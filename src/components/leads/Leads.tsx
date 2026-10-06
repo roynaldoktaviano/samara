@@ -12,7 +12,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Skeleton } from '@/components/ui/skeleton'
-import { UserPlus, Plus, Edit, MessageCircle, Send, Search, Mail, Phone, ChevronRight, ChevronLeft, Trash2, X, Globe, RotateCw, Download, ArrowUp, ArrowDown, Target, AlertTriangle, Loader2 } from 'lucide-react'
+import { UserPlus, Plus, Edit, MessageCircle, Send, Search, Mail, Phone, ChevronRight, ChevronLeft, Trash2, X, Globe, RotateCw, Download, ArrowUp, ArrowDown, Target, AlertTriangle, Loader2, Ship } from 'lucide-react'
 import LeadEditSheet from '@/components/leads/LeadEditSheet'
 import LostReasonDialog from '@/components/leads/LostReasonDialog'
 import { isHttpUrl } from '@/lib/url-safety'
@@ -45,7 +45,28 @@ interface Lead {
   budgetMin?: number | null
   budgetMax?: number | null
   budgetCurrency?: string | null
+  // Only on the Meta Lead Ads tab: the latest instant-form inquiry.
+  inquiries?: MetaInquiry[]
 }
+
+interface MetaInquiry {
+  createdAt: string
+  utmSource?: string | null
+  utmCampaign?: string | null
+  tripType?: string | null
+  checkInDate?: string | null
+  checkOutDate?: string | null
+  guestCount?: number | null
+}
+
+type LeadChannel = 'all' | 'form' | 'meta'
+const CHANNEL_TABS: { value: LeadChannel; label: string; title: string }[] = [
+  { value: 'all',  label: 'All Leads',      title: 'All Leads' },
+  { value: 'form', label: 'Website Form',   title: 'Website Form Leads' },
+  { value: 'meta', label: 'Meta Lead Ads',  title: 'Meta Lead Ads Leads' },
+]
+
+const fmtShortDate = (d: string) => new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', timeZone: 'UTC' })
 
 interface Inquiry {
   id: string
@@ -129,6 +150,13 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail }: {
   const [sourceFilter, setSourceFilter] = useState('all')
   const [sources, setSources] = useState<string[]>([])
   const [stageFilter, setStageFilter] = useState<LeadStage | 'all'>('all')
+  const [channel, setChannel] = useState<LeadChannel>('all')
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
+  const [campaignFilter, setCampaignFilter] = useState('all')
+  const [yachtFilter, setYachtFilter] = useState('all')
+  const [metaCampaigns, setMetaCampaigns] = useState<string[]>([])
+  const [metaYachts, setMetaYachts] = useState<string[]>([])
   const [stageBusy, setStageBusy] = useState(false)
   const [lostTarget, setLostTarget] = useState<Lead | null>(null)
   const [destinationMap, setDestinationMap] = useState<Record<string, string>>({})
@@ -181,6 +209,13 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail }: {
       if (websiteFilter !== 'all') params.set('website', websiteFilter)
       if (sourceFilter !== 'all') params.set('source', sourceFilter)
       if (stageFilter !== 'all') params.set('stage', stageFilter)
+      if (channel !== 'all') params.set('channel', channel)
+      if (channel === 'meta') {
+        if (dateFrom) params.set('dateFrom', dateFrom)
+        if (dateTo) params.set('dateTo', dateTo)
+        if (campaignFilter !== 'all') params.set('campaign', campaignFilter)
+        if (yachtFilter !== 'all') params.set('yacht', yachtFilter)
+      }
       const res = await fetch(`/api/leads?${params}`)
       if (res.ok) {
         setLeads(await res.json())
@@ -189,7 +224,7 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail }: {
     } finally {
       setLoading(false)
     }
-  }, [search, websiteFilter, sourceFilter, stageFilter, sortDir])
+  }, [search, websiteFilter, sourceFilter, stageFilter, sortDir, channel, dateFrom, dateTo, campaignFilter, yachtFilter])
 
   useEffect(() => { setPage(1); fetchLeads(1) }, [fetchLeads])
 
@@ -208,6 +243,9 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail }: {
   useEffect(() => {
     fetch('/api/leads/websites').then(r => r.ok ? r.json() : []).then(setWebsites).catch(() => {})
     fetch('/api/leads/sources').then(r => r.ok ? r.json() : []).then(setSources).catch(() => {})
+    fetch('/api/leads/meta-filters').then(r => r.ok ? r.json() : null).then((d: { campaigns: string[]; yachts: string[] } | null) => {
+      if (d) { setMetaCampaigns(d.campaigns); setMetaYachts(d.yachts) }
+    }).catch(() => {})
     fetch('/api/destinations').then(r => r.ok ? r.json() : []).then((d: { id: string; name: string }[]) => setDestinationMap(Object.fromEntries(d.map(x => [x.id, x.name])))).catch(() => {})
   }, [])
 
@@ -366,14 +404,27 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail }: {
         </div>
       </div>
 
+      {/* Channel tabs */}
+      <div className="flex gap-1 border-b">
+        {CHANNEL_TABS.map(t => (
+          <button
+            key={t.value}
+            onClick={() => setChannel(t.value)}
+            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${channel === t.value ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
       {/* Table card */}
       <Card>
         <CardHeader>
-          <CardTitle>All Leads</CardTitle>
+          <CardTitle>{CHANNEL_TABS.find(t => t.value === channel)?.title}</CardTitle>
           <CardDescription>{totalLeads} lead(s) registered</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="flex items-center gap-2 mb-4">
+          <div className="flex flex-wrap items-center gap-2 mb-4">
             <Search className="h-4 w-4 text-muted-foreground" />
             <Input
               placeholder="Search by name, email, phone, passport..."
@@ -383,6 +434,39 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail }: {
             />
             {search && <button onClick={() => setSearch('')}><X className="h-4 w-4 text-muted-foreground" /></button>}
 
+            {channel === 'meta' ? <>
+              <Input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className={`w-[150px] ${dateFrom ? 'border-primary text-primary font-medium' : ''}`} title="Lead date from" />
+              <span className="text-muted-foreground text-xs">–</span>
+              <Input type="date" value={dateTo} min={dateFrom || undefined} onChange={e => setDateTo(e.target.value)} className={`w-[150px] ${dateTo ? 'border-primary text-primary font-medium' : ''}`} title="Lead date to" />
+
+              <Select value={campaignFilter} onValueChange={setCampaignFilter}>
+                <SelectTrigger className={`w-[220px] ${campaignFilter !== 'all' ? 'border-primary text-primary font-medium' : ''}`}>
+                  <Target className="h-3.5 w-3.5 mr-1.5 shrink-0" />
+                  <SelectValue placeholder="Campaign" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Campaigns</SelectItem>
+                  {metaCampaigns.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                </SelectContent>
+              </Select>
+
+              <Select value={yachtFilter} onValueChange={setYachtFilter}>
+                <SelectTrigger className={`w-[160px] ${yachtFilter !== 'all' ? 'border-primary text-primary font-medium' : ''}`}>
+                  <Ship className="h-3.5 w-3.5 mr-1.5 shrink-0" />
+                  <SelectValue placeholder="Yacht" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Yachts</SelectItem>
+                  {metaYachts.map(y => <SelectItem key={y} value={y}>{y}</SelectItem>)}
+                </SelectContent>
+              </Select>
+
+              {(dateFrom || dateTo || campaignFilter !== 'all' || yachtFilter !== 'all') && (
+                <Button variant="ghost" size="sm" onClick={() => { setDateFrom(''); setDateTo(''); setCampaignFilter('all'); setYachtFilter('all') }}>
+                  <X className="h-3.5 w-3.5 mr-1" /> Reset
+                </Button>
+              )}
+            </> : <>
             <Select value={websiteFilter} onValueChange={setWebsiteFilter}>
               <SelectTrigger className={`w-[180px] ${websiteFilter !== 'all' ? 'border-primary text-primary font-medium' : ''}`}>
                 <Globe className="h-3.5 w-3.5 mr-1.5 shrink-0" />
@@ -404,6 +488,7 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail }: {
                 {sources.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
               </SelectContent>
             </Select>
+            </>}
 
             {/* Bulk action bar */}
             {isAdmin && selectedIds.size > 0 && (
@@ -450,6 +535,11 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail }: {
                   )}
                   <TableHead>Name</TableHead>
                   <TableHead>Stage</TableHead>
+                  {channel === 'meta' && <>
+                    <TableHead>Yacht</TableHead>
+                    <TableHead>Campaign</TableHead>
+                    <TableHead>Trip</TableHead>
+                  </>}
                   <TableHead>Contact</TableHead>
                   <TableHead>Subscribed</TableHead>
                   <TableHead>Country</TableHead>
@@ -477,6 +567,11 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail }: {
                         </div>
                       </TableCell>
                       <TableCell><Skeleton className="h-4 w-20 rounded-full" /></TableCell>
+                      {channel === 'meta' && <>
+                        <TableCell><Skeleton className="h-3 w-16" /></TableCell>
+                        <TableCell><Skeleton className="h-3 w-32" /></TableCell>
+                        <TableCell><Skeleton className="h-3 w-20" /></TableCell>
+                      </>}
                       <TableCell><div className="space-y-1.5"><Skeleton className="h-3 w-36" /><Skeleton className="h-3 w-24" /></div></TableCell>
                       <TableCell><Skeleton className="h-3 w-16" /></TableCell>
                       <TableCell><Skeleton className="h-3 w-20" /></TableCell>
@@ -486,7 +581,7 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail }: {
                   ))
                 ) : leads.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={isAdmin ? 8 : 7} className="py-12 text-center text-muted-foreground">No leads found</TableCell>
+                    <TableCell colSpan={(isAdmin ? 8 : 7) + (channel === 'meta' ? 3 : 0)} className="py-12 text-center text-muted-foreground">No leads found</TableCell>
                   </TableRow>
                 ) : leads.map(l => (
                   <TableRow
@@ -514,6 +609,22 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail }: {
                     <TableCell>
                       <Badge className={`${LEAD_STAGE_COLOR[l.stage]} border-transparent`}>{LEAD_STAGE_LABEL[l.stage]}</Badge>
                     </TableCell>
+                    {channel === 'meta' && (() => {
+                      const mi = l.inquiries?.[0]
+                      return <>
+                        <TableCell>
+                          {mi?.tripType ? <Badge variant="outline" className="whitespace-nowrap">{mi.tripType}</Badge> : <span className="text-muted-foreground text-xs">—</span>}
+                        </TableCell>
+                        <TableCell className="max-w-[260px]">
+                          <p className="text-xs truncate" title={mi?.utmCampaign ?? ''}>{mi?.utmCampaign ?? '—'}</p>
+                          {mi && <p className="text-[11px] text-muted-foreground capitalize">{mi.utmSource} · {new Date(mi.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</p>}
+                        </TableCell>
+                        <TableCell>
+                          <p className="text-xs whitespace-nowrap">{mi?.checkInDate ? `${fmtShortDate(mi.checkInDate)}${mi.checkOutDate ? ` – ${fmtShortDate(mi.checkOutDate)}` : ''}` : '—'}</p>
+                          {mi?.guestCount != null && <p className="text-[11px] text-muted-foreground">{mi.guestCount} guest{mi.guestCount === 1 ? '' : 's'}</p>}
+                        </TableCell>
+                      </>
+                    })()}
                     <TableCell>
                       <div className="space-y-0.5">
                         {l.email && <div className="flex items-center gap-1 text-xs"><Mail className="h-3 w-3 text-muted-foreground" />{l.email}</div>}

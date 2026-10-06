@@ -15,6 +15,12 @@ export async function GET(request: NextRequest) {
     const website = searchParams.get('website')
     const source  = searchParams.get('source')
     const stage   = searchParams.get('stage')
+    // Tab on the Leads page: 'form' = website CF7 form, 'meta' = Meta Lead Ads instant form.
+    const channel = searchParams.get('channel')
+    const dateFrom = searchParams.get('dateFrom')
+    const dateTo   = searchParams.get('dateTo')
+    const campaign = searchParams.get('campaign')
+    const yacht    = searchParams.get('yacht')
     const limit  = Math.min(parseInt(searchParams.get('limit') ?? '500') || 500, 2000)
     const page   = Math.max(1, parseInt(searchParams.get('page') ?? '1') || 1)
     const sort   = searchParams.get('sort') === 'asc' ? 'asc' : 'desc'
@@ -35,6 +41,20 @@ export async function GET(request: NextRequest) {
     const inquiryFilters: Record<string, unknown>[] = []
     if (website) inquiryFilters.push(leadWebsiteWhere([website]))
     if (source)  inquiryFilters.push({ inquiries: { some: { OR: [{ utmSource: source }, { lastSource: source }] } } })
+    if (channel === 'form') inquiryFilters.push({ inquiries: { some: { source: 'CF7' } } })
+    if (channel === 'meta') {
+      // Date/campaign/yacht must all hold on the same Meta inquiry. Date is the Meta lead's
+      // own time (the webhook stores it as the inquiry's createdAt), days in WIB.
+      const createdAt: Record<string, Date> = {}
+      if (dateFrom) createdAt.gte = new Date(`${dateFrom}T00:00:00+07:00`)
+      if (dateTo)   createdAt.lte = new Date(`${dateTo}T23:59:59.999+07:00`)
+      inquiryFilters.push({ inquiries: { some: {
+        source: 'META_LEAD_AD',
+        ...(Object.keys(createdAt).length > 0 && { createdAt }),
+        ...(campaign && { utmCampaign: campaign }),
+        ...(yacht && { tripType: yacht }),
+      } } })
+    }
     if (inquiryFilters.length > 0) where.AND = inquiryFilters
 
     const [leads, total] = await Promise.all([
@@ -43,6 +63,13 @@ export async function GET(request: NextRequest) {
         orderBy: { createdAt: sort },
         skip: (page - 1) * limit,
         take: limit,
+        // Meta tab shows the latest instant-form answer (yacht, campaign, trip date) per row.
+        ...(channel === 'meta' && { include: { inquiries: {
+          where: { source: 'META_LEAD_AD' },
+          orderBy: { createdAt: 'desc' as const },
+          take: 1,
+          select: { createdAt: true, utmSource: true, utmCampaign: true, tripType: true, checkInDate: true, checkOutDate: true, guestCount: true },
+        } } }),
       }),
       db.lead.count({ where }),
     ])
