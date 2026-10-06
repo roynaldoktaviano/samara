@@ -39,6 +39,8 @@ const META_KEYS = new Set([
   'id', 'leadgen_id', 'created_time', 'ad_id', 'ad_name', 'adset_id', 'adset_name',
   'campaign_id', 'campaign_name', 'form_id', 'form_name', 'is_organic', 'platform',
   'lead_status', 'page_id', 'field_data', 'secret', 'tenant',
+  // Extra envelope keys some relay tools add around the lead.
+  'lead_id', 'brand', 'event', 'source', 'sent_at', 'freshsales_contact_id',
 ])
 const CONTACT_KEYS = new Set(['full_name', 'first_name', 'last_name', 'email', 'phone_number', 'phone'])
 
@@ -67,17 +69,37 @@ function str(v: unknown): string {
   return ''
 }
 
-// Flattens to string-only values for logging/audit (field_data → "<name>: a, b").
-function toJsonSafe(data: Record<string, unknown>): Record<string, string> {
-  const out: Record<string, string> = {}
+// Flattens to string-only values for logging/audit. Relay tools (Zapier, Make, custom
+// syncs) often nest the person under e.g. `contact: {...}` or answers under `fields: [...]`,
+// so nested objects are lifted to their leaf keys — a top-level key always wins a clash.
+// Answer lists ({name, values} as in Graph's field_data, or {key|question|label, value|answer})
+// become "<name>": "a, b".
+function toJsonSafe(data: Record<string, unknown>, out: Record<string, string> = {}, parentKey = ''): Record<string, string> {
   for (const [k, v] of Object.entries(data)) {
     if (k === 'secret') continue
-    if (k === 'field_data' && Array.isArray(v)) {
-      for (const f of v as { name?: string; values?: unknown[] }[]) {
-        if (f?.name) out[f.name] = (f.values ?? []).map(str).filter(Boolean).join(', ')
+    if (Array.isArray(v)) {
+      if (v.every(item => typeof item !== 'object' || item === null)) {
+        const joined = v.map(str).filter(Boolean).join(', ')
+        if (joined && (!parentKey || !(k in out))) out[k] = joined
+        continue
       }
+      for (const item of v) {
+        if (!item || typeof item !== 'object') continue
+        const o = item as Record<string, unknown>
+        const name = str(o.name) || str(o.key) || str(o.question) || str(o.label)
+        const value = 'values' in o ? (Array.isArray(o.values) ? o.values : [o.values]) : [o.value ?? o.answer]
+        if (name && value.some(x => str(x))) {
+          if (!(name in out)) out[name] = value.map(str).filter(Boolean).join(', ')
+        } else {
+          toJsonSafe(o, out, k)
+        }
+      }
+    } else if (v && typeof v === 'object') {
+      toJsonSafe(v as Record<string, unknown>, out, k)
     } else if (str(v)) {
-      out[k] = str(v)
+      // A bare `name` only means the person's name inside a contact-like object.
+      const key = k === 'name' && /contact|lead|person|customer|user|guest/i.test(parentKey) ? 'full_name' : k
+      if (!parentKey || !(key in out)) out[key] = str(v)
     }
   }
   return out
@@ -95,17 +117,17 @@ function toMetaLead(data: Record<string, unknown>): MetaLead {
   for (const [k, v] of Object.entries(raw)) {
     if (!META_KEYS.has(k)) fields[k] = v
   }
-  const platform = str(data.platform).toLowerCase()
+  const platform = (raw.platform ?? '').toLowerCase()
   return {
-    leadgenId:    str(data.leadgen_id) || str(data.id),
-    createdTime:  parseCreatedTime(str(data.created_time)),
-    adId:         str(data.ad_id),
-    adName:       str(data.ad_name),
-    adsetName:    str(data.adset_name),
-    campaignName: str(data.campaign_name),
-    formId:       str(data.form_id),
-    formName:     str(data.form_name),
-    isOrganic:    str(data.is_organic).toLowerCase() === 'true',
+    leadgenId:    raw.leadgen_id || raw.lead_id || str(data.id),
+    createdTime:  parseCreatedTime(raw.created_time ?? ''),
+    adId:         raw.ad_id ?? '',
+    adName:       raw.ad_name ?? '',
+    adsetName:    raw.adset_name ?? '',
+    campaignName: raw.campaign_name ?? '',
+    formId:       raw.form_id ?? '',
+    formName:     raw.form_name ?? '',
+    isOrganic:    (raw.is_organic ?? '').toLowerCase() === 'true',
     platform:     platform === 'ig' ? 'instagram' : platform === 'fb' ? 'facebook' : platform,
     fields,
     raw,
@@ -336,6 +358,24 @@ function verifySignature(rawBody: string, header: string | null, appSecret: stri
   return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(provided))
 }
 
+// Flat deliveries come from relay tools that each authenticate their own way, so any of
+// these is accepted as long as it's built from the tenant's Meta Lead Ads Webhook Secret:
+// ?secret= / body `secret`, a header carrying the secret itself (incl. "Bearer <secret>"),
+// or a header carrying an HMAC-SHA256 of the raw body (hex or base64, optional "sha256=").
+function isFlatRequestAuthorized(request: NextRequest, rawBody: string, data: Record<string, unknown>, expected: string): boolean {
+  const eq = (a: string, b: string) => a.length === b.length && crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b))
+  const given = request.nextUrl.searchParams.get('secret') ?? str(data.secret)
+  if (given && eq(given, expected)) return true
+
+  const hmac = crypto.createHmac('sha256', expected).update(rawBody).digest()
+  const accepted = [expected, `Bearer ${expected}`, hmac.toString('hex'), hmac.toString('base64')]
+  for (const [, value] of request.headers) {
+    const v = value.trim().replace(/^sha256=/i, '')
+    if (accepted.some(a => eq(v, a) || eq(v.toLowerCase(), a))) return true
+  }
+  return false
+}
+
 async function graphGet(path: string, token: string): Promise<Record<string, unknown> | null> {
   const res = await fetch(`https://graph.facebook.com/${WHATSAPP_GRAPH_VERSION}/${path}`, {
     headers: { Authorization: `Bearer ${token}` },
@@ -424,11 +464,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: true })
     }
 
-    // Flat delivery (Zapier/Make/CSV row): authenticated by ?secret=.
-    const secret = request.nextUrl.searchParams.get('secret') ?? str(data.secret)
+    // Flat delivery (Zapier/Make/relay tool/CSV row) — see isFlatRequestAuthorized.
     const expected = await getTenantSecret(tenant.id, 'metaLeadsWebhookSecret')
-    if (!expected || secret !== expected) {
-      logWebhookFailure({ source: SOURCE, tenantSlug: tenant.slug, reason: 'unauthorized', rawPayload: toJsonSafe(data) })
+    if (!expected || !isFlatRequestAuthorized(request, rawBody, data, expected)) {
+      // Header names only (never values) — enough to see how a new sender authenticates.
+      const headerNames = [...request.headers.keys()].join(', ')
+      logWebhookFailure({ source: SOURCE, tenantSlug: tenant.slug, reason: 'unauthorized', detail: `headers: ${headerNames}`, rawPayload: toJsonSafe(data) })
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
