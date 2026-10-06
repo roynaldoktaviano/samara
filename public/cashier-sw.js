@@ -4,7 +4,7 @@
 // JS/CSS chunks, fonts, product images). API data and the queue of unsynced sales live in the
 // page itself (src/lib/cashier-offline.ts), never here.
 const SHELL_CACHE = 'cashier-shell-v1'
-const ASSET_CACHE = 'cashier-assets-v1'
+const ASSET_CACHE = 'cashier-assets-v2'
 const KEEP = [SHELL_CACHE, ASSET_CACHE]
 const MAX_ASSETS = 400
 
@@ -30,7 +30,7 @@ async function trim(name, max) {
 
 function isAsset(request, url) {
   if (url.origin === self.location.origin) {
-    return url.pathname.startsWith('/_next/static/') || url.pathname.startsWith('/icons/') || url.pathname.startsWith('/_next/image')
+    return url.pathname.startsWith('/_next/static/') || url.pathname.startsWith('/app-icons/') || url.pathname.startsWith('/_next/image')
   }
   // Google Fonts + product/vessel images hosted elsewhere (R2 / CDN).
   return url.hostname === 'fonts.googleapis.com' || url.hostname === 'fonts.gstatic.com' || request.destination === 'image'

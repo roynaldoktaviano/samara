@@ -148,6 +148,19 @@ function parseDepartureRange(label: string, ref: Date): { checkIn: Date; checkOu
   return { checkIn, checkOut }
 }
 
+// "Samara 1 / Bali + Jakarta / …" → "Samara I". Checked in order, so a campaign name wins
+// over the form name; Samara II is tested before Samara I since "Samara I" prefixes it.
+function vesselFromNames(...names: string[]): string | null {
+  for (const name of names) {
+    if (!name) continue
+    if (/otium/i.test(name)) return 'Otium'
+    if (/mischief/i.test(name)) return 'Mischief'
+    if (/samara\s*(ii|2)\b/i.test(name)) return 'Samara II'
+    if (/samara\s*(i|1)\b/i.test(name)) return 'Samara I'
+  }
+  return null
+}
+
 async function ingestLead(db: PrismaClient, lead: MetaLead): Promise<IngestResult> {
   const f = lead.fields
   const email = f.email ?? ''
@@ -178,9 +191,10 @@ async function ingestLead(db: PrismaClient, lead: MetaLead): Promise<IngestResul
   ].filter(Boolean).join('\n')
 
   const website = lead.platform ? `${lead.platform}.com` : null
-  // Form name doubles as tripType so brandForInquiry routes "Otium …"/"Mischief …" forms
-  // to that brand's sales pool, same as a website inquiry would.
-  const tripType = lead.formName || lead.campaignName || null
+  // The vessel the ad is for, read off the campaign name (then form/ad set name) — doubles
+  // as tripType so brandForInquiry routes Otium/Mischief leads to that brand's sales pool.
+  const vessel = vesselFromNames(lead.campaignName, lead.formName, lead.adsetName)
+  const tripType = vessel || lead.formName || lead.campaignName || null
   const utmSource = lead.platform || 'meta'
   const utmMedium = lead.isOrganic ? 'organic_social' : 'paid_social'
 
@@ -231,7 +245,7 @@ async function ingestLead(db: PrismaClient, lead: MetaLead): Promise<IngestResul
       })
       ownerId = updated.id
     } else {
-      const leadSelect = { id: true, firstName: true, lastName: true, email: true, phone: true } as const
+      const leadSelect = { id: true, firstName: true, lastName: true, email: true, phone: true, productInterest: true } as const
       const matchedLead =
         (email ? await tx.lead.findFirst({ where: { email: { equals: email, mode: 'insensitive' }, deletedAt: null }, select: leadSelect }) : null) ??
         (phone ? await tx.lead.findFirst({ where: { phone: { in: phoneVariants }, deletedAt: null }, select: leadSelect }) : null)
@@ -244,6 +258,7 @@ async function ingestLead(db: PrismaClient, lead: MetaLead): Promise<IngestResul
             ...(!matchedLead.firstName && firstName && { firstName, lastName: lastName || null, name: fullName }),
             ...(!matchedLead.email && email && { email }),
             ...(!matchedLead.phone && phone && { phone }),
+            ...(!matchedLead.productInterest && vessel && { productInterest: vessel }),
           },
           select: { id: true },
         })
@@ -257,6 +272,7 @@ async function ingestLead(db: PrismaClient, lead: MetaLead): Promise<IngestResul
             lastName:  lastName  || null,
             email:     email     || null,
             phone:     phone     || null,
+            productInterest: vessel || null,
           },
           select: { id: true },
         })

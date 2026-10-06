@@ -3,7 +3,7 @@
 // cache API responses or HTML pages (stale bookings/inventory would be worse than
 // no offline support at all). Only static, hashed build assets and icons are cached.
 const CACHE_NAME = 'samara-erp-static-v1'
-const STATIC_PATH_PREFIXES = ['/_next/static/', '/icons/', '/logo.svg']
+const STATIC_PATH_PREFIXES = ['/_next/static/', '/app-icons/', '/logo.svg']
 
 self.addEventListener('install', (event) => {
   self.skipWaiting()
@@ -49,8 +49,8 @@ self.addEventListener('push', (event) => {
   event.waitUntil(
     self.registration.showNotification(data.title, {
       body: data.body,
-      icon: '/icons/icon-192.png',
-      badge: '/icons/icon-192.png',
+      icon: '/app-icons/icon-192.png',
+      badge: '/app-icons/icon-192.png',
       data: { url: data.url || '/' },
     })
   )
