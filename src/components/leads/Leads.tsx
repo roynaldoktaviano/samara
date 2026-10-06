@@ -16,6 +16,7 @@ import { UserPlus, Plus, Edit, MessageCircle, Send, Search, Mail, Phone, Chevron
 import LeadEditSheet from '@/components/leads/LeadEditSheet'
 import LostReasonDialog from '@/components/leads/LostReasonDialog'
 import { isHttpUrl } from '@/lib/url-safety'
+import { LEAD_ORIGINS, LEAD_ORIGIN_LABEL, LEAD_ORIGIN_COLOR, INQUIRY_FORM_LABEL, classifyLeadOrigin, formPageLabel, type LeadOrigin } from '@/lib/lead-origin'
 import FreshsalesImportModal from '@/components/shared/FreshsalesImportModal'
 import { LEAD_STAGES, LEAD_STAGE_LABEL, LEAD_STAGE_COLOR, LEAD_TRANSITIONS, type LeadStage } from '@/lib/lead-pipeline'
 import { toast } from 'sonner'
@@ -149,6 +150,7 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail }: {
   const [websites, setWebsites] = useState<string[]>([])
   const [sourceFilter, setSourceFilter] = useState('all')
   const [sources, setSources] = useState<string[]>([])
+  const [originFilter, setOriginFilter] = useState<LeadOrigin | 'all'>('all')
   const [stageFilter, setStageFilter] = useState<LeadStage | 'all'>('all')
   const [channel, setChannel] = useState<LeadChannel>('all')
   const [dateFrom, setDateFrom] = useState('')
@@ -208,6 +210,7 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail }: {
       if (search) params.set('search', search)
       if (websiteFilter !== 'all') params.set('website', websiteFilter)
       if (sourceFilter !== 'all') params.set('source', sourceFilter)
+      if (originFilter !== 'all' && channel !== 'meta') params.set('origin', originFilter)
       if (stageFilter !== 'all') params.set('stage', stageFilter)
       if (channel !== 'all') params.set('channel', channel)
       if (channel === 'meta') {
@@ -224,7 +227,7 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail }: {
     } finally {
       setLoading(false)
     }
-  }, [search, websiteFilter, sourceFilter, stageFilter, sortDir, channel, dateFrom, dateTo, campaignFilter, yachtFilter])
+  }, [search, websiteFilter, sourceFilter, originFilter, stageFilter, sortDir, channel, dateFrom, dateTo, campaignFilter, yachtFilter])
 
   useEffect(() => { setPage(1); fetchLeads(1) }, [fetchLeads])
 
@@ -475,6 +478,17 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail }: {
               <SelectContent>
                 <SelectItem value="all">All Websites</SelectItem>
                 {websites.map(w => <SelectItem key={w} value={w}>{w}</SelectItem>)}
+              </SelectContent>
+            </Select>
+
+            <Select value={originFilter} onValueChange={v => setOriginFilter(v as LeadOrigin | 'all')}>
+              <SelectTrigger className={`w-[200px] ${originFilter !== 'all' ? 'border-primary text-primary font-medium' : ''}`}>
+                <Target className="h-3.5 w-3.5 mr-1.5 shrink-0" />
+                <SelectValue placeholder="Origin" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Origins</SelectItem>
+                {LEAD_ORIGINS.filter(o => channel !== 'form' || o !== 'META_LEAD_AD').map(o => <SelectItem key={o} value={o}>{LEAD_ORIGIN_LABEL[o]}</SelectItem>)}
               </SelectContent>
             </Select>
 
@@ -837,7 +851,15 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail }: {
                       {inquiries.map(inq => (
                         <div key={inq.id} className="rounded-lg border px-3 py-2 space-y-1">
                           <div className="flex items-center justify-between gap-2">
-                            <span className="text-xs font-medium">{inq.source}</span>
+                            {(() => {
+                              const origin = classifyLeadOrigin(inq)
+                              return (
+                                <span className="flex items-center gap-1.5 min-w-0">
+                                  <span className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${LEAD_ORIGIN_COLOR[origin]}`}>{LEAD_ORIGIN_LABEL[origin]}</span>
+                                  {origin !== 'META_LEAD_AD' && <span className="text-[11px] text-muted-foreground truncate">via {INQUIRY_FORM_LABEL[inq.source] ?? inq.source}</span>}
+                                </span>
+                              )
+                            })()}
                             <span className="text-[11px] text-muted-foreground">{new Date(inq.createdAt).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
                           </div>
                           {(inq.checkInDate || inq.checkOutDate) && (
@@ -852,7 +874,7 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail }: {
                           {inq.message && <p className="text-xs whitespace-pre-wrap">{inq.message}</p>}
                           {inq.website && (
                             <p className="text-xs text-muted-foreground">
-                              {isHttpUrl(inq.url) ? <a href={inq.url} target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground">{inq.website}</a> : inq.website}
+                              {isHttpUrl(inq.url) ? <a href={inq.url} target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground">{formPageLabel(inq.url, inq.website)}</a> : inq.website}
                             </p>
                           )}
                           {(inq.utmSource || inq.utmMedium || inq.utmCampaign || inq.lastSource || inq.gclid || inq.fbclid) && (

@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { logActivity } from '@/lib/activity'
 import { leadWebsiteWhere } from '@/lib/lead-website'
+import { classifyLeadOrigin, LEAD_ORIGINS, LEAD_ORIGIN_SELECT, type LeadOrigin } from '@/lib/lead-origin'
 
 export async function GET(request: NextRequest) {
   const session = await getServerSession(authOptions)
@@ -14,6 +15,7 @@ export async function GET(request: NextRequest) {
     const search  = searchParams.get('search')
     const website = searchParams.get('website')
     const source  = searchParams.get('source')
+    const origin  = searchParams.get('origin')
     const stage   = searchParams.get('stage')
     // Tab on the Leads page: 'form' = website CF7 form, 'meta' = Meta Lead Ads instant form.
     const channel = searchParams.get('channel')
@@ -41,6 +43,13 @@ export async function GET(request: NextRequest) {
     const inquiryFilters: Record<string, unknown>[] = []
     if (website) inquiryFilters.push(leadWebsiteWhere([website]))
     if (source)  inquiryFilters.push({ inquiries: { some: { OR: [{ utmSource: source }, { lastSource: source }] } } })
+    // Origin is derived from several UTM/click-id fields with precedence rules (see
+    // src/lib/lead-origin.ts), so it's classified here rather than expressed in SQL.
+    if (origin && (LEAD_ORIGINS as readonly string[]).includes(origin)) {
+      const rows = await db.inquiry.findMany({ where: { leadId: { not: null } }, select: { leadId: true, ...LEAD_ORIGIN_SELECT } })
+      const leadIds = [...new Set(rows.filter(r => classifyLeadOrigin(r) === (origin as LeadOrigin)).map(r => r.leadId as string))]
+      inquiryFilters.push({ id: { in: leadIds } })
+    }
     if (channel === 'form') inquiryFilters.push({ inquiries: { some: { source: 'CF7' } } })
     if (channel === 'meta') {
       // Date/campaign/yacht must all hold on the same Meta inquiry. Date is the Meta lead's

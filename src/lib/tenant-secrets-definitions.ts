@@ -21,6 +21,8 @@ export type TenantSecretKey =
   | 'whatsappOtiumWabaId'
   | 'whatsappWebhookSecret'
   | 'whatsappAppSecret'
+  | 'whatsappMischiefWebhookSecret'
+  | 'whatsappMischiefAppSecret'
   | 'instagramApiUrl'
   | 'instagramApiToken'
   | 'instagramWebhookSecret'
@@ -49,6 +51,8 @@ export interface TenantSecrets {
   whatsappOtiumWabaId?: string
   whatsappWebhookSecret?: string
   whatsappAppSecret?: string
+  whatsappMischiefWebhookSecret?: string
+  whatsappMischiefAppSecret?: string
   instagramApiUrl?: string
   instagramApiToken?: string
   instagramWebhookSecret?: string
@@ -83,6 +87,8 @@ export const TENANT_SECRET_DEFINITIONS: {
   { key: 'whatsappOtiumWabaId', label: 'WhatsApp Business Account ID — Otium', description: 'WABA ID that owns the Otium number — lets Chat > WhatsApp Templates sync approved templates from Meta (token needs whatsapp_business_management)', envFallback: 'WHATSAPP_OTIUM_WABA_ID' },
   { key: 'whatsappWebhookSecret', label: 'WhatsApp Webhook Verify Token', description: 'Value you choose and also enter in the Meta webhook subscription setup — shared across all 3 numbers if they sit under the same Meta App', envFallback: 'WHATSAPP_WEBHOOK_SECRET' },
   { key: 'whatsappAppSecret', label: 'WhatsApp Meta App Secret', description: 'Verifies inbound Cloud API webhook signatures (X-Hub-Signature-256) — shared across all 3 numbers if they sit under the same Meta App', envFallback: 'WHATSAPP_APP_SECRET' },
+  { key: 'whatsappMischiefWebhookSecret', label: 'WhatsApp Webhook Verify Token — Mischief', description: 'Only if the Mischief number is in its own Meta App — verify token for /api/webhooks/whatsapp/mischief (empty = uses the shared verify token)', envFallback: 'WHATSAPP_MISCHIEF_WEBHOOK_SECRET' },
+  { key: 'whatsappMischiefAppSecret', label: 'WhatsApp Meta App Secret — Mischief', description: 'Only if the Mischief number is in its own Meta App — verifies signatures on /api/webhooks/whatsapp/mischief (empty = uses the shared app secret)', envFallback: 'WHATSAPP_MISCHIEF_APP_SECRET' },
   { key: 'instagramApiUrl', label: 'Instagram Send API URL', description: 'Graph API endpoint for sending Instagram DMs once connected', envFallback: 'INSTAGRAM_API_URL' },
   { key: 'instagramApiToken', label: 'Instagram Access Token', description: 'Access token for the connected Instagram/Facebook Page', envFallback: 'INSTAGRAM_API_TOKEN' },
   { key: 'instagramWebhookSecret', label: 'Instagram Webhook Verify Token', description: 'Value you choose and also enter in the Meta webhook subscription setup', envFallback: 'INSTAGRAM_WEBHOOK_SECRET' },

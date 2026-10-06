@@ -20,3 +20,9 @@ export const WHATSAPP_BRAND_SECRET_KEYS: Record<WhatsappBrand, { phoneNumberId: 
   MISCHIEF: { phoneNumberId: 'whatsappMischiefPhoneNumberId', apiToken: 'whatsappMischiefApiToken', wabaId: 'whatsappMischiefWabaId' },
   OTIUM:    { phoneNumberId: 'whatsappOtiumPhoneNumberId',    apiToken: 'whatsappOtiumApiToken',    wabaId: 'whatsappOtiumWabaId' },
 }
+
+// Only for a number that lives in its own Meta App (separate verify token / app secret) —
+// brands not listed use the shared whatsappWebhookSecret / whatsappAppSecret.
+export const WHATSAPP_BRAND_WEBHOOK_SECRET_KEYS: Partial<Record<WhatsappBrand, { webhookSecret: TenantSecretKey; appSecret: TenantSecretKey }>> = {
+  MISCHIEF: { webhookSecret: 'whatsappMischiefWebhookSecret', appSecret: 'whatsappMischiefAppSecret' },
+}
