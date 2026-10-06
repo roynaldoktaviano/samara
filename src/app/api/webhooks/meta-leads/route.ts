@@ -418,7 +418,7 @@ export async function POST(request: NextRequest) {
 
     // A batch (array of rows, e.g. a whole CSV export) or a single row.
     const rows = Array.isArray(data) ? data as Record<string, unknown>[] : Array.isArray(data.leads) ? data.leads as Record<string, unknown>[] : [data]
-    const results = []
+    const results: (IngestResult & { id: string | null })[] = []
     for (const row of rows) {
       const lead = toMetaLead(row)
       const result = await ingestLead(db, lead)
