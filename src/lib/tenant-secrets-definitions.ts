@@ -26,6 +26,9 @@ export type TenantSecretKey =
   | 'instagramWebhookSecret'
   | 'emailInboxWebhookSecret'
   | 'emailInboxFromAddress'
+  | 'metaLeadsWebhookSecret'
+  | 'metaLeadsPageToken'
+  | 'metaLeadsAppSecret'
 
 export interface TenantSecrets {
   freshsalesApiKey?: string
@@ -51,6 +54,9 @@ export interface TenantSecrets {
   instagramWebhookSecret?: string
   emailInboxWebhookSecret?: string
   emailInboxFromAddress?: string
+  metaLeadsWebhookSecret?: string
+  metaLeadsPageToken?: string
+  metaLeadsAppSecret?: string
 }
 
 export const TENANT_SECRET_DEFINITIONS: {
@@ -82,6 +88,9 @@ export const TENANT_SECRET_DEFINITIONS: {
   { key: 'instagramWebhookSecret', label: 'Instagram Webhook Verify Token', description: 'Value you choose and also enter in the Meta webhook subscription setup', envFallback: 'INSTAGRAM_WEBHOOK_SECRET' },
   { key: 'emailInboxWebhookSecret', label: 'Email Inbox Webhook Secret', description: 'Shared secret your inbound-email provider sends when POSTing new emails', envFallback: 'EMAIL_INBOX_WEBHOOK_SECRET' },
   { key: 'emailInboxFromAddress', label: 'Email Inbox From Address', description: 'Sender address for replies (uses the existing Resend API Key to send)', envFallback: 'EMAIL_INBOX_FROM_ADDRESS' },
+  { key: 'metaLeadsWebhookSecret', label: 'Meta Lead Ads Webhook Secret', description: 'Verify token for the Meta leadgen webhook subscription, and the ?secret= for flat payloads (Zapier/Make)', envFallback: 'META_LEADS_WEBHOOK_SECRET' },
+  { key: 'metaLeadsPageToken', label: 'Meta Lead Ads Page Access Token', description: 'Page token with leads_retrieval — used to fetch the lead details Meta only references by leadgen_id', envFallback: 'META_LEADS_PAGE_TOKEN' },
+  { key: 'metaLeadsAppSecret', label: 'Meta Lead Ads App Secret', description: 'Verifies leadgen webhook signatures (X-Hub-Signature-256) — same as the WhatsApp App Secret if both live in one Meta App', envFallback: 'META_LEADS_APP_SECRET' },
 ]
 
 export const VALID_TENANT_SECRET_KEYS = new Set<string>(TENANT_SECRET_DEFINITIONS.map(s => s.key))
