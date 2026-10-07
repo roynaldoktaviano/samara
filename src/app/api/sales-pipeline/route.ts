@@ -18,8 +18,8 @@ const PER_COLUMN = 200
 export type PipelineChannel = 'website' | 'whatsapp' | 'manual'
 
 // Data for the "Sales Pipeline" board — every Lead regardless of channel (website form,
-// WhatsApp, manual), one card per person. SALES sees leads they own plus unowned ones they
-// can claim; ADMIN sees all and can filter by owner. Also returns the WhatsApp chats still
+// WhatsApp, manual), one card per person. SALES sees only the leads they own; ADMIN sees
+// all and can filter by owner. Also returns the WhatsApp chats still
 // waiting to be triaged (a chat only becomes a Lead once marked SALES, see whatsapp-lead.ts).
 // Won leads are soft-deleted when a booking converts them (POST /api/bookings), so
 // CLOSED_WON is read regardless of deletedAt.
@@ -48,7 +48,8 @@ export async function GET(req: NextRequest) {
       { whatsappConversations: { some: salesChat } },
     ] },
   ]
-  if (!isAdmin) filters.push({ OR: [{ ownerId: session.user.id }, { ownerId: null }] })
+  // Sales only ever see their own leads — unowned ones are handed out by auto-distribution or an admin
+  if (!isAdmin) filters.push({ ownerId: session.user.id })
   else if (ownerParam === 'unassigned') filters.push({ ownerId: null })
   else if (ownerParam && ownerParam !== 'all') filters.push({ ownerId: ownerParam })
   if (channel === 'website') filters.push({ inquiries: { some: {} } })

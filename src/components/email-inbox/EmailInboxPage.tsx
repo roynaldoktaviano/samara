@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { toast } from 'sonner'
 import { uploadToR2 } from '@/lib/r2-client'
 import { Search, Send, Loader2, Mail, Paperclip, X } from 'lucide-react'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
@@ -16,6 +17,7 @@ interface ConversationSummary {
   lastMessageAt: string
   lastMessagePreview: string | null
   unreadCount: number
+  assignedTo: { id: string; name: string | null } | null
 }
 interface Message {
   id: string
@@ -114,6 +116,7 @@ export default function EmailInboxPage({ initialConversationId }: { initialConve
       })
       const data = await res.json().catch(() => ({}))
       if (data?.message) setDetail(prev => prev ? { ...prev, messages: [...prev.messages, data.message] } : prev)
+      if (data?.providerError) toast.error(`Failed to send: ${data.providerError}`)
       await loadConversations()
     } finally { setSending(false) }
   }
@@ -173,6 +176,7 @@ export default function EmailInboxPage({ initialConversationId }: { initialConve
                   <span className="text-[10px] text-muted-foreground shrink-0">{fmtListTime(c.lastMessageAt)}</span>
                 </div>
                 <p className={`text-xs truncate ${c.unreadCount > 0 ? 'text-foreground font-medium' : 'text-muted-foreground'}`}>{c.subject}</p>
+                <p className="text-[10px] truncate text-muted-foreground">{c.assignedTo ? `Owner: ${c.assignedTo.name ?? '—'}` : 'Unassigned'}</p>
                 <div className="flex items-center justify-between gap-2 mt-0.5">
                   <p className="text-xs truncate text-muted-foreground">{c.lastMessagePreview || '—'}</p>
                   {c.unreadCount > 0 && (
@@ -199,7 +203,7 @@ export default function EmailInboxPage({ initialConversationId }: { initialConve
           <>
             <div className="px-5 py-3 border-b bg-white shrink-0">
               <p className="text-sm font-semibold truncate">{detail?.subject}</p>
-              <p className="text-xs text-muted-foreground mt-0.5">{detail?.fromName ? `${detail.fromName} · ` : ''}{detail?.fromEmail}</p>
+              <p className="text-xs text-muted-foreground mt-0.5">{detail?.fromName ? `${detail.fromName} · ` : ''}{detail?.fromEmail}{detail ? ` · ${detail.assignedTo ? `Owner: ${detail.assignedTo.name ?? '—'}` : 'Unassigned'}` : ''}</p>
             </div>
 
             <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-5 space-y-3">

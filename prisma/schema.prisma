@@ -206,6 +206,7 @@ model User {
   inventoryItemsCreated                  InventoryItem[]
   inventoryOpnamesCounted                InventoryOpname[]
   assignedWhatsappConversations          WhatsappConversation[]            @relation("WhatsappConversationAssignedTo")
+  assignedEmailInboxConversations        EmailInboxConversation[]          @relation("EmailInboxConversationAssignedTo")
   whatsappDistributionParticipants       WhatsappDistributionParticipant[]
   todos                                  Todo[]
 
@@ -4640,12 +4641,17 @@ model EmailInboxConversation {
   lastMessageAt      DateTime @default(now())
   lastMessagePreview String?
   unreadCount        Int      @default(0)
+  // Sales rep who owns the thread — emails go out From/Reply-To their own address and only
+  // they (plus ADMIN) see it. Null = shared pool, claimed by whoever replies first.
+  assignedToId       String?
+  assignedTo         User?    @relation("EmailInboxConversationAssignedTo", fields: [assignedToId], references: [id], onDelete: SetNull)
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
   messages EmailInboxMessage[]
 
   @@index([lastMessageAt])
+  @@index([assignedToId])
 }
 
 model EmailInboxMessage {
@@ -4657,6 +4663,8 @@ model EmailInboxMessage {
   attachmentUrls    String[]                @default([])
   status            EmailInboxMessageStatus @default(SENT)
   providerMessageId String?                 @unique
+  // RFC 5322 Message-ID of an inbound email — replies set In-Reply-To/References to it so they thread
+  internetMessageId String?
   sentByUserId      String?
   sentByName        String?
   createdAt         DateTime                @default(now())

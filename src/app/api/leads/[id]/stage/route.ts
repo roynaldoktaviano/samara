@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { logActivity } from '@/lib/activity'
+import { leadOwnerScope } from '@/lib/lead-access'
 import { canTransition, getMissingQualificationFields, isLeadLostReason, isLeadStage, LEAD_STAGE_LABEL, LEAD_TRANSITIONS } from '@/lib/lead-pipeline'
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -18,7 +19,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       return NextResponse.json({ error: 'Invalid stage' }, { status: 400 })
     }
 
-    const lead = await db.lead.findUnique({ where: { id } })
+    const lead = await db.lead.findFirst({ where: { id, ...leadOwnerScope((session.user as { role?: string }).role, session.user.id) } })
     if (!lead) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
     if (!canTransition(lead.stage, targetStage)) {

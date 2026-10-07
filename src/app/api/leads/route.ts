@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { logActivity } from '@/lib/activity'
 import { leadWebsiteWhere } from '@/lib/lead-website'
+import { leadOwnerScope } from '@/lib/lead-access'
 import { classifyLeadOrigin, LEAD_ORIGINS, LEAD_ORIGIN_SELECT, type LeadOrigin } from '@/lib/lead-origin'
 
 export async function GET(request: NextRequest) {
@@ -27,7 +28,7 @@ export async function GET(request: NextRequest) {
     const page   = Math.max(1, parseInt(searchParams.get('page') ?? '1') || 1)
     const sort   = searchParams.get('sort') === 'asc' ? 'asc' : 'desc'
 
-    const where: Record<string, unknown> = { deletedAt: null }
+    const where: Record<string, unknown> = { deletedAt: null, ...leadOwnerScope((session.user as { role?: string }).role, session.user.id) }
     if (stage) where.stage = stage
     if (search) {
       where.OR = [

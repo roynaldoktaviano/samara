@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { logActivity } from '@/lib/activity'
+import { leadOwnerScope, canAccessLead } from '@/lib/lead-access'
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getServerSession(authOptions)
@@ -10,7 +11,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const db = await getDb(session)
   try {
     const { id } = await params
-    const lead = await db.lead.findUnique({ where: { id } })
+    const lead = await db.lead.findFirst({ where: { id, ...leadOwnerScope((session.user as { role?: string }).role, session.user.id) } })
     if (!lead) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     return NextResponse.json(lead)
   } catch (error) {
@@ -51,6 +52,9 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   const db = await getDb(session)
   try {
     const { id } = await params
+    if (!(await canAccessLead(db, (session.user as { role?: string }).role, session.user.id, id))) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    }
     const body = await request.json()
     const {
       firstName, lastName, nationality, email, phone, notes,

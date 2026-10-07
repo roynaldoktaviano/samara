@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { emitTenantEvent } from '@/lib/realtime-bus'
+import { emailConversationScope } from '@/lib/email-inbox'
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getServerSession(authOptions)
@@ -11,9 +12,9 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 
   const { id } = await params
   const db = await getDb(session)
-  const conversation = await db.emailInboxConversation.findUnique({
-    where: { id },
-    include: { messages: { orderBy: { createdAt: 'asc' } } },
+  const conversation = await db.emailInboxConversation.findFirst({
+    where: { id, ...emailConversationScope(role, session.user.id) },
+    include: { messages: { orderBy: { createdAt: 'asc' } }, assignedTo: { select: { id: true, name: true } } },
   })
   if (!conversation) return NextResponse.json({ error: 'Not found' }, { status: 404 })
   return NextResponse.json(conversation)
@@ -26,8 +27,9 @@ export async function PATCH(_req: NextRequest, { params }: { params: Promise<{ i
 
   const { id } = await params
   const db = await getDb(session)
-  const conversation = await db.emailInboxConversation.update({ where: { id }, data: { unreadCount: 0 } }).catch(() => null)
-  if (!conversation) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  const { count } = await db.emailInboxConversation.updateMany({ where: { id, ...emailConversationScope(role, session.user.id) }, data: { unreadCount: 0 } })
+  if (!count) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  const conversation = await db.emailInboxConversation.findUnique({ where: { id } })
   emitTenantEvent(session.user.tenantId, 'chat')
   return NextResponse.json(conversation)
 }
