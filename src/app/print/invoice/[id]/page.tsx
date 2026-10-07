@@ -758,6 +758,7 @@ export default function InvoicePage() {
             </div>
             <div style={{ textAlign: 'center' }}>
               <div style={{ fontSize: 26, fontWeight: 300, letterSpacing: 7, color: 'white', textTransform: 'uppercase', marginBottom: 14 }}>TERMS &amp; CONDITIONS</div>
+              <div style={{ fontSize: 22, fontWeight: 300, letterSpacing: 7, color: 'white' }}>-V 2.2-</div>
             </div>
             <div style={{ textAlign: 'center' }}>
               <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)', letterSpacing: 0.5 }}>{co.website}</div>
@@ -772,12 +773,12 @@ export default function InvoicePage() {
           <div className="pg-body">
             <div className="body-p" style={{marginBottom:4}}>
               <div style={{fontWeight:700,marginBottom:6,textAlign:'center',letterSpacing:1,textTransform:'uppercase'}}>Preamble</div>
-              These Terms and Conditions (&quot;T&amp;C&quot;) govern all bookings and services provided to or by <strong>{co.name}</strong> and all its subsidiaries or partners (the &quot;Principal&quot;) for yacht charters. These terms are binding for all clients who engage in these services, either directly or through an authorized Travel Agency (&quot;Agency&quot;). By confirming a booking and/or making payment, the Guest acknowledges and agrees to these T&amp;C.
+              These Terms and Conditions (&quot;T&amp;C&quot;) govern all bookings and services provided to or by <strong>PT Samara Yacht Agency</strong> and all its subsidiaries or partners (the &quot;Principal&quot;) for yacht charters. These terms are binding for all clients who engage in these services, either directly or through an authorized Travel Agency (&quot;Agency&quot;). By confirming a booking and/or making payment, the Guest acknowledges and agrees to these T&amp;C.
             </div>
 
             <div className="sec-h">1. Roles and Responsibilities</div>
             <ul className="clauses">
-              <li><span className="cn">1.1.</span><span className="ct"><strong>Principal and Operator:</strong> <strong>{co.name}</strong> acts as the commercial principal and/or chartering entity. The operational management of the vessel is carried out by the Operator.</span></li>
+              <li><span className="cn">1.1.</span><span className="ct"><strong>Principal and Operator:</strong> <strong>PT Samara Yacht Agency</strong> acts as the commercial principal and/or chartering entity. The operational management of the vessel, is carried out by <strong>PT Samara Yacht Management</strong> (the &quot;Operator&quot;).</span></li>
               <li><span className="cn">1.2.</span><span className="ct"><strong>Travel Agent:</strong> Where a booking is made through a Travel Agent, the Agency acts solely as an intermediary between the Guest and the Principal. The Travel Agent does not own, operate, manage, or control the vessel, crew, or maritime operations and shall not be considered a contractual carrier or service provider.</span></li>
             </ul>
 
@@ -812,13 +813,13 @@ export default function InvoicePage() {
           <TncHdr />
           <div className="pg-body">
             <div className="sec-h">5. Bookings and Payments</div>
-            <p className="body-p" style={{fontWeight:600}}>Charters and FIT below USD 5,000.- per night:</p>
+            <p className="body-p" style={{fontWeight:600}}>Charters and FIT below USD 5000.- per night:</p>
             <ul className="clauses">
               <li><span className="cn">5.1.</span><span className="ct"><strong>Deposit:</strong> A non-refundable deposit of 30% is required within 3 days of booking to confirm a reservation.</span></li>
               <li><span className="cn">5.2.</span><span className="ct"><strong>Balance Payment:</strong> The remaining 70% must be paid at least 30 days before the departure date.</span></li>
               <li><span className="cn">5.3.</span><span className="ct"><strong>Short-Notice Bookings:</strong> For bookings made within 30 days of departure, full payment is required at the time of booking.</span></li>
             </ul>
-            <p className="body-p" style={{fontWeight:600, marginTop:6}}>Charters and FIT above USD 5,000.- per night:</p>
+            <p className="body-p" style={{fontWeight:600, marginTop:6}}>Charters and FIT above USD 5000.- per night:</p>
             <ul className="clauses">
               <li><span className="cn">5.4.</span><span className="ct"><strong>Deposit:</strong> A non-refundable deposit of 30% is required within 3 days of booking to confirm a reservation.</span></li>
               <li><span className="cn">5.5.</span><span className="ct"><strong>Balance Payment:</strong> The remaining 70% must be paid at least 90 days before the departure date.</span></li>
@@ -903,10 +904,10 @@ export default function InvoicePage() {
 
             <div className="sec-h">11. Guest Responsibilities</div>
             <ul className="clauses">
-              <li><span className="cn">11.1.</span><span className="ct">Guests must follow all safety instructions provided by the crew.</span></li>
+              <li><span className="cn">11.1.</span><span className="ct">Guests must follow all <strong>safety instructions</strong> provided by the crew.</span></li>
               <li><span className="cn">11.2.</span><span className="ct">Respectful and cooperative behavior toward staff and fellow guests is expected at all times.</span></li>
               <li><span className="cn">11.3.</span><span className="ct">Guests are <strong>financially responsible</strong> for any damage to the vessel or its equipment caused by negligence or misconduct.</span></li>
-              <li><span className="cn">11.4.</span><span className="ct">Failure to comply with safety or ecological rules may result in exclusion from activities without refund.</span></li>
+              <li><span className="cn">11.4.</span><span className="ct">Failure to comply with safety or ecological rules may result in <strong>exclusion from activities</strong> without refund.</span></li>
             </ul>
           </div>
           <TncFtr n={3} />
@@ -923,30 +924,26 @@ export default function InvoicePage() {
 
             <div className="sec-h">13. Diving Activities (if offered)</div>
             <ul className="clauses">
-              <li><span className="cn">13.1.</span><span className="ct">Guests must hold a valid dive certification (e.g., PADI Open Water).</span></li>
+              <li><span className="cn">13.1.</span><span className="ct">Guests must hold a valid dive certification (e.g., <strong>PADI Open Water</strong>).</span></li>
               <li><span className="cn">13.2.</span><span className="ct"><strong>Dive insurance is mandatory</strong> and must be presented before the first dive.</span></li>
-              <li><span className="cn">13.3.</span><span className="ct">A signed liability waiver is required before participating.</span></li>
-              <li><span className="cn">13.4.</span><span className="ct">Missed dives for personal or medical reasons are non-refundable.</span></li>
+              <li><span className="cn">13.3.</span><span className="ct">A signed <strong>liability waiver</strong> is required before participating.</span></li>
+              <li><span className="cn">13.4.</span><span className="ct">Missed dives for personal or medical reasons are <strong>non-refundable.</strong></span></li>
             </ul>
 
             <div className="sec-h">14. Liability and Indemnity</div>
             <ul className="clauses">
               <li><span className="cn">14.1.</span><span className="ct"><strong>Assumption of Risk:</strong> Guests participate in all onboard and offboard activities at their own risk. While the Principal takes reasonable precautions to ensure guest safety, the nature of sea travel and adventure activities involves inherent risks.</span></li>
               <li><span className="cn">14.2.</span><span className="ct"><strong>Limitation of Liability:</strong> To the maximum extent permitted by applicable law, neither the Principal, its subsidiaries, partners, Agents, employees, nor crew shall be liable for any injury, illness, death, loss, damage, delay, or expense arising from, including but not limited to, the following:
-                <ul className="sub-list" style={{marginTop:4}}>
-                  <li>Slips, trips, or falls onboard (including staircases, decks, or wet areas)</li>
-                  <li>Participation in snorkeling, diving, swimming, trekking, or other activities</li>
-                  <li>Shore excursions organised by the principal or any third-party service providers</li>
-                  <li>Guest negligence, disregard of safety instructions, or inappropriate behavior</li>
-                  <li>Loss, theft, or damage to personal belongings</li>
-                  <li>Delays, missed flights, or travel disruptions</li>
-                  <li>Incomplete or inaccurate travel documentation or insurance coverage</li>
-                </ul>
               </span></li>
-              <li><span className="cn">14.3.</span><span className="ct"><strong>Gross Negligence:</strong> The Principal shall only be liable where gross negligence or intentional misconduct can be clearly demonstrated. General sea conditions, weather-related movement, or vessel motion do not constitute grounds for liability.</span></li>
-              <li><span className="cn">14.4.</span><span className="ct"><strong>Travel Insurance:</strong> Guests are strongly advised to obtain comprehensive travel and medical insurance, including coverage for accidents, evacuation, missed connections, and activity-related injuries.</span></li>
-              <li><span className="cn">14.5.</span><span className="ct"><strong>Indemnification:</strong> By participating in the cruise, all Guests agree to fully indemnify, defend, and hold harmless the Principal, its subsidiaries, partners, Agents, employees, and crew from any claims, damages, losses, liabilities, or expenses arising from the Guest&apos;s actions or omissions during the trip.</span></li>
-              <li><span className="cn">14.6.</span><span className="ct"><strong>Weather and Itinerary Changes:</strong> The Principal shall comply with all directives issued by port authorities or the Indonesian Coast Guard. The Captain may adjust the route, activities, or schedule at their discretion to ensure safety and optimize guest experience.</span></li>
+              <li><span className="cn">14.2.1.</span><span className="ct">Slips, trips, or falls onboard (including staircases, decks, or wet areas)</span></li>
+              <li><span className="cn">14.2.2.</span><span className="ct">Participation in snorkeling, diving, swimming, trekking, or other activities</span></li>
+              <li><span className="cn">14.2.3.</span><span className="ct">Shore excursions or organised by the principal or any third-party service providers</span></li>
+              <li><span className="cn">14.2.4.</span><span className="ct">Guest negligence, disregard of safety instructions, or inappropriate behavior</span></li>
+              <li><span className="cn">14.2.5.</span><span className="ct">Loss, theft, or damage to personal belongings</span></li>
+              <li><span className="cn">14.2.6.</span><span className="ct">Delays, missed flights, or travel disruptions</span></li>
+              <li><span className="cn">14.2.7.</span><span className="ct">Incomplete or inaccurate travel documentation or insurance coverage</span></li>
+              <li><span className="cn">14.3.</span><span className="ct"><strong>Gross Negligence:</strong> The Principal, its subsidiaries, partners, Agents, employees, and crew shall only be liable where gross negligence or intentional misconduct can be clearly demonstrated. General sea conditions, weather-related movement, vessel motion, or incidental onboard hazards do not constitute grounds for liability.</span></li>
+              <li><span className="cn">14.4.</span><span className="ct"><strong>Travel Insurance:</strong> Guests are strongly advised to obtain comprehensive travel and medical insurance, including coverage for accidents, evacuation, missed connections, and activity-related injuries (such as diving or trekking).</span></li>
             </ul>
           </div>
           <TncFtr n={4} />
@@ -956,21 +953,30 @@ export default function InvoicePage() {
         <div className="tnc-pg">
           <TncHdr />
           <div className="pg-body">
+            <ul className="clauses">
+              <li><span className="cn">14.5.</span><span className="ct"><strong>Indemnification:</strong> By participating in the cruise, all Guests agree to fully indemnify, defend, and hold harmless the Principal, its subsidiaries, partners, Agents, employees, and crew from and against any claims, damages, losses, liabilities, or expenses (including legal fees) arising from the Guest&apos;s actions or omissions during the trip. This indemnity shall survive the end of the voyage and apply to any post-trip claims.</span></li>
+              <li><span className="cn">14.6.</span><span className="ct"><strong>Weather and Itinerary Changes:</strong></span></li>
+              <li><span className="cn">14.6.1.</span><span className="ct">The Principal shall comply with all directives issued by port authorities or the Indonesian Coast Guard. Any resulting itinerary changes, delays, or cancellations do not entitle the Guest to compensation.</span></li>
+              <li><span className="cn">14.6.2.</span><span className="ct">The Captain and crew may adjust the route, activities, or schedule at their discretion at any time to ensure safety and optimize the guest experience.</span></li>
+            </ul>
+
             <div className="sec-h">15. Changes and Price Adjustments</div>
             <ul className="clauses">
               <li><span className="cn">15.1.</span><span className="ct">The Principal reserves the right to update brochures, service descriptions, and pricing at any time before a booking is confirmed.</span></li>
-              <li><span className="cn">15.2.</span><span className="ct">In very rare cases, price adjustments after booking may occur due to: significant increases in fuel or operational costs; new government fees, taxes, or port charges; or major exchange rate fluctuations. Guests will be informed of such changes and may choose to accept or cancel under applicable terms.</span></li>
+              <li><span className="cn">15.2.</span><span className="ct">In very rare cases, price adjustments after booking may occur due to:</span></li>
+              <li><span className="cn">15.2.1.</span><span className="ct">Significant increases in fuel or operational costs</span></li>
+              <li><span className="cn">15.2.2.</span><span className="ct">New government fees, taxes, or port charges</span></li>
+              <li><span className="cn">15.2.3.</span><span className="ct">Major exchange rate fluctuations</span></li>
+              <li><span className="cn">15.2.4.</span><span className="ct">Guests will be informed of such changes and may choose to accept or cancel under applicable terms.</span></li>
             </ul>
 
             <div className="sec-h">16. Cancellation by the Principal for Guest Misconduct</div>
             <ul className="clauses">
               <li><span className="cn">16.1.</span><span className="ct">The Principal reserves the right to cancel a guest&apos;s participation <strong>without refund</strong> if the guest:</span></li>
-            </ul>
-            <ul className="sub-list" style={{marginTop:2}}>
-              <li>Provides false personal information</li>
-              <li>Fails to follow crew instructions or safety procedures</li>
-              <li>Damages the vessel</li>
-              <li>Endangers themselves, other guests, or marine life</li>
+              <li><span className="cn">16.2.</span><span className="ct">Provides false personal information</span></li>
+              <li><span className="cn">16.3.</span><span className="ct">Fails to follow crew instructions or safety procedures</span></li>
+              <li><span className="cn">16.4.</span><span className="ct">Damages the vessel</span></li>
+              <li><span className="cn">16.5.</span><span className="ct">Endangers themselves, other guests, or marine life</span></li>
             </ul>
 
             <div className="sec-h">17. Governing Law</div>
@@ -986,8 +992,8 @@ export default function InvoicePage() {
             <div className="sec-h">19. Contact</div>
             <p className="body-p" style={{paddingLeft:14}}>
               For assistance or inquiries, please contact:<br/>
-              <strong>{co.name}</strong><br/>
-              {co.email}&nbsp;&nbsp;·&nbsp;&nbsp;{co.website}
+              <strong>PT Samara Yacht Agency</strong><br/>
+              info@samarayachting.com&nbsp;&nbsp;·&nbsp;&nbsp;www.samarayachting.com
             </p>
           </div>
           <TncFtr n={5} />

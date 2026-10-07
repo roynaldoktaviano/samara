@@ -64,6 +64,18 @@ export function createWhatsappWebhookHandlers(endpointBrand?: WhatsappBrand) {
     if (mode === 'subscribe' && challenge && verifyToken && token === verifyToken) {
       return new NextResponse(challenge, { status: 200 })
     }
+    // Diagnostics for a failed handshake — lengths/prefixes only, never the full tokens.
+    const ownKey = endpointBrand ? WHATSAPP_BRAND_WEBHOOK_SECRET_KEYS[endpointBrand]?.webhookSecret : undefined
+    const ownSet = ownKey ? !!(await getTenantSecret(resolved.tenant.id, ownKey)) : false
+    console.warn('[whatsapp webhook] verification failed', {
+      tenant: resolved.tenant.slug,
+      endpointBrand: endpointBrand ?? 'shared',
+      tokenSource: ownSet ? ownKey : 'whatsappWebhookSecret (or env WHATSAPP_WEBHOOK_SECRET)',
+      mode,
+      hasChallenge: !!challenge,
+      received: token ? { length: token.length, prefix: token.slice(0, 4) } : null,
+      expected: verifyToken ? { length: verifyToken.length, prefix: verifyToken.slice(0, 4) } : null,
+    })
     return NextResponse.json({ error: 'Verification failed' }, { status: 403 })
   }
 
