@@ -773,7 +773,7 @@ export default function InvoicePage() {
           <div className="pg-body">
             <div className="body-p" style={{marginBottom:4}}>
               <div style={{fontWeight:700,marginBottom:6,textAlign:'center',letterSpacing:1,textTransform:'uppercase'}}>Preamble</div>
-              These Terms and Conditions (&quot;T&amp;C&quot;) govern all bookings and services provided to or by <strong>PT Samara Yacht Agency</strong> and all its subsidiaries or partners (the &quot;Principal&quot;) for yacht charters. These terms are binding for all clients who engage in these services, either directly or through an authorized Travel Agency (&quot;Agency&quot;). By confirming a booking and/or making payment, the Guest acknowledges and agrees to these T&amp;C.
+              These Terms and Conditions (&quot;T&amp;C&quot;) govern all bookings and services provided to or by <strong>PT Samara Yacht Agency</strong>&nbsp;and all its subsidiaries or partners (the &quot;Principal&quot;) for yacht charters. These terms are binding for all clients who engage in these services, either directly or through an authorized Travel Agency (&quot;Agency&quot;). By confirming a booking and/or making payment, the Guest acknowledges and agrees to these T&amp;C.
             </div>
 
             <div className="sec-h">1. Roles and Responsibilities</div>
