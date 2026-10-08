@@ -1,5 +1,5 @@
 import type { PrismaClient, WhatsappBrand } from '@prisma/client'
-import { pickNextSalesUserId } from '@/lib/whatsapp-distribution'
+import { getDistributionPool, pickNextSalesUserId, type LeadDistributionChannel } from '@/lib/whatsapp-distribution'
 import { sendPushToUser } from '@/lib/push'
 import { brandForInquiry, setLeadOwner } from '@/lib/whatsapp-lead'
 
@@ -19,7 +19,7 @@ export async function runLeadStagnantCheck(db: PrismaClient): Promise<{ reassign
   const cutoff = new Date(Date.now() - STAGNANT_HOURS * 60 * 60 * 1000)
   const openLead = { deletedAt: null, stage: { notIn: ['CLOSED_WON', 'CLOSED_LOST'] as ('CLOSED_WON' | 'CLOSED_LOST')[] } }
 
-  const stagnant = new Map<string, { brand: WhatsappBrand; why: string }>()
+  const stagnant = new Map<string, { brand: WhatsappBrand; channel: LeadDistributionChannel; why: string }>()
 
   // Chat-based: customer waiting 24h+ for a reply.
   const chats = await db.whatsappConversation.findMany({
@@ -32,7 +32,7 @@ export async function runLeadStagnantCheck(db: PrismaClient): Promise<{ reassign
   })
   for (const c of chats) {
     if (c.lastOutboundAt && c.lastInboundAt && c.lastOutboundAt >= c.lastInboundAt) continue
-    if (c.leadId && !stagnant.has(c.leadId)) stagnant.set(c.leadId, { brand: c.brand, why: `chat WhatsApp belum dibalas ${STAGNANT_HOURS} jam` })
+    if (c.leadId && !stagnant.has(c.leadId)) stagnant.set(c.leadId, { brand: c.brand, channel: 'WHATSAPP', why: `chat WhatsApp belum dibalas ${STAGNANT_HOURS} jam` })
   }
 
   // No chat: still NEW 24h after being assigned.
@@ -44,7 +44,7 @@ export async function runLeadStagnantCheck(db: PrismaClient): Promise<{ reassign
     select: { id: true, inquiries: { orderBy: { createdAt: 'desc' }, take: 1, select: { website: true, tripType: true } } },
   })
   for (const l of idle) {
-    if (!stagnant.has(l.id)) stagnant.set(l.id, { brand: brandForInquiry(l.inquiries[0]?.website, l.inquiries[0]?.tripType), why: `masih New ${STAGNANT_HOURS} jam setelah di-assign` })
+    if (!stagnant.has(l.id)) stagnant.set(l.id, { brand: brandForInquiry(l.inquiries[0]?.website, l.inquiries[0]?.tripType), channel: 'WEBSITE', why: `masih New ${STAGNANT_HOURS} jam setelah di-assign` })
   }
 
   if (stagnant.size === 0) return { reassigned: 0, escalated: 0 }
@@ -52,7 +52,7 @@ export async function runLeadStagnantCheck(db: PrismaClient): Promise<{ reassign
   let reassigned = 0
   let escalated = 0
 
-  for (const [leadId, { brand, why }] of stagnant) {
+  for (const [leadId, { brand, channel, why }] of stagnant) {
     const lead = await db.lead.findUnique({
       where: { id: leadId },
       select: {
@@ -63,7 +63,7 @@ export async function runLeadStagnantCheck(db: PrismaClient): Promise<{ reassign
     if (!lead?.ownerId) continue
     const alreadyTried = new Set([lead.ownerId, ...lead.assignmentLogs.map(l => l.fromUserId).filter((id): id is string => !!id)])
 
-    const nextOwner = await pickFromPoolExcluding(db, brand, alreadyTried)
+    const nextOwner = await pickFromPoolExcluding(db, brand, channel, alreadyTried)
     const oldOwnerName = lead.owner?.name ?? lead.owner?.email ?? 'sales'
 
     if (!nextOwner) {
@@ -92,17 +92,18 @@ export async function runLeadStagnantCheck(db: PrismaClient): Promise<{ reassign
   return { reassigned, escalated }
 }
 
-// Next rep from the brand's pool (falling back to Samara's if empty) who isn't excluded.
-// Walks the normal rotation so load stays balanced; gives up after one full lap.
-async function pickFromPoolExcluding(db: PrismaClient, brand: WhatsappBrand, exclude: Set<string>): Promise<string | null> {
+// Next rep from the channel/brand's pool (falling back to Samara's if empty) who isn't
+// excluded. Walks the rotation on its own STAGNANT counter so reassignments don't use up the
+// channel's normal turns; gives up after one full lap.
+async function pickFromPoolExcluding(db: PrismaClient, brand: WhatsappBrand, channel: LeadDistributionChannel, exclude: Set<string>): Promise<string | null> {
   let poolBrand = brand
-  let size = await db.whatsappDistributionParticipant.count({ where: { brand } })
+  let size = (await getDistributionPool(db, brand, channel)).participants.length
   if (size === 0 && brand !== 'SAMARA') {
     poolBrand = 'SAMARA'
-    size = await db.whatsappDistributionParticipant.count({ where: { brand: 'SAMARA' } })
+    size = (await getDistributionPool(db, 'SAMARA', channel)).participants.length
   }
   for (let i = 0; i < size; i++) {
-    const candidate = await pickNextSalesUserId(db, poolBrand)
+    const candidate = await pickNextSalesUserId(db, poolBrand, channel, 'STAGNANT')
     if (candidate && !exclude.has(candidate)) return candidate
   }
   return null

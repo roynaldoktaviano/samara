@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
+import { salesCanAccessConversation } from '@/lib/whatsapp-distribution'
 import { emitTenantEvent } from '@/lib/realtime-bus'
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -20,7 +21,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       },
     },
   })
-  if (!conversation) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  if (!conversation || (role === 'SALES' && !salesCanAccessConversation(conversation, session.user.id))) return NextResponse.json({ error: 'Not found' }, { status: 404 })
   return NextResponse.json(conversation)
 }
 
@@ -32,6 +33,8 @@ export async function PATCH(_req: NextRequest, { params }: { params: Promise<{ i
 
   const { id } = await params
   const db = await getDb(session)
+  const existing = await db.instagramConversation.findUnique({ where: { id }, select: { assignedToId: true } })
+  if (!existing || (role === 'SALES' && !salesCanAccessConversation(existing, session.user.id))) return NextResponse.json({ error: 'Not found' }, { status: 404 })
   const conversation = await db.instagramConversation.update({ where: { id }, data: { unreadCount: 0 } }).catch(() => null)
   if (!conversation) return NextResponse.json({ error: 'Not found' }, { status: 404 })
   emitTenantEvent(session.user.tenantId, 'chat')

@@ -23,6 +23,8 @@ export type TenantSecretKey =
   | 'whatsappAppSecret'
   | 'whatsappMischiefWebhookSecret'
   | 'whatsappMischiefAppSecret'
+  | 'whatsappOtiumWebhookSecret'
+  | 'whatsappOtiumAppSecret'
   | 'instagramApiUrl'
   | 'instagramApiToken'
   | 'instagramWebhookSecret'
@@ -54,6 +56,8 @@ export interface TenantSecrets {
   whatsappAppSecret?: string
   whatsappMischiefWebhookSecret?: string
   whatsappMischiefAppSecret?: string
+  whatsappOtiumWebhookSecret?: string
+  whatsappOtiumAppSecret?: string
   instagramApiUrl?: string
   instagramApiToken?: string
   instagramWebhookSecret?: string
@@ -91,6 +95,8 @@ export const TENANT_SECRET_DEFINITIONS: {
   { key: 'whatsappAppSecret', label: 'WhatsApp Meta App Secret', description: 'Verifies inbound Cloud API webhook signatures (X-Hub-Signature-256) — shared across all 3 numbers if they sit under the same Meta App', envFallback: 'WHATSAPP_APP_SECRET' },
   { key: 'whatsappMischiefWebhookSecret', label: 'WhatsApp Webhook Verify Token — Mischief', description: 'Only if the Mischief number is in its own Meta App — verify token for /api/webhooks/whatsapp/mischief (empty = uses the shared verify token)', envFallback: 'WHATSAPP_MISCHIEF_WEBHOOK_SECRET' },
   { key: 'whatsappMischiefAppSecret', label: 'WhatsApp Meta App Secret — Mischief', description: 'Only if the Mischief number is in its own Meta App — verifies signatures on /api/webhooks/whatsapp/mischief (empty = uses the shared app secret)', envFallback: 'WHATSAPP_MISCHIEF_APP_SECRET' },
+  { key: 'whatsappOtiumWebhookSecret', label: 'WhatsApp Webhook Verify Token — Otium', description: 'Only if the Otium number is in its own Meta App — verify token for /api/webhooks/whatsapp/otium (empty = uses the shared verify token)', envFallback: 'WHATSAPP_OTIUM_WEBHOOK_SECRET' },
+  { key: 'whatsappOtiumAppSecret', label: 'WhatsApp Meta App Secret — Otium', description: 'Only if the Otium number is in its own Meta App — verifies signatures on /api/webhooks/whatsapp/otium (empty = uses the shared app secret)', envFallback: 'WHATSAPP_OTIUM_APP_SECRET' },
   { key: 'instagramApiUrl', label: 'Instagram Send API URL', description: 'Graph API endpoint for sending Instagram DMs once connected', envFallback: 'INSTAGRAM_API_URL' },
   { key: 'instagramApiToken', label: 'Instagram Access Token', description: 'Access token for the connected Instagram/Facebook Page', envFallback: 'INSTAGRAM_API_TOKEN' },
   { key: 'instagramWebhookSecret', label: 'Instagram Webhook Verify Token', description: 'Value you choose and also enter in the Meta webhook subscription setup', envFallback: 'INSTAGRAM_WEBHOOK_SECRET' },
@@ -106,3 +112,37 @@ export const VALID_TENANT_SECRET_KEYS = new Set<string>(TENANT_SECRET_DEFINITION
 export const TENANT_SECRET_ENV_FALLBACK: Record<TenantSecretKey, string> = Object.fromEntries(
   TENANT_SECRET_DEFINITIONS.map(s => [s.key, s.envFallback]),
 ) as Record<TenantSecretKey, string>
+
+// How Super Admin → Secrets groups the list, so each brand's WhatsApp credentials sit
+// together. Order here = display order; within a group, definitions keep their list order
+// except WhatsApp, which follows WHATSAPP_FIELD_ORDER. The shared WhatsApp verify token /
+// app secret belong to the shared endpoint, which is the Samara number's Meta App.
+export const TENANT_SECRET_GROUPS: { id: string; label: string; match: (key: TenantSecretKey) => boolean }[] = [
+  { id: 'wa-samara', label: 'WhatsApp — Samara', match: k => k.startsWith('whatsappSamara') || k === 'whatsappWebhookSecret' || k === 'whatsappAppSecret' },
+  { id: 'wa-mischief', label: 'WhatsApp — Mischief', match: k => k.startsWith('whatsappMischief') },
+  { id: 'wa-otium', label: 'WhatsApp — Otium', match: k => k.startsWith('whatsappOtium') },
+  { id: 'email', label: 'Email (Resend)', match: k => k.startsWith('resend') || k.startsWith('emailInbox') },
+  { id: 'instagram', label: 'Instagram', match: k => k.startsWith('instagram') },
+  { id: 'meta-leads', label: 'Meta Lead Ads', match: k => k.startsWith('metaLeads') },
+  { id: 'freshsales', label: 'Freshsales', match: k => k.startsWith('freshsales') },
+  { id: 'other', label: 'Other', match: () => true },
+]
+
+const WHATSAPP_FIELD_ORDER = ['PhoneNumberId', 'ApiToken', 'WabaId', 'WebhookSecret', 'AppSecret']
+const whatsappFieldRank = (key: string) => {
+  const i = WHATSAPP_FIELD_ORDER.findIndex(f => key.endsWith(f))
+  return i === -1 ? WHATSAPP_FIELD_ORDER.length : i
+}
+
+/** TENANT_SECRET_DEFINITIONS bucketed by TENANT_SECRET_GROUPS (each key lands in its first matching group). */
+export function groupedTenantSecretDefinitions() {
+  const buckets = TENANT_SECRET_GROUPS.map(g => ({ id: g.id, label: g.label, items: [] as typeof TENANT_SECRET_DEFINITIONS }))
+  for (const def of TENANT_SECRET_DEFINITIONS) {
+    const idx = TENANT_SECRET_GROUPS.findIndex(g => g.match(def.key))
+    buckets[idx].items.push(def)
+  }
+  for (const b of buckets) {
+    if (b.id.startsWith('wa-')) b.items.sort((a, z) => whatsappFieldRank(a.key) - whatsappFieldRank(z.key))
+  }
+  return buckets.filter(b => b.items.length > 0)
+}

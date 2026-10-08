@@ -18,7 +18,7 @@ import { WHATSAPP_BRANDS, WHATSAPP_BRAND_SECRET_KEYS, WHATSAPP_BRAND_WEBHOOK_SEC
 //
 // Point this at, in the Meta App dashboard → WhatsApp → Configuration:
 //   Callback URL:   https://<app-domain>/api/webhooks/whatsapp?tenant=<slug>
-//                   (or /api/webhooks/whatsapp/mischief?tenant=<slug> for the Mischief number)
+//                   (or /api/webhooks/whatsapp/mischief|otium?tenant=<slug> for a number in its own Meta App)
 //   Verify token:   whatever you set as "WhatsApp Webhook Verify Token" in Super Admin
 // Subscribe to the `messages` webhook field.
 //

@@ -50,7 +50,7 @@ export const navigationItems: NavItem[] = [
   { id: 'my-business-trips', label: 'Business Trip', icon: Plane, roles: ['SUPER_ADMIN', 'ADMIN', 'SALES', 'FINANCE', 'MARKETING', 'PURCHASING', 'WAREHOUSE', 'HR', 'SALES_MARKETING', 'FINANCE_DIRECTOR', 'CREW', 'BOAT_CAPTAIN', 'CRUISE_DIRECTOR'], group: 'main' },
   { id: 'chat-inbox',    label: 'All Chats',      icon: MessageCircle, roles: ['ADMIN', 'SALES'],                      group: 'chat' },
   { id: 'chat-email',    label: 'Email',          icon: Mail,          roles: ['ADMIN', 'SALES'],                      group: 'chat' },
-  { id: 'chat-whatsapp-distribution', label: 'WhatsApp Distribution', icon: Shuffle, roles: ['ADMIN'], group: 'chat' },
+  { id: 'chat-whatsapp-distribution', label: 'Leads Distribution', icon: Shuffle, roles: ['ADMIN'], group: 'chat' },
   { id: 'chat-whatsapp-templates', label: 'WhatsApp Templates', icon: FileText, roles: ['ADMIN'], group: 'chat' },
   { id: 'bookings',      label: 'Bookings',        icon: Calendar,   roles: ['ADMIN', 'SALES'],                         group: 'operations' },
   { id: 'open-trips',    label: 'Open Trips',      icon: Ship,       roles: ['ADMIN', 'MARKETING'],                     group: 'operations' },

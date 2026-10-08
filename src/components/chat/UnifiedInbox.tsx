@@ -92,8 +92,8 @@ export default function UnifiedInbox({ onOpenEmail, initialWhatsappId, onDeepLin
   const filtered = useMemo(() => {
     let list = items
     if (brandFilter !== 'all') list = list.filter(i => i.channel === 'whatsapp' && i.brand === brandFilter)
-    if (salesFilter === 'unassigned') list = list.filter(i => i.channel === 'whatsapp' && !i.assignedToId)
-    else if (salesFilter !== 'all') list = list.filter(i => i.channel === 'whatsapp' && i.assignedToId === salesFilter)
+    if (salesFilter === 'unassigned') list = list.filter(i => !i.assignedToId)
+    else if (salesFilter !== 'all') list = list.filter(i => i.assignedToId === salesFilter)
     const q = search.trim().toLowerCase()
     if (q) list = list.filter(i => i.name.toLowerCase().includes(q) || i.preview?.toLowerCase().includes(q))
     return list
@@ -212,9 +212,9 @@ export default function UnifiedInbox({ onOpenEmail, initialWhatsappId, onDeepLin
                     <p className={cn('text-xs truncate mt-0.5', unread ? 'text-foreground' : 'text-muted-foreground')}>
                       {item.preview || '—'}
                     </p>
-                    {item.channel === 'whatsapp' && (
+                    {(item.channel === 'whatsapp' || !item.assignedToId || (isAdmin && item.assignedToName)) && (
                       <p className="text-[10px] text-muted-foreground/70 truncate mt-0.5">
-                        {item.brand && WHATSAPP_BRAND_LABELS[item.brand]}
+                        {item.channel === 'whatsapp' ? item.brand && WHATSAPP_BRAND_LABELS[item.brand] : item.channel === 'instagram' ? 'Instagram' : 'Email'}
                         {!item.assignedToId
                           ? <span className="text-amber-600 font-medium"> · Belum di-assign</span>
                           : isAdmin && item.assignedToName && <> · Sales: {item.assignedToName}</>}

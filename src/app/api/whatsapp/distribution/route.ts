@@ -2,16 +2,21 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
-import { getWhatsappDistributionMethod, setWhatsappDistributionMethod, type WhatsappDistributionMethod } from '@/lib/whatsapp-distribution'
+import { getWhatsappDistributionMethod, setWhatsappDistributionMethod, LEAD_DISTRIBUTION_CHANNELS, CHANNELS_WITH_BRANDS, type WhatsappDistributionMethod, type LeadDistributionChannel } from '@/lib/whatsapp-distribution'
 import { WHATSAPP_BRANDS, type WhatsappBrand } from '@/lib/whatsapp-brands'
 
-// Admin-only settings screen for how new WhatsApp chats get handed out to sales —
-// either round-robin across a chosen pool, or a fixed percentage split. Configured
-// separately per brand/number (Samara/Mischief/Otium each have their own pool). See
-// src/lib/whatsapp-distribution.ts for the assignment logic this configures.
+// Admin-only settings screen (Chat > Leads Distribution) for how new leads get handed out
+// to sales — either round-robin across a chosen pool, or a fixed percentage split.
+// Configured separately per channel (WhatsApp/Email/Instagram/Website form) and, for
+// WhatsApp + Website, per brand. See src/lib/whatsapp-distribution.ts for the logic.
 
 function parseBrand(value: string | null): WhatsappBrand | null {
   return (WHATSAPP_BRANDS as readonly string[]).includes(value ?? '') ? (value as WhatsappBrand) : null
+}
+
+function parseChannel(value: string | null): LeadDistributionChannel | null {
+  if (value === null || value === '') return 'WHATSAPP'
+  return (LEAD_DISTRIBUTION_CHANNELS as string[]).includes(value) ? (value as LeadDistributionChannel) : null
 }
 
 export async function GET(req: NextRequest) {
@@ -19,17 +24,21 @@ export async function GET(req: NextRequest) {
   const role = (session?.user as { role?: string })?.role ?? ''
   if (!session?.user?.id || role !== 'ADMIN') return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const brand = parseBrand(req.nextUrl.searchParams.get('brand'))
+  const channel = parseChannel(req.nextUrl.searchParams.get('channel'))
+  if (!channel) return NextResponse.json({ error: 'Invalid channel' }, { status: 400 })
+  const brand = CHANNELS_WITH_BRANDS.includes(channel) ? parseBrand(req.nextUrl.searchParams.get('brand')) : 'SAMARA'
   if (!brand) return NextResponse.json({ error: 'Invalid or missing brand' }, { status: 400 })
 
   const db = await getDb(session)
   const [salesUsers, participants, method] = await Promise.all([
     db.user.findMany({ where: { role: 'SALES' }, select: { id: true, name: true, email: true }, orderBy: { name: 'asc' } }),
-    db.whatsappDistributionParticipant.findMany({ where: { brand }, orderBy: { createdAt: 'asc' }, select: { userId: true, percentage: true } }),
-    getWhatsappDistributionMethod(db, brand),
+    db.whatsappDistributionParticipant.findMany({ where: { brand, channel }, orderBy: { createdAt: 'asc' }, select: { userId: true, percentage: true } }),
+    getWhatsappDistributionMethod(db, brand, channel),
   ])
 
-  return NextResponse.json({ method, salesUsers, participants })
+  // An unconfigured non-WhatsApp pool borrows the WhatsApp pool (see getDistributionPool).
+  const borrowsWhatsapp = channel !== 'WHATSAPP' && participants.length === 0
+  return NextResponse.json({ method, salesUsers, participants, borrowsWhatsapp })
 }
 
 export async function PUT(req: NextRequest) {
@@ -38,7 +47,9 @@ export async function PUT(req: NextRequest) {
   if (!session?.user?.id || role !== 'ADMIN') return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const body = await req.json()
-  const brand = parseBrand(typeof body.brand === 'string' ? body.brand : null)
+  const channel = parseChannel(typeof body.channel === 'string' ? body.channel : null)
+  if (!channel) return NextResponse.json({ error: 'Invalid channel' }, { status: 400 })
+  const brand = CHANNELS_WITH_BRANDS.includes(channel) ? parseBrand(typeof body.brand === 'string' ? body.brand : null) : 'SAMARA'
   if (!brand) return NextResponse.json({ error: 'Invalid or missing brand' }, { status: 400 })
 
   const method: string = body.method
@@ -74,14 +85,14 @@ export async function PUT(req: NextRequest) {
 
   const keepIds = participants.map(p => p.userId)
   await db.$transaction([
-    db.whatsappDistributionParticipant.deleteMany({ where: { brand, userId: { notIn: keepIds } } }),
+    db.whatsappDistributionParticipant.deleteMany({ where: { brand, channel, userId: { notIn: keepIds } } }),
     ...participants.map(p => db.whatsappDistributionParticipant.upsert({
-      where: { userId_brand: { userId: p.userId, brand } },
-      create: { userId: p.userId, brand, percentage: method === 'PERCENTAGE' ? p.percentage : 0 },
+      where: { userId_brand_channel: { userId: p.userId, brand, channel } },
+      create: { userId: p.userId, brand, channel, percentage: method === 'PERCENTAGE' ? p.percentage : 0 },
       update: { percentage: method === 'PERCENTAGE' ? p.percentage : 0 },
     })),
   ])
-  await setWhatsappDistributionMethod(db, brand, method as WhatsappDistributionMethod, session.user.id)
+  await setWhatsappDistributionMethod(db, brand, method as WhatsappDistributionMethod, session.user.id, channel)
 
   return NextResponse.json({ ok: true })
 }

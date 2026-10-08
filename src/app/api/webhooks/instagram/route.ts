@@ -3,6 +3,8 @@ import { resolveTenantBySlugFull } from '@/lib/resolve-tenant'
 import { getTenantSecret } from '@/lib/tenant-secrets'
 import { isHttpUrl } from '@/lib/url-safety'
 import { emitTenantEvent } from '@/lib/realtime-bus'
+import { pickNextSalesUserId } from '@/lib/whatsapp-distribution'
+import { sendPushToUser } from '@/lib/push'
 
 // Instagram DM webhook placeholder — point whichever provider gets connected
 // (Meta's Instagram Messaging API, or a third-party inbox provider) at:
@@ -42,15 +44,26 @@ export async function POST(request: NextRequest) {
     if (dup) return NextResponse.json({ ok: true, duplicate: true })
   }
 
+  // A brand-new DM gets a sales rep from the Instagram pool (Chat › Leads Distribution, own
+  // rotation); an existing one keeps whoever holds it.
+  const existing = await db.instagramConversation.findUnique({ where: { igUsername: raw.username }, select: { id: true } })
+  const assignedToId = existing ? null : await pickNextSalesUserId(db, 'SAMARA', 'INSTAGRAM')
   const conversation = await db.instagramConversation.upsert({
     where: { igUsername: raw.username },
-    create: { igUsername: raw.username, displayName: raw.name ?? null, profilePicUrl: raw.profilePicUrl ?? null, lastMessagePreview: preview, unreadCount: 1 },
+    create: { igUsername: raw.username, displayName: raw.name ?? null, profilePicUrl: raw.profilePicUrl ?? null, lastMessagePreview: preview, unreadCount: 1, assignedToId },
     update: { displayName: raw.name ?? undefined, profilePicUrl: raw.profilePicUrl ?? undefined, lastMessageAt: new Date(), lastMessagePreview: preview, unreadCount: { increment: 1 } },
   })
 
   await db.instagramMessage.create({
     data: { conversationId: conversation.id, direction: 'IN', body: raw.message ?? null, mediaUrl, mediaType: raw.mediaType ?? null, status: 'DELIVERED', providerMessageId: raw.messageId ?? null },
   })
+
+  if (conversation.assignedToId) {
+    const title = existing ? `Instagram: ${conversation.displayName || conversation.igUsername}` : `Instagram DM baru: ${conversation.displayName || conversation.igUsername}`
+    const body = preview || 'Pesan baru'
+    db.notification.create({ data: { userId: conversation.assignedToId, type: 'WHATSAPP_MESSAGE', title, body } }).catch(() => {})
+    sendPushToUser(db, conversation.assignedToId, { title, body, url: '/' }).catch(() => {})
+  }
 
   emitTenantEvent(tenant.id, 'chat')
   return NextResponse.json({ ok: true })

@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useSession, signOut } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { TENANT_FEATURE_DEFINITIONS, type TenantFeatures } from '@/lib/tenant-features'
-import { TENANT_SECRET_DEFINITIONS, type TenantSecretKey } from '@/lib/tenant-secrets-definitions'
+import { groupedTenantSecretDefinitions, type TenantSecretKey } from '@/lib/tenant-secrets-definitions'
 
 interface Tenant {
   id: string
@@ -146,38 +146,51 @@ function TenantSecretsEditor({ tenant, onUpdate }: { tenant: Tenant; onUpdate: (
       <p className="text-xs text-gray-400">
         Leave blank to keep using the shared default credential. Set a value here to override it for this tenant only. Values are encrypted at rest and never shown again once saved.
       </p>
-      {TENANT_SECRET_DEFINITIONS.map(s => (
-        <div key={s.key} className="flex items-center justify-between gap-3 py-2 border-b border-gray-50 last:border-0">
-          <div className="min-w-0">
-            <div className="text-sm font-medium text-gray-700 flex items-center gap-2">
-              {s.label}
-              {status?.[s.key] ? (
-                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 font-medium">Configured</span>
-              ) : (
-                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500 font-medium">Using default</span>
-              )}
+      {groupedTenantSecretDefinitions().map(group => {
+        const configured = group.items.filter(s => status?.[s.key]).length
+        return (
+          <details key={group.id} className="border border-gray-100 rounded-lg">
+            <summary className="cursor-pointer select-none px-3 py-2 text-sm font-semibold text-gray-700 flex items-center justify-between">
+              {group.label}
+              <span className="text-[10px] font-medium text-gray-400">{configured}/{group.items.length} configured</span>
+            </summary>
+            <div className="px-3 pb-1">
+              {group.items.map(s => (
+                <div key={s.key} className="flex items-center justify-between gap-3 py-2 border-b border-gray-50 last:border-0">
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                      {s.label}
+                      {status?.[s.key] ? (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 font-medium">Configured</span>
+                      ) : (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500 font-medium">Using default</span>
+                      )}
+                    </div>
+                    <div className="text-xs text-gray-400">{s.description}</div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <input
+                      type="password"
+                      autoComplete="off"
+                      className="border border-gray-200 rounded px-2 py-1 text-xs w-48 outline-none focus:border-[#1e3a5f]"
+                      placeholder={status?.[s.key] ? '••••••••••' : 'Not set'}
+                      value={drafts[s.key] ?? ''}
+                      onChange={e => setDrafts(d => ({ ...d, [s.key]: e.target.value }))}
+                    />
+                    <button
+                      onClick={() => save(s.key)}
+                      disabled={saving === s.key || !drafts[s.key]?.trim()}
+                      className="text-xs bg-[#1e3a5f] text-white px-2 py-1 rounded disabled:opacity-40"
+                    >
+                      {saving === s.key ? '...' : 'Save'}
+                    </button>
+                  </div>
+                </div>
+              ))}
             </div>
-            <div className="text-xs text-gray-400">{s.description}</div>
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <input
-              type="password"
-              autoComplete="off"
-              className="border border-gray-200 rounded px-2 py-1 text-xs w-48 outline-none focus:border-[#1e3a5f]"
-              placeholder={status?.[s.key] ? '••••••••••' : 'Not set'}
-              value={drafts[s.key] ?? ''}
-              onChange={e => setDrafts(d => ({ ...d, [s.key]: e.target.value }))}
-            />
-            <button
-              onClick={() => save(s.key)}
-              disabled={saving === s.key || !drafts[s.key]?.trim()}
-              className="text-xs bg-[#1e3a5f] text-white px-2 py-1 rounded disabled:opacity-40"
-            >
-              {saving === s.key ? '...' : 'Save'}
-            </button>
-          </div>
-        </div>
-      ))}
+          </details>
+        )
+      })}
     </div>
   )
 }

@@ -19,8 +19,8 @@ import { sendPushToUser } from '@/lib/push'
 //   1. mail to rina@<reply domain> (a rep's personal Reply-To, or a Zoho forward from
 //      rina@samarayachting.com) → the user whose login email is rina@<from domain>
 //   2. the sender is already a Lead with an owner → that owner (lead owner = chat owner)
-//   3. otherwise (mail to the shared inquiry@ address) → next rep in the Samara sales pool,
-//      same rotation as new WhatsApp chats / website leads (Chat › WhatsApp Distribution)
+//   3. otherwise (mail to the shared inquiry@ address) → next rep in the Email pool, on its
+//      own rotation (Chat › Leads Distribution)
 // A thread that already has an owner keeps it.
 
 function htmlToText(html: string): string {
@@ -106,7 +106,7 @@ export async function POST(request: NextRequest) {
       orderBy: { updatedAt: 'desc' },
       select: { ownerId: true },
     })
-    ownerId = rep?.id ?? lead?.ownerId ?? await pickNextSalesUserId(db, 'SAMARA')
+    ownerId = rep?.id ?? lead?.ownerId ?? await pickNextSalesUserId(db, 'SAMARA', 'EMAIL')
   }
   const newlyAssigned = !!ownerId && ownerId !== existing?.assignedToId
 

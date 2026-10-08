@@ -207,6 +207,7 @@ model User {
   inventoryOpnamesCounted                InventoryOpname[]
   assignedWhatsappConversations          WhatsappConversation[]            @relation("WhatsappConversationAssignedTo")
   assignedEmailInboxConversations        EmailInboxConversation[]          @relation("EmailInboxConversationAssignedTo")
+  assignedInstagramConversations         InstagramConversation[]           @relation("InstagramConversationAssignedTo")
   whatsappDistributionParticipants       WhatsappDistributionParticipant[]
   todos                                  Todo[]
 
@@ -4535,23 +4536,31 @@ model WhatsappTemplate {
   @@unique([brand, name, language])
 }
 
-// Admin-configured pool of sales reps that new WhatsApp chats get assigned to, kept
-// separately per brand/number (see src/lib/whatsapp-distribution.ts +
-// /api/whatsapp/distribution UI) since each brand's leads should rotate among its own
-// pool of reps. A row's mere existence means that user is in that brand's pool;
-// `percentage` only matters when the method (stored as SystemSetting key
-// "whatsapp_distribution_method_<brand>") is PERCENTAGE — ROUND_ROBIN ignores it and
-// cycles the pool in `createdAt` order instead.
-model WhatsappDistributionParticipant {
-  id         String        @id @default(cuid())
-  userId     String
-  user       User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  brand      WhatsappBrand @default(SAMARA)
-  percentage Int           @default(0)
-  createdAt  DateTime      @default(now())
-  updatedAt  DateTime      @updatedAt
+// Which inbound channel a distribution pool hands out — each has its own pool, method and
+// round-robin counter, so e.g. email leads never use up WhatsApp's turn.
+enum LeadDistributionChannel {
+  WHATSAPP
+  EMAIL
+  INSTAGRAM
+  WEBSITE
+}
 
-  @@unique([userId, brand])
+// Admin-configured pool of sales reps that new leads get assigned to, kept separately per
+// channel + brand (see src/lib/whatsapp-distribution.ts + Chat > Leads Distribution).
+// EMAIL and INSTAGRAM only use brand SAMARA (one inbox each). A row's mere existence means
+// that user is in that pool; `percentage` only matters when the pool's method is
+// PERCENTAGE — ROUND_ROBIN ignores it and cycles the pool in `createdAt` order instead.
+model WhatsappDistributionParticipant {
+  id         String                  @id @default(cuid())
+  userId     String
+  user       User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  channel    LeadDistributionChannel @default(WHATSAPP)
+  brand      WhatsappBrand           @default(SAMARA)
+  percentage Int                     @default(0)
+  createdAt  DateTime                @default(now())
+  updatedAt  DateTime                @updatedAt
+
+  @@unique([userId, brand, channel])
 }
 
 // ─── Instagram DM (admin-only inbox) ───────────────────────────────────────────
@@ -4582,6 +4591,9 @@ model InstagramConversation {
   // accounts are actually connected; the inbound webhook should set this from the
   // payload's entry[].id (mapped to that account's username) once that's wired up.
   ourAccountUsername String?
+  // Sales rep holding this DM — set on first inbound via the INSTAGRAM distribution pool.
+  assignedToId       String?
+  assignedTo         User?    @relation("InstagramConversationAssignedTo", fields: [assignedToId], references: [id], onDelete: SetNull)
   lastMessageAt      DateTime @default(now())
   lastMessagePreview String?
   unreadCount        Int      @default(0)
@@ -4591,6 +4603,7 @@ model InstagramConversation {
   messages InstagramMessage[]
 
   @@index([lastMessageAt])
+  @@index([assignedToId])
 }
 
 model InstagramMessage {

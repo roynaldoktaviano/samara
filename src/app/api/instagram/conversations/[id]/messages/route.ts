@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
+import { salesCanAccessConversation } from '@/lib/whatsapp-distribution'
 import { sendInstagramMessage } from '@/lib/instagram'
 
 // Admin composes a reply from the Chat UI. The message is saved immediately
@@ -19,7 +20,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const db = await getDb(session)
   const conversation = await db.instagramConversation.findUnique({ where: { id } })
-  if (!conversation) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  if (!conversation || (role === 'SALES' && !salesCanAccessConversation(conversation, session.user.id))) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  // A SALES rep replying to an unassigned DM takes it (guarded so two reps can't both win).
+  if (role === 'SALES' && conversation.assignedToId === null) {
+    const { count } = await db.instagramConversation.updateMany({ where: { id, assignedToId: null }, data: { assignedToId: session.user.id } })
+    if (count === 0) return NextResponse.json({ error: 'Another sales rep just took this chat' }, { status: 409 })
+  }
 
   if (replyToId) {
     const quoted = await db.instagramMessage.findFirst({ where: { id: replyToId, conversationId: id } })
