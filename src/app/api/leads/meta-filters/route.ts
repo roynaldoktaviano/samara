@@ -3,7 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 
-/** Distinct campaigns and yachts seen on Meta Lead Ads inquiries, for the Leads → Meta Lead Ads tab filters. */
+/** Distinct campaigns and yachts seen on Meta Lead Ads inquiries, for the Leads → Instant Form tab filters. */
 export async function GET() {
   const session = await getServerSession(authOptions)
   if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

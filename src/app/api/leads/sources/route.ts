@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
+import { sourceLabel } from '@/lib/lead-origin'
 
 /** Distinct traffic sources (first- or last-touch UTM source) seen across all inquiries, for the Leads "Source" filter. */
 export async function GET() {
@@ -16,7 +17,7 @@ export async function GET() {
     const sources = Array.from(new Set([
       ...firstTouch.map(r => r.utmSource),
       ...lastTouch.map(r => r.lastSource),
-    ].filter((s): s is string => !!s))).sort((a, b) => a.localeCompare(b))
+    ].filter((s): s is string => !!s?.trim()).map(sourceLabel))).sort((a, b) => a.localeCompare(b))
     return NextResponse.json(sources)
   } catch (error) {
     console.error('Error fetching lead sources:', error)

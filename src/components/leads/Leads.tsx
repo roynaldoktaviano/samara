@@ -46,7 +46,7 @@ interface Lead {
   budgetMin?: number | null
   budgetMax?: number | null
   budgetCurrency?: string | null
-  // Only on the Meta Lead Ads tab: the latest instant-form inquiry.
+  // Only on the Instant Form tab: the latest instant-form inquiry.
   inquiries?: MetaInquiry[]
 }
 
@@ -64,7 +64,7 @@ type LeadChannel = 'all' | 'form' | 'meta'
 const CHANNEL_TABS: { value: LeadChannel; label: string; title: string }[] = [
   { value: 'all',  label: 'All Leads',      title: 'All Leads' },
   { value: 'form', label: 'Website Form',   title: 'Website Form Leads' },
-  { value: 'meta', label: 'Meta Lead Ads',  title: 'Meta Lead Ads Leads' },
+  { value: 'meta', label: 'Instant Form',   title: 'Instant Form Leads' },
 ]
 
 const fmtShortDate = (d: string) => new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', timeZone: 'UTC' })

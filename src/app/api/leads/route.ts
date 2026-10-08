@@ -5,7 +5,7 @@ import { getDb } from '@/lib/get-db'
 import { logActivity } from '@/lib/activity'
 import { leadWebsiteWhere } from '@/lib/lead-website'
 import { leadOwnerScope } from '@/lib/lead-access'
-import { classifyLeadOrigin, LEAD_ORIGINS, LEAD_ORIGIN_SELECT, type LeadOrigin } from '@/lib/lead-origin'
+import { classifyLeadOrigin, LEAD_ORIGINS, LEAD_ORIGIN_SELECT, sourceLabel, type LeadOrigin } from '@/lib/lead-origin'
 
 export async function GET(request: NextRequest) {
   const session = await getServerSession(authOptions)
@@ -43,7 +43,18 @@ export async function GET(request: NextRequest) {
     // so a website match and a source match don't have to be the same inquiry.
     const inquiryFilters: Record<string, unknown>[] = []
     if (website) inquiryFilters.push(leadWebsiteWhere([website]))
-    if (source)  inquiryFilters.push({ inquiries: { some: { OR: [{ utmSource: source }, { lastSource: source }] } } })
+    if (source) {
+      // The Source filter lists grouped labels (e.g. every Google Ads spelling → "Google Ads"),
+      // so expand the picked label back to all raw utm_source values that map to it.
+      const [firstTouch, lastTouch] = await Promise.all([
+        db.inquiry.findMany({ where: { utmSource: { not: null } }, select: { utmSource: true }, distinct: ['utmSource'] }),
+        db.inquiry.findMany({ where: { lastSource: { not: null } }, select: { lastSource: true }, distinct: ['lastSource'] }),
+      ])
+      const raws = [...new Set([...firstTouch.map(r => r.utmSource), ...lastTouch.map(r => r.lastSource)])]
+        .filter((s): s is string => !!s && sourceLabel(s) === source)
+      if (!raws.length) raws.push(source)
+      inquiryFilters.push({ inquiries: { some: { OR: [{ utmSource: { in: raws } }, { lastSource: { in: raws } }] } } })
+    }
     // Origin is derived from several UTM/click-id fields with precedence rules (see
     // src/lib/lead-origin.ts), so it's classified here rather than expressed in SQL.
     if (origin && (LEAD_ORIGINS as readonly string[]).includes(origin)) {

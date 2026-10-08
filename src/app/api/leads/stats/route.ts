@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
+import { sourceLabel } from '@/lib/lead-origin'
 
 // WITA (Central Indonesia Time, UTC+8) has no DST, so a fixed offset is safe here.
 const WITA_OFFSET_MS = 8 * 60 * 60 * 1000
@@ -98,7 +99,8 @@ export async function GET(request: NextRequest) {
         if (!websiteLeads.has(website)) websiteLeads.set(website, new Set())
         websiteLeads.get(website)!.add(inq.leadId)
       }
-      const src = (inq.utmSource || inq.lastSource)?.trim()
+      const rawSrc = (inq.utmSource || inq.lastSource)?.trim()
+      const src = rawSrc ? sourceLabel(rawSrc) : ''
       if (src) {
         if (!sourceLeads.has(src)) sourceLeads.set(src, new Set())
         sourceLeads.get(src)!.add(inq.leadId)

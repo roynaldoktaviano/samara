@@ -1,4 +1,5 @@
 import type { PrismaClient } from '@prisma/client'
+import { sourceLabel } from '@/lib/lead-origin'
 
 export interface ChannelBreakdown { channel: string; count: number }
 export interface RevenueByChannel { channel: string; revenue: number }
@@ -128,7 +129,7 @@ export async function getMarketingPerformanceSnapshot(db: PrismaClient, periodDa
 
   const bySourceMap = new Map<string, number>()
   for (const inq of periodInquiries) {
-    const key = inq.utmSource || inq.source || 'Direct / Unknown'
+    const key = (inq.utmSource?.trim() && sourceLabel(inq.utmSource)) || inq.source || 'Direct / Unknown'
     bySourceMap.set(key, (bySourceMap.get(key) ?? 0) + 1)
   }
   const bySource = [...bySourceMap.entries()].sort((a, b) => b[1] - a[1]).map(([channel, count]) => ({ channel, count }))
@@ -137,7 +138,7 @@ export async function getMarketingPerformanceSnapshot(db: PrismaClient, periodDa
   const firstChannelByCustomer = new Map<string, string>()
   for (const inq of allInquiriesForAttribution) {
     if (!inq.customerId || firstChannelByCustomer.has(inq.customerId)) continue
-    firstChannelByCustomer.set(inq.customerId, inq.utmSource || inq.source || 'Direct / Unknown')
+    firstChannelByCustomer.set(inq.customerId, (inq.utmSource?.trim() && sourceLabel(inq.utmSource)) || inq.source || 'Direct / Unknown')
   }
 
   const revenueByChannelMap = new Map<string, number>()

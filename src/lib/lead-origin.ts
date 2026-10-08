@@ -105,6 +105,18 @@ function classifyTouch(t: Touch): LeadOrigin | null {
 
 const norm = (s: string | null | undefined) => (s ?? '').trim().toLowerCase()
 
+// utm_source values the ad team has used for Google Ads over time — "google-ads",
+// "googleads", the "goolge-ads" typo, campaign-suffixed ones ("google-ads-manta-season",
+// "google-sla-sc-private-leads") and "sitelink-google-ads-diving". Plain "google" is left
+// alone since it's also what organic search traffic reports.
+const GOOGLE_ADS_SOURCE = /(^|[-_ ])(google|goolge)[-_ ]?ads\b|^(google|goolge)[-_]/
+
+/** Display/grouping label for a raw utm_source — collapses Google Ads spellings into one. */
+export function sourceLabel(raw: string): string {
+  const s = raw.trim()
+  return GOOGLE_ADS_SOURCE.test(s.toLowerCase()) ? 'Google Ads' : s
+}
+
 /** First touch (how the visitor originally found us) wins; falls back to this
  *  submission's own last touch when the first-touch fields are empty. */
 export function classifyLeadOrigin(inq: LeadOriginInput): LeadOrigin {
