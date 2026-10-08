@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
@@ -27,13 +27,15 @@ export interface UnifiedInboxItem {
 // stay their own model — see prisma/schema.prisma) into one recency-sorted list for the
 // "All Chats" inbox view. Read-only summary; replying still happens in the per-channel
 // screen once you click through (see UnifiedInbox's onOpenConversation).
-export async function GET() {
+export async function GET(request: NextRequest) {
   const session = await getServerSession(authOptions)
   const role = (session?.user as { role?: string })?.role ?? ''
   if (!session?.user?.id || !['ADMIN', 'SALES'].includes(role)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
 
-  const [whatsapp, instagram, email] = await Promise.all([
+  // allSettled so one channel's failure (e.g. a column missing after an un-pushed schema
+  // change) doesn't blank the whole inbox — the other channels still show.
+  const [waRes, igRes, emailRes] = await Promise.allSettled([
     db.whatsappConversation.findMany({
       // SALES: their own chats plus unassigned ones they can claim (see salesCanAccessConversation).
       where: role === 'SALES' ? { OR: [{ assignedToId: session.user.id }, { assignedToId: null }] } : undefined,
@@ -51,6 +53,18 @@ export async function GET() {
       include: { assignedTo: { select: { id: true, name: true, email: true } } },
     }),
   ])
+  const errors: Record<string, string> = {}
+  const settled = <T,>(name: string, r: PromiseSettledResult<T[]>): T[] => {
+    if (r.status === 'fulfilled') return r.value
+    console.error(`[chat/inbox] ${name} query failed:`, r.reason)
+    errors[name] = r.reason instanceof Error ? r.reason.message : String(r.reason)
+    return []
+  }
+  const whatsapp = settled('whatsapp', waRes)
+  const instagram = settled('instagram', igRes)
+  const email = settled('email', emailRes)
+  // ADMIN can open /api/chat/inbox?debug=1 to see why a channel came back empty.
+  if (role === 'ADMIN' && request.nextUrl.searchParams.get('debug')) return NextResponse.json({ errors })
 
   const items: UnifiedInboxItem[] = [
     ...whatsapp.map((c): UnifiedInboxItem => ({
