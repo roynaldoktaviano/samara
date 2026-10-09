@@ -9,6 +9,9 @@ export const ALL_ROLES: Role[] = [
   'SUPER_ADMIN', 'ADMIN', 'SALES', 'FINANCE', 'MARKETING', 'PURCHASING', 'WAREHOUSE', 'HR',
   'SALES_MARKETING', 'MARKETING_DIRECTOR', 'FINANCE_DIRECTOR', 'CREW', 'BOAT_CAPTAIN', 'CRUISE_DIRECTOR',
 ]
+// BOT is deliberately NOT in ALL_ROLES: it has no sidebar modules to toggle — its access is the
+// fixed read-only whitelist in src/lib/bot-access.ts, enforced in middleware — so it stays off
+// the Roles & Permissions screen where ticking modules for it would do nothing.
 
 // ADMIN/SUPER_ADMIN can never lose access to these two modules, no matter what an override
 // row says — otherwise an admin could accidentally lock every admin out of Roles &

@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { Plus, Edit, Trash2, Eye, EyeOff, Search, IdCard } from 'lucide-react'
 
-type Role = 'ADMIN' | 'SUPER_ADMIN' | 'SALES' | 'FINANCE' | 'MARKETING' | 'MARKETING_DIRECTOR' | 'PURCHASING' | 'WAREHOUSE' | 'HR' | 'SALES_MARKETING' | 'FINANCE_DIRECTOR' | 'CREW' | 'BOAT_CAPTAIN' | 'CRUISE_DIRECTOR'
+type Role = 'ADMIN' | 'SUPER_ADMIN' | 'SALES' | 'FINANCE' | 'MARKETING' | 'MARKETING_DIRECTOR' | 'PURCHASING' | 'WAREHOUSE' | 'HR' | 'SALES_MARKETING' | 'FINANCE_DIRECTOR' | 'CREW' | 'BOAT_CAPTAIN' | 'CRUISE_DIRECTOR' | 'BOT'
 type PurchasingDivision = 'BOAT_OPERATION' | 'BUILDING_MATERIAL'
 
 interface UserRecord {
@@ -168,6 +168,13 @@ const ROLES: { value: Role; label: string; desc: string; color: string; modules:
     desc: 'File & approve crew purchase requests',
     color: 'bg-indigo-100 text-indigo-700',
     modules: 'Purchasing (Purchase Requests, My Approvals)',
+  },
+  {
+    value: 'BOT',
+    label: 'Bot (Read-only)',
+    desc: 'AI bot service account — read-only API, no UI',
+    color: 'bg-slate-200 text-slate-700',
+    modules: 'Read-only /api/bot: bookings, revenue, costs, invoices, purchasing, stock, boat & hotel ops. No passwords, bank details, staff personal data or guest IDs. Cannot post, approve or delete.',
   },
   {
     value: 'ADMIN',

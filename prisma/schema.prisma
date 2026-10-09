@@ -30,6 +30,7 @@ enum Role {
   CREW // ship crew — Purchase Request module only, no approval authority
   BOAT_CAPTAIN // Purchase Request module + approves their crew's requests + receives delivery links for their assignedYacht
   CRUISE_DIRECTOR // same scope as BOAT_CAPTAIN
+  BOT // read-only service account for AI bots — can only GET /api/bot/* (see src/lib/bot-access.ts + middleware)
 }
 
 enum BookingSource {

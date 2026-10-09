@@ -154,6 +154,20 @@ export default async function middleware(req: NextRequest) {
     return NextResponse.rewrite(new URL('/agent/calendar/denied', req.url))
   }
 
+  // ── BOT role: read-only, deny-by-default ──
+  // A BOT session may only GET the curated read-only API under /api/bot (see
+  // src/lib/bot-access.ts). Every page, every other API route, and every write method
+  // (POST/PUT/PATCH/DELETE) is refused here, before any route handler runs — so the bot can
+  // never post, approve or delete anything regardless of what individual routes allow.
+  const sessionToken = await getToken({ req, secret: process.env.NEXTAUTH_SECRET })
+  if (sessionToken?.role === 'BOT') {
+    const isBotApi = pathname === '/api/bot' || pathname.startsWith('/api/bot/')
+    const isRead = req.method === 'GET' || req.method === 'HEAD'
+    if (!isBotApi || !isRead) {
+      return NextResponse.json({ error: 'Bot accounts are read-only and limited to /api/bot' }, { status: 403 })
+    }
+  }
+
   if (isPublic(pathname)) return NextResponse.next()
   return (authMiddleware as any)(req, {} as any)
 }
