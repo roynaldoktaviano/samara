@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
-import { parseTodoInput, todoUploadPrefix, referencedAssignees, notifyNewAssignees } from '@/lib/todo'
+import { parseTodoInput, todoUploadPrefix, referencedAssignees, notifyNewAssignees, applyRecurrenceSchedule, spawnRecurringTodos } from '@/lib/todo'
 import { emitTenantEvent } from '@/lib/realtime-bus'
 
 // "My Works" — one board per user: their own Todo rows plus tasks other people assigned to
@@ -15,10 +15,14 @@ export async function GET(req: NextRequest) {
   const me = session.user.id
   const assigned = req.nextUrl.searchParams.get('scope') === 'assigned'
 
+  // Repeating tasks whose next date has arrived appear right away, without waiting for the tick.
+  const mine = { OR: [{ userId: me }, { assigneeIds: { has: me } }, { subAssigneeIds: { has: me } }] }
+  if (await spawnRecurringTodos(db, session.user.tenantId, mine).catch(() => 0)) emitTenantEvent(session.user.tenantId, 'my-works')
+
   const todos = await db.todo.findMany({
     where: assigned
       ? { userId: { not: me }, OR: [{ assigneeIds: { has: me } }, { subAssigneeIds: { has: me } }] }
-      : { OR: [{ userId: me }, { assigneeIds: { has: me } }, { subAssigneeIds: { has: me } }] },
+      : mine,
     orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }],
     include: { user: { select: { id: true, name: true, email: true } } },
   })
@@ -34,6 +38,8 @@ export async function POST(req: NextRequest) {
   if (!('title' in body)) return NextResponse.json({ error: 'Title is required' }, { status: 400 })
   const parsed = parseTodoInput(body, session.user.id)
   if ('error' in parsed) return NextResponse.json({ error: parsed.error }, { status: 400 })
+  const recurrenceError = applyRecurrenceSchedule(parsed.data)
+  if (recurrenceError) return NextResponse.json({ error: recurrenceError }, { status: 400 })
 
   const ids = referencedAssignees(parsed.data)
   if (ids.length && await db.user.count({ where: { id: { in: ids } } }) !== ids.length) {

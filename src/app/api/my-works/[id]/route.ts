@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
-import { parseTodoInput, attachmentsOf, deleteTodoFiles, restrictToProgress, referencedAssignees, notifyNewAssignees, notifyTaskCompleted, logEstimationChanges } from '@/lib/todo'
+import { parseTodoInput, attachmentsOf, deleteTodoFiles, restrictToProgress, referencedAssignees, notifyNewAssignees, notifyTaskCompleted, logEstimationChanges, applyRecurrenceSchedule } from '@/lib/todo'
 import { emitTenantEvent } from '@/lib/realtime-bus'
 
 // The owner can change anything; an assignee (on the task or one of its sub tasks) can only
@@ -32,6 +32,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const start = 'startDate' in parsed.data ? parsed.data.startDate as Date | null : existing.startDate
   const due = 'dueDate' in parsed.data ? parsed.data.dueDate as Date | null : existing.dueDate
   if (start && due && due < start) return NextResponse.json({ error: 'End date must be on or after the start date' }, { status: 400 })
+  // Changing the repeat or the dates restarts the schedule from the new dates. Skip when nothing
+  // actually changed, so re-saving the modal doesn't reset where a series is.
+  const sameDay = (a: Date | null, b: Date | null) => (a?.getTime() ?? null) === (b?.getTime() ?? null)
+  if (('recurrence' in parsed.data ? parsed.data.recurrence ?? null : existing.recurrence) !== existing.recurrence || !sameDay(start, existing.startDate) || !sameDay(due, existing.dueDate)) {
+    const recurrenceError = applyRecurrenceSchedule(parsed.data, existing)
+    if (recurrenceError) return NextResponse.json({ error: recurrenceError }, { status: 400 })
+  }
 
   if (isOwner) {
     const known = new Set([...existing.assigneeIds, ...existing.subAssigneeIds])

@@ -9,7 +9,7 @@ import {
 import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { Plus, CalendarDays, AlignLeft, Paperclip, ChevronDown } from 'lucide-react'
-import { STATUSES, fmtRange, isOverdue, todayKey, TypeTag, PriorityTag, SubtaskCount, flattenSubtasks, mapSubtaskTree, isSubOverdue, fmtDay, useWorks, canProgressTask, canTickSub, isOwnTask, AvatarStack, userLabel, type Subtask, type Todo, type Status } from './shared'
+import { STATUSES, fmtRange, isOverdue, todayKey, TypeTag, PriorityTag, RecurrenceTag, SubtaskCount, flattenSubtasks, mapSubtaskTree, isSubOverdue, fmtDay, useWorks, canProgressTask, canTickSub, isOwnTask, AvatarStack, userLabel, type Subtask, type Todo, type Status } from './shared'
 
 type Columns = Record<Status, string[]>
 
@@ -170,6 +170,7 @@ function Card({ todo, dragging, onSubtasks }: { todo: Todo; dragging?: boolean; 
       <div className="flex flex-wrap items-center gap-1.5">
         {todo.type && <TypeTag type={todo.type} />}
         <PriorityTag priority={todo.priority} />
+        <RecurrenceTag todo={todo} />
         {todo.assigneeIds?.length > 0 && <span className="ml-auto"><AvatarStack ids={todo.assigneeIds} size={20} /></span>}
       </div>
       {todo.subtasks?.length > 0 && (

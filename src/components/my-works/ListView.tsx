@@ -6,7 +6,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuSub,
   DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { STATUSES, STATUS_META, isOverdue, todayKey, SubtaskCount, useWorks, canProgressTask, isOwnTask, userLabel, type Todo, type Status, type Subtask } from './shared'
+import { STATUSES, STATUS_META, isOverdue, todayKey, SubtaskCount, RecurrenceTag, useWorks, canProgressTask, isOwnTask, userLabel, type Todo, type Status, type Subtask } from './shared'
 import AssigneePicker from './AssigneePicker'
 import { SubtaskTree, subtaskOps, PriorityPick, type SubtaskTreeState } from './SubtaskRows'
 import { TextCell, TypeCell, RangeCell } from './InlineCells'
@@ -111,6 +111,7 @@ export default function ListView({ todos, onAdd, onEdit, onDelete, onStatus, onS
                                   className={`font-medium break-words ${done ? 'line-through text-muted-foreground' : ''}`} />
                                 {ro && t.user && <p className="text-xs text-sky-700">Assigned by {userLabel(t.user)}</p>}
                               </div>
+                              {t.recurrence && <span className="shrink-0"><RecurrenceTag todo={t} /></span>}
                               {t.attachments?.length > 0 && (
                                 <span className="inline-flex items-center gap-0.5 text-xs text-muted-foreground shrink-0" title={`${t.attachments.length} attachment${t.attachments.length !== 1 ? 's' : ''}`}>
                                   <Paperclip className="h-3 w-3" />{t.attachments.length}

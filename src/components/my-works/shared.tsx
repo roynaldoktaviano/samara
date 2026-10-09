@@ -1,10 +1,11 @@
 'use client'
 
 import { createContext, useContext } from 'react'
-import { ListChecks } from 'lucide-react'
+import { ListChecks, Repeat } from 'lucide-react'
 
 export type Priority = 'LOW' | 'MEDIUM' | 'HIGH'
 export type Status = 'TODO' | 'IN_PROGRESS' | 'IN_REVIEW' | 'DONE'
+export type Recurrence = 'WEEKLY' | 'MONTHLY' | 'YEARLY'
 
 export interface Attachment { url: string; name: string; size: number; contentType: string; uploadedAt: string }
 
@@ -35,6 +36,9 @@ export interface Todo {
   // Owner's name, for the "from …" label on tasks assigned to me.
   user?: { id: string; name: string | null; email: string }
   completedAt: string | null
+  // Repeat schedule; only the newest task of a series has it (see spawnRecurringTodos).
+  recurrence: Recurrence | null
+  recurrenceNextAt: string | null
   createdAt: string
 }
 
@@ -51,6 +55,24 @@ export const PRIORITIES: { key: Priority; label: string; cls: string; dot: strin
   { key: 'MEDIUM', label: 'Medium', cls: 'bg-amber-50 text-amber-700 border-amber-200', dot: 'bg-amber-500' },
   { key: 'LOW',    label: 'Low',    cls: 'bg-sky-50 text-sky-600 border-sky-200',       dot: 'bg-sky-500' },
 ]
+export const RECURRENCES: { key: Recurrence; label: string }[] = [
+  { key: 'WEEKLY', label: 'Weekly' },
+  { key: 'MONTHLY', label: 'Monthly' },
+  { key: 'YEARLY', label: 'Yearly' },
+]
+
+/** "Weekly" etc. badge with the date the next copy appears; nothing for one-off tasks. */
+export function RecurrenceTag({ todo }: { todo: Pick<Todo, 'recurrence' | 'recurrenceNextAt'> }) {
+  if (!todo.recurrence) return null
+  const label = RECURRENCES.find(r => r.key === todo.recurrence)?.label ?? todo.recurrence
+  return (
+    <span title={todo.recurrenceNextAt ? `Repeats ${label.toLowerCase()} — next task on ${fmtDay(todo.recurrenceNextAt)}` : `Repeats ${label.toLowerCase()}`}
+      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-xs font-medium whitespace-nowrap bg-violet-50 text-violet-700 border-violet-200">
+      <Repeat className="h-3 w-3" />{label}
+    </span>
+  )
+}
+
 export const PRIORITY_META = Object.fromEntries(PRIORITIES.map(p => [p.key, p])) as Record<Priority, typeof PRIORITIES[number]>
 
 // Dates are saved as plain dates (midnight UTC from <input type="date">), so everything

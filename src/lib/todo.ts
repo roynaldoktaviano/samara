@@ -5,6 +5,7 @@ import { queueTaskEmail } from '@/lib/task-email'
 
 export const TODO_PRIORITIES = ['LOW', 'MEDIUM', 'HIGH'] as const
 export const TODO_STATUSES = ['TODO', 'IN_PROGRESS', 'IN_REVIEW', 'DONE'] as const
+export const TODO_RECURRENCES = ['WEEKLY', 'MONTHLY', 'YEARLY'] as const
 
 export interface TodoAttachment { url: string; name: string; size: number; contentType: string; uploadedAt: string }
 
@@ -162,8 +163,106 @@ export function parseTodoInput(body: Record<string, unknown>, userId: string, ex
     if (!ids) return { error: 'Invalid assignees' }
     data.assigneeIds = ids
   }
+  if ('recurrence' in body) {
+    if (body.recurrence != null && !TODO_RECURRENCES.includes(body.recurrence as never)) return { error: 'Invalid repeat' }
+    data.recurrence = (body.recurrence as string | null) ?? null
+  }
   if ('sortOrder' in body && Number.isInteger(body.sortOrder)) data.sortOrder = body.sortOrder as number
   return { data }
+}
+
+// ── Recurring tasks ──────────────────────────────────────────────────────────
+
+const DAY_MS = 24 * 60 * 60 * 1000
+
+/** `n` weeks/months/years after `d` (a UTC-midnight date), clamped to the month's last day. */
+function addPeriod(d: Date, recurrence: string, n: number): Date {
+  if (recurrence === 'WEEKLY') return new Date(d.getTime() + n * 7 * DAY_MS)
+  const y = d.getUTCFullYear(), m = d.getUTCMonth() + (recurrence === 'YEARLY' ? n * 12 : n)
+  const lastDay = new Date(Date.UTC(y, m + 1, 0)).getUTCDate()
+  return new Date(Date.UTC(y, m, Math.min(d.getUTCDate(), lastDay)))
+}
+
+// Task dates are plain days; "today" is the business's day (Indonesia, WIB UTC+7, no DST).
+const businessToday = () => new Date(new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString().slice(0, 10) + 'T00:00:00Z')
+
+/**
+ * Restarts a task's repeat schedule from its current dates — call whenever recurrence or the
+ * dates change. Adds the recurrence* fields to `data`, or an error if a repeat has no date.
+ */
+export function applyRecurrenceSchedule(
+  data: Prisma.TodoUncheckedUpdateInput,
+  existing?: { recurrence: string | null; startDate: Date | null; dueDate: Date | null },
+): string | null {
+  if (!('recurrence' in data || 'startDate' in data || 'dueDate' in data)) return null
+  const recurrence = 'recurrence' in data ? data.recurrence as string | null : existing?.recurrence ?? null
+  const start = 'startDate' in data ? data.startDate as Date | null : existing?.startDate ?? null
+  const due = 'dueDate' in data ? data.dueDate as Date | null : existing?.dueDate ?? null
+  const anchor = start ?? due
+  if (!recurrence) {
+    if ('recurrence' in data) Object.assign(data, { recurrenceAnchor: null, recurrenceIndex: 0, recurrenceNextAt: null })
+    return null
+  }
+  if (!anchor) return 'A repeating task needs a start or end date'
+  Object.assign(data, { recurrenceAnchor: anchor, recurrenceIndex: 0, recurrenceNextAt: addPeriod(anchor, recurrence, 1) })
+  return null
+}
+
+const shiftDay = (k: string | null, days: number) => k ? new Date(Date.parse(k + 'T00:00:00Z') + days * DAY_MS).toISOString().slice(0, 10) : null
+const freshSubtasks = (subs: TodoSubtask[], days: number): TodoSubtask[] => subs.map(s => ({
+  ...s, done: false, startDate: shiftDay(s.startDate, days), dueDate: shiftDay(s.dueDate, days), children: freshSubtasks(s.children ?? [], days),
+}))
+
+/**
+ * Creates the next copy of every repeating task (matching `where`) whose next date has
+ * arrived: same title/notes/type/priority/assignees/sub tasks, status To-do, sub tasks
+ * unticked, all dates moved to the new occurrence. Files and comments stay on the old task.
+ * If several periods were missed only the latest one is created. The recurrence then moves
+ * onto the copy, so the series always continues from its newest task. Runs from the hourly
+ * tick (src/instrumentation-node.ts) and on every board load; the conditional claim below
+ * makes concurrent runs safe.
+ */
+export async function spawnRecurringTodos(db: PrismaClient, tenantId: string | undefined, where: Prisma.TodoWhereInput = {}): Promise<number> {
+  const today = businessToday()
+  const due = await db.todo.findMany({
+    where: { AND: [where, { recurrence: { not: null }, recurrenceNextAt: { lte: today } }] },
+    include: { user: { select: { id: true, name: true } } },
+  })
+  let spawned = 0
+  for (const t of due) {
+    const rec = t.recurrence!, anchor = t.recurrenceAnchor ?? t.startDate ?? t.dueDate
+    if (!anchor) continue
+    let n = t.recurrenceIndex + 1
+    while (n < t.recurrenceIndex + 1000 && addPeriod(anchor, rec, n + 1) <= today) n++
+    const occurrence = addPeriod(anchor, rec, n)
+    const base = t.startDate ?? t.dueDate ?? anchor
+    const days = Math.round((occurrence.getTime() - base.getTime()) / DAY_MS)
+    const shift = (d: Date | null) => d ? new Date(d.getTime() + days * DAY_MS) : null
+
+    const copy = await db.$transaction(async tx => {
+      // Claim the series — only the run that flips recurrenceNextAt gets to create the copy.
+      const claimed = await tx.todo.updateMany({
+        where: { id: t.id, recurrenceNextAt: t.recurrenceNextAt },
+        data: { recurrence: null, recurrenceNextAt: null },
+      })
+      if (!claimed.count) return null
+      const first = await tx.todo.findFirst({ where: { userId: t.userId, status: 'TODO' }, orderBy: { sortOrder: 'asc' }, select: { sortOrder: true } })
+      return tx.todo.create({
+        data: {
+          userId: t.userId, title: t.title, notes: t.notes, type: t.type, priority: t.priority,
+          startDate: shift(t.startDate), dueDate: shift(t.dueDate),
+          subtasks: freshSubtasks(subtasksOf(t.subtasks), days) as unknown as Prisma.InputJsonValue,
+          assigneeIds: t.assigneeIds, subAssigneeIds: t.subAssigneeIds,
+          sortOrder: (first?.sortOrder ?? 1) - 1,
+          recurrence: rec, recurrenceAnchor: anchor, recurrenceIndex: n, recurrenceNextAt: addPeriod(anchor, rec, n + 1),
+        },
+      })
+    })
+    if (!copy) continue
+    spawned++
+    await notifyNewAssignees(db, { id: t.userId, name: t.user.name, tenantId }, null, copy).catch(() => {})
+  }
+  return spawned
 }
 
 // ── Assignees ────────────────────────────────────────────────────────────────

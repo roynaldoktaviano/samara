@@ -12,7 +12,7 @@ import AttachmentsField from './AttachmentsField'
 import SubtasksField from './SubtasksField'
 import AssigneePicker from './AssigneePicker'
 import ActivityField from './ActivityField'
-import { STATUSES, PRIORITIES, dayKey, isOverdue, todayKey, type Todo, type Status, type Priority, type Attachment, type Subtask, type WorkUser, WorksContext, canProgressTask, isOwnTask, userLabel } from './shared'
+import { STATUSES, PRIORITIES, RECURRENCES, dayKey, isOverdue, todayKey, type Todo, type Status, type Priority, type Recurrence, type Attachment, type Subtask, type WorkUser, WorksContext, canProgressTask, isOwnTask, userLabel } from './shared'
 
 type ViewMode = 'kanban' | 'timeline' | 'list' | 'calendar'
 const VIEW_KEY = 'my-works:view'
@@ -24,10 +24,20 @@ const VIEWS: { key: ViewMode; label: string; icon: React.ElementType }[] = [
   { key: 'timeline', label: 'Timeline', icon: GanttChart },
 ]
 
-interface FormState { title: string; notes: string; type: string; startDate: string; dueDate: string; priority: Priority; status: Status; attachments: Attachment[]; subtasks: Subtask[]; assigneeIds: string[] }
-const emptyForm = (status: Status = 'TODO'): FormState => ({ title: '', notes: '', type: '', startDate: '', dueDate: '', priority: 'MEDIUM', status, attachments: [], subtasks: [], assigneeIds: [] })
+interface FormState { title: string; notes: string; type: string; startDate: string; dueDate: string; priority: Priority; status: Status; attachments: Attachment[]; subtasks: Subtask[]; assigneeIds: string[]; recurrence: Recurrence | '' }
+const emptyForm = (status: Status = 'TODO'): FormState => ({ title: '', notes: '', type: '', startDate: '', dueDate: '', priority: 'MEDIUM', status, attachments: [], subtasks: [], assigneeIds: [], recurrence: '' })
 
 type Source = 'all' | 'mine' | 'assigned'
+
+const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+/** "A new copy of this task is created every Monday" etc. for the Repeat field. */
+function repeatHint(recurrence: Recurrence, day: string): string {
+  const d = new Date(day + 'T00:00:00Z')
+  const when = recurrence === 'WEEKLY' ? `every ${WEEKDAYS[d.getUTCDay()]}`
+    : recurrence === 'MONTHLY' ? `on day ${d.getUTCDate()} of every month`
+    : `every ${d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', timeZone: 'UTC' })}`
+  return `A new copy of this task is created automatically ${when}, with the same dates, assignees and sub tasks.`
+}
 
 /**
  * One board for my own tasks (full edit) and tasks other people assigned to me or to one of
@@ -127,7 +137,7 @@ export default function MyWorksPage() {
     setForm({
       title: t.title, notes: t.notes ?? '', type: t.type ?? '',
       startDate: t.startDate ? dayKey(t.startDate) : '', dueDate: t.dueDate ? dayKey(t.dueDate) : '',
-      priority: t.priority, status: t.status, attachments: t.attachments ?? [], subtasks: t.subtasks ?? [], assigneeIds: t.assigneeIds ?? [],
+      priority: t.priority, status: t.status, attachments: t.attachments ?? [], subtasks: t.subtasks ?? [], assigneeIds: t.assigneeIds ?? [], recurrence: t.recurrence ?? '',
     })
     setFormError(''); setModalOpen(true)
   }
@@ -136,11 +146,12 @@ export default function MyWorksPage() {
     if (!form.title.trim()) { setFormError('Task name is required'); return }
     if (uploadBusy) return
     if (form.startDate && form.dueDate && form.dueDate < form.startDate) { setFormError('End date must be on or after the start date'); return }
+    if (form.recurrence && !form.startDate && !form.dueDate) { setFormError('A repeating task needs a start or end date'); return }
     setSaving(true); setFormError('')
     const ro = !!editing && !isOwnTask(editing, meId)
     const payload = ro
       ? { status: form.status, attachments: form.attachments, startDate: form.startDate || null, dueDate: form.dueDate || null }
-      : { ...form, startDate: form.startDate || null, dueDate: form.dueDate || null }
+      : { ...form, startDate: form.startDate || null, dueDate: form.dueDate || null, recurrence: form.recurrence || null }
     const res = await fetch(editing ? `/api/my-works/${editing.id}` : '/api/my-works', {
       method: editing ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
     })
@@ -380,6 +391,18 @@ export default function MyWorksPage() {
                   <label className={labelCls}>End Date</label>
                   <input type="date" disabled={!canProgress} className={`${inputCls} ${disabledCls}`} min={form.startDate || undefined} value={form.dueDate} onChange={e => setForm(f => ({ ...f, dueDate: e.target.value }))} />
                 </div>
+              </div>
+              <div className="space-y-1.5">
+                <label className={labelCls}>Repeat</label>
+                {/* Picking a repeat on an undated task starts it today, since the series runs off the date. */}
+                <select disabled={ro} className={`${inputCls} ${disabledCls}`} value={form.recurrence}
+                  onChange={e => { const recurrence = e.target.value as Recurrence | ''; setForm(f => ({ ...f, recurrence, ...(recurrence && !f.startDate && !f.dueDate ? { startDate: todayKey() } : {}) })) }}>
+                  <option value="">Does not repeat</option>
+                  {RECURRENCES.map(r => <option key={r.key} value={r.key}>{r.label}</option>)}
+                </select>
+                {form.recurrence && (form.startDate || form.dueDate) && (
+                  <p className="text-xs text-muted-foreground">{repeatHint(form.recurrence, form.startDate || form.dueDate)}</p>
+                )}
               </div>
               <div className="grid grid-cols-3 gap-3">
                 <div className="space-y-1.5">

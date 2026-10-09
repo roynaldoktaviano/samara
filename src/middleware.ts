@@ -56,6 +56,9 @@ const PUBLIC_PATHS = [
   // Sales Pipeline 24h stagnant-lead reassignment — self-hosted interval in
   // instrumentation-node.ts, authenticates via its own CRON_SECRET bearer token
   '/api/leads/stagnant-check',
+  // My Works weekly/monthly/yearly task spawner — self-hosted interval in
+  // instrumentation-node.ts, authenticates via its own CRON_SECRET bearer token
+  '/api/my-works/recurring-tick',
   // PWA manifest + service worker — must be fetchable pre-login (browsers request these
   // to decide installability before the user necessarily has a session)
   '/manifest.webmanifest',

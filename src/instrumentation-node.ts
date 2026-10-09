@@ -87,6 +87,18 @@ export async function startNodeInstrumentation() {
     }
   }, leadStagnantCheckIntervalMs)
 
+  // Creates the next copy of weekly/monthly/yearly My Works tasks once their date arrives —
+  // see spawnRecurringTodos in src/lib/todo.ts. Hourly is plenty for day-granularity dates, and
+  // the per-series claim makes re-running it harmless.
+  const myWorksRecurringIntervalMs = 60 * 60 * 1000
+  setInterval(async () => {
+    try {
+      await fetch(`http://127.0.0.1:${port}/api/my-works/recurring-tick`, { headers: cronHeaders })
+    } catch (err) {
+      console.error('[scheduler] my-works recurring tick failed:', err)
+    }
+  }, myWorksRecurringIntervalMs)
+
   // Rebuilds the Google Ads offline-conversion Google Sheet — full-refresh/idempotent (see
   // rebuildGoogleAdsConversionsSheet), so running this more often than Google Ads actually
   // reads the sheet is harmless. A few hours' cadence is enough for same-day attribution.

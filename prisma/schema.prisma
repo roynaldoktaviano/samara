@@ -258,11 +258,21 @@ model Todo {
   // Legacy flag from before `status` existed — always kept equal to (status == DONE).
   completed      Boolean      @default(false)
   completedAt    DateTime?
+  // Repeating task: WEEKLY | MONTHLY | YEARLY, null = one-off. Only the newest task of a series
+  // carries it — when recurrenceNextAt arrives a fresh copy is created on the same day of the
+  // next week/month/year and the recurrence moves onto it. See spawnRecurringTodos in src/lib/todo.ts.
+  recurrence       String?
+  // Date of occurrence #0 (the task's start, else due date) — later dates are computed from it
+  // so a monthly task on the 31st doesn't drift to the 28th after February.
+  recurrenceAnchor DateTime?
+  recurrenceIndex  Int        @default(0)
+  recurrenceNextAt DateTime?
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
   activities     TodoActivity[]
 
   @@index([userId, status])
+  @@index([recurrenceNextAt])
 }
 
 // Activity section of a My Works task: free comments by the owner/assignees, plus an automatic
