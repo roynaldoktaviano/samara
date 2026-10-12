@@ -8,6 +8,7 @@ export type TenantSecretKey =
   | 'resendApiKey'
   | 'resendWebhookSecret'
   | 'cf7WebhookSecret'
+  | 'pageviewWebhookSecret'
   | 'tripSheetGoogleSheetId'
   | 'googleAdsConversionsSheetId'
   | 'whatsappSamaraPhoneNumberId'
@@ -41,6 +42,7 @@ export interface TenantSecrets {
   resendApiKey?: string
   resendWebhookSecret?: string
   cf7WebhookSecret?: string
+  pageviewWebhookSecret?: string
   tripSheetGoogleSheetId?: string
   googleAdsConversionsSheetId?: string
   whatsappSamaraPhoneNumberId?: string
@@ -79,7 +81,8 @@ export const TENANT_SECRET_DEFINITIONS: {
   { key: 'freshsalesDomain', label: 'Freshsales Domain', description: 'e.g. yourcompany.myfreshworks.com/crm/sales', envFallback: 'FRESHSALES_DOMAIN' },
   { key: 'resendApiKey', label: 'Resend API Key', description: 'Sends marketing campaigns and newsletters', envFallback: 'RESEND_API_KEY' },
   { key: 'resendWebhookSecret', label: 'Resend Webhook Signing Secret', description: 'Verifies open/click/bounce events from Resend', envFallback: 'RESEND_WEBHOOK_SECRET' },
-  { key: 'cf7WebhookSecret', label: 'Website Form Webhook Secret', description: 'Shared secret the WordPress contact form sends', envFallback: 'CF7_WEBHOOK_SECRET' },
+  { key: 'cf7WebhookSecret', label: 'Website Form Webhook Secret', description: 'Shared secret the WordPress server sends with each form submission (X-Webhook-Secret header) — keep it server-side only, never in browser JS', envFallback: 'CF7_WEBHOOK_SECRET' },
+  { key: 'pageviewWebhookSecret', label: 'Website Pageview Tracker Secret', description: 'Separate, low-value secret for the browser-side page-view tracker (it is visible in page source by design) — must differ from the Website Form Webhook Secret. Empty = tracker still accepts the form secret (transition only)', envFallback: 'PAGEVIEW_WEBHOOK_SECRET' },
   { key: 'tripSheetGoogleSheetId', label: 'Trip Sheet Google Sheet ID', description: "This tenant's own spreadsheet for trip sheet sync", envFallback: 'TRIP_SHEET_GOOGLE_SHEET_ID' },
   { key: 'googleAdsConversionsSheetId', label: 'Google Ads Conversions Sheet ID', description: 'Spreadsheet auto-synced with confirmed-deposit bookings, set as a Google Sheets source on a Google Ads conversion action', envFallback: 'GOOGLE_ADS_CONVERSIONS_SHEET_ID' },
   { key: 'whatsappSamaraPhoneNumberId', label: 'WhatsApp Phone Number ID — Samara', description: "Meta phone number ID for the Samara brand's WhatsApp Business number", envFallback: 'WHATSAPP_SAMARA_PHONE_NUMBER_ID' },

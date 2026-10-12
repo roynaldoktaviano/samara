@@ -96,7 +96,10 @@ export function createWhatsappWebhookHandlers(endpointBrand?: WhatsappBrand) {
     // `id` is the WAMID (providerMessageId) of the message being replied to.
     context?: { id: string }
   }
-  interface CloudApiStatus { id: string; status: string; timestamp: string; recipient_id: string }
+  interface CloudApiStatus {
+    id: string; status: string; timestamp: string; recipient_id: string
+    errors?: { code: number; title?: string; message?: string; error_data?: { details?: string } }[]
+  }
   interface CloudApiValue {
     metadata?: { phone_number_id?: string }
     contacts?: { profile?: { name?: string }; wa_id: string }[]
@@ -175,9 +178,16 @@ export function createWhatsappWebhookHandlers(endpointBrand?: WhatsappBrand) {
         for (const status of value.statuses ?? []) {
           const mapped = status.status.toUpperCase()
           if (!['SENT', 'DELIVERED', 'READ', 'FAILED'].includes(mapped)) continue
+          // A `failed` status carries Meta's reason (e.g. 131042 payment issue, 131049
+          // per-user marketing limit) — keep it so staff can see why, not just a red icon.
+          const err = status.errors?.[0]
+          const errorMessage = mapped === 'FAILED' && err
+            ? `(#${err.code}) ${err.title ?? err.message ?? 'Failed'}${err.error_data?.details ? ` — ${err.error_data.details}` : ''}`
+            : undefined
+          if (errorMessage) console.error('[whatsapp] delivery failed', status.id, errorMessage)
           await db.whatsappMessage.updateMany({
             where: { providerMessageId: status.id },
-            data: { status: mapped as 'SENT' | 'DELIVERED' | 'READ' | 'FAILED' },
+            data: { status: mapped as 'SENT' | 'DELIVERED' | 'READ' | 'FAILED', ...(errorMessage && { errorMessage }) },
           }).catch(() => {})
         }
 

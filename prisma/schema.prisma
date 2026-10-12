@@ -4512,6 +4512,9 @@ model WhatsappMessage {
   // window (see src/lib/whatsapp-templates.ts). `body` still holds the rendered text for display.
   templateName      String?
   status            WhatsappMessageStatus @default(SENT)
+  // Why Meta refused/failed this OUT message — set from the send response or from a
+  // `failed` status webhook (code + title + details), so staff can see the reason.
+  errorMessage      String?
   // Provider's own message id — lets the inbound webhook dedupe on redelivery,
   // and lets an outbound send record what it maps to once the provider replies.
   providerMessageId String?               @unique

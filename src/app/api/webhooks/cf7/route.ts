@@ -6,12 +6,13 @@ import { autoAssignWebsiteLead } from '@/lib/whatsapp-lead'
 import { isHttpUrl } from '@/lib/url-safety'
 import { logWebhookFailure } from '@/lib/webhook-log'
 import { getClientIp, countryFromIp } from '@/lib/geo-country'
+import { providedWebhookSecret, webhookSecretMatches } from '@/lib/webhook-secret'
 
-// This endpoint is meant to be called directly from the browser (client-side
-// JS on the WordPress site listening for the wpcf7mailsent event), not just
-// server-to-server — so it needs CORS. Auth is the ?secret= query param, not
-// cookies, so a wide-open origin doesn't expose anything beyond the secret
-// itself (which the client-side caller already has in plain view anyway).
+// Should be called server-to-server by the WordPress site (a PHP hook on
+// wpcf7_mail_sent) with the secret in the X-Webhook-Secret header, so the
+// secret never reaches the browser. CORS + ?secret= are kept only so the
+// legacy browser-side caller keeps working until WordPress is switched over
+// and the secret is rotated.
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
@@ -101,9 +102,8 @@ export async function POST(request: NextRequest) {
     const { db, tenant } = resolved
 
     // ── Verify secret token ──────────────────────────────────────────────────
-    const secret   = request.nextUrl.searchParams.get('secret')
     const expected = await getTenantSecret(tenant.id, 'cf7WebhookSecret')
-    if (!expected || secret !== expected) {
+    if (!webhookSecretMatches(providedWebhookSecret(request), expected)) {
       logWebhookFailure({ source: 'CF7', tenantSlug: tenant.slug, reason: 'unauthorized', rawPayload: toJsonSafe(data) })
       return json({ error: 'Unauthorized' }, 401)
     }
@@ -156,7 +156,10 @@ export async function POST(request: NextRequest) {
     // Best-effort country guess from the submitter's IP — only ever used to fill
     // in a Lead that doesn't have a nationality yet, never to overwrite one a
     // human entered (or, for a matched Customer, their passport-verified data).
-    const ipCountry = countryFromIp(getClientIp(request))
+    // A server-side caller (the WordPress PHP hook) forwards the visitor's IP
+    // as visitor_ip — otherwise the request IP would be the WordPress server's.
+    // Safe to trust here since the secret has already been verified above.
+    const ipCountry = countryFromIp(pick(data, 'visitor_ip') || getClientIp(request))
 
     if (!firstName && !email && !phone) {
       logWebhookFailure({ source: 'CF7', tenantSlug: tenant.slug, reason: 'insufficient_contact_data', rawPayload: toJsonSafe(data) })

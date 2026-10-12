@@ -3,7 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { normalizeWhatsappPhone, sendWhatsappTemplateMessage } from '@/lib/whatsapp'
-import { findWhatsappTemplate, renderWhatsappTemplateBody } from '@/lib/whatsapp-templates'
+import { findWhatsappTemplate, missingTemplateParams, renderWhatsappTemplateBody } from '@/lib/whatsapp-templates'
 import { WHATSAPP_BRANDS, type WhatsappBrand } from '@/lib/whatsapp-brands'
 import { claimWhatsappConversation, pickNextSalesUserId } from '@/lib/whatsapp-distribution'
 import { autoLinkNewConversation, recordStaffReply, syncLeadOwner } from '@/lib/whatsapp-lead'
@@ -39,6 +39,9 @@ export async function POST(req: NextRequest) {
   const db = await getDb(session)
   const templateDef = await findWhatsappTemplate(db, brand as WhatsappBrand, templateName ?? '', templateLanguage)
   if (!templateDef) return NextResponse.json({ error: 'Unknown template' }, { status: 400 })
+  if (missingTemplateParams(templateDef, templateParams)) {
+    return NextResponse.json({ error: 'Fill in every template field — WhatsApp rejects empty values' }, { status: 400 })
+  }
 
   // Threads are per (number, brand) — the same number on another brand is a separate thread.
   const existing = await db.whatsappConversation.findUnique({ where: { phone_brand: { phone, brand } } })
@@ -81,7 +84,7 @@ export async function POST(req: NextRequest) {
 
   await db.whatsappMessage.update({
     where: { id: message.id },
-    data: result.ok ? { status: 'SENT', providerMessageId: result.providerMessageId } : { status: 'FAILED' },
+    data: result.ok ? { status: 'SENT', providerMessageId: result.providerMessageId } : { status: 'FAILED', errorMessage: result.error ?? null },
   })
   if (result.ok) await recordStaffReply(db, conversation.id, session.user.id).catch(e => console.error('[whatsapp] recordStaffReply failed', e))
 

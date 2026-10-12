@@ -3,11 +3,14 @@ import { resolveTenantBySlugFull } from '@/lib/resolve-tenant'
 import { getTenantSecret } from '@/lib/tenant-secrets'
 import { isHttpUrl } from '@/lib/url-safety'
 import { logWebhookFailure } from '@/lib/webhook-log'
+import { providedWebhookSecret, webhookSecretMatches } from '@/lib/webhook-secret'
 
 // Called from the client-side tracker on every page load of the tenant's
-// website (not just on form submit) — same trust model as /api/webhooks/cf7:
-// public + CORS-open, auth is the ?secret= query param (shared with cf7,
-// since both come from the same WordPress site).
+// website (not just on form submit), so it's public + CORS-open and its
+// ?secret= is visible in page source by design. That's why it has its own
+// low-value pageviewWebhookSecret, separate from the cf7 (lead) secret.
+// Until that's set, the cf7 secret is still accepted so the live tracker
+// keeps working — set it before rotating the cf7 secret.
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
@@ -38,9 +41,9 @@ export async function POST(request: NextRequest) {
     }
     const { db, tenant } = resolved
 
-    const secret   = request.nextUrl.searchParams.get('secret')
-    const expected = await getTenantSecret(tenant.id, 'cf7WebhookSecret')
-    if (!expected || secret !== expected) {
+    const pageviewSecret = await getTenantSecret(tenant.id, 'pageviewWebhookSecret')
+    const expected = pageviewSecret || await getTenantSecret(tenant.id, 'cf7WebhookSecret')
+    if (!webhookSecretMatches(providedWebhookSecret(request), expected)) {
       logWebhookFailure({ source: 'PageView', tenantSlug: tenant.slug, reason: 'unauthorized' })
       return json({ error: 'Unauthorized' }, 401)
     }

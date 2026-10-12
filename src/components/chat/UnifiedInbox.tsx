@@ -12,7 +12,7 @@ import { Search, MessageCircle, Instagram, Mail, Plus, Loader2 } from 'lucide-re
 import { cn } from '@/lib/utils'
 import type { ChatChannel, UnifiedInboxItem } from '@/app/api/chat/inbox/route'
 import { WHATSAPP_BRANDS, WHATSAPP_BRAND_LABELS, type WhatsappBrand } from '@/lib/whatsapp-brands'
-import { renderWhatsappTemplateBody } from '@/lib/whatsapp-templates'
+import { missingTemplateParams, renderWhatsappTemplateBody } from '@/lib/whatsapp-templates'
 import { useWhatsappTemplates, templateKey } from '@/components/whatsapp/useWhatsappTemplates'
 import WhatsAppThread from '@/components/whatsapp/WhatsAppThread'
 import InstagramThread from '@/components/instagram/InstagramThread'
@@ -323,7 +323,7 @@ export function NewChatForm({ onSubmit, initialPhone = '', initialName = '' }: {
         </p>
       )}
       {error && <p className="text-xs text-red-600">{error}</p>}
-      <Button onClick={handleSubmit} disabled={!phone.trim() || !selectedTemplate || submitting} className="w-full h-9">
+      <Button onClick={handleSubmit} disabled={!phone.trim() || !selectedTemplate || submitting || missingTemplateParams(selectedTemplate, templateParams)} className="w-full h-9">
         {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Mulai Chat'}
       </Button>
     </div>

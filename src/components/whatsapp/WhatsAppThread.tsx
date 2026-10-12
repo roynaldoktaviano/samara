@@ -10,7 +10,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
-import { renderWhatsappTemplateBody } from '@/lib/whatsapp-templates'
+import { missingTemplateParams, renderWhatsappTemplateBody } from '@/lib/whatsapp-templates'
 import { WHATSAPP_BRAND_LABELS, type WhatsappBrand } from '@/lib/whatsapp-brands'
 import { useWhatsappTemplates, templateKey } from '@/components/whatsapp/useWhatsappTemplates'
 import { WHATSAPP_CHAT_CATEGORIES, WHATSAPP_CHAT_CATEGORY_LABEL, type WhatsappChatCategory } from '@/lib/whatsapp-chat-category'
@@ -28,6 +28,7 @@ interface Message {
   status: 'PENDING' | 'SENT' | 'DELIVERED' | 'READ' | 'FAILED'
   sentByName: string | null
   templateName: string | null
+  errorMessage: string | null
   createdAt: string
   replyTo: QuotedMessage | null
 }
@@ -303,6 +304,9 @@ export default function WhatsAppThread({ conversationId, onConversationUpdate, s
                 <span className="text-[10px]">{fmtTime(m.createdAt)}</span>
                 {m.direction === 'OUT' && <StatusIcon status={m.status} />}
               </div>
+              {m.direction === 'OUT' && m.status === 'FAILED' && m.errorMessage && (
+                <p className="mt-1 text-[10px] text-red-100 bg-red-500/30 rounded px-1.5 py-0.5 break-words">{m.errorMessage}</p>
+              )}
             </div>
             {m.direction === 'IN' && (
               <button onClick={() => setReplyTo(m)} title="Reply"
@@ -374,7 +378,7 @@ export default function WhatsAppThread({ conversationId, onConversationUpdate, s
                   {renderWhatsappTemplateBody(selectedTemplate, templateParams)}
                 </p>
               )}
-              <Button onClick={sendTemplate} disabled={!selectedTemplate || sendingTemplate} className="w-full h-9" style={{ backgroundColor: ACCENT }}>
+              <Button onClick={sendTemplate} disabled={!selectedTemplate || sendingTemplate || missingTemplateParams(selectedTemplate, templateParams)} className="w-full h-9" style={{ backgroundColor: ACCENT }}>
                 {sendingTemplate ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Kirim Template'}
               </Button>
             </PopoverContent>

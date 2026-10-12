@@ -3,7 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { sendWhatsappMessage, sendWhatsappTemplateMessage } from '@/lib/whatsapp'
-import { findWhatsappTemplate, renderWhatsappTemplateBody } from '@/lib/whatsapp-templates'
+import { findWhatsappTemplate, missingTemplateParams, renderWhatsappTemplateBody } from '@/lib/whatsapp-templates'
 import { claimWhatsappConversation } from '@/lib/whatsapp-distribution'
 import { recordStaffReply, syncLeadOwner } from '@/lib/whatsapp-lead'
 
@@ -50,6 +50,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const brand = conversation.brand
   const templateDef = templateName ? await findWhatsappTemplate(db, brand, templateName, templateLanguage) : undefined
   if (templateName && !templateDef) return NextResponse.json({ error: 'Unknown template' }, { status: 400 })
+  if (templateDef && missingTemplateParams(templateDef, templateParams)) {
+    return NextResponse.json({ error: 'Fill in every template field — WhatsApp rejects empty values' }, { status: 400 })
+  }
   const renderedBody = templateDef ? renderWhatsappTemplateBody(templateDef, templateParams ?? []) : text
 
   const message = await db.whatsappMessage.create({
@@ -83,7 +86,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     where: { id: message.id },
     data: result.ok
       ? { status: 'SENT', providerMessageId: result.providerMessageId }
-      : { status: 'FAILED' },
+      : { status: 'FAILED', errorMessage: result.error ?? null },
     include: { replyTo: { select: { id: true, body: true, direction: true, mediaType: true } } },
   })
   if (result.ok) await recordStaffReply(db, id, session.user.id).catch(e => console.error('[whatsapp] recordStaffReply failed', e))

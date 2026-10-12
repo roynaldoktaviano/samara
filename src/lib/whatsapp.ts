@@ -47,7 +47,12 @@ async function postToCloudApi(phoneNumberId: string, apiToken: string, payload: 
       body: JSON.stringify(payload),
     })
     const data = await res.json().catch(() => ({}))
-    if (!res.ok) return { ok: false, error: data?.error?.message ?? `Provider returned ${res.status}` }
+    if (!res.ok) {
+      const err = data?.error
+      const details = err?.error_data?.details
+      const msg = err ? `(#${err.code}) ${err.message}${details && details !== err.message ? ` — ${details}` : ''}` : `Provider returned ${res.status}`
+      return { ok: false, error: msg }
+    }
     return { ok: true, providerMessageId: data?.messages?.[0]?.id }
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : 'Failed to reach WhatsApp API' }

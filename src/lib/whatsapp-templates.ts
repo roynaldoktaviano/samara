@@ -55,3 +55,8 @@ export function countTemplateParams(bodyText: string): number {
 export function renderWhatsappTemplateBody(def: WhatsappTemplateDef, params: string[]): string {
   return def.bodyText.replace(/\{\{(\d+)\}\}/g, (_, n) => params[Number(n) - 1] ?? `{{${n}}}`)
 }
+
+// True when any {{n}} placeholder would be sent blank — Meta rejects empty template params.
+export function missingTemplateParams(def: WhatsappTemplateDef, params: string[] | undefined): boolean {
+  return Array.from({ length: countTemplateParams(def.bodyText) }, (_, i) => params?.[i]?.trim() ?? '').some(v => !v)
+}
