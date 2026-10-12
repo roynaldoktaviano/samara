@@ -4,6 +4,10 @@ import { sendPushToUser } from '@/lib/push'
 import { brandForInquiry, setLeadOwner } from '@/lib/whatsapp-lead'
 
 export const STAGNANT_HOURS = 24
+// Off until the Sales Pipeline is actually in use (Roy, 2026-10-12): while it isn't, every lead
+// "goes stagnant" and gets bounced between reps with a notification each time. Set
+// LEAD_STAGNANT_CHECK=on to turn the 24h reassign + its notifications back on.
+export const LEAD_STAGNANT_ENABLED = process.env.LEAD_STAGNANT_CHECK === 'on'
 
 // 24h no-follow-up rule for the Sales Pipeline — polled by src/instrumentation-node.ts via
 // /api/leads/stagnant-check. A Lead is stagnant when its current owner has held it 24h

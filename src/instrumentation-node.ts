@@ -78,8 +78,9 @@ export async function startNodeInstrumentation() {
   // Moves Sales Pipeline leads to the next rep after 24h without follow-up — see
   // src/lib/lead-stagnant.ts. Every 10 minutes so a lead moves within ~10 min of hitting
   // 24h; the clock restarts on every hand-over, so re-running it is harmless.
+  // Only scheduled when LEAD_STAGNANT_CHECK=on (see LEAD_STAGNANT_ENABLED).
   const leadStagnantCheckIntervalMs = 10 * 60 * 1000
-  setInterval(async () => {
+  if (process.env.LEAD_STAGNANT_CHECK === 'on') setInterval(async () => {
     try {
       await fetch(`http://127.0.0.1:${port}/api/leads/stagnant-check`, { headers: cronHeaders })
     } catch (err) {

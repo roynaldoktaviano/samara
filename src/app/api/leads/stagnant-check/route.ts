@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { centralDb } from '@/lib/central-db'
 import { getTenantDb } from '@/lib/tenant-db'
-import { runLeadStagnantCheck } from '@/lib/lead-stagnant'
+import { runLeadStagnantCheck, LEAD_STAGNANT_ENABLED } from '@/lib/lead-stagnant'
 
 /**
  * Cron-only endpoint (no user session — polled by src/instrumentation-node.ts) that moves
@@ -15,6 +15,8 @@ export async function GET(req: NextRequest) {
   if (!secret || auth !== `Bearer ${secret}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
+
+  if (!LEAD_STAGNANT_ENABLED) return NextResponse.json({ ok: true, disabled: true })
 
   const tenants = await centralDb.tenant.findMany({ where: { isActive: true }, select: { slug: true, databaseUrl: true } })
 

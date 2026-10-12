@@ -211,6 +211,7 @@ model User {
   assignedInstagramConversations         InstagramConversation[]           @relation("InstagramConversationAssignedTo")
   whatsappDistributionParticipants       WhatsappDistributionParticipant[]
   todos                                  Todo[]
+  freshsalesUsers                        FreshsalesUser[]
 
   @@index([assignedYachtId])
 }
@@ -231,34 +232,34 @@ enum TodoStatus {
 // Personal task board behind the "My Works" menu (List / Kanban / Timeline views) — every
 // task belongs to exactly one login account and is only ever visible to that account.
 model Todo {
-  id             String       @id @default(cuid())
-  userId         String
-  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  title          String
-  notes          String?
+  id               String         @id @default(cuid())
+  userId           String
+  user             User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title            String
+  notes            String?
   // Free-text label shown as a coloured tag (e.g. "Dashboard", "Mobile App").
-  type           String?
+  type             String?
   // Estimation range — startDate..dueDate drives the Timeline bar; either can be empty.
-  startDate      DateTime?
-  dueDate        DateTime?
-  priority       TodoPriority @default(MEDIUM)
-  status         TodoStatus   @default(TODO)
+  startDate        DateTime?
+  dueDate          DateTime?
+  priority         TodoPriority   @default(MEDIUM)
+  status           TodoStatus     @default(TODO)
   // Manual order within a status column (Kanban drag & drop), ascending.
-  sortOrder      Int          @default(0)
+  sortOrder        Int            @default(0)
   // Attached files, uploaded straight to R2 under my-works/<userId>/ —
   // [{ url, name, size, contentType, uploadedAt }]. See src/lib/todo.ts.
-  attachments    Json         @default("[]")
+  attachments      Json           @default("[]")
   // Checklist of sub tasks — [{ id, title, done }], in display order. See src/lib/todo.ts.
-  subtasks       Json         @default("[]")
+  subtasks         Json           @default("[]")
   // Users this task is assigned to (besides the owner). They see it under "Assigned to Me"
   // and may only update progress — see restrictToProgress in src/lib/todo.ts.
-  assigneeIds    String[]     @default([])
+  assigneeIds      String[]       @default([])
   // Union of every sub task's assigneeIds, kept in sync on save so "Assigned to Me" can
   // find tasks where someone is only on a sub task without scanning the JSON.
-  subAssigneeIds String[]     @default([])
+  subAssigneeIds   String[]       @default([])
   // Legacy flag from before `status` existed — always kept equal to (status == DONE).
-  completed      Boolean      @default(false)
-  completedAt    DateTime?
+  completed        Boolean        @default(false)
+  completedAt      DateTime?
   // Repeating task: WEEKLY | MONTHLY | YEARLY, null = one-off. Only the newest task of a series
   // carries it — when recurrenceNextAt arrives a fresh copy is created on the same day of the
   // next week/month/year and the recurrence moves onto it. See spawnRecurringTodos in src/lib/todo.ts.
@@ -266,11 +267,11 @@ model Todo {
   // Date of occurrence #0 (the task's start, else due date) — later dates are computed from it
   // so a monthly task on the 31st doesn't drift to the 28th after February.
   recurrenceAnchor DateTime?
-  recurrenceIndex  Int        @default(0)
+  recurrenceIndex  Int            @default(0)
   recurrenceNextAt DateTime?
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
-  activities     TodoActivity[]
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  activities       TodoActivity[]
 
   @@index([userId, status])
   @@index([recurrenceNextAt])
@@ -279,16 +280,16 @@ model Todo {
 // Activity section of a My Works task: free comments by the owner/assignees, plus an automatic
 // ESTIMATION entry whenever an assignee changes the task's or a sub task's dates.
 model TodoActivity {
-  id        String   @id @default(cuid())
-  todoId    String
-  todo      Todo     @relation(fields: [todoId], references: [id], onDelete: Cascade)
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  kind      String   // COMMENT | ESTIMATION
-  body      String
+  id          String   @id @default(cuid())
+  todoId      String
+  todo        Todo     @relation(fields: [todoId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind        String // COMMENT | ESTIMATION
+  body        String
   // COMMENT only: files/images attached to the comment, same shape as Todo.attachments.
-  attachments Json   @default("[]")
-  createdAt DateTime @default(now())
+  attachments Json     @default("[]")
+  createdAt   DateTime @default(now())
 
   @@index([todoId, createdAt])
 }
@@ -335,6 +336,7 @@ model Customer {
   waitingListHistories  WaitingListHistory[] @relation("WaitingListHistoryCustomer")
   inquiries             Inquiry[]
   pageViews             PageView[]
+  freshsalesContacts    FreshsalesContact[]
 
   @@index([deletedAt])
   @@index([name])
@@ -426,6 +428,7 @@ model Lead {
   pageViews             PageView[]
   whatsappConversations WhatsappConversation[]
   assignmentLogs        LeadAssignmentLog[]
+  freshsalesContacts    FreshsalesContact[]
 
   @@index([deletedAt])
   @@index([name])
@@ -4718,4 +4721,236 @@ model CashierTerminal {
   updatedAt  DateTime @updatedAt
 
   @@map("cashier_terminals")
+}
+
+// ─── Freshsales archive ──────────────────────────────────────────────────────
+// Read-only mirror of the old Freshsales CRM (deals, activities, email conversations,
+// contact timelines), pulled by the Freshsales sync so nothing is lost after leaving it.
+// Rules that keep it tidy:
+//  - Every row's `id` IS the Freshsales id (string — they overflow int32), so re-syncs
+//    are plain upserts and cross-references need no lookup.
+//  - References between Freshsales records (stage, owner, contact, deal…) are loose
+//    `*FsId` strings / `*FsIds` arrays, not FKs — a partial or out-of-order sync never
+//    fails a constraint. Only the links into ERP tables (Lead/Customer/User) are real FKs.
+//  - `raw` keeps the full API object, so any field not promoted to a column is still there.
+
+enum FreshsalesLookupKind {
+  DEAL_PIPELINE
+  DEAL_STAGE
+  DEAL_REASON
+  DEAL_TYPE
+  DEAL_PAYMENT_STATUS
+  LEAD_SOURCE
+  CAMPAIGN
+  TERRITORY
+  CURRENCY
+  ACTIVITY_TYPE
+  ACTIVITY_OUTCOME
+}
+
+enum FreshsalesActivityKind {
+  SALES_ACTIVITY
+  TASK
+  APPOINTMENT
+  NOTE
+}
+
+// All /api/selector/* dropdown values in one table (pipelines, stages, lost reasons…).
+model FreshsalesLookup {
+  kind       FreshsalesLookupKind
+  fsId       String
+  name       String
+  // DEAL_STAGE → its pipeline, ACTIVITY_OUTCOME → its activity type
+  parentFsId String?
+  position   Int?
+  // e.g. stage forecast_type "Closed Won"/"Closed Lost", currency code
+  extra      Json?
+  syncedAt   DateTime             @default(now()) @updatedAt
+
+  @@id([kind, fsId])
+}
+
+// Freshsales users (deal/contact owners). Matched to an ERP User by email.
+model FreshsalesUser {
+  id       String   @id
+  name     String?
+  email    String?
+  isActive Boolean  @default(true)
+  userId   String?
+  user     User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  syncedAt DateTime @default(now()) @updatedAt
+
+  @@index([email])
+}
+
+// Slim mirror of every Freshsales contact — the hub conversations/activities/deals hang off,
+// whether or not it was ever imported as a Lead/Customer. leadId/customerId are resolved
+// from Lead/Customer.freshsalesContactId at sync time.
+model FreshsalesContact {
+  id                    String    @id
+  name                  String?
+  email                 String?
+  phone                 String?
+  ownerFsId             String?
+  lastContactedAt       DateTime?
+  fsCreatedAt           DateTime?
+  fsUpdatedAt           DateTime?
+  isDeleted             Boolean   @default(false)
+  leadId                String?
+  lead                  Lead?     @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  customerId            String?
+  customer              Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  raw                   Json?
+  // Per-contact crawl progress — conversations and timeline can only be fetched one contact
+  // at a time (rate limit 1000 req/h), so the sync resumes from whichever are still null.
+  conversationsSyncedAt DateTime?
+  timelineSyncedAt      DateTime?
+  syncedAt              DateTime  @default(now()) @updatedAt
+
+  @@index([email])
+  @@index([phone])
+  @@index([leadId])
+  @@index([customerId])
+  @@index([lastContactedAt])
+}
+
+model FreshsalesDeal {
+  id                 String    @id
+  name               String
+  amount             Float?
+  baseCurrencyAmount Float?
+  currencyFsId       String?
+  pipelineFsId       String?
+  stageFsId          String?
+  stageUpdatedAt     DateTime?
+  lostReasonFsId     String?
+  dealTypeFsId       String?
+  leadSourceFsId     String?
+  campaignFsId       String?
+  paymentStatusFsId  String?
+  ownerFsId          String?
+  contactFsIds       String[]  @default([])
+  salesAccountFsId   String?
+  probability        Int?
+  forecastCategory   String?
+  expectedClose      DateTime?
+  closedDate         DateTime?
+  isDeleted          Boolean   @default(false)
+  // Set once the full GET /api/deals/{id} (custom fields, lost reason, notes) has been pulled —
+  // the list/search endpoints only return a slim subset, so a null here means "still slim".
+  detailSyncedAt     DateTime?
+  // Freshsales cf_* fields (product interest, pax, date window, utm, deposit…) as-is
+  customFields       Json?
+  fsCreatedAt        DateTime?
+  fsUpdatedAt        DateTime?
+  raw                Json?
+  syncedAt           DateTime  @default(now()) @updatedAt
+
+  @@index([pipelineFsId, stageFsId])
+  @@index([ownerFsId])
+  @@index([contactFsIds], type: Gin)
+  @@index([fsCreatedAt])
+  @@index([detailSyncedAt])
+}
+
+// Sales activities (logged calls/WA chats/meetings), tasks, appointments and notes —
+// one table, `kind` says which Freshsales endpoint it came from.
+model FreshsalesActivity {
+  id           String                 @id @default(cuid())
+  kind         FreshsalesActivityKind
+  fsId         String
+  title        String?
+  body         String?
+  typeFsId     String?
+  outcomeFsId  String?
+  // task: "open"/"completed"; sales activity: "open"/"completed"
+  status       String?
+  startAt      DateTime?
+  endAt        DateTime?
+  dueAt        DateTime?
+  completedAt  DateTime?
+  location     String?
+  ownerFsId    String?
+  creatorFsId  String?
+  contactFsIds String[]               @default([])
+  dealFsIds    String[]               @default([])
+  fsCreatedAt  DateTime?
+  fsUpdatedAt  DateTime?
+  raw          Json?
+  syncedAt     DateTime               @default(now()) @updatedAt
+
+  @@unique([kind, fsId])
+  @@index([contactFsIds], type: Gin)
+  @@index([dealFsIds], type: Gin)
+  @@index([fsCreatedAt])
+}
+
+// Email threads from /api/contacts/{id}/conversations (one row per Freshsales
+// email_conversation). `channel` is there for the rare non-email types.
+model FreshsalesConversation {
+  id            String    @id
+  channel       String    @default("EMAIL")
+  // Freshsales thread id (email_id) — rows sharing it are the same thread
+  threadFsId    String?
+  direction     String?
+  subject       String?
+  bodyText      String?
+  bodyHtml      String?
+  status        Int?
+  messageCount  Int?
+  isRead        Boolean?
+  needsResponse Boolean?
+  occurredAt    DateTime?
+  contactFsIds  String[]  @default([])
+  dealFsIds     String[]  @default([])
+  // [{field: from|to|cc|bcc, email, name, isUser, targetType, targetFsId, openedAt, clickedAt, bounced}]
+  participants  Json?
+  // [{fsId, fileName, contentType, size, url}] — Freshsales URLs are signed and expire;
+  // `storedUrl` is set once the file is copied to our own storage.
+  attachments   Json?
+  raw           Json?
+  syncedAt      DateTime  @default(now()) @updatedAt
+
+  @@index([threadFsId])
+  @@index([contactFsIds], type: Gin)
+  @@index([dealFsIds], type: Gin)
+  @@index([occurredAt])
+}
+
+// Contact/deal timeline events from /api/contacts/{id}/activities: stage changes, owner
+// changes, email sent/replied, status changes, page views, journeys… — the audit history.
+model FreshsalesTimelineEvent {
+  // Freshsales composite_id, e.g. "<uuid>_EMAIL_SENT"
+  id             String   @id
+  actionType     String
+  targetType     String?
+  targetFsId     String?
+  actionableType String?
+  actionableFsId String?
+  groupName      String?
+  userActivity   Boolean?
+  actionData     Json?
+  // Contact whose timeline this was pulled from
+  contactFsId    String?
+  occurredAt     DateTime
+  raw            Json?
+  syncedAt       DateTime @default(now()) @updatedAt
+
+  @@index([contactFsId, occurredAt])
+  @@index([targetType, targetFsId])
+  @@index([actionType])
+}
+
+// One row per sync job (lookups, users, contacts, deals, activities, conversations, timeline)
+// so a long rate-limited pull can stop and resume where it left off.
+model FreshsalesSyncState {
+  entity     String    @id
+  status     String    @default("IDLE") // IDLE | RUNNING | DONE | ERROR
+  cursor     Json?
+  processed  Int       @default(0)
+  total      Int?
+  lastError  String?
+  startedAt  DateTime?
+  finishedAt DateTime?
+  updatedAt  DateTime  @updatedAt
 }

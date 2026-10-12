@@ -92,6 +92,7 @@ import UnifiedInbox from '@/components/chat/UnifiedInbox'
 import WhatsappDistributionSettings from '@/components/whatsapp/WhatsappDistributionSettings'
 import WhatsappTemplateSettings from '@/components/whatsapp/WhatsappTemplateSettings'
 import SalesPipeline from '@/components/leads/SalesPipeline'
+import FreshsalesArchive from '@/components/freshsales/FreshsalesArchive'
 import Banks from '@/components/banks/Banks'
 import MarketingBrands from '@/components/marketing/brands/Brands'
 import TncPdfSettings from '@/components/settings/TncPdfSettings'
@@ -848,6 +849,7 @@ export default function Home() {
       case 'trip-sheet':   return <TripSheet />
       case 'agents':       return <Agents />
       case 'agent-leads':  return <AgentLeadsPage />
+      case 'freshsales-archive': return <FreshsalesArchive />
       case 'banks':         return <Banks />
       case 'finance-po-payments': return <PurchaseOrderPayments deepLinkId={deepLink?.view === 'finance-po-payments' ? deepLink.id : null} onDeepLinkHandled={() => setDeepLink(null)} />
       case 'finance-po-reimbursements': return <POReimbursements deepLinkId={deepLink?.view === 'finance-po-reimbursements' ? deepLink.id : null} onDeepLinkHandled={() => setDeepLink(null)} />
