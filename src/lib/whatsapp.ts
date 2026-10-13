@@ -98,13 +98,19 @@ export async function sendWhatsappMessage(
 
   // Cloud API accepts an external https:// link directly for media (no need to
   // upload to Meta first) — our mediaUrl is already a public Vercel Blob URL.
+  // Documents without a `filename` arrive on the customer's phone as "Untitled" — use the
+  // uploaded file's own name (our upload paths are `whatsapp/<conv>/<timestamp>-<name>`).
+  const kind = cloudApiMediaType(mediaType)
+  const filename = kind === 'document' && mediaUrl
+    ? decodeURIComponent(mediaUrl.split('/').pop() ?? '').replace(/^\d{10,}-/, '') || undefined
+    : undefined
   const payload = mediaUrl
     ? {
         messaging_product: 'whatsapp',
         recipient_type: 'individual',
         to,
-        type: cloudApiMediaType(mediaType),
-        [cloudApiMediaType(mediaType)]: { link: mediaUrl, ...(body && { caption: body }) },
+        type: kind,
+        [kind]: { link: mediaUrl, ...(body && { caption: body }), ...(filename && { filename }) },
         ...context,
       }
     : {

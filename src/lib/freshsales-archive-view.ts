@@ -12,14 +12,14 @@ import { roleMatches } from '@/lib/role-utils'
 export const ARCHIVE_MODULE = 'freshsales-archive'
 
 /** Session + tenant db if the user's role has the module (Roles & Permissions aware), else a 401/403 response. */
-export async function archiveAccess(): Promise<{ db: PrismaClient } | { error: NextResponse }> {
+export async function archiveAccess(moduleId: string = ARCHIVE_MODULE): Promise<{ db: PrismaClient } | { error: NextResponse }> {
   const session = await getServerSession(authOptions)
   const role = (session?.user as { role?: string } | undefined)?.role
   if (!session?.user?.id || !role) return { error: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) }
   const db = (await getDb(session)) as unknown as PrismaClient
   if (!roleMatches(role, ['ADMIN', 'SUPER_ADMIN'])) {
     const modules = await getEffectiveModules(db, role as Role)
-    if (!modules.includes(ARCHIVE_MODULE)) return { error: NextResponse.json({ error: 'Forbidden' }, { status: 403 }) }
+    if (!modules.includes(moduleId)) return { error: NextResponse.json({ error: 'Forbidden' }, { status: 403 }) }
   }
   return { db }
 }

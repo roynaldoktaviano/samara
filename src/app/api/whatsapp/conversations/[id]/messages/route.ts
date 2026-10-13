@@ -6,6 +6,7 @@ import { sendWhatsappMessage, sendWhatsappTemplateMessage } from '@/lib/whatsapp
 import { findWhatsappTemplate, missingTemplateParams, renderWhatsappTemplateBody } from '@/lib/whatsapp-templates'
 import { claimWhatsappConversation } from '@/lib/whatsapp-distribution'
 import { recordStaffReply, syncLeadOwner } from '@/lib/whatsapp-lead'
+import { emitTenantEvent } from '@/lib/realtime-bus'
 
 // Admin composes a reply from the Chat UI. The message is saved immediately
 // (so the thread always reflects what was sent from here, regardless of
@@ -55,7 +56,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
   const renderedBody = templateDef ? renderWhatsappTemplateBody(templateDef, templateParams ?? []) : text
 
-  const message = await db.whatsappMessage.create({
+  // Independent writes — run together, every round-trip here is time the rep waits on "Send".
+  const [message] = await Promise.all([db.whatsappMessage.create({
     data: {
       conversationId: id,
       direction: 'OUT',
@@ -69,11 +71,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       sentByName: session.user.name ?? session.user.email ?? 'Admin',
     },
     include: { replyTo: { select: { id: true, body: true, direction: true, mediaType: true } } },
-  })
-  await db.whatsappConversation.update({
+  }), db.whatsappConversation.update({
     where: { id },
     data: { lastMessageAt: new Date(), lastMessagePreview: renderedBody ?? (mediaUrl ? '📎 Attachment' : '') },
-  })
+  })])
 
   const tenantId = (session.user as { tenantId?: string }).tenantId
   const result = !tenantId
@@ -89,7 +90,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       : { status: 'FAILED', errorMessage: result.error ?? null },
     include: { replyTo: { select: { id: true, body: true, direction: true, mediaType: true } } },
   })
-  if (result.ok) await recordStaffReply(db, id, session.user.id).catch(e => console.error('[whatsapp] recordStaffReply failed', e))
+  // SLA timestamps / lead stage bump — bookkeeping the rep doesn't need to wait for.
+  if (result.ok) {
+    recordStaffReply(db, id, session.user.id)
+      .catch(e => console.error('[whatsapp] recordStaffReply failed', e))
+      .finally(() => emitTenantEvent(session.user.tenantId, 'chat'))
+  } else {
+    emitTenantEvent(session.user.tenantId, 'chat')
+  }
 
   return NextResponse.json({ message: updated, providerError: result.ok ? undefined : result.error })
 }

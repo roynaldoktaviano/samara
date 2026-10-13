@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getClientIp } from '@/lib/geo-country'
+import { exceedsRateLimit } from '@/lib/rate-limit'
 import { resolveTenantBySlugFull } from '@/lib/resolve-tenant'
 import { getTenantSecret } from '@/lib/tenant-secrets'
 import { isHttpUrl } from '@/lib/url-safety'
@@ -11,6 +13,8 @@ import { providedWebhookSecret, webhookSecretMatches } from '@/lib/webhook-secre
 // low-value pageviewWebhookSecret, separate from the cf7 (lead) secret.
 // Until that's set, the cf7 secret is still accepted so the live tracker
 // keeps working — set it before rotating the cf7 secret.
+// Since the secret is public anyway, the real guards against junk pageviews
+// are the per-IP rate limit and the pageviewAllowedDomains check below.
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
@@ -25,8 +29,36 @@ function json(body: unknown, status = 200) {
   return NextResponse.json(body, { status, headers: CORS_HEADERS })
 }
 
+// A real visitor loads a few pages a minute at most; 120 per 10 min per IP leaves
+// room for an office/hotel sharing one IP while still capping a script.
+const RATE_LIMIT_MAX = 120
+const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000
+
+/** "https://www.Example.com/x, otiumyacht.com" → ["example.com", "otiumyacht.com"] */
+function parseAllowedDomains(raw: string | null): string[] {
+  if (!raw) return []
+  return raw.split(',')
+    .map(d => d.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '').replace(/^www\./, ''))
+    .filter(Boolean)
+}
+
+function hostAllowed(urlOrOrigin: string, allowed: string[]): boolean {
+  try {
+    const host = new URL(urlOrOrigin).hostname.toLowerCase()
+    return allowed.some(d => host === d || host.endsWith('.' + d))
+  } catch {
+    return false
+  }
+}
+
 export async function POST(request: NextRequest) {
   const rawTenantSlug = request.nextUrl.searchParams.get('tenant')
+
+  // Before any DB work, so a flood (or secret guessing) costs us nothing. Not logged — it
+  // would just turn the flood into log spam.
+  if (exceedsRateLimit(`pageview:${rawTenantSlug}:${getClientIp(request) ?? 'unknown'}`, RATE_LIMIT_MAX, RATE_LIMIT_WINDOW_MS)) {
+    return json({ error: 'Too many requests' }, 429)
+  }
 
   let data: Record<string, unknown> = {}
   try {
@@ -52,6 +84,19 @@ export async function POST(request: NextRequest) {
     const rawUrl    = typeof data.url === 'string' ? data.url.trim() : ''
     if (!visitorId || !isHttpUrl(rawUrl)) {
       return json({ error: 'Missing visitorId or url' }, 400)
+    }
+
+    // Both the reported page URL and the browser's Origin (when sent) must be one of the
+    // tenant's own sites — stops other websites, or hand-made requests with made-up URLs,
+    // from filling the visitor journey. Origin can be forged outside a browser; the rate
+    // limit above is what caps that.
+    const allowedDomains = parseAllowedDomains(await getTenantSecret(tenant.id, 'pageviewAllowedDomains'))
+    if (allowedDomains.length > 0) {
+      const origin = request.headers.get('origin')
+      if (!hostAllowed(rawUrl, allowedDomains) || (origin && !hostAllowed(origin, allowedDomains))) {
+        logWebhookFailure({ source: 'PageView', tenantSlug: tenant.slug, reason: 'domain_not_allowed', detail: `url=${rawUrl.slice(0, 200)} origin=${origin ?? '-'}` })
+        return json({ error: 'Domain not allowed' }, 403)
+      }
     }
 
     const rawReferrer = typeof data.referrer === 'string' ? data.referrer.trim() : ''

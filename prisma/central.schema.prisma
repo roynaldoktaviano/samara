@@ -65,7 +65,7 @@ model WebhookFailureLog {
   id         String   @id @default(cuid())
   source     String   // 'CF7'
   tenantSlug String?  // raw ?tenant= query value, even if it didn't resolve to a real tenant
-  reason     String   // 'unknown_tenant' | 'unauthorized' | 'insufficient_contact_data' | 'exception'
+  reason     String   // 'unknown_tenant' | 'unauthorized' | 'insufficient_contact_data' | 'domain_not_allowed' | 'exception'
   detail     String?  // exception message, when reason = 'exception'
   rawPayload Json?    // best-effort parsed form fields, for diagnosing why it was rejected
   createdAt  DateTime @default(now())

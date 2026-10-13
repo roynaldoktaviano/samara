@@ -58,7 +58,8 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
   // Build timeline: merge movements + receipts, sorted by date desc
   const timeline = [
     ...movements
-      .filter(m => !(m.type === 'RECEIPT' && m.referenceType === 'GoodsReceipt' && m.referenceId && grIds.has(m.referenceId)))
+      // (also the imported CariStok sheet rows that scripts/import-caristok-beverage.ts linked to a GR)
+      .filter(m => !(m.type === 'RECEIPT' && (m.referenceType === 'GoodsReceipt' || m.referenceType === 'CariStokImport') && m.referenceId && grIds.has(m.referenceId)))
       .map(m => ({
         id: m.id,
         date: m.createdAt,

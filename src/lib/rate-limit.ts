@@ -37,3 +37,25 @@ export function getFailedAttemptCount(key: string): number {
   if (!bucket || bucket.resetAt < Date.now()) return 0
   return bucket.count
 }
+
+// Separate store for request-volume limits (every request counts, not just failures),
+// e.g. the public pageview webhook. Same per-process caveat as above.
+const volumeBuckets = new Map<string, Bucket>()
+let lastPrune = 0
+
+/** Counts one request against `key` and returns true once it exceeds `max` within `windowMs`. */
+export function exceedsRateLimit(key: string, max: number, windowMs: number): boolean {
+  const now = Date.now()
+  // Keys are per-IP, so drop expired buckets now and then to keep the map from growing forever.
+  if (now - lastPrune > windowMs) {
+    for (const [k, b] of volumeBuckets) if (b.resetAt < now) volumeBuckets.delete(k)
+    lastPrune = now
+  }
+  const bucket = volumeBuckets.get(key)
+  if (!bucket || bucket.resetAt < now) {
+    volumeBuckets.set(key, { count: 1, resetAt: now + windowMs })
+    return false
+  }
+  bucket.count++
+  return bucket.count > max
+}

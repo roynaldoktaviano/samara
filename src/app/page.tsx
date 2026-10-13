@@ -43,6 +43,7 @@ import DocumentVersionControlProto from '@/components/documents/DocumentVersionC
 import Statistics from '@/components/statistics/Statistics'
 import SalesStats from '@/components/statistics/SalesStats'
 import LeadsStats from '@/components/leads/LeadsStats'
+import WonAttribution from '@/components/statistics/WonAttribution'
 import PurchasingOverview from '@/components/purchasing/PurchasingOverview'
 import PurchasingItemsPage from '@/components/purchasing/items/ItemsPage'
 import PurchasingItemTypesPage from '@/components/purchasing/item-types/ItemTypesPage'
@@ -56,6 +57,7 @@ import PurchasingTransfersPage from '@/components/purchasing/transfers/Transfers
 import PurchasingExceptionsPage from '@/components/purchasing/exceptions/ExceptionsPage'
 import PurchasingReportsPage from '@/components/purchasing/reports/ReportsPage'
 import PurchasingWithdrawalsPage from '@/components/purchasing/reports/WithdrawalsPage'
+import PurchasingUsageStatsPage from '@/components/purchasing/reports/UsageStatsPage'
 import PurchasingStockCountsPage from '@/components/purchasing/stock-counts/StockCountsPage'
 import PurchasingInitialStockOpnamePage from '@/components/purchasing/initial-stock-opname/InitialStockOpnamePage'
 import PurchasingSuppliersPage from '@/components/purchasing/suppliers/SuppliersPage'
@@ -556,7 +558,7 @@ export default function Home() {
     try {
       const role = (session?.user as { role?: string })?.role ?? ''
       if (!['ADMIN', 'SALES'].includes(role)) return
-      const res = await fetch('/api/whatsapp/conversations')
+      const res = await fetch('/api/whatsapp/conversations?unread=1')
       if (res.ok) {
         const data = await res.json()
         setUnreadWhatsapp(Array.isArray(data) ? data.reduce((s: number, c: { unreadCount: number }) => s + c.unreadCount, 0) : 0)
@@ -568,7 +570,7 @@ export default function Home() {
     try {
       const role = (session?.user as { role?: string })?.role ?? ''
       if (!['ADMIN', 'SALES'].includes(role)) return
-      const res = await fetch('/api/instagram/conversations')
+      const res = await fetch('/api/instagram/conversations?unread=1')
       if (res.ok) {
         const data = await res.json()
         setUnreadInstagram(Array.isArray(data) ? data.reduce((s: number, c: { unreadCount: number }) => s + c.unreadCount, 0) : 0)
@@ -590,7 +592,7 @@ export default function Home() {
     try {
       const role = (session?.user as { role?: string })?.role ?? ''
       if (!['ADMIN', 'SALES'].includes(role)) return
-      const res = await fetch('/api/email-inbox/conversations')
+      const res = await fetch('/api/email-inbox/conversations?unread=1')
       if (res.ok) {
         const data = await res.json()
         setUnreadEmailInbox(Array.isArray(data) ? data.reduce((s: number, c: { unreadCount: number }) => s + c.unreadCount, 0) : 0)
@@ -640,7 +642,8 @@ export default function Home() {
       // within ~1-2s, instead of waiting for its own 120s poll.
       // Shared My Works task changed — refresh the badge, any open board, and the bell (new assignment).
       'my-works': () => { fetchAssignedWorks(); fetchNotifications(); window.dispatchEvent(new Event('my-works-changed')) },
-      'chat': () => { fetchUnreadWhatsapp(); fetchUnreadInstagram(); fetchUnreadEmailInbox(); fetchNotifications() },
+      // 'chat-changed' lets an open inbox/thread refresh instantly too (see UnifiedInbox / WhatsAppThread).
+      'chat': () => { fetchUnreadWhatsapp(); fetchUnreadInstagram(); fetchUnreadEmailInbox(); fetchNotifications(); window.dispatchEvent(new Event('chat-changed')) },
     }
     const es = new EventSource('/api/realtime/events')
     es.onmessage = (e) => { topicHandlers[e.data]?.() }
@@ -835,7 +838,7 @@ export default function Home() {
       case 'customers':    return <Customers />
       case 'leads':        return <Leads onOpenWhatsapp={id => { setWhatsappDeepLinkId(id); setCurrentView('chat-inbox') }} onOpenEmail={id => { setEmailDeepLinkId(id); setCurrentView('chat-email') }} />
       case 'calendar':     return <CalendarView />
-      case 'chat-inbox':   return <UnifiedInbox initialWhatsappId={whatsappDeepLinkId} onDeepLinkHandled={() => setWhatsappDeepLinkId(null)} onOpenEmail={id => { setEmailDeepLinkId(id); setCurrentView('chat-email') }} />
+      case 'chat-inbox':   return <UnifiedInbox onOpenBooking={id => { setDeepLink({ view: 'bookings', id }); setCurrentView('bookings') }} initialWhatsappId={whatsappDeepLinkId} onDeepLinkHandled={() => setWhatsappDeepLinkId(null)} onOpenEmail={id => { setEmailDeepLinkId(id); setCurrentView('chat-email') }} />
       case 'sales-pipeline': return <SalesPipeline onOpenChat={id => { setWhatsappDeepLinkId(id); setCurrentView('chat-inbox') }} />
       case 'chat-email':   return <EmailInboxPage initialConversationId={emailDeepLinkId ?? undefined} />
       case 'chat-whatsapp-distribution': return <WhatsappDistributionSettings />
@@ -884,6 +887,7 @@ export default function Home() {
       case 'finance-stats':  return <FinanceTabView />
       case 'sales-stats':    return <SalesStats />
       case 'leads-stats':    return <LeadsStats />
+      case 'won-attribution': return <WonAttribution />
       case 'purchasing-overview':   return <PurchasingOverview />
       case 'purchasing-requests':  return <PurchasingRequestsPage onOpenPo={(id: string) => { setPendingPoId(id); setCurrentView('purchasing-orders') }} deepLinkId={deepLink?.view === 'purchasing-requests' ? deepLink.id : null} onDeepLinkHandled={() => setDeepLink(null)} />
       case 'purchasing-orders':    return <PurchasingOrdersPage openPoId={pendingPoId} onOpenPoHandled={() => setPendingPoId(null)} />
@@ -898,6 +902,7 @@ export default function Home() {
       case 'purchasing-suppliers':    return <PurchasingSuppliersPage />
       case 'purchasing-exceptions':   return <PurchasingExceptionsPage />
       case 'purchasing-withdrawals':  return <PurchasingWithdrawalsPage />
+      case 'purchasing-usage-stats':  return <PurchasingUsageStatsPage />
       case 'purchasing-reports':      return <PurchasingReportsPage />
       case 'inventory-items':         return <InventoryItemsPage />
       case 'inventory-rooms':         return <InventoryRoomsPage />

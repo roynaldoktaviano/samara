@@ -1,7 +1,7 @@
 import { centralDb } from '@/lib/central-db'
 import type { Prisma } from '@prisma/central-client'
 
-type WebhookFailureReason = 'unknown_tenant' | 'unauthorized' | 'insufficient_contact_data' | 'exception'
+type WebhookFailureReason = 'unknown_tenant' | 'unauthorized' | 'insufficient_contact_data' | 'domain_not_allowed' | 'exception'
 
 // Fire-and-forget by design — a logging failure must never break the webhook
 // response itself. Callers should not await this on the response's critical path.

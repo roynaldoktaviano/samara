@@ -112,7 +112,7 @@ interface PageView {
 
 interface WebhookFailure {
   id: string
-  reason: 'unknown_tenant' | 'unauthorized' | 'insufficient_contact_data' | 'exception'
+  reason: 'unknown_tenant' | 'unauthorized' | 'insufficient_contact_data' | 'domain_not_allowed' | 'exception'
   detail?: string | null
   rawPayload?: Record<string, unknown> | null
   createdAt: string
@@ -122,6 +122,7 @@ const FAILURE_REASON_LABEL: Record<WebhookFailure['reason'], string> = {
   unknown_tenant:              'Tenant/website tidak dikenali',
   unauthorized:                'Secret webhook salah/tidak cocok',
   insufficient_contact_data:   'Form tidak ada nama/email/telepon yang dikenali',
+  domain_not_allowed:          'Pageview dari domain di luar daftar Allowed Domains',
   exception:                   'Error server saat memproses',
 }
 

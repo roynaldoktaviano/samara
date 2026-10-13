@@ -8,6 +8,7 @@ import { emitTenantEvent } from '@/lib/realtime-bus'
 import { pickNextSalesUserId } from '@/lib/whatsapp-distribution'
 import { autoLinkNewConversation } from '@/lib/whatsapp-lead'
 import { sendPushToUser } from '@/lib/push'
+import { isViewing } from '@/lib/chat-presence'
 import { WHATSAPP_BRANDS, WHATSAPP_BRAND_SECRET_KEYS, WHATSAPP_BRAND_WEBHOOK_SECRET_KEYS, WHATSAPP_GRAPH_VERSION, type WhatsappBrand } from '@/lib/whatsapp-brands'
 
 // WhatsApp Cloud API (Meta) webhook — handles both the one-time GET verification
@@ -92,6 +93,11 @@ export function createWhatsappWebhookHandlers(endpointBrand?: WhatsappBrand) {
     audio?: CloudApiMediaRef
     document?: CloudApiMediaRef
     sticker?: CloudApiMediaRef
+    // Tap on a template's quick-reply button / an interactive message's button or list row.
+    button?: { text?: string; payload?: string }
+    interactive?: { button_reply?: { title?: string }; list_reply?: { title?: string; description?: string } }
+    reaction?: { emoji?: string; message_id?: string }
+    location?: { latitude: number; longitude: number; name?: string; address?: string }
     // Present when this message is a "swipe to reply" quote of an earlier message —
     // `id` is the WAMID (providerMessageId) of the message being replied to.
     context?: { id: string }
@@ -167,6 +173,8 @@ export function createWhatsappWebhookHandlers(endpointBrand?: WhatsappBrand) {
     // keeps redelivering them (for up to ~7 days) until the config is fixed. Everything else
     // in the batch is still processed now; redelivery is safe thanks to the providerMessageId dedupe.
     let hasUnroutedMessages = false
+    // Receipts are batched by Meta — one realtime ping for the whole delivery is enough.
+    let statusChanged = false
 
     for (const entry of body.entry ?? []) {
       for (const change of entry.changes ?? []) {
@@ -185,10 +193,11 @@ export function createWhatsappWebhookHandlers(endpointBrand?: WhatsappBrand) {
             ? `(#${err.code}) ${err.title ?? err.message ?? 'Failed'}${err.error_data?.details ? ` — ${err.error_data.details}` : ''}`
             : undefined
           if (errorMessage) console.error('[whatsapp] delivery failed', status.id, errorMessage)
-          await db.whatsappMessage.updateMany({
+          const { count } = await db.whatsappMessage.updateMany({
             where: { providerMessageId: status.id },
             data: { status: mapped as 'SENT' | 'DELIVERED' | 'READ' | 'FAILED', ...(errorMessage && { errorMessage }) },
-          }).catch(() => {})
+          }).catch(() => ({ count: 0 }))
+          if (count) statusChanged = true
         }
 
         if (!brand) {
@@ -203,23 +212,35 @@ export function createWhatsappWebhookHandlers(endpointBrand?: WhatsappBrand) {
 
           const contactName = value.contacts?.find(c => c.wa_id === msg.from)?.profile?.name ?? null
           let text: string | null = null
-          let mediaUrl: string | null = null
           let mediaType: string | null = null
+          // Downloaded after the message is saved and Meta has been answered — see below.
+          let pendingMediaId: string | null = null
 
           if (msg.type === 'text') {
             text = msg.text?.body ?? null
+          } else if (msg.type === 'button') {
+            text = msg.button?.text ?? msg.button?.payload ?? null
+          } else if (msg.type === 'interactive') {
+            text = msg.interactive?.button_reply?.title ?? msg.interactive?.list_reply?.title ?? null
+          } else if (msg.type === 'reaction') {
+            // An empty emoji means the customer removed their reaction — nothing to show.
+            if (!msg.reaction?.emoji) continue
+            text = `Reacted ${msg.reaction.emoji}`
+          } else if (msg.type === 'location' && msg.location) {
+            const { latitude, longitude, name, address } = msg.location
+            text = `📍 ${[name, address].filter(Boolean).join(' — ') || 'Location'}\nhttps://maps.google.com/?q=${latitude},${longitude}`
           } else if ((MEDIA_TYPES as readonly string[]).includes(msg.type)) {
             const ref = (msg as unknown as Record<string, CloudApiMediaRef | undefined>)[msg.type]
-            if (ref?.id && accessToken) {
-              const stored = await fetchAndStoreMedia(ref.id, accessToken)
-              if (stored) { mediaUrl = stored.url; mediaType = stored.mimeType }
+            if (ref?.id) {
+              pendingMediaId = ref.id
+              mediaType = ref.mime_type ?? (msg.type === 'sticker' ? 'image/webp' : `${msg.type === 'document' ? 'application' : msg.type}/octet-stream`)
             }
             text = ref?.caption ?? null
           } else {
             text = `[Unsupported message type: ${msg.type}]`
           }
 
-          const preview = text ?? (mediaUrl ? '📎 Attachment' : '')
+          const preview = text ?? (!mediaType ? '' : mediaType.startsWith('image/') ? '📷 Photo' : mediaType.startsWith('video/') ? '🎥 Video' : mediaType.startsWith('audio/') ? '🎤 Audio' : '📎 Attachment')
           // One thread per (number, brand) — the same customer messaging Samara and then
           // Otium gets two threads, each distributed via that brand's own pool and replied
           // from that brand's number. Only a brand-new thread gets assigned (per the
@@ -256,10 +277,28 @@ export function createWhatsappWebhookHandlers(endpointBrand?: WhatsappBrand) {
             ? await db.whatsappMessage.findUnique({ where: { providerMessageId: msg.context.id }, select: { id: true } })
             : null
 
-          await db.whatsappMessage.create({
-            data: { conversationId: conversation.id, direction: 'IN', body: text, mediaUrl, mediaType, status: 'DELIVERED', providerMessageId: msg.id, replyToId: quoted?.id ?? null },
+          const saved = await db.whatsappMessage.create({
+            data: { conversationId: conversation.id, direction: 'IN', body: text, mediaUrl: null, mediaType, status: 'DELIVERED', providerMessageId: msg.id, replyToId: quoted?.id ?? null },
+            select: { id: true },
           })
           emitTenantEvent(tenant.id, 'chat')
+
+          // Media is fetched from Meta and re-hosted on R2 in the background — a big video
+          // can take many seconds, and holding the webhook response that long makes Meta
+          // retry/throttle deliveries (and delays every other message in the batch). The
+          // bubble shows "loading" until mediaUrl lands; a failure is recorded on the row.
+          // Relies on the long-running single Node process (see src/lib/realtime-bus.ts).
+          if (pendingMediaId) {
+            const mediaId = pendingMediaId
+            void (async () => {
+              const stored = accessToken ? await fetchAndStoreMedia(mediaId, accessToken) : null
+              await db.whatsappMessage.update({
+                where: { id: saved.id },
+                data: stored ? { mediaUrl: stored.url, mediaType: stored.mimeType } : { errorMessage: 'Media could not be downloaded from WhatsApp' },
+              })
+              emitTenantEvent(tenant.id, 'chat')
+            })().catch(e => console.error('[whatsapp webhook] background media store failed', mediaId, e))
+          }
 
           // Existing Lead/Guest with this number → link/categorise the new chat right away
           // (see src/lib/whatsapp-lead.ts). Never blocks acking the webhook.
@@ -273,7 +312,10 @@ export function createWhatsappWebhookHandlers(endpointBrand?: WhatsappBrand) {
           // failure here shouldn't hold up acking the webhook to Meta.
           const notifTitle = `WhatsApp from ${contactName || msg.from}`
           const notifBody = preview || 'New message'
-          if (conversation.assignedToId) {
+          if (conversation.assignedToId && isViewing(tenant.id, conversation.assignedToId, conversation.id)) {
+            // The rep has this chat open right now — the message just appears in their thread
+            // (the 'chat' event above), so a bell/push on top of it would only be noise.
+          } else if (conversation.assignedToId) {
             db.notification.create({
               data: { userId: conversation.assignedToId, type: 'WHATSAPP_MESSAGE', title: notifTitle, body: notifBody },
             }).catch(() => {})
@@ -293,6 +335,7 @@ export function createWhatsappWebhookHandlers(endpointBrand?: WhatsappBrand) {
       }
     }
 
+    if (statusChanged) emitTenantEvent(tenant.id, 'chat')
     if (hasUnroutedMessages) {
       return NextResponse.json({ error: 'Message received on a WhatsApp number that is not configured for any brand' }, { status: 503 })
     }

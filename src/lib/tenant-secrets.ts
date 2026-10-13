@@ -56,10 +56,25 @@ export function decryptSecret(ciphertext: string): string {
  * unchanged until they're explicitly given their own credentials.
  */
 export async function getTenantSecret(tenantId: string, key: TenantSecretKey): Promise<string | null> {
-  const tenant = await centralDb.tenant.findUnique({ where: { id: tenantId }, select: { secrets: true } })
-  const stored = (tenant?.secrets as TenantSecrets | null)?.[key]
+  const stored = (await loadStoredSecrets(tenantId))?.[key]
   if (stored) return decryptSecret(stored)
   return process.env[ENV_FALLBACK[key]] || null
+}
+
+// Hot paths (every WhatsApp send, every webhook delivery) read several secrets per request —
+// without this each one is its own round-trip to the central DB. Short TTL + explicit
+// invalidation in setTenantSecrets keeps a Super Admin change effective almost immediately.
+// In-process only, same single-Node-process assumption as src/lib/realtime-bus.ts.
+const SECRETS_TTL_MS = 60_000
+const secretsCache = new Map<string, { at: number; secrets: TenantSecrets | null }>()
+
+async function loadStoredSecrets(tenantId: string): Promise<TenantSecrets | null> {
+  const hit = secretsCache.get(tenantId)
+  if (hit && Date.now() - hit.at < SECRETS_TTL_MS) return hit.secrets
+  const tenant = await centralDb.tenant.findUnique({ where: { id: tenantId }, select: { secrets: true } })
+  const secrets = (tenant?.secrets as TenantSecrets | null) ?? null
+  secretsCache.set(tenantId, { at: Date.now(), secrets })
+  return secrets
 }
 
 /** Merges new secret values into whatever a tenant already has set — never wipes other keys. */
@@ -71,6 +86,7 @@ export async function setTenantSecrets(tenantId: string, raw: unknown): Promise<
     merged[k as TenantSecretKey] = encryptSecret(v)
   }
   await centralDb.tenant.update({ where: { id: tenantId }, data: { secrets: JSON.parse(JSON.stringify(merged)) } })
+  secretsCache.delete(tenantId)
 }
 
 /** Which secret keys a tenant currently has an override for — safe to return to a client, no values. */

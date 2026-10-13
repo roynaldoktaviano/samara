@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { uploadToR2 } from '@/lib/r2-client'
-import { Loader2, Image as ImageIcon, Heart, Reply, X } from 'lucide-react'
+import { Loader2, Image as ImageIcon, Heart, Reply, X, ArrowLeft } from 'lucide-react'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { isHttpUrl } from '@/lib/url-safety'
 
@@ -44,7 +44,7 @@ function quoteSnippet(q: QuotedMessage) {
  * (src/components/chat/UnifiedInbox.tsx) can drop it into its own right-hand pane next to a
  * shared conversation list, instead of Instagram needing its own separate screen.
  */
-export default function InstagramThread({ conversationId, onConversationUpdate }: { conversationId: string; onConversationUpdate: () => void }) {
+export default function InstagramThread({ conversationId, onConversationUpdate, onBack }: { conversationId: string; onConversationUpdate: () => void; onBack?: () => void }) {
   const [detail, setDetail] = useState<ConversationDetail | null>(null)
   const [detailLoading, setDetailLoading] = useState(true)
   const [draft, setDraft] = useState('')
@@ -109,7 +109,12 @@ export default function InstagramThread({ conversationId, onConversationUpdate }
 
   return (
     <div className="flex-1 flex flex-col min-w-0 bg-white">
-      <div className="px-5 py-3 border-b bg-white flex items-center gap-3 shrink-0">
+      <div className="px-3 md:px-5 py-3 border-b bg-white flex items-center gap-3 shrink-0">
+        {onBack && (
+          <button onClick={onBack} title="Back to chats" className="md:hidden -ml-1 h-8 w-8 shrink-0 rounded-full flex items-center justify-center hover:bg-muted">
+            <ArrowLeft className="h-5 w-5" />
+          </button>
+        )}
         <Avatar>
           {detail?.profilePicUrl && <AvatarImage src={detail.profilePicUrl} alt={detail.igUsername} />}
           <AvatarFallback className="text-xs font-semibold bg-muted">{initials(detail?.displayName ?? null, detail?.igUsername ?? '')}</AvatarFallback>
@@ -119,13 +124,13 @@ export default function InstagramThread({ conversationId, onConversationUpdate }
           <p className="text-xs text-muted-foreground">@{detail?.igUsername}</p>
         </div>
         {detail?.ourAccountUsername && (
-          <p className="text-xs text-muted-foreground shrink-0">
+          <p className="hidden sm:block text-xs text-muted-foreground shrink-0">
             From: <span className="font-medium text-foreground">@{detail.ourAccountUsername}</span>
           </p>
         )}
       </div>
 
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-4 space-y-1.5">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-3 md:px-6 py-4 space-y-1.5">
         {detailLoading ? (
           <div className="flex justify-center pt-10"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
         ) : detail?.messages.map(m => (

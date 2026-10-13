@@ -7,16 +7,23 @@ import { findWhatsappTemplate, missingTemplateParams, renderWhatsappTemplateBody
 import { WHATSAPP_BRANDS, type WhatsappBrand } from '@/lib/whatsapp-brands'
 import { claimWhatsappConversation, pickNextSalesUserId } from '@/lib/whatsapp-distribution'
 import { autoLinkNewConversation, recordStaffReply, syncLeadOwner } from '@/lib/whatsapp-lead'
+import { emitTenantEvent } from '@/lib/realtime-bus'
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions)
   const role = (session?.user as { role?: string })?.role ?? ''
   if (!session?.user?.id || !['ADMIN', 'SALES'].includes(role)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const db = await getDb(session)
   // A SALES rep sees chats assigned to them plus unassigned ones they can claim; ADMIN sees everything.
+  const scope = role === 'SALES' ? { OR: [{ assignedToId: session.user.id }, { assignedToId: null }] } : {}
+  // `?unread=1` — just the unread rows' counts, for the sidebar badge (refetched on every
+  // realtime 'chat' event, so it shouldn't drag the whole list along).
+  if (req.nextUrl.searchParams.get('unread')) {
+    return NextResponse.json(await db.whatsappConversation.findMany({ where: { ...scope, unreadCount: { gt: 0 } }, select: { id: true, unreadCount: true } }))
+  }
   const conversations = await db.whatsappConversation.findMany({
-    where: role === 'SALES' ? { OR: [{ assignedToId: session.user.id }, { assignedToId: null }] } : undefined,
+    where: scope,
     orderBy: { lastMessageAt: 'desc' },
   })
   return NextResponse.json(conversations)
@@ -87,6 +94,7 @@ export async function POST(req: NextRequest) {
     data: result.ok ? { status: 'SENT', providerMessageId: result.providerMessageId } : { status: 'FAILED', errorMessage: result.error ?? null },
   })
   if (result.ok) await recordStaffReply(db, conversation.id, session.user.id).catch(e => console.error('[whatsapp] recordStaffReply failed', e))
+  emitTenantEvent(session.user.tenantId, 'chat')
 
   return NextResponse.json({ conversationId: conversation.id, providerError: result.ok ? undefined : result.error })
 }

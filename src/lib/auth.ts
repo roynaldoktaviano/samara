@@ -4,6 +4,7 @@ import bcrypt from 'bcryptjs'
 import { db } from '@/lib/db'
 import { centralDb } from '@/lib/central-db'
 import { getTenantDb } from '@/lib/tenant-db'
+import { resolveTenantDbUrl } from '@/lib/tenant-db-url'
 import { logActivity } from '@/lib/activity'
 
 // In-memory rate limiter for authorize(): max 10 attempts per email per 2 minutes
@@ -85,7 +86,6 @@ export const authOptions: NextAuthOptions = {
             role: tenantUser.role,
             tenantId: userTenant.tenant.id,
             tenantSlug: userTenant.tenant.slug,
-            tenantDbUrl: userTenant.tenant.databaseUrl,
             tenantLogoUrl: userTenant.tenant.logoUrl ?? undefined,
             tenantFeatures: (userTenant.tenant.features ?? {}) as Record<string, boolean>,
           }
@@ -135,7 +135,6 @@ export const authOptions: NextAuthOptions = {
           role: user.role,
           tenantId: samaraTenant?.id,
           tenantSlug: 'samara',
-          tenantDbUrl: samaraTenant?.databaseUrl ?? process.env.DATABASE_URL,
           tenantLogoUrl: samaraTenant?.logoUrl ?? undefined,
           tenantFeatures: (samaraTenant?.features ?? {}) as Record<string, boolean>,
         }
@@ -162,7 +161,7 @@ export const authOptions: NextAuthOptions = {
       if (user) {
         const u = user as {
           id: string; role: string; isSuperAdmin?: boolean
-          tenantId?: string; tenantSlug?: string; tenantDbUrl?: string; tenantLogoUrl?: string
+          tenantId?: string; tenantSlug?: string; tenantLogoUrl?: string
           tenantFeatures?: Record<string, boolean>
         }
         token.id = u.id
@@ -170,7 +169,6 @@ export const authOptions: NextAuthOptions = {
         token.isSuperAdmin = u.isSuperAdmin ?? false
         token.tenantId = u.tenantId
         token.tenantSlug = u.tenantSlug
-        token.tenantDbUrl = u.tenantDbUrl
         token.tenantLogoUrl = u.tenantLogoUrl
         token.tenantFeatures = u.tenantFeatures
         return token
@@ -178,8 +176,8 @@ export const authOptions: NextAuthOptions = {
       // Refresh name/email on subsequent requests
       if (token.isSuperAdmin) return token
       try {
-        if (token.tenantDbUrl) {
-          const tenantDb = getTenantDb(token.tenantDbUrl as string)
+        if (token.tenantId) {
+          const tenantDb = getTenantDb(await resolveTenantDbUrl(token.tenantId))
           const dbUser = await tenantDb.user.findUnique({
             where: { id: token.id as string },
             select: { name: true, email: true, role: true },
@@ -205,7 +203,8 @@ export const authOptions: NextAuthOptions = {
         session.user.isSuperAdmin = token.isSuperAdmin ?? false
         session.user.tenantId    = token.tenantId
         session.user.tenantSlug  = token.tenantSlug
-        session.user.tenantDbUrl = token.tenantDbUrl
+        // No tenantDbUrl here — the session is served to the browser via /api/auth/session.
+        // getDb() resolves the tenant DB server-side from tenantId.
         session.user.tenantLogoUrl = token.tenantLogoUrl
         session.user.tenantFeatures = token.tenantFeatures
       }
