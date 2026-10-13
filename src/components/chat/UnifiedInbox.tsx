@@ -241,7 +241,7 @@ export default function UnifiedInbox({ onOpenEmail, onOpenBooking, initialWhatsa
             </Select>
           )}
         </div>
-        <div className="flex-1 overflow-y-auto pb-20 md:pb-0">
+        <div className="flex-1 overflow-y-auto pb-28 md:pb-0">
           {loading ? (
             <div className="p-4 space-y-3">
               {[...Array(5)].map((_, i) => <div key={i} className="h-12 rounded-md bg-muted animate-pulse" />)}
@@ -317,12 +317,12 @@ export default function UnifiedInbox({ onOpenEmail, onOpenBooking, initialWhatsa
           )}
         </div>
 
-        {/* Mobile: new-chat FAB + brand switcher as a bottom tab bar (desktop uses the Tabs above). */}
+        {/* Mobile: new-chat FAB + brand switcher as a floating bottom tab bar (desktop uses the Tabs above). */}
         <button onClick={() => setNewChatOpen(true)} title="Start a new WhatsApp chat"
-          className="md:hidden absolute right-4 bottom-[5.25rem] h-14 w-14 rounded-2xl bg-[#1fa855] text-white shadow-lg flex items-center justify-center active:scale-95 transition-transform">
+          className="md:hidden absolute right-4 bottom-[6.5rem] h-14 w-14 rounded-2xl bg-[#1fa855] text-white shadow-lg flex items-center justify-center active:scale-95 transition-transform">
           <MessageSquarePlus className="h-6 w-6" />
         </button>
-        <nav className="md:hidden absolute inset-x-0 bottom-0 border-t bg-card grid grid-cols-4 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+        <nav className="md:hidden absolute inset-x-4 bottom-[max(1rem,env(safe-area-inset-bottom))] rounded-full border bg-card/95 backdrop-blur shadow-lg grid grid-cols-4 py-2">
           {(['all', ...WHATSAPP_BRANDS] as const).map(b => {
             const Icon = BRAND_TAB_ICON[b]
             const active = brandFilter === b

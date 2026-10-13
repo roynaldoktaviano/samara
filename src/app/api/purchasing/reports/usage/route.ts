@@ -31,7 +31,7 @@ export async function GET(req: NextRequest) {
       select: { id: true, sku: true, name: true, category: true, baseUnit: true, purchaseUnit: true, conversionFactor: true, standardCost: true, isActive: true },
     }),
     db.stockLocation.findMany({ select: { id: true, name: true, type: true, yacht: { select: { name: true } } } }),
-    db.stockMovement.findFirst({ where: { referenceType: IMPORT_REF }, orderBy: { createdAt: 'desc' }, select: { createdAt: true } }),
+    db.stockMovement.findFirst({ where: { referenceType: IMPORT_REF, item: { type: itemType } }, orderBy: { createdAt: 'desc' }, select: { createdAt: true } }),
   ])
   const itemIds = items.map(i => i.id)
   const locMap = new Map(locations.map(l => [l.id, l]))
