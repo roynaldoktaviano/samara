@@ -3,6 +3,8 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { sendEmailInboxReply, emailConversationScope } from '@/lib/email-inbox'
+import { normalizeEmailSignature } from '@/lib/email-signature'
+import { sanitizeEmailHtml, emailHtmlToText } from '@/lib/email-html'
 
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions)
@@ -31,10 +33,13 @@ export async function POST(req: NextRequest) {
   const role = (session?.user as { role?: string })?.role ?? ''
   if (!session?.user?.id || !['ADMIN', 'SALES'].includes(role)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { to: rawTo, name, subject: rawSubject, body: rawBody } = await req.json()
+  const { to: rawTo, name, subject: rawSubject, body: rawBody, html: rawHtml } = await req.json()
   const to = String(rawTo ?? '').trim()
   const subject = String(rawSubject ?? '').trim()
-  const text = String(rawBody ?? '').trim()
+  // Rich-text composer sends `html`; the plain-text body is derived from it
+  const html = typeof rawHtml === 'string' ? sanitizeEmailHtml(rawHtml) : ''
+  const text = html ? emailHtmlToText(html) : String(rawBody ?? '').trim()
+  const bodyHtml = html && text ? html : null
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) return NextResponse.json({ error: 'A valid email address is required' }, { status: 400 })
   if (!subject) return NextResponse.json({ error: 'Subject is required' }, { status: 400 })
   if (!text) return NextResponse.json({ error: 'Message is required' }, { status: 400 })
@@ -58,6 +63,7 @@ export async function POST(req: NextRequest) {
       conversationId: conversation.id,
       direction: 'OUT',
       body: text,
+      bodyHtml,
       attachmentUrls: [],
       status: 'PENDING',
       sentByUserId: session.user.id,
@@ -66,8 +72,10 @@ export async function POST(req: NextRequest) {
   })
 
   const tenantId = (session.user as { tenantId?: string }).tenantId
+  const me = await db.user.findUnique({ where: { id: session.user.id }, select: { emailSignature: true } })
+  const signature = normalizeEmailSignature(me?.emailSignature)
   const result = tenantId
-    ? await sendEmailInboxReply(tenantId, to, subject, text, { sender: { name: session.user.name, email: session.user.email } })
+    ? await sendEmailInboxReply(tenantId, to, subject, text, { sender: { name: session.user.name, email: session.user.email }, signature, html: bodyHtml })
     : { ok: false, error: 'No tenant on session' }
 
   await db.emailInboxMessage.update({

@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import EmailComposer, { SignaturePreview, type ComposerValue } from '@/components/email-inbox/EmailComposer'
 import { useSession } from 'next-auth/react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -20,7 +21,6 @@ import { LEAD_ORIGINS, LEAD_ORIGIN_LABEL, LEAD_ORIGIN_COLOR, INQUIRY_FORM_LABEL,
 import FreshsalesImportModal from '@/components/shared/FreshsalesImportModal'
 import { LEAD_STAGES, LEAD_STAGE_LABEL, LEAD_STAGE_COLOR, LEAD_TRANSITIONS, type LeadStage } from '@/lib/lead-pipeline'
 import { toast } from 'sonner'
-import { Textarea } from '@/components/ui/textarea'
 import { NewChatForm, type NewChatPayload } from '@/components/chat/UnifiedInbox'
 
 /* ─── Types ─────────────────────────────────────────────────────────────── */
@@ -1108,27 +1108,31 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail }: {
   )
 }
 
+function escapeHtmlText(s: string) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
 function EmailFollowUpDialog({ lead, onClose, onSent }: { lead: Lead | null; onClose: () => void; onSent: (conversationId: string) => void }) {
   const [subject, setSubject] = useState('')
-  const [body, setBody] = useState('')
+  const [body, setBody] = useState<ComposerValue>({ html: '', text: '', isEmpty: true })
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!lead) return
     setSubject('Following up on your inquiry')
-    setBody(`Hi ${lead.firstName || lead.name},\n\n`)
     setError(null)
   }, [lead])
+  const greeting = lead ? `<p>Hi ${escapeHtmlText(lead.firstName || lead.name)},</p><p></p>` : ''
 
   async function send() {
-    if (!lead?.email || !subject.trim() || !body.trim()) return
+    if (!lead?.email || !subject.trim() || !body.text) return
     setSending(true)
     setError(null)
     try {
       const res = await fetch('/api/email-inbox/conversations', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ to: lead.email, name: lead.name, subject, body }),
+        body: JSON.stringify({ to: lead.email, name: lead.name, subject, body: body.text, html: body.html }),
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) { setError(data?.error ?? 'Failed to send email'); return }
@@ -1138,9 +1142,12 @@ function EmailFollowUpDialog({ lead, onClose, onSent }: { lead: Lead | null; onC
     } finally { setSending(false) }
   }
 
+  const sendRef = useRef(send)
+  useEffect(() => { sendRef.current = send })
+
   return (
     <Dialog open={!!lead} onOpenChange={open => { if (!open) onClose() }}>
-      <DialogContent>
+      <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Follow up by Email</DialogTitle>
           <DialogDescription>Sent from the shared Email inbox — replies continue in Chat › Email.</DialogDescription>
@@ -1156,10 +1163,13 @@ function EmailFollowUpDialog({ lead, onClose, onSent }: { lead: Lead | null; onC
           </div>
           <div className="space-y-1">
             <label className="text-xs font-medium text-muted-foreground">Message</label>
-            <Textarea value={body} onChange={e => setBody(e.target.value)} rows={8} className="text-sm" />
+            <div className="rounded-md border overflow-hidden bg-white">
+              <EmailComposer initialHtml={greeting} onChange={setBody} onSubmit={() => sendRef.current()} resetKey={lead?.id ?? ''} minHeight={160} />
+              <SignaturePreview />
+            </div>
           </div>
           {error && <p className="text-xs text-red-600">{error}</p>}
-          <Button onClick={send} disabled={!subject.trim() || !body.trim() || sending} className="w-full h-9">
+          <Button onClick={send} disabled={!subject.trim() || !body.text || sending} className="w-full h-9">
             {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Send className="h-4 w-4 mr-1.5" /> Send Email</>}
           </Button>
         </div>

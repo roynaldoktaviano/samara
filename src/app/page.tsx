@@ -15,6 +15,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
+import EmailSignatureDialog from '@/components/profile/EmailSignatureDialog'
 import Dashboard from '@/components/dashboard/Dashboard'
 import Yachts from '@/components/yachts/Yachts'
 import Destinations from '@/components/destinations/Destinations'
@@ -331,6 +332,7 @@ export default function Home() {
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
   const [showUserMenu, setShowUserMenu] = useState(false)
   const [profileOpen, setProfileOpen]   = useState(false)
+  const [signatureOpen, setSignatureOpen] = useState(false)
   const [profileName, setProfileName]   = useState('')
   const [profileCurPw, setProfileCurPw] = useState('')
   const [profileNewPw, setProfileNewPw] = useState('')
@@ -1483,6 +1485,13 @@ export default function Home() {
                         <UserPen className="h-4 w-4 text-muted-foreground" />
                         Edit Profile
                       </button>
+                      <button
+                        onClick={() => { setShowUserMenu(false); setSignatureOpen(true) }}
+                        className="flex w-full items-center gap-2 px-3 py-2.5 text-sm text-foreground hover:bg-muted transition-colors"
+                      >
+                        <Mail className="h-4 w-4 text-muted-foreground" />
+                        Email Signature
+                      </button>
                       <div className="border-t mx-2" />
                       <button
                         onClick={() => triggerTransition(() => signOut({ callbackUrl: '/login' }), 900, branding)}
@@ -1521,6 +1530,10 @@ export default function Home() {
         </main>
       </div>
     </SidebarProvider>
+
+    {session?.user?.id && (
+      <EmailSignatureDialog open={signatureOpen} onOpenChange={setSignatureOpen} userId={session.user.id} />
+    )}
 
     {/* ── Edit Profile Dialog ── */}
     <Dialog open={profileOpen} onOpenChange={v => { if (!v) setProfileOpen(false) }}>

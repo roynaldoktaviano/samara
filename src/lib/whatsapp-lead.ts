@@ -70,8 +70,11 @@ async function reconcileOwnership(db: PrismaClient, conversationId: string, lead
 
 // Run once when a conversation is first created (inbound webhook or "New Chat"). An
 // existing Lead with the same number → linked + SALES straight away; an existing Guest →
-// GUEST; otherwise it stays UNSORTED for a human to triage. Best-effort by design.
-export async function autoLinkNewConversation(db: PrismaClient, conversationId: string): Promise<void> {
+// GUEST. An unknown number: with `createLead` (inbound webhook) it becomes SALES with a new
+// Lead named after the WhatsApp profile name (sales edit the details later, or re-triage the
+// chat if it's spam/vendor); otherwise ("New Chat" started by staff) it stays UNSORTED for a
+// human to triage. Best-effort by design.
+export async function autoLinkNewConversation(db: PrismaClient, conversationId: string, opts: { createLead?: boolean } = {}): Promise<void> {
   const conv = await db.whatsappConversation.findUnique({
     where: { id: conversationId },
     select: { phone: true, assignedToId: true, category: true, leadId: true },
@@ -86,6 +89,11 @@ export async function autoLinkNewConversation(db: PrismaClient, conversationId: 
   }
   if (await customerExistsByPhone(db, conv.phone)) {
     await db.whatsappConversation.update({ where: { id: conversationId }, data: { category: 'GUEST' } })
+    return
+  }
+  if (opts.createLead) {
+    await db.whatsappConversation.update({ where: { id: conversationId }, data: { category: 'SALES' } })
+    await ensureLeadForConversation(db, conversationId)
   }
 }
 

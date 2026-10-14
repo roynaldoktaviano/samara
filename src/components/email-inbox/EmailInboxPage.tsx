@@ -6,6 +6,7 @@ import { uploadToR2 } from '@/lib/r2-client'
 import { Search, Send, Loader2, Mail, Paperclip, X } from 'lucide-react'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { isHttpUrl } from '@/lib/url-safety'
+import EmailComposer, { SignaturePreview, EMAIL_BODY_CLASSES, type ComposerValue } from './EmailComposer'
 
 const ACCENT = '#1a73e8' // familiar "email" blue
 
@@ -23,6 +24,7 @@ interface Message {
   id: string
   direction: 'IN' | 'OUT'
   body: string | null
+  bodyHtml?: string | null
   attachmentUrls: string[]
   status: 'PENDING' | 'SENT' | 'DELIVERED' | 'FAILED'
   sentByName: string | null
@@ -53,7 +55,8 @@ export default function EmailInboxPage({ initialConversationId }: { initialConve
   const [activeId, setActiveId] = useState<string | null>(null)
   const [detail, setDetail] = useState<ConversationDetail | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
-  const [draft, setDraft] = useState('')
+  const [draft, setDraft] = useState<ComposerValue>({ html: '', text: '', isEmpty: true })
+  const [draftKey, setDraftKey] = useState(0)
   const [pendingAttachments, setPendingAttachments] = useState<string[]>([])
   const [sending, setSending] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -104,15 +107,15 @@ export default function EmailInboxPage({ initialConversationId }: { initialConve
   }
 
   async function sendReply() {
-    if ((!draft.trim() && pendingAttachments.length === 0) || !activeId) return
+    if ((draft.isEmpty && pendingAttachments.length === 0) || !activeId) return
     setSending(true)
-    const text = draft.trim()
+    const { text, html } = draft
     const attachments = pendingAttachments
-    setDraft(''); setPendingAttachments([])
+    setDraftKey(k => k + 1); setPendingAttachments([])
     try {
       const res = await fetch(`/api/email-inbox/conversations/${activeId}/messages`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ body: text, attachmentUrls: attachments }),
+        body: JSON.stringify({ body: text, html: draft.isEmpty ? '' : html, attachmentUrls: attachments }),
       })
       const data = await res.json().catch(() => ({}))
       if (data?.message) setDetail(prev => prev ? { ...prev, messages: [...prev.messages, data.message] } : prev)
@@ -120,6 +123,10 @@ export default function EmailInboxPage({ initialConversationId }: { initialConve
       await loadConversations()
     } finally { setSending(false) }
   }
+
+  // The editor's Cmd/Ctrl+Enter handler is bound once — always call the latest sendReply
+  const sendReplyRef = useRef(sendReply)
+  useEffect(() => { sendReplyRef.current = sendReply })
 
   async function handleFilePicked(file: File) {
     if (!activeId) return
@@ -228,7 +235,9 @@ export default function EmailInboxPage({ initialConversationId }: { initialConve
                     <span className="text-xs text-muted-foreground shrink-0">{fmtDateTime(m.createdAt)}</span>
                   </div>
                   <div className="px-4 py-3 text-sm">
-                    {m.body && <p className="whitespace-pre-wrap break-words leading-relaxed">{m.body}</p>}
+                    {m.bodyHtml
+                      ? <div className={`break-words ${EMAIL_BODY_CLASSES}`} dangerouslySetInnerHTML={{ __html: m.bodyHtml }} />
+                      : m.body && <p className="whitespace-pre-wrap break-words leading-relaxed">{m.body}</p>}
                     {m.attachmentUrls.length > 0 && (
                       <div className="flex flex-wrap gap-2 mt-3">
                         {m.attachmentUrls.filter(isHttpUrl).map((url, i) => (
@@ -255,13 +264,12 @@ export default function EmailInboxPage({ initialConversationId }: { initialConve
                   <span className="text-foreground">&lt;{detail?.fromEmail}&gt;</span>
                   <span className="block text-[11px] mt-0.5">Subject: Re: {detail?.subject}</span>
                 </div>
-                <textarea
-                  rows={4}
-                  className="w-full resize-none px-4 py-3 text-sm focus:outline-none"
+                <EmailComposer
                   placeholder="Write your reply..."
-                  value={draft}
-                  onChange={e => setDraft(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); sendReply() } }}
+                  onChange={setDraft}
+                  onSubmit={() => sendReplyRef.current()}
+                  resetKey={`${activeId}-${draftKey}`}
+                  minHeight={96}
                 />
                 {pendingAttachments.length > 0 && (
                   <div className="flex flex-wrap gap-2 px-4 pb-2">
@@ -275,6 +283,7 @@ export default function EmailInboxPage({ initialConversationId }: { initialConve
                     ))}
                   </div>
                 )}
+                <SignaturePreview />
                 <div className="flex items-center justify-between px-4 py-2.5 border-t bg-muted/10">
                   <input ref={fileInputRef} type="file" className="hidden"
                     onChange={e => { const f = e.target.files?.[0]; if (f) handleFilePicked(f); e.target.value = '' }} />
@@ -282,7 +291,7 @@ export default function EmailInboxPage({ initialConversationId }: { initialConve
                     className="h-8 w-8 rounded-md flex items-center justify-center text-muted-foreground hover:bg-muted disabled:opacity-40 transition-colors">
                     {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Paperclip className="h-4 w-4" />}
                   </button>
-                  <button onClick={sendReply} disabled={(!draft.trim() && pendingAttachments.length === 0) || sending}
+                  <button onClick={sendReply} disabled={(draft.isEmpty && pendingAttachments.length === 0) || sending}
                     className="flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-medium text-white disabled:opacity-40 transition-colors"
                     style={{ backgroundColor: ACCENT }}>
                     {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-3.5 w-3.5" />}

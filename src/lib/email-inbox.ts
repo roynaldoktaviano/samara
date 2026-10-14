@@ -1,5 +1,6 @@
 import { Resend } from 'resend'
 import { getTenantSecret } from '@/lib/tenant-secrets'
+import { renderEmailSignatureHtml, renderEmailSignatureText, type EmailSignature } from '@/lib/email-signature'
 
 // Unlike WhatsApp/Instagram, actually sendable today — reuses the same Resend
 // API key already wired up for marketing campaigns (src/lib/resend-mailer.ts).
@@ -29,6 +30,10 @@ export interface SendEmailReplyOptions {
   sender?: EmailSender | null
   /** Message-ID of the guest email being answered — threads the reply in their mail client. */
   inReplyTo?: string | null
+  /** The sender's saved signature (User.emailSignature), appended below the body. */
+  signature?: EmailSignature | null
+  /** Sanitized rich-text body (see email-html.ts); `body` is then its plain-text version. */
+  html?: string | null
 }
 
 /** "Samara Yachting <inquiry@samarayachting.com>" → { name: 'Samara Yachting', email: 'inquiry@samarayachting.com' } */
@@ -104,6 +109,9 @@ export async function sendEmailInboxReply(
     return { ok: false, error: 'Email inbox is not configured for this tenant yet (Resend API Key / From Address)' }
   }
   const { from, replyTo } = resolveSenderAddresses(sharedFrom, sharedReplyTo, opts.sender)
+  const sigCtx = { email: parseAddress(from).email ?? '', company: parseAddress(sharedFrom).name }
+  const sigHtml = renderEmailSignatureHtml(opts.signature ?? null, sigCtx)
+  const sigText = renderEmailSignatureText(opts.signature ?? null, sigCtx)
 
   try {
     const resend = new Resend(apiKey)
@@ -112,8 +120,8 @@ export async function sendEmailInboxReply(
       ...(replyTo ? { replyTo } : {}),
       ...(opts.inReplyTo ? { headers: { 'In-Reply-To': opts.inReplyTo, References: opts.inReplyTo } } : {}),
       ...(opts.attachmentUrls?.length ? { attachments: opts.attachmentUrls.map(path => ({ path, filename: filenameFromUrl(path) })) } : {}),
-      html: escapeHtml(body).replace(/\n/g, '<br>'),
-      text: body,
+      html: `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.5;color:#222222;">${opts.html || escapeHtml(body).replace(/\n/g, '<br>')}</div>${sigHtml}`,
+      text: sigText ? `${body}\n\n${sigText}` : body,
     })
     if (error || !data) return { ok: false, error: error?.message ?? 'Send failed' }
     return { ok: true, providerMessageId: data.id }

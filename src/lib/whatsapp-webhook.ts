@@ -300,10 +300,10 @@ export function createWhatsappWebhookHandlers(endpointBrand?: WhatsappBrand) {
             })().catch(e => console.error('[whatsapp webhook] background media store failed', mediaId, e))
           }
 
-          // Existing Lead/Guest with this number → link/categorise the new chat right away
-          // (see src/lib/whatsapp-lead.ts). Never blocks acking the webhook.
+          // Existing Lead/Guest with this number → link/categorise the new chat right away;
+          // an unknown number gets a new Lead (see src/lib/whatsapp-lead.ts). Never blocks acking the webhook.
           if (isNewConversation) {
-            await autoLinkNewConversation(db, conversation.id).catch(e => console.error('[whatsapp webhook] auto-link failed', e))
+            await autoLinkNewConversation(db, conversation.id, { createLead: true }).catch(e => console.error('[whatsapp webhook] auto-link failed', e))
           }
 
           // Notice for whichever sales rep this chat is assigned to — in-app bell (toast +

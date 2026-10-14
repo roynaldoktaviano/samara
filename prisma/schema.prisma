@@ -123,6 +123,9 @@ model User {
   assignedYacht                          Yacht?                            @relation(fields: [assignedYachtId], references: [id], onDelete: SetNull)
   // My Works: true = no assign/completed emails (bell + push still arrive). Toggled in My Works.
   taskEmailOptOut                        Boolean                           @default(false)
+  // Chat › Email signature: only the field values (see src/lib/email-signature.ts) — the
+  // layout is a fixed template so every rep's signature looks the same. Null = no signature.
+  emailSignature                         Json?
   todoActivities                         TodoActivity[]
   createdAt                              DateTime                          @default(now())
   updatedAt                              DateTime                          @updatedAt
@@ -4689,7 +4692,10 @@ model EmailInboxMessage {
   conversationId    String
   conversation      EmailInboxConversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   direction         EmailInboxDirection
+  // Plain text — used for previews/search and the text/plain part
   body              String?
+  // Sanitized HTML from the rich-text composer (OUT only; null for inbound and older messages)
+  bodyHtml          String?
   attachmentUrls    String[]                @default([])
   status            EmailInboxMessageStatus @default(SENT)
   providerMessageId String?                 @unique
