@@ -64,7 +64,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const updated = await db.emailInboxMessage.update({
     where: { id: message.id },
-    data: result.ok ? { status: 'SENT', providerMessageId: result.providerMessageId } : { status: 'FAILED' },
+    data: result.ok ? { status: 'SENT', providerMessageId: result.providerMessageId, signatureHtml: result.signatureHtml ?? null } : { status: 'FAILED' },
   })
 
   return NextResponse.json({ message: updated, providerError: result.ok ? undefined : result.error })

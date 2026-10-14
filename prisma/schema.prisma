@@ -4674,6 +4674,8 @@ model EmailInboxConversation {
   lastMessageAt      DateTime @default(now())
   lastMessagePreview String?
   unreadCount        Int      @default(0)
+  // Gmail-style star (one owner per thread, so a single flag is enough)
+  starred            Boolean  @default(false)
   // Sales rep who owns the thread — emails go out From/Reply-To their own address and only
   // they (plus ADMIN) see it. Null = shared pool, claimed by whoever replies first.
   assignedToId       String?
@@ -4696,6 +4698,8 @@ model EmailInboxMessage {
   body              String?
   // Sanitized HTML from the rich-text composer (OUT only; null for inbound and older messages)
   bodyHtml          String?
+  // Signature exactly as it was appended when this OUT message was sent (later edits don't rewrite history)
+  signatureHtml     String?
   attachmentUrls    String[]                @default([])
   status            EmailInboxMessageStatus @default(SENT)
   providerMessageId String?                 @unique

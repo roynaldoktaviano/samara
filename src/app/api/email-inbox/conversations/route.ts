@@ -20,9 +20,23 @@ export async function GET(req: NextRequest) {
   const conversations = await db.emailInboxConversation.findMany({
     where: emailConversationScope(role, session.user.id),
     orderBy: { lastMessageAt: 'desc' },
-    include: { assignedTo: { select: { id: true, name: true } } },
+    include: {
+      assignedTo: { select: { id: true, name: true } },
+      // Gmail-style row: "Name, me 3" + the newest message's attachment chips
+      _count: { select: { messages: true } },
+      messages: { where: { attachmentUrls: { isEmpty: false } }, orderBy: { createdAt: 'desc' }, take: 1, select: { attachmentUrls: true } },
+    },
   })
-  return NextResponse.json(conversations)
+  const repliedIds = new Set((await db.emailInboxMessage.groupBy({
+    by: ['conversationId'],
+    where: { direction: 'OUT', conversationId: { in: conversations.map(c => c.id) } },
+  })).map(r => r.conversationId))
+  return NextResponse.json(conversations.map(({ _count, messages, ...c }) => ({
+    ...c,
+    messageCount: _count.messages,
+    hasReply: repliedIds.has(c.id),
+    attachmentUrls: messages[0]?.attachmentUrls ?? [],
+  })))
 }
 
 // Starts (or continues) a thread with someone who hasn't necessarily emailed in yet — used by
@@ -33,7 +47,9 @@ export async function POST(req: NextRequest) {
   const role = (session?.user as { role?: string })?.role ?? ''
   if (!session?.user?.id || !['ADMIN', 'SALES'].includes(role)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { to: rawTo, name, subject: rawSubject, body: rawBody, html: rawHtml } = await req.json()
+  const { to: rawTo, name, subject: rawSubject, body: rawBody, html: rawHtml, attachmentUrls } = await req.json()
+  // Forward re-sends the original's files; only our own uploaded (http) URLs are accepted
+  const attachments: string[] = Array.isArray(attachmentUrls) ? attachmentUrls.filter((u: unknown) => typeof u === 'string' && /^https?:\/\//.test(u)).slice(0, 20) : []
   const to = String(rawTo ?? '').trim()
   const subject = String(rawSubject ?? '').trim()
   // Rich-text composer sends `html`; the plain-text body is derived from it
@@ -64,7 +80,7 @@ export async function POST(req: NextRequest) {
       direction: 'OUT',
       body: text,
       bodyHtml,
-      attachmentUrls: [],
+      attachmentUrls: attachments,
       status: 'PENDING',
       sentByUserId: session.user.id,
       sentByName: session.user.name ?? session.user.email ?? 'Admin',
@@ -75,12 +91,12 @@ export async function POST(req: NextRequest) {
   const me = await db.user.findUnique({ where: { id: session.user.id }, select: { emailSignature: true } })
   const signature = normalizeEmailSignature(me?.emailSignature)
   const result = tenantId
-    ? await sendEmailInboxReply(tenantId, to, subject, text, { sender: { name: session.user.name, email: session.user.email }, signature, html: bodyHtml })
+    ? await sendEmailInboxReply(tenantId, to, subject, text, { sender: { name: session.user.name, email: session.user.email }, signature, html: bodyHtml, attachmentUrls: attachments })
     : { ok: false, error: 'No tenant on session' }
 
   await db.emailInboxMessage.update({
     where: { id: message.id },
-    data: result.ok ? { status: 'SENT', providerMessageId: result.providerMessageId } : { status: 'FAILED' },
+    data: result.ok ? { status: 'SENT', providerMessageId: result.providerMessageId, signatureHtml: result.signatureHtml ?? null } : { status: 'FAILED' },
   })
 
   return NextResponse.json({ conversationId: conversation.id, providerError: result.ok ? undefined : result.error })

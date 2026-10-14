@@ -20,14 +20,17 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   return NextResponse.json(conversation)
 }
 
-export async function PATCH(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+// No body = mark as read; { starred: boolean } = star/unstar.
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getServerSession(authOptions)
   const role = (session?.user as { role?: string })?.role ?? ''
   if (!session?.user?.id || !['ADMIN', 'SALES'].includes(role)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { id } = await params
   const db = await getDb(session)
-  const { count } = await db.emailInboxConversation.updateMany({ where: { id, ...emailConversationScope(role, session.user.id) }, data: { unreadCount: 0 } })
+  const body = await req.json().catch(() => null)
+  const data = typeof body?.starred === 'boolean' ? { starred: body.starred } : { unreadCount: 0 }
+  const { count } = await db.emailInboxConversation.updateMany({ where: { id, ...emailConversationScope(role, session.user.id) }, data })
   if (!count) return NextResponse.json({ error: 'Not found' }, { status: 404 })
   const conversation = await db.emailInboxConversation.findUnique({ where: { id } })
   emitTenantEvent(session.user.tenantId, 'chat')

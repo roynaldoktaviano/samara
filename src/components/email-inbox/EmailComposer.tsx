@@ -38,7 +38,7 @@ function editorToValue(editor: Editor): ComposerValue {
   return { html: editor.getHTML(), text: editor.getText({ blockSeparator: '\n' }).trim(), isEmpty: editor.isEmpty }
 }
 
-export default function EmailComposer({ initialHtml = '', placeholder, onChange, onSubmit, disabled, minHeight = 120, resetKey }: {
+export default function EmailComposer({ initialHtml = '', placeholder, onChange, onSubmit, disabled, minHeight = 120, maxHeight = '40vh', resetKey, autoFocus }: {
   initialHtml?: string
   placeholder?: string
   onChange: (value: ComposerValue) => void
@@ -46,8 +46,11 @@ export default function EmailComposer({ initialHtml = '', placeholder, onChange,
   onSubmit?: () => void
   disabled?: boolean
   minHeight?: number
+  /** Editor scrolls past this height; null = grows with the content (the page scrolls instead). */
+  maxHeight?: string | null
   /** Change this to clear the editor back to initialHtml (e.g. after sending). */
   resetKey?: string | number
+  autoFocus?: boolean
 }) {
   const editor = useEditor({
     immediatelyRender: false,
@@ -60,6 +63,7 @@ export default function EmailComposer({ initialHtml = '', placeholder, onChange,
       Placeholder.configure({ placeholder: placeholder ?? 'Write your message...' }),
     ],
     content: initialHtml,
+    autofocus: autoFocus ? 'end' : false,
     editorProps: {
       attributes: { class: `${EMAIL_BODY_CLASSES} px-4 py-3 focus:outline-none`, style: `min-height:${minHeight}px` },
       handleKeyDown: (_view, event) => {
@@ -67,6 +71,8 @@ export default function EmailComposer({ initialHtml = '', placeholder, onChange,
         return false
       },
     },
+    // Report pre-filled content (e.g. Forward) right away, not only after the first keystroke
+    onCreate: ({ editor }) => onChange(editorToValue(editor)),
     onUpdate: ({ editor }) => onChange(editorToValue(editor)),
   })
 
@@ -80,15 +86,15 @@ export default function EmailComposer({ initialHtml = '', placeholder, onChange,
 
   return (
     <div className="flex flex-col">
-      {editor && <Toolbar editor={editor} />}
-      <div className="max-h-[40vh] overflow-y-auto [&_.is-editor-empty:first-child::before]:content-[attr(data-placeholder)] [&_.is-editor-empty:first-child::before]:text-muted-foreground [&_.is-editor-empty:first-child::before]:float-left [&_.is-editor-empty:first-child::before]:h-0 [&_.is-editor-empty:first-child::before]:pointer-events-none">
+      {editor && <Toolbar editor={editor} sticky={maxHeight === null} />}
+      <div style={maxHeight ? { maxHeight, overflowY: 'auto' } : undefined} className="[&_.is-editor-empty:first-child::before]:content-[attr(data-placeholder)] [&_.is-editor-empty:first-child::before]:text-muted-foreground [&_.is-editor-empty:first-child::before]:float-left [&_.is-editor-empty:first-child::before]:h-0 [&_.is-editor-empty:first-child::before]:pointer-events-none">
         <EditorContent editor={editor} />
       </div>
     </div>
   )
 }
 
-function Toolbar({ editor }: { editor: Editor }) {
+function Toolbar({ editor, sticky }: { editor: Editor; sticky?: boolean }) {
   const s = useEditorState({
     editor,
     selector: ({ editor: e }) => ({
@@ -109,7 +115,7 @@ function Toolbar({ editor }: { editor: Editor }) {
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-0.5 px-2 py-1.5 border-b bg-muted/10">
+    <div className={`flex flex-wrap items-center gap-0.5 px-2 py-1.5 border-b ${sticky ? 'sticky top-0 z-10 bg-white' : 'bg-muted/10'}`}>
       <Btn title="Undo" onClick={() => chain().undo().run()} disabled={!s.canUndo}><Undo2 /></Btn>
       <Btn title="Redo" onClick={() => chain().redo().run()} disabled={!s.canRedo}><Redo2 /></Btn>
       <Sep />

@@ -34,11 +34,17 @@ function htmlToText(html: string): string {
     .trim()
 }
 
-/** Drops the quoted thread mail clients append below a reply ("On … wrote:", "-----Original Message-----", "> …"). */
+/**
+ * Drops the quoted thread mail clients append below a reply ("On … wrote:" / Indonesian
+ * Gmail "Pada … menulis:", "-----Original Message-----", "> …"). The attribution line is
+ * often wrapped onto two lines in the text/plain part, so each line is also tried joined
+ * with the next.
+ */
 function stripQuotedReply(text: string): string {
   const lines = text.split(/\r?\n/)
-  const cut = lines.findIndex(l =>
-    /^On .+wrote:\s*$/i.test(l.trim()) ||
+  const isAttribution = (l: string) => /^(On|Pada) .+(wrote|menulis):\s*$/i.test(l.trim())
+  const cut = lines.findIndex((l, i) =>
+    isAttribution(l) || (/^(On|Pada) /i.test(l.trim()) && isAttribution(`${l.trim()} ${lines[i + 1]?.trim() ?? ''}`)) ||
     /^-{2,}\s*Original Message\s*-{2,}/i.test(l.trim()) ||
     /^From: .+/i.test(l.trim()) && lines.some(x => /^Sent: /i.test(x.trim())))
   const kept = (cut > 0 ? lines.slice(0, cut) : lines)

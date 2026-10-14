@@ -16,6 +16,8 @@ import { renderEmailSignatureHtml, renderEmailSignatureText, type EmailSignature
 export interface SendEmailReplyResult {
   ok: boolean
   providerMessageId?: string
+  /** The signature HTML that was appended — stored on the message so the thread shows it. */
+  signatureHtml?: string
   error?: string
 }
 
@@ -124,7 +126,7 @@ export async function sendEmailInboxReply(
       text: sigText ? `${body}\n\n${sigText}` : body,
     })
     if (error || !data) return { ok: false, error: error?.message ?? 'Send failed' }
-    return { ok: true, providerMessageId: data.id }
+    return { ok: true, providerMessageId: data.id, signatureHtml: sigHtml || undefined }
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : 'Failed to reach Resend' }
   }
