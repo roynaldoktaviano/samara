@@ -87,7 +87,11 @@ async function main() {
   const lnSkus = await prisma.purchaseItem.findMany({ where: { sku: { startsWith: 'LN ' } }, select: { sku: true } })
   let nextNo = Math.max(0, ...lnSkus.map(s => parseInt(s.sku.slice(3), 10) || 0)) + 1
 
-  const plans = []
+  type Plan = {
+    name: string; sku: string; stock: number; cur: number
+    existing: { id: string; sku: string; stockLots: { id: string; quantity: number; costPerUnit: number }[] } | null
+  }
+  const plans: Plan[] = []
   for (const [base, size, stock] of ROWS) {
     const name = size ? `${base} ${size}` : base
     const existing = await prisma.purchaseItem.findFirst({
