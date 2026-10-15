@@ -95,21 +95,27 @@ export async function startNodeInstrumentation() {
   // run stopped, so deploys/restarts just pause it.
   if (process.env.NODE_ENV === 'production' && process.env.FRESHSALES_ARCHIVE_SYNC !== 'off') {
     let crawling = false
+    let lastSkip = ''
+    // Logs why a tick did nothing, once per reason, so the server log shows it without spamming
+    const skip = (why: string) => { if (why !== lastSkip) console.log(`[freshsales-archive] idle: ${why}`); lastSkip = why }
     const crawlTick = async () => {
       if (crawling) return
       crawling = true
       try {
         const { FreshsalesClient, runArchiveCrawl, archiveCrawlComplete } = await import('@/lib/freshsales-archive')
-        if (await archiveCrawlComplete(db).catch(() => true)) return // done, or this DB has no archive tables
+        const complete = await archiveCrawlComplete(db).catch((e: unknown) => { skip(`archive tables unavailable (${(e as Error)?.message?.slice(0, 120)})`); return null })
+        if (complete === null) return
+        if (complete) return skip('archive complete')
         const { getTenantSecret } = await import('@/lib/tenant-secrets')
         const tenant = await centralDb.tenant.findFirst({ where: { databaseUrl: process.env.DATABASE_URL }, select: { id: true } })
         const apiKey = (tenant && await getTenantSecret(tenant.id, 'freshsalesApiKey')) || process.env.FRESHSALES_API_KEY
         const domain = (tenant && await getTenantSecret(tenant.id, 'freshsalesDomain')) || process.env.FRESHSALES_DOMAIN
-        if (!apiKey || !domain) return
+        if (!apiKey || !domain) return skip(`no Freshsales credentials (tenant ${tenant ? 'found' : 'not matched to DATABASE_URL'})`)
         const log = (m: string) => console.log(`[freshsales-archive]${m.startsWith(' ') ? '' : ' '}${m}`)
         const fs = new FreshsalesClient(domain, apiKey, log)
         const result = await runArchiveCrawl(db, fs, `server-${process.pid}`, log)
-        if (result === 'done') log('crawl complete')
+        if (result === 'locked') skip('another process holds the crawl lease')
+        else { lastSkip = ''; if (result === 'done') log('crawl complete') }
       } catch (err) {
         console.error('[freshsales-archive] crawl tick failed:', err)
       } finally {

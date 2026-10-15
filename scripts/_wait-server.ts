@@ -5,8 +5,8 @@ const db = new PrismaClient()
   for (;;) {
     const r = await db.freshsalesSyncState.findUnique({ where: { entity: 'crawlLease' } })
     const owner = (r?.cursor as { owner?: string } | null)?.owner ?? ''
-    if (r?.status === 'RUNNING' && owner.startsWith('server-')) { console.log('TAKEN', owner, r.updatedAt.toISOString(), `${Math.round((Date.now() - start) / 1000)}s`); break }
-    if (Date.now() - start > 14 * 60_000) { console.log('NOT TAKEN after 14 min', r?.status, owner); break }
+    if (owner.startsWith('server-')) { console.log('TAKEN', r?.status, owner, r?.updatedAt.toISOString(), r?.lastError ?? ''); break }
+    if (Date.now() - start > 16 * 60_000) { console.log('NOT TAKEN after 16 min', r?.status, owner); break }
     await new Promise(res => setTimeout(res, 20_000))
   }
   await db.$disconnect()
