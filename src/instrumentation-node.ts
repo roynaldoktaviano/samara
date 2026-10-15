@@ -88,6 +88,38 @@ export async function startNodeInstrumentation() {
     }
   }, leadStagnantCheckIntervalMs)
 
+  // Freshsales archive crawl (src/lib/freshsales-archive.ts) — pulls emails / deal details /
+  // timelines into the Freshsales* tables until done. Production only (a local `next dev` on
+  // the same DB must not crawl); FRESHSALES_ARCHIVE_SYNC=off disables it. runArchiveCrawl's
+  // lease keeps it from running alongside the Mac script, and every tick resumes where the last
+  // run stopped, so deploys/restarts just pause it.
+  if (process.env.NODE_ENV === 'production' && process.env.FRESHSALES_ARCHIVE_SYNC !== 'off') {
+    let crawling = false
+    const crawlTick = async () => {
+      if (crawling) return
+      crawling = true
+      try {
+        const { FreshsalesClient, runArchiveCrawl, archiveCrawlComplete } = await import('@/lib/freshsales-archive')
+        if (await archiveCrawlComplete(db).catch(() => true)) return // done, or this DB has no archive tables
+        const { getTenantSecret } = await import('@/lib/tenant-secrets')
+        const tenant = await centralDb.tenant.findFirst({ where: { databaseUrl: process.env.DATABASE_URL }, select: { id: true } })
+        const apiKey = (tenant && await getTenantSecret(tenant.id, 'freshsalesApiKey')) || process.env.FRESHSALES_API_KEY
+        const domain = (tenant && await getTenantSecret(tenant.id, 'freshsalesDomain')) || process.env.FRESHSALES_DOMAIN
+        if (!apiKey || !domain) return
+        const log = (m: string) => console.log(`[freshsales-archive]${m.startsWith(' ') ? '' : ' '}${m}`)
+        const fs = new FreshsalesClient(domain, apiKey, log)
+        const result = await runArchiveCrawl(db, fs, `server-${process.pid}`, log)
+        if (result === 'done') log('crawl complete')
+      } catch (err) {
+        console.error('[freshsales-archive] crawl tick failed:', err)
+      } finally {
+        crawling = false
+      }
+    }
+    setTimeout(crawlTick, 2 * 60_000)
+    setInterval(crawlTick, 10 * 60_000)
+  }
+
   // Creates the next copy of weekly/monthly/yearly My Works tasks once their date arrives —
   // see spawnRecurringTodos in src/lib/todo.ts. Hourly is plenty for day-granularity dates, and
   // the per-series claim makes re-running it harmless.

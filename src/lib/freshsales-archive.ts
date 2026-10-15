@@ -28,6 +28,8 @@ const PAGE = 100
 export class FreshsalesClient {
   private lastAt = 0
   requests = 0
+  // Set when this process loses the crawl lease (see runArchiveCrawl) — every further request throws
+  stopped: string | null = null
   constructor(private domain: string, private apiKey: string, private log: (m: string) => void = console.log) {}
 
   async get(path: string) { return this.call('GET', path) }
@@ -35,6 +37,7 @@ export class FreshsalesClient {
 
   private async call(method: string, path: string, body?: unknown): Promise<Json | null> {
     for (let attempt = 0; ; attempt++) {
+      if (this.stopped) throw new Error(`crawl stopped: ${this.stopped}`)
       const wait = this.lastAt + MIN_GAP_MS - Date.now()
       if (wait > 0) await sleep(wait)
       this.lastAt = Date.now()
@@ -592,4 +595,54 @@ export async function syncPerContact(db: PrismaClient, fs: FreshsalesClient, wha
     await state(db, what, { processed: contacts })
     return { contacts, items }
   })
+}
+
+// ─── long-running crawl with a lease ────────────────────────────────────────
+
+const LEASE = 'crawlLease'
+const LEASE_STALE_MS = 10 * 60_000
+
+/**
+ * Runs the slow per-record steps (conversations → dealDetails → timeline) until nothing is left.
+ * Only one process may crawl at a time — the Mac script and the production server both call this —
+ * so it holds a lease row in FreshsalesSyncState, renewed every minute. A holder that dies (deploy,
+ * laptop shut down) goes stale after 10 minutes and the next caller takes over; a holder that
+ * finds its lease taken stops at its next request. Every step resumes where the last run left off.
+ * Returns 'locked' when another process holds the lease.
+ */
+export async function runArchiveCrawl(db: PrismaClient, fs: FreshsalesClient, owner: string, log: (m: string) => void = console.log) {
+  await retryDb(db, () => db.freshsalesSyncState.upsert({ where: { entity: LEASE }, create: { entity: LEASE, status: 'IDLE' }, update: {} }))
+  const got = await retryDb(db, () => db.freshsalesSyncState.updateMany({
+    where: { entity: LEASE, OR: [{ status: { not: 'RUNNING' } }, { updatedAt: { lt: new Date(Date.now() - LEASE_STALE_MS) } }] },
+    data: { status: 'RUNNING', cursor: { owner }, startedAt: new Date(), lastError: null },
+  }))
+  if (got.count !== 1) return 'locked' as const
+
+  const ownLease = { entity: LEASE, cursor: { path: ['owner'], equals: owner } }
+  const heartbeat = setInterval(async () => {
+    const r = await db.freshsalesSyncState.updateMany({ where: ownLease, data: { status: 'RUNNING' } }).catch(() => null)
+    if (r && r.count === 0) { fs.stopped = 'lease taken by another process'; log('  lease lost — stopping') }
+  }, 60_000)
+  try {
+    log('▶ conversations'); await syncPerContact(db, fs, 'conversations', { log })
+    log('▶ dealDetails'); await syncDealDetails(db, fs, { log })
+    log('▶ timeline'); await syncPerContact(db, fs, 'timeline', { log })
+    await db.freshsalesSyncState.updateMany({ where: ownLease, data: { status: 'DONE', finishedAt: new Date() } }).catch(() => {})
+    return 'done' as const
+  } catch (e) {
+    await db.freshsalesSyncState.updateMany({ where: ownLease, data: { status: 'IDLE', lastError: String((e as Error)?.message ?? e).slice(0, 500) } }).catch(() => {})
+    throw e
+  } finally {
+    clearInterval(heartbeat)
+  }
+}
+
+/** True once every live contact has conversations + timeline and every deal has its detail. */
+export async function archiveCrawlComplete(db: PrismaClient) {
+  const [conv, tl, deals] = await Promise.all([
+    db.freshsalesContact.count({ where: { isDeleted: false, conversationsSyncedAt: null } }),
+    db.freshsalesContact.count({ where: { isDeleted: false, timelineSyncedAt: null } }),
+    db.freshsalesDeal.count({ where: { detailSyncedAt: null } }),
+  ])
+  return conv + tl + deals === 0
 }

@@ -7,11 +7,13 @@
  *   quick = lookups users contacts dealsIndex activities
  *   all   = every step
  *   status = print progress only
+ *   crawl  = conversations → dealDetails → timeline under the shared lease (same as the server job;
+ *            exits right away if the production server is already crawling)
  */
 import { PrismaClient } from '@prisma/client'
 import {
   FreshsalesClient, syncLookups, syncUsers, syncContacts, syncDealsIndex, syncActivities,
-  syncDealDetails, syncPerContact, crawlScopeCount,
+  syncDealDetails, syncPerContact, crawlScopeCount, runArchiveCrawl,
 } from '../src/lib/freshsales-archive'
 
 const db = new PrismaClient()
@@ -60,6 +62,7 @@ async function main() {
       case 'dealDetails': r = await syncDealDetails(db, fs, { limit }); break
       case 'conversations': r = await syncPerContact(db, fs, 'conversations', { limit }); break
       case 'timeline': r = await syncPerContact(db, fs, 'timeline', { limit }); break
+      case 'crawl': r = await runArchiveCrawl(db, fs, `mac-${process.pid}`); break
       default: throw new Error(`unknown step ${step}`)
     }
     console.log(`✔ ${step}: ${JSON.stringify(r)} in ${Math.round((Date.now() - s) / 1000)}s (${fs.requests} req total)`)
