@@ -62,6 +62,12 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
         select: { id: true, poNumber: true, status: true },
         orderBy: { createdAt: 'asc' },
       },
+      // Transfers created from this PR (Warehouse's stock check or Purchasing's convert) —
+      // used to show each transferred item's transfer number instead of supplier/PO fields.
+      transfers: {
+        select: { id: true, transferNumber: true, status: true, fromLocation: { select: { name: true } }, items: { select: { itemId: true } } },
+        orderBy: { createdAt: 'asc' },
+      },
     },
   })
   if (!request) return NextResponse.json({ error: 'Not found' }, { status: 404 })
@@ -124,8 +130,14 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
           .map(l => ({ locationId: l.locationId, locationName: warehouseNameMap.get(l.locationId) ?? '—', qty: l.qty }))
       : []
 
+    // A converted item with no PO went out via Transfer — find the PR transfer carrying it.
+    const tr = item.convertedAt && !item.convertedPoId && item.itemId
+      ? request.transfers.find(t => t.items.some(ti => ti.itemId === item.itemId))
+      : null
+
     return {
       ...item,
+      transfer: tr ? { id: tr.id, transferNumber: tr.transferNumber, status: tr.status, fromLocationName: tr.fromLocation.name } : null,
       currentStock: item.itemId ? (stockMap.get(item.itemId) ?? 0) : null,
       minStock: master?.minStock ?? 0,
       baseUnit: master?.baseUnit ?? null,
@@ -136,7 +148,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     }
   })
 
-  return NextResponse.json({ ...request, tripBooking: undefined, openTrip: undefined, trip: tripOf(request), items, requestedBy: requester, createdBy: requesterUser, canTransfer })
+  return NextResponse.json({ ...request, transfers: undefined, tripBooking: undefined, openTrip: undefined, trip: tripOf(request), items, requestedBy: requester, createdBy: requesterUser, canTransfer })
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {

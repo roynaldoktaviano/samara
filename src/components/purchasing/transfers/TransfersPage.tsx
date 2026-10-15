@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { useSession } from 'next-auth/react'
 import { Plus, ChevronRight, X, ArrowRight, Package, Trash2, Search, Camera, AlertTriangle, CheckCircle2, ArrowLeftRight, ChevronDown, User, FileDown, Ship } from 'lucide-react'
 import { useFileDrop } from '@/hooks/useFileDrop'
 import { PhotoSourceMenu } from '@/components/ui/file-preview'
@@ -152,7 +153,11 @@ function EmployeeCombobox({ employees, value, onChange }: {
 }
 
 
-export default function TransfersPage() {
+export default function TransfersPage({ deepLinkId, onDeepLinkHandled }: { deepLinkId?: string | null; onDeepLinkHandled?: () => void } = {}) {
+  const { data: session } = useSession()
+  // Cruise Director only sees transfers headed to their own yacht (scoped by the API) and
+  // can only confirm receipt — no creating, dispatching, cancelling or editing.
+  const receiveOnly = (session?.user as { role?: string })?.role === 'CRUISE_DIRECTOR'
   const [transfers, setTransfers] = useState<StockTransfer[]>([])
   const [loading, setLoading] = useState(true)
   // Tablet/mobile card layout (< lg) — same pattern as Purchase Orders/Requests.
@@ -278,12 +283,20 @@ export default function TransfersPage() {
     setPickerOpen(false)
   }
 
-  async function openDetail(t: StockTransfer) {
+  async function openDetail(t: Pick<StockTransfer, 'id'>) {
     setView('detail'); setDetailLoading(true)
     const res = await fetch(`/api/purchasing/transfers/${t.id}`)
     if (res.ok) setDetail(await res.json())
     setDetailLoading(false)
   }
+
+  // Opened from a PR's transfer badge (see RequestsPage TransferBadge) — straight to its detail.
+  useEffect(() => {
+    if (!deepLinkId) return
+    openDetail({ id: deepLinkId })
+    onDeepLinkHandled?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deepLinkId])
 
   function openAddItem() {
     if (!detail) return
@@ -420,11 +433,11 @@ export default function TransfersPage() {
         <h2 className="text-2xl font-bold tracking-tight">Stock Transfers</h2>
         <p className="text-muted-foreground text-sm mt-1">Move inventory between locations</p>
       </div>
-      <div className="flex justify-end">
+      {!receiveOnly && <div className="flex justify-end">
         <button onClick={() => { setFromLoc(''); setToLoc(''); setTrip(null); setLines([]); setWarehouseStock([]); setView('create') }} className="flex items-center gap-2 bg-[#bdac7e] hover:bg-[#a89860] text-white text-sm font-medium px-4 py-2 rounded-md transition-colors">
           <Plus className="h-4 w-4" /> Create Transfer
         </button>
-      </div>
+      </div>}
       {/* Desktop table — full column set, only makes sense at lg+ width */}
       <div className="hidden desktop:block rounded-lg border overflow-hidden">
         <div className="overflow-x-auto"><table className="w-full text-sm">
@@ -849,12 +862,12 @@ export default function TransfersPage() {
                   <FileDown className="h-3.5 w-3.5" /> Packing List
                 </button>
               )}
-              {detail.status === 'PENDING' && <button onClick={openDispatch} className="px-3 py-1.5 text-sm bg-amber-600 text-white rounded-md hover:bg-amber-700 font-medium">Dispatch</button>}
+              {detail.status === 'PENDING' && !receiveOnly && <button onClick={openDispatch} className="px-3 py-1.5 text-sm bg-amber-600 text-white rounded-md hover:bg-amber-700 font-medium">Dispatch</button>}
               {detail.status === 'DISPATCHED' && <button onClick={openReceive} className="px-3 py-1.5 text-sm bg-green-600 text-white rounded-md hover:bg-green-700 font-medium">Receive</button>}
-              {detail.status === 'DISPATCHED' && (
+              {detail.status === 'DISPATCHED' && !receiveOnly && (
                 <button onClick={openCrewLink} className="px-3 py-1.5 text-sm border rounded-md hover:bg-muted font-medium">Get Crew Link</button>
               )}
-              {detail.status === 'PENDING' && (
+              {detail.status === 'PENDING' && !receiveOnly && (
                 <button onClick={async () => { await fetch(`/api/purchasing/transfers/${detail.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'cancel' }) }); setView('list'); load() }} className="px-3 py-1.5 text-sm border text-muted-foreground rounded-md hover:bg-muted">Cancel</button>
               )}
             </div>
@@ -944,7 +957,7 @@ export default function TransfersPage() {
           <div className="rounded-lg border overflow-hidden">
             <div className="px-5 py-3 bg-muted/50 text-xs font-medium text-muted-foreground uppercase flex items-center justify-between">
               Item List
-              {detail.status === 'PENDING' && (
+              {detail.status === 'PENDING' && !receiveOnly && (
                 <button onClick={openAddItem} className="normal-case text-xs font-medium px-2.5 py-1 rounded-md border bg-white hover:bg-muted transition-colors flex items-center gap-1">
                   <Plus className="h-3 w-3" /> Add Item
                 </button>

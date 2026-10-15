@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useSession } from 'next-auth/react'
 import { toast } from 'sonner'
-import { Plus, Minus, ChevronRight, ChevronLeft, Trash2, Package, Search, FileText, ChevronDown, Check, Building2, MapPin, CheckCircle2, Pencil, X, AlertTriangle, Download, ImagePlus, Camera, ShoppingCart, Send, Users, Paperclip, Clock, Ship } from 'lucide-react'
+import { Plus, Minus, ChevronRight, ChevronLeft, Trash2, Package, Search, FileText, ChevronDown, Check, Building2, MapPin, CheckCircle2, Pencil, X, AlertTriangle, Download, ImagePlus, Camera, ShoppingCart, Send, Users, Paperclip, Clock, Ship, ArrowRightLeft } from 'lucide-react'
 import { ITEM_TYPES, ITEM_TYPE_LABELS, type PurchaseItemType } from '@/lib/purchase-item-types'
 import { useFileDrop } from '@/hooks/useFileDrop'
 import { getBand, requiredQuotationCount, BAND_LABEL, RECURRING_SUPPLIER_ORDER_THRESHOLD } from '@/lib/purchasing/quotationBands'
@@ -48,7 +48,7 @@ interface InventoryItemOption {
   id: string; itemNumber: string; name: string; quantity: number; unitPrice: number; photoKeys?: string[]
   category: { id: string; name: string }; room: { id: string; name: string }
 }
-interface RequestLine { id?: string; key?: string; itemId: string; itemName: string; baseUnit: string; purchaseUnit: string; itemUnit: string; unit?: string; quantity: number; estimatedCost: number; supplierId: string; supplierName: string; supplierSearch: string; supplierOpen: boolean; notes: string; search: string; open: boolean; currentStock?: number | null; minStock?: number | null; conversionFactor?: number | null; imageKeys?: string[]; isCustom?: boolean; isStockItem?: boolean; sourceInventoryItemId?: string | null; sourceInventoryItem?: { id: string; itemNumber: string; name: string; room: { name: string } | null; category: { name: string } | null } | null; warehouseStock?: { locationId: string; locationName: string; qty: number }[]; transferEligible?: boolean; quotations?: Quotation[]; exemptionReason?: string | null; selectionJustification?: string | null; requestedByEmployeeId?: string; quotationApproverId?: string | null; quotationApprover?: { id: string; name: string | null } | null; quotationSubmittedAt?: string | null; quotationApprovedById?: string | null; quotationApprovedBy?: { id: string; name: string | null } | null; quotationApprovedAt?: string | null; quotationRejectedBy?: { id: string; name: string | null } | null; quotationRejectedAt?: string | null; quotationRejectionReason?: string | null; convertedAt?: string | null; convertedPoId?: string | null; verifyRejectedById?: string | null; verifyRejectedBy?: { id: string; name: string | null } | null; verifyRejectedAt?: string | null; verifyRejectionReason?: string | null; warehouseDecision?: 'TRANSFER' | 'PURCHASE' | null; warehouseCheckedAt?: string | null; warehouseCheckNote?: string | null }
+interface RequestLine { id?: string; key?: string; itemId: string; itemName: string; baseUnit: string; purchaseUnit: string; itemUnit: string; unit?: string; quantity: number; estimatedCost: number; supplierId: string; supplierName: string; supplierSearch: string; supplierOpen: boolean; notes: string; search: string; open: boolean; currentStock?: number | null; minStock?: number | null; conversionFactor?: number | null; imageKeys?: string[]; isCustom?: boolean; isStockItem?: boolean; sourceInventoryItemId?: string | null; sourceInventoryItem?: { id: string; itemNumber: string; name: string; room: { name: string } | null; category: { name: string } | null } | null; warehouseStock?: { locationId: string; locationName: string; qty: number }[]; transferEligible?: boolean; quotations?: Quotation[]; exemptionReason?: string | null; selectionJustification?: string | null; requestedByEmployeeId?: string; quotationApproverId?: string | null; quotationApprover?: { id: string; name: string | null } | null; quotationSubmittedAt?: string | null; quotationApprovedById?: string | null; quotationApprovedBy?: { id: string; name: string | null } | null; quotationApprovedAt?: string | null; quotationRejectedBy?: { id: string; name: string | null } | null; quotationRejectedAt?: string | null; quotationRejectionReason?: string | null; convertedAt?: string | null; convertedPoId?: string | null; verifyRejectedById?: string | null; verifyRejectedBy?: { id: string; name: string | null } | null; verifyRejectedAt?: string | null; verifyRejectionReason?: string | null; warehouseDecision?: 'TRANSFER' | 'PURCHASE' | null; warehouseCheckedAt?: string | null; warehouseCheckNote?: string | null; transfer?: { id: string; transferNumber: string; status: string; fromLocationName: string } | null }
 interface PurchaseRequest {
   id: string
   prNumber: string
@@ -179,8 +179,34 @@ function ItemNamesPreview({ names, max = 2, className = '' }: { names: string[];
   )
 }
 
-export default function RequestsPage({ onOpenPo, deepLinkId, onDeepLinkHandled }: {
+const TRANSFER_STATUS_LABEL: Record<string, string> = { PENDING: 'Pending dispatch', DISPATCHED: 'Dispatched', RECEIVED: 'Received', CANCELLED: 'Cancelled' }
+
+// Clickable when onOpen is given — jumps to the transfer's detail in Transfers, where
+// Warehouse dispatches it.
+function TransferBadge({ transfer, onOpen }: { transfer?: RequestLine['transfer']; onOpen?: (transferId: string) => void }) {
+  const clickable = !!(transfer && onOpen)
+  return (
+    <div className="space-y-0.5">
+      <button
+        type="button" disabled={!clickable}
+        onClick={e => { e.stopPropagation(); if (transfer && onOpen) onOpen(transfer.id) }}
+        title={clickable ? 'Open transfer' : undefined}
+        className={`inline-flex items-center gap-1 text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-md px-2 py-1 whitespace-nowrap ${clickable ? 'hover:bg-blue-100 cursor-pointer' : 'cursor-default'}`}
+      >
+        <ArrowRightLeft className="h-3 w-3" />
+        {transfer?.transferNumber ?? 'Transfer from stock'}
+        {clickable && <ChevronRight className="h-3 w-3" />}
+      </button>
+      <p className="text-[10px] text-muted-foreground">
+        From warehouse stock{transfer ? ` · ${TRANSFER_STATUS_LABEL[transfer.status] ?? transfer.status}` : ''}
+      </p>
+    </div>
+  )
+}
+
+export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onDeepLinkHandled }: {
   onOpenPo?: (poId: string) => void
+  onOpenTransfer?: (transferId: string) => void
   deepLinkId?: string | null
   onDeepLinkHandled?: () => void
 } = {}) {
@@ -1738,6 +1764,9 @@ export default function RequestsPage({ onOpenPo, deepLinkId, onDeepLinkHandled }
                   const isRejected = !!item.verifyRejectedAt
                   const canDecide = !isWarehouse && ['DRAFT', 'ON_PROCESS'].includes(detail.status) && !item.convertedAt
                   const poNumber = item.convertedPoId ? poNumberMap.get(item.convertedPoId) : null
+                  // Already sent out of warehouse stock via a Transfer — nothing left for
+                  // Purchasing to pick (supplier, fulfillment, room), so those cells show the transfer.
+                  const transferred = !!item.convertedAt && !item.convertedPoId && (item.warehouseDecision === 'TRANSFER' || !!item.transfer)
                   const isNewPoGroup = i > 0 && item.convertedPoId && sortedItems[i - 1].convertedPoId !== item.convertedPoId
                   return (
                     <tr
@@ -1772,7 +1801,9 @@ export default function RequestsPage({ onOpenPo, deepLinkId, onDeepLinkHandled }
                         </div>
                       </td>
                       <td className="px-5 py-3 text-muted-foreground" onClick={e => detail.status === 'ON_PROCESS' && !isWarehouse && e.stopPropagation()}>
-                        {detail.status !== 'ON_PROCESS' || isWarehouse ? (
+                        {transferred && !(detail.status === 'DRAFT' && canWarehouseCheck) ? (
+                          <TransferBadge transfer={item.transfer} onOpen={onOpenTransfer} />
+                        ) : detail.status !== 'ON_PROCESS' || isWarehouse ? (
                           <>
                             {item.supplierName ?? <span className="text-muted-foreground/50 italic">—</span>}
                             {item.transferEligible && !!item.warehouseStock?.length && detail.deliveryLocation?.type !== 'WAREHOUSE' && (
@@ -1875,7 +1906,7 @@ export default function RequestsPage({ onOpenPo, deepLinkId, onDeepLinkHandled }
                           ) : isCustom ? (
                             <span className="text-xs text-muted-foreground italic">Custom — otomatis ke Purchasing</span>
                           ) : item.convertedAt && item.warehouseDecision === 'TRANSFER' ? (
-                            <span className="text-[10px] font-medium text-green-700 bg-green-50 border border-green-200 rounded-full px-2 py-0.5 whitespace-nowrap">✓ Transfer dari stok</span>
+                            <TransferBadge transfer={item.transfer} onOpen={onOpenTransfer} />
                           ) : (() => {
                             const busy = warehouseBusyItemId === item.id
                             const warehouseLocations = locations.filter(l => l.type === 'WAREHOUSE' && l.id !== detail.deliveryLocationId)
@@ -1925,7 +1956,9 @@ export default function RequestsPage({ onOpenPo, deepLinkId, onDeepLinkHandled }
                       )}
                       {detail.status === 'ON_PROCESS' && !isWarehouse && (
                         <td className="px-5 py-3" onClick={e => e.stopPropagation()}>
-                          {item.warehouseDecision === 'PURCHASE' || !item.transferEligible || !item.warehouseStock?.length ? (
+                          {transferred ? (
+                            <span className="text-xs text-blue-700">Transfer{item.transfer ? ` from ${item.transfer.fromLocationName}` : ''}</span>
+                          ) : item.warehouseDecision === 'PURCHASE' || !item.transferEligible || !item.warehouseStock?.length ? (
                             <span className="text-xs text-muted-foreground" title={item.warehouseDecision === 'PURCHASE' ? 'Gudang sudah cek fisik — tidak ada stok' : undefined}>Purchase Order</span>
                           ) : (
                             <div className="relative inline-block">
@@ -1948,7 +1981,7 @@ export default function RequestsPage({ onOpenPo, deepLinkId, onDeepLinkHandled }
                       )}
                       {detail.status === 'ON_PROCESS' && !isWarehouse && detail.deliveryLocation?.type === 'VESSEL' && (
                         <td className="px-5 py-3" onClick={e => e.stopPropagation()}>
-                          {chosenFromLocationId ? (
+                          {chosenFromLocationId || transferred ? (
                             <span className="text-xs text-muted-foreground/60 italic">— (transfer, not needed)</span>
                           ) : (
                             <div className="flex items-center gap-1.5">
@@ -1974,7 +2007,7 @@ export default function RequestsPage({ onOpenPo, deepLinkId, onDeepLinkHandled }
                         </td>
                       )}
                       <td className="px-5 py-3 text-right" onClick={e => e.stopPropagation()}>
-                        {editable && (
+                        {editable && !transferred && (
                           <button onClick={() => openEditItem(item)} className="text-muted-foreground hover:text-foreground transition-colors" title="Edit price / supplier">
                             <Pencil className="h-3.5 w-3.5" />
                           </button>

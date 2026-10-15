@@ -9,8 +9,19 @@ import { emitTenantEvent } from '@/lib/realtime-bus'
 import { notifyAssignedYachtCaptains } from '@/lib/notify-purchasing'
 import { getOrCreateTransferReceiveToken, resolveBaseUrl } from '@/lib/purchasing/receiveLink'
 import { tripFromBooking, tripFromOpenTrip, tripBookingSelect, openTripSelect } from '@/lib/purchasing/tripLink'
+import { resolveAssignedYachtId } from '@/lib/purchasing/yachtScope'
 
 const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE']
+// Cruise Director: view + receive only, and only transfers headed to their own yacht.
+const YACHT_ROLES = ['CRUISE_DIRECTOR']
+
+async function yachtRoleCanAccess(db: Awaited<ReturnType<typeof getDb>>, userId: string, toLocationId: string): Promise<boolean> {
+  const [yachtId, toLoc] = await Promise.all([
+    resolveAssignedYachtId(db, userId),
+    db.stockLocation.findUnique({ where: { id: toLocationId }, select: { yachtId: true } }),
+  ])
+  return !!yachtId && toLoc?.yachtId === yachtId
+}
 
 // For PO-driven transit legs only (transfer.purchaseOrderId set) — ad-hoc transfers made
 // directly in the Transfers module aren't scoped this way. A leg's destination is usually a
@@ -28,7 +39,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const { id } = await params
   const session = await getServerSession(authOptions)
   const role = (session?.user as { role?: string })?.role ?? ''
-  if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!session?.user?.id || !roleMatches(role, [...ALLOWED, ...YACHT_ROLES])) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
   const transfer = await db.stockTransfer.findUnique({
     where: { id },
@@ -55,6 +66,9 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     },
   })
   if (!transfer) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  if (!roleMatches(role, ALLOWED) && !(await yachtRoleCanAccess(db, session.user.id, transfer.toLocationId))) {
+    return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  }
   const [fromLoc, toLoc] = await Promise.all([
     db.stockLocation.findUnique({ where: { id: transfer.fromLocationId }, select: { id: true, name: true, type: true } }),
     db.stockLocation.findUnique({ where: { id: transfer.toLocationId }, select: { id: true, name: true, type: true } }),
@@ -109,13 +123,17 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const { id } = await params
   const session = await getServerSession(authOptions)
   const role = (session?.user as { role?: string })?.role ?? ''
-  if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!session?.user?.id || !roleMatches(role, [...ALLOWED, ...YACHT_ROLES])) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
   const body = await req.json()
   const { action, items, dispatchPhotoKey, receivePhotoKey, expectedReceiverName, receivedByName } = body
 
   const transfer = await db.stockTransfer.findUnique({ where: { id }, include: { items: true } })
   if (!transfer) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  if (!roleMatches(role, ALLOWED)) {
+    if (!(await yachtRoleCanAccess(db, session.user.id, transfer.toLocationId))) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    if (action !== 'receive') return NextResponse.json({ error: 'Only receiving is allowed for your role' }, { status: 403 })
+  }
 
   // Lets the Packing List print page (src/app/print/stock-transfer/[id]/page.tsx) add a
   // real item to this transfer when a new box row is picked from the inventory catalog,

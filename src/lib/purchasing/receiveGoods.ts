@@ -1,7 +1,7 @@
 import { getDb } from '@/lib/get-db'
 import { notifyByRole } from '@/lib/notify-purchasing'
 import { movingAverageCost } from '@/lib/valuation'
-import { shipUsageOnArrival, USAGE_LOCATION_SELECT } from '@/lib/purchasing/usage'
+import { shipArrivalRouter, shipUsageOnArrival, USAGE_LOCATION_SELECT } from '@/lib/purchasing/usage'
 import { attemptFinalizePOStatus, resolveNextHop, spawnNextTransitLeg } from '@/lib/purchasing/transitChain'
 import { nextSeq } from '@/lib/purchasing/docNumber'
 
@@ -78,14 +78,16 @@ export async function receiveGoods(db: Db, params: {
 
   const grNumber = await generateGrNumber(db)
 
-  // A PO delivered straight to a ship/galley (no warehouse in between) is usage on arrival.
-  const receivingLoc = await db.stockLocation.findUnique({ where: { id: effectiveLocationId }, select: USAGE_LOCATION_SELECT })
-  const usage = receivingLoc ? shipUsageOnArrival(null, receivingLoc) : null
+  // A PO delivered straight to a ship/galley (no warehouse in between) is usage on arrival —
+  // except beverages, which land in the yacht's bar as stock (see shipArrivalRouter). A routed
+  // PO's first stop is only a waypoint, so it keeps everything where it is.
+  const receivingLoc = await db.stockLocation.findUnique({ where: { id: effectiveLocationId }, select: { id: true, ...USAGE_LOCATION_SELECT } })
+  const route = hasRoute ? null : await shipArrivalRouter(db, effectiveLocationId)
 
   const itemIds = items.map(it => it.itemId).filter(Boolean) as string[]
   const purchaseItemsData = await db.purchaseItem.findMany({
     where: { id: { in: itemIds } },
-    select: { id: true, conversionFactor: true, standardCost: true, baseUnit: true, name: true, isStockTracked: true },
+    select: { id: true, conversionFactor: true, standardCost: true, baseUnit: true, name: true, isStockTracked: true, type: true },
   })
   const conversionMap = new Map(purchaseItemsData.map(i => [i.id, i.conversionFactor]))
   const itemDataMap = new Map(purchaseItemsData.map(i => [i.id, i]))
@@ -174,11 +176,14 @@ export async function receiveGoods(db: Db, params: {
       // the PO/date/cost that brought it in, without ever pooling into a location's
       // stock balance or feeding min-stock/reorder logic.
       const isStockTracked = it.itemId ? (stockTrackedMap.get(it.itemId) ?? true) : false
+      const dest = route?.(it.itemId ? itemDataMap.get(it.itemId)?.type : null) ?? receivingLoc
+      const destId = dest?.id ?? effectiveLocationId
+      const usage = dest ? shipUsageOnArrival(null, dest) : null
       const incomingCost = baseCostPerUnit || (it.itemId ? itemDataMap.get(it.itemId)?.standardCost ?? 0 : 0)
       if (it.itemId && isStockTracked) {
         // Moving average: the location's running cost is re-blended with this receipt's
         // invoice price, so later transfers/usage are valued at the true average cost.
-        const lot = await tx.stockLot.findFirst({ where: { itemId: it.itemId, locationId: effectiveLocationId } })
+        const lot = await tx.stockLot.findFirst({ where: { itemId: it.itemId, locationId: destId } })
         if (lot) {
           await tx.stockLot.update({
             where: { id: lot.id },
@@ -190,20 +195,20 @@ export async function receiveGoods(db: Db, params: {
           })
         } else {
           await tx.stockLot.create({
-            data: { id: crypto.randomUUID(), locationId: effectiveLocationId, quantity: baseQty, costPerUnit: incomingCost, updatedAt: new Date(), itemId: it.itemId },
+            data: { id: crypto.randomUUID(), locationId: destId, quantity: baseQty, costPerUnit: incomingCost, updatedAt: new Date(), itemId: it.itemId },
           })
         }
       } else {
         await tx.stockLot.create({
           data: {
-            id: crypto.randomUUID(), locationId: effectiveLocationId, quantity: baseQty, costPerUnit: baseCostPerUnit, updatedAt: new Date(),
+            id: crypto.randomUUID(), locationId: destId, quantity: baseQty, costPerUnit: baseCostPerUnit, updatedAt: new Date(),
             itemName: it.itemName, unit: it.unit?.trim() || null, sourcePoId: orderId,
           },
         })
       }
       await tx.stockMovement.create({
         data: {
-          id: crypto.randomUUID(), toLocationId: effectiveLocationId, quantity: baseQty, type: 'RECEIPT', referenceId: gr.id, referenceType: 'GoodsReceipt', createdById: params.movementCreatedById,
+          id: crypto.randomUUID(), toLocationId: destId, quantity: baseQty, type: 'RECEIPT', referenceId: gr.id, referenceType: 'GoodsReceipt', createdById: params.movementCreatedById,
           ...(it.itemId ? { itemId: it.itemId } : { itemName: it.itemName }),
           unitCost: incomingCost,
           totalCost: baseQty * incomingCost,

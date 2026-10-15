@@ -1,6 +1,6 @@
 import { getDb } from '@/lib/get-db'
 import { movingAverageCost } from '@/lib/valuation'
-import { shipUsageOnArrival, USAGE_LOCATION_SELECT } from '@/lib/purchasing/usage'
+import { shipArrivalRouter, shipUsageOnArrival, USAGE_LOCATION_SELECT } from '@/lib/purchasing/usage'
 import { attemptFinalizePOStatus, getRouteLocationIds, resolveNextHop, spawnNextTransitLeg } from '@/lib/purchasing/transitChain'
 import { nextSeq } from '@/lib/purchasing/docNumber'
 
@@ -100,11 +100,18 @@ export async function receiveTransferLeg(db: Db, transferId: string, params: {
     db.stockLocation.findUnique({ where: { id: transfer.toLocationId }, select: { name: true, ...USAGE_LOCATION_SELECT } }),
     db.stockLocation.findUnique({ where: { id: transfer.fromLocationId }, select: USAGE_LOCATION_SELECT }),
   ])
-  // Stock → ship/galley is usage (pemakaian); ship → stock is a reversal. See usage.ts.
-  const usage = toLoc ? shipUsageOnArrival(fromLoc, toLoc) : null
   // Fallback cost for legacy lines dispatched before unitCost was snapshotted.
   const catalogIds = transfer.items.map(ti => ti.itemId).filter(Boolean) as string[]
-  const stdCostMap = new Map((await db.purchaseItem.findMany({ where: { id: { in: catalogIds } }, select: { id: true, standardCost: true } })).map(i => [i.id, i.standardCost]))
+  const catalog = await db.purchaseItem.findMany({ where: { id: { in: catalogIds } }, select: { id: true, standardCost: true, type: true } })
+  const stdCostMap = new Map(catalog.map(i => [i.id, i.standardCost]))
+  const typeMap = new Map(catalog.map(i => [i.id, i.type]))
+
+  // At the final destination on a yacht, each line lands by item type (beverages → the
+  // yacht's bar as stock, everything else → usage on the ship; see shipArrivalRouter).
+  // A transit stop the goods get forwarded from keeps everything in one place.
+  const routeLocationIds = transfer.purchaseOrderId && transfer.originGoodsReceiptId ? await getRouteLocationIds(db, transfer.purchaseOrderId) : null
+  const isFinalStop = !routeLocationIds || !resolveNextHop(routeLocationIds, transfer.toLocationId)
+  const route = isFinalStop ? await shipArrivalRouter(db, transfer.toLocationId) : null
 
   await db.$transaction(async (tx) => {
     for (const it of params.items) {
@@ -116,9 +123,14 @@ export async function receiveTransferLeg(db: Db, transferId: string, params: {
       const transferItem = transfer.items.find(ti => it.itemId ? ti.itemId === it.itemId : ti.itemName === it.itemName)
       const dispatchedQty = transferItem?.dispatchedQty ?? 0
 
+      const dest = route?.(it.itemId ? typeMap.get(it.itemId) : null) ?? (toLoc ? { id: transfer.toLocationId, ...toLoc } : null)
+      const destId = dest?.id ?? transfer.toLocationId
+      // Stock → ship/galley is usage (pemakaian); ship → stock is a reversal. See usage.ts.
+      const usage = dest ? shipUsageOnArrival(fromLoc, dest) : null
+
       const lotWhere = it.itemId
-        ? { itemId: it.itemId, locationId: transfer.toLocationId }
-        : { itemId: null, itemName: it.itemName, locationId: transfer.toLocationId }
+        ? { itemId: it.itemId, locationId: destId }
+        : { itemId: null, itemName: it.itemName, locationId: destId }
       // The cost carried from the source location is blended into the destination's
       // moving average (see movingAverageCost in src/lib/valuation.ts).
       const incomingCost = transferItem?.unitCost || (it.itemId ? stdCostMap.get(it.itemId) ?? 0 : 0)
@@ -131,14 +143,14 @@ export async function receiveTransferLeg(db: Db, transferId: string, params: {
       } else {
         await tx.stockLot.create({
           data: {
-            id: crypto.randomUUID(), locationId: transfer.toLocationId, quantity: qty, costPerUnit: incomingCost, updatedAt: new Date(),
+            id: crypto.randomUUID(), locationId: destId, quantity: qty, costPerUnit: incomingCost, updatedAt: new Date(),
             ...(it.itemId ? { itemId: it.itemId } : { itemName: it.itemName }),
           },
         })
       }
       await tx.stockMovement.create({
         data: {
-          id: crypto.randomUUID(), fromLocationId: transfer.fromLocationId, toLocationId: transfer.toLocationId, quantity: qty, type: 'TRANSFER_IN', referenceId: transferId, referenceType: 'StockTransfer', createdById: params.movementCreatedById,
+          id: crypto.randomUUID(), fromLocationId: transfer.fromLocationId, toLocationId: destId, quantity: qty, type: 'TRANSFER_IN', referenceId: transferId, referenceType: 'StockTransfer', createdById: params.movementCreatedById,
           ...(it.itemId ? { itemId: it.itemId } : { itemName: it.itemName }),
           unitCost: incomingCost,
           totalCost: qty * incomingCost * (usage?.sign ?? 1),
