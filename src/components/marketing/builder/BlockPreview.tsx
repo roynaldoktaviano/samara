@@ -107,7 +107,7 @@ export default function BlockPreview({ block, mobile = false }: { block: EmailBl
 
     case 'columns':
       return (
-        <div style={{ ...paddingStyle(effectivePadding(block, mobile)), gap: block.gap ?? 24, gridTemplateColumns: `repeat(${block.columns.length}, minmax(0, 1fr))` }} className="grid">
+        <div style={{ ...paddingStyle(effectivePadding(block, mobile)), gap: block.gap ?? 24, gridTemplateColumns: `repeat(${block.columns.length}, minmax(0, 1fr))`, alignItems: { top: 'start', middle: 'center', bottom: 'end' }[block.verticalAlign ?? 'top'] }} className="grid">
           {block.columns.map((col, i) => (
             <div key={i} className="space-y-1">
               {col.length === 0 ? (

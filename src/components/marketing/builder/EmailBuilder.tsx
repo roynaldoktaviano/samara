@@ -493,6 +493,9 @@ function SortableCanvasBlock({
   )
 }
 
+// 'top' keeps the default stretch so an empty column's drop zone still fills the row.
+const COLUMN_ALIGN_ITEMS = { top: 'stretch', middle: 'center', bottom: 'end' } as const
+
 function BlockList({
   containerId, blocks, selectedId, onSelect, onDelete, onDuplicate, emptyLabel, mobile,
 }: {
@@ -525,9 +528,11 @@ function BlockList({
             mobile={mobile}
           >
             {block.type === 'columns' ? (
-              <div style={{ ...paddingStyle(effectivePadding(block, mobile)), gap: mobile && block.stackOnMobile ? (block.mobile?.gap ?? block.gap ?? 24) : (block.gap ?? 24), gridTemplateColumns: mobile && block.stackOnMobile ? '1fr' : `repeat(${block.columns.length}, minmax(0, 1fr))` }} className="grid">
+              <div style={{ ...paddingStyle(effectivePadding(block, mobile)), gap: mobile && block.stackOnMobile ? (block.mobile?.gap ?? block.gap ?? 24) : (block.gap ?? 24), gridTemplateColumns: mobile && block.stackOnMobile ? '1fr' : `repeat(${block.columns.length}, minmax(0, 1fr))`, alignItems: COLUMN_ALIGN_ITEMS[block.verticalAlign ?? 'top'] }} className="grid">
                 {block.columns.map((colList, i) => (
-                  <BlockList key={i} containerId={childContainerId(containerId, `col:${block.id}:${i}`)} blocks={colList} selectedId={selectedId} onSelect={onSelect} onDelete={onDelete} onDuplicate={onDuplicate} emptyLabel="Drop here" mobile={mobile} />
+                  <div key={i} className="min-w-0" style={{ order: mobile && block.stackOnMobile && block.reverseOnMobile ? block.columns.length - i : i }}>
+                    <BlockList containerId={childContainerId(containerId, `col:${block.id}:${i}`)} blocks={colList} selectedId={selectedId} onSelect={onSelect} onDelete={onDelete} onDuplicate={onDuplicate} emptyLabel="Drop here" mobile={mobile} />
+                  </div>
                 ))}
               </div>
             ) : block.type === 'section' ? (

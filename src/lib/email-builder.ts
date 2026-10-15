@@ -319,8 +319,12 @@ export interface ColumnsBlock {
   gap: number // total horizontal space between side-by-side columns, in px
   hideOn: HideOn
   stackOnMobile: boolean // below 600px, drop each column to full width, one per row
+  reverseOnMobile?: boolean // when stacked, show the last column first (e.g. text|image row → image on top)
+  verticalAlign?: ColumnsVerticalAlign // align columns of unequal height against each other (default top)
   mobile?: ColumnsMobileOverride // gap: vertical space between stacked columns, in px
 }
+
+export type ColumnsVerticalAlign = 'top' | 'middle' | 'bottom'
 
 // Background image sizing/tiling, shared by Section and Footer. Size and repeat are
 // separate choices; 'auto' (original size) exists mainly so tiling can use the image's
@@ -971,6 +975,10 @@ function renderBlockInner(block: EmailBlock, contentWidth: number): string {
       const soleFillImageOf = (list: EmailBlock[]) =>
         list.length === 1 && (list[0].type === 'image' || list[0].type === 'logo') && list[0].fillHeight ? (list[0] as ImageBlock | LogoBlock) : null
       const hasFillImage = block.columns.some(list => soleFillImageOf(list) !== null)
+      const valign = block.verticalAlign ?? 'top'
+      const reverse = block.stackOnMobile && !!block.reverseOnMobile && n > 1
+      const ltrAttr = reverse ? ' dir="ltr"' : ''
+      const orderCells = (cells: string[], mso: boolean) => (reverse && !mso ? [...cells].reverse() : cells)
 
       if (hasFillImage) {
         // A fill-height image needs a real table row — cells in the same <tr> are
@@ -984,7 +992,11 @@ function renderBlockInner(block: EmailBlock, contentWidth: number): string {
         // into full-width blocks — a pure enhancement on top of the always-side-by-
         // side base, same idea as the fluid columns' own @media relaxation below: a
         // client that ignores it just stays side-by-side instead of failing to stack.
-        const cellsFor = (mso: boolean) => block.columns.map((list, i) => {
+        // Reverse-on-mobile: cells go in reverse DOM order (so display:block stacking
+        // puts the last column first) inside a dir="rtl" table, which lays them back
+        // out right-to-left — i.e. in the original visual order — side by side.
+        // Outlook never stacks, so its copy keeps the plain order.
+        const cellsFor = (mso: boolean) => orderCells(block.columns.map((list, i) => {
           const padLeft = i === 0 ? 0 : halfGap
           const padRight = i === n - 1 ? 0 : halfGap
           const cls = `col-${block.id}-${i}`
@@ -1003,10 +1015,10 @@ function renderBlockInner(block: EmailBlock, contentWidth: number): string {
             }
             return renderFillHeightCell(fillImage, width, padding, cls)
           }
-          return `<td width="${width}%" valign="top" class="${cls}" style="padding-left:${padLeft}px;padding-right:${padRight}px;">${renderColumnCell(list, colMaxPx)}</td>`
-        }).join('')
+          return `<td width="${width}%" valign="${valign}"${ltrAttr} class="${cls}" style="padding-left:${padLeft}px;padding-right:${padRight}px;vertical-align:${valign};">${renderColumnCell(list, colMaxPx)}</td>`
+        }), mso).join('')
         const msoTable = `<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>${cellsFor(true)}</tr></table>`
-        const table = `<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>${cellsFor(false)}</tr></table>`
+        const table = `<table role="presentation" width="100%" cellpadding="0" cellspacing="0"${reverse ? ' dir="rtl"' : ''}><tr>${cellsFor(false)}</tr></table>`
         return `<tr><td${classAttr(pdClass(block), hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};">
           <!--[if mso]>${msoTable}<![endif]-->
           <!--[if !mso]><!-->${table}<!--<![endif]-->
@@ -1016,7 +1028,7 @@ function renderBlockInner(block: EmailBlock, contentWidth: number): string {
       const tdCells = block.columns.map((list, i) => {
         const padLeft = i === 0 ? 0 : halfGap
         const padRight = i === n - 1 ? 0 : halfGap
-        return `<td width="${width}%" valign="top" style="padding-left:${padLeft}px;padding-right:${padRight}px;">${renderColumnCell(list, colMaxPx)}</td>`
+        return `<td width="${width}%" valign="${valign}" style="padding-left:${padLeft}px;padding-right:${padRight}px;vertical-align:${valign};">${renderColumnCell(list, colMaxPx)}</td>`
       }).join('')
       const tdTable = `<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>${tdCells}</tr></table>`
       if (!block.stackOnMobile) {
@@ -1055,11 +1067,17 @@ function renderBlockInner(block: EmailBlock, contentWidth: number): string {
         // it still wraps correctly, just stays capped at its desktop width instead of
         // filling the row — text-align:center below at least keeps that centered
         // instead of flush against the left edge.
-        return `<div class="col-${block.id}-${i}" style="display:inline-block;vertical-align:top;width:100%;max-width:${colMaxPx}px;box-sizing:border-box;padding:0 ${padRight}px ${padBottom}px ${padLeft}px;font-size:14px;">${renderColumnCell(list, colMaxPx)}</div>`
-      }).join('')
+        // Reversed, the stacked gap belongs under every column except the one that
+        // ends up last in DOM order — the original first column.
+        const padBottomFinal = reverse ? (i === 0 ? 0 : mobileGap) : padBottom
+        return `<div class="col-${block.id}-${i}"${ltrAttr} style="display:inline-block;vertical-align:${valign};width:100%;max-width:${colMaxPx}px;box-sizing:border-box;padding:0 ${padRight}px ${padBottomFinal}px ${padLeft}px;font-size:14px;">${renderColumnCell(list, colMaxPx)}</div>`
+      })
+      // Same reverse trick as the fill-image branch: reversed DOM order + direction:rtl
+      // keeps desktop's left-to-right order while wrapping (stacking) puts the last
+      // column on top. Each column resets dir="ltr" so its own content isn't mirrored.
       return `<tr><td${classAttr(pdClass(block), hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};">
         <!--[if mso]>${tdTable}<![endif]-->
-        <!--[if !mso]><!--><div style="font-size:0;line-height:0;text-align:center;">${fluidCells}</div><!--<![endif]-->
+        <!--[if !mso]><!--><div${reverse ? ' dir="rtl"' : ''} style="font-size:0;line-height:0;text-align:center;${reverse ? 'direction:rtl;' : ''}">${orderCells(fluidCells, false).join('')}</div><!--<![endif]-->
       </td></tr>`
     }
 

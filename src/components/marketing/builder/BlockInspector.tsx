@@ -1,14 +1,14 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { FONT_OPTIONS, customFontOptions, leadingFontFamily, uniformPadding, type EmailBlock, type BlockAlign, type Padding, type HideOn, type BackgroundImageFields } from '@/lib/email-builder'
+import { FONT_OPTIONS, customFontOptions, leadingFontFamily, uniformPadding, type EmailBlock, type BlockAlign, type Padding, type HideOn, type BackgroundImageFields, type ColumnsVerticalAlign } from '@/lib/email-builder'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
-import { Bold, Italic, Underline, Strikethrough, List, ListOrdered, Superscript, Subscript, Link as LinkIcon, Link2Off, Loader2, Upload, Monitor, Smartphone, AlignLeft, AlignCenter, AlignRight, AlertTriangle, Search, Palette } from 'lucide-react'
+import { Bold, Italic, Underline, Strikethrough, List, ListOrdered, Superscript, Subscript, Link as LinkIcon, Link2Off, Loader2, Upload, Monitor, Smartphone, AlignLeft, AlignCenter, AlignRight, AlignStartHorizontal, AlignCenterHorizontal, AlignEndHorizontal, AlertTriangle, Search, Palette } from 'lucide-react'
 import { toast } from 'sonner'
 import { useFileDrop } from '@/hooks/useFileDrop'
 import { useEmailFonts } from '@/components/marketing/shared/useEmailFonts'
@@ -74,6 +74,32 @@ function AlignField({ value, onChange }: { value: BlockAlign; onChange: (v: Bloc
           <button
             key={o.v}
             type="button"
+            onClick={() => onChange(o.v)}
+            className={`flex h-8 items-center justify-center rounded-md border transition-colors ${value === o.v ? 'bg-[#bdac7e] text-white border-[#bdac7e]' : 'text-muted-foreground hover:bg-muted/50'}`}
+          >
+            <o.icon className="h-3.5 w-3.5" />
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function VerticalAlignField({ value, onChange }: { value: ColumnsVerticalAlign; onChange: (v: ColumnsVerticalAlign) => void }) {
+  const options: { v: ColumnsVerticalAlign; icon: React.ElementType; title: string }[] = [
+    { v: 'top', icon: AlignStartHorizontal, title: 'Top' },
+    { v: 'middle', icon: AlignCenterHorizontal, title: 'Middle' },
+    { v: 'bottom', icon: AlignEndHorizontal, title: 'Bottom' },
+  ]
+  return (
+    <div className="space-y-1.5">
+      <Label className="text-xs">Vertical alignment</Label>
+      <div className="grid grid-cols-3 gap-1.5">
+        {options.map(o => (
+          <button
+            key={o.v}
+            type="button"
+            title={o.title}
             onClick={() => onChange(o.v)}
             className={`flex h-8 items-center justify-center rounded-md border transition-colors ${value === o.v ? 'bg-[#bdac7e] text-white border-[#bdac7e]' : 'text-muted-foreground hover:bg-muted/50'}`}
           >
@@ -672,6 +698,16 @@ export default function BlockInspector({ block, onChange }: { block: EmailBlock;
             <Label className="text-xs">Stack on mobile</Label>
             <Switch checked={block.stackOnMobile} onCheckedChange={stackOnMobile => onChange({ ...block, stackOnMobile })} />
           </div>
+          {block.stackOnMobile && count > 1 && (
+            <div className="space-y-1">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs">Reverse order on mobile</Label>
+                <Switch checked={!!block.reverseOnMobile} onCheckedChange={reverseOnMobile => onChange({ ...block, reverseOnMobile })} />
+              </div>
+              <p className="text-[10px] text-muted-foreground">Stacks the last column first — e.g. a text | image row shows the image on top, matching the other rows.</p>
+            </div>
+          )}
+          <VerticalAlignField value={block.verticalAlign ?? 'top'} onChange={verticalAlign => onChange({ ...block, verticalAlign })} />
           <SectionHeader label="Block options" />
           <ResponsivePaddingField block={block} onChange={onChange} />
           <HideOnField value={block.hideOn} onChange={hideOn => onChange({ ...block, hideOn })} />
