@@ -1232,9 +1232,19 @@ function collectExtraStyles(blocks: EmailBlock[]): string[] {
         const fillImageIndex = b.columns.findIndex(list => list.length === 1 && (list[0].type === 'image' || list[0].type === 'logo') && list[0].fillHeight)
         const hasFillImage = fillImageIndex !== -1
         const fillImage = hasFillImage ? (b.columns[fillImageIndex][0] as ImageBlock | LogoBlock) : null
+        // Each column's inline padding carries half the inter-column gap on its inner
+        // side(s) — right on the first, left on the last — which is what spaces them
+        // apart side by side. Once stacked that half-gap is meaningless and shows up as
+        // every column sitting off-center by a different amount (first nudged left, last
+        // nudged right), so the horizontal padding is zeroed out here.
+        const reverse = !!b.reverseOnMobile && b.columns.length > 1
+        const lastStacked = reverse ? 0 : b.columns.length - 1
+        const mobileGap = b.mobile?.gap ?? b.gap ?? 24
         const decls = b.columns.map((_, i) => {
-          if (!hasFillImage) return `.col-${b.id}-${i}{max-width:100% !important;}`
-          if (i !== fillImageIndex) return `.col-${b.id}-${i}{display:block !important;width:100% !important;}`
+          if (!hasFillImage) return `.col-${b.id}-${i}{max-width:100% !important;padding-left:0 !important;padding-right:0 !important;}`
+          // Table cells have no bottom padding baked in (side by side they don't need it),
+          // so the vertical gap between stacked cells is added here.
+          if (i !== fillImageIndex) return `.col-${b.id}-${i}{display:block !important;width:100% !important;padding-left:0 !important;padding-right:0 !important;padding-bottom:${i === lastStacked ? 0 : mobileGap}px !important;}`
           // Stacking also strips away the equal-height table row this column's
           // background-image relied on for its height (see renderFillHeightCell),
           // leaving it ~0px tall — just whatever padding it was given. A width-based
