@@ -159,11 +159,21 @@ export default async function middleware(req: NextRequest) {
   // src/lib/bot-access.ts). Every page, every other API route, and every write method
   // (POST/PUT/PATCH/DELETE) is refused here, before any route handler runs — so the bot can
   // never post, approve or delete anything regardless of what individual routes allow.
+  const isBotApiPath = pathname === '/api/bot' || pathname.startsWith('/api/bot/')
+  // BOT API key (`Authorization: Bearer sbk_…`, see src/lib/bot-api-key.ts): no cookie session,
+  // so it can't pass withAuth below — let it through to /api/bot/* reads only. The route handler
+  // verifies the key and always treats it as the BOT role. Off /api/bot the header is ignored.
+  if (isBotApiPath && /^Bearer\s+sbk_/i.test(req.headers.get('authorization') ?? '')) {
+    if (req.method !== 'GET' && req.method !== 'HEAD') {
+      return NextResponse.json({ error: 'Bot API keys are read-only' }, { status: 403 })
+    }
+    return NextResponse.next()
+  }
+
   const sessionToken = await getToken({ req, secret: process.env.NEXTAUTH_SECRET })
   if (sessionToken?.role === 'BOT') {
-    const isBotApi = pathname === '/api/bot' || pathname.startsWith('/api/bot/')
     const isRead = req.method === 'GET' || req.method === 'HEAD'
-    if (!isBotApi || !isRead) {
+    if (!isBotApiPath || !isRead) {
       return NextResponse.json({ error: 'Bot accounts are read-only and limited to /api/bot' }, { status: 403 })
     }
   }

@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireRole } from '@/lib/auth-guard'
+import { requireBotAccess } from '@/lib/bot-api-key'
 import { getDb } from '@/lib/get-db'
 import { BOT_RESOURCES, botSelect, delegateName, sanitizeForBot } from '@/lib/bot-access'
 
 // Read-only single-record endpoint for whitelisted resources (see src/lib/bot-access.ts).
 export async function GET(_: NextRequest, { params }: { params: Promise<{ resource: string; id: string }> }) {
-  const auth = await requireRole(['BOT', 'ADMIN', 'SUPER_ADMIN'])
+  const auth = await requireBotAccess()
   if (!auth.ok) return auth.response
 
   const { resource, id } = await params

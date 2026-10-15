@@ -7,6 +7,11 @@ import sanitizeHtml from 'sanitize-html'
 const P_STYLE = 'margin:0;'
 const LIST_STYLE = 'margin:0 0 0 0;padding-left:24px;'
 
+// The composer emits a blank line as an empty <p></p>. The editor/thread view give it a line of
+// height (min-h), but Gmail and most clients collapse empty paragraphs to nothing, which glues
+// every section together — so blank lines are sent as <p><br></p>, which clients do render.
+const EMPTY_P = /<p style="margin:0;?">(?:\s|&nbsp;|<span[^>]*>\s*<\/span>)*<\/p>/g
+
 export function sanitizeEmailHtml(html: string): string {
   return sanitizeHtml(html, {
     allowedTags: ['p', 'br', 'strong', 'b', 'em', 'i', 'u', 's', 'ul', 'ol', 'li', 'a', 'span', 'blockquote'],
@@ -29,7 +34,7 @@ export function sanitizeEmailHtml(html: string): string {
       blockquote: (_tag, attribs) => ({ tagName: 'blockquote', attribs: { ...attribs, style: 'margin:0 0 0 8px;padding-left:12px;border-left:3px solid #d0d7de;color:#555;' } }),
       a: (_tag, attribs) => ({ tagName: 'a', attribs: { ...attribs, target: '_blank', rel: 'noopener noreferrer' } }),
     },
-  })
+  }).replace(EMPTY_P, `<p style="${P_STYLE}"><br /></p>`)
 }
 
 /** Plain-text version of composer HTML, for previews/search and the text/plain part. */

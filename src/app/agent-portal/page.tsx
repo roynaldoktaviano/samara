@@ -15,6 +15,9 @@ const GOLD_DARK = '#a8956a'
 
 const SAMARA_LOGO = '/agent-portal/logoo.png'
 
+// Loaded by ./layout.tsx via next/font.
+const MERRIWEATHER = "var(--font-merriweather), 'Merriweather', serif"
+
 // react-pageflip touches browser globals (document/HTMLElement) at module-evaluation time,
 // which throws during Next.js's server-side render pass on a self-hosted (non-edge) Node
 // server — loaded client-only to avoid that.
@@ -161,10 +164,13 @@ function FullScreenLoader() {
 function PromoPopup({ promo, onClose }: { promo: PromoRecord; onClose: () => void }) {
   return (
     <div
-      className="fixed inset-0 bg-neutral-950/80 backdrop-blur-sm flex items-center justify-center z-[60] p-4"
+      className="fixed inset-0 bg-neutral-950/80 backdrop-blur-sm flex items-center justify-center z-[60] p-4 animate-in fade-in duration-300"
       onClick={onClose}
     >
-      <div className="bg-white rounded-2xl overflow-hidden max-w-md w-full shadow-2xl" onClick={e => e.stopPropagation()}>
+      <div
+        className="bg-white rounded-2xl overflow-hidden max-w-md w-full shadow-2xl animate-in fade-in zoom-in-95 slide-in-from-bottom-4 duration-500 delay-150 fill-mode-both ease-out"
+        onClick={e => e.stopPropagation()}
+      >
         {promo.imageUrl && (
           <div className="aspect-[16/9] bg-neutral-100">
             <img src={promo.imageUrl} alt={promo.title} className="w-full h-full object-cover" />
@@ -172,7 +178,7 @@ function PromoPopup({ promo, onClose }: { promo: PromoRecord; onClose: () => voi
         )}
         <div className="p-6">
           <div className="flex items-start justify-between gap-3">
-            <h3 className="text-lg font-bold tracking-tight" style={{ fontFamily: "'Merriweather', serif" }}>{promo.title}</h3>
+            <h3 className="text-lg font-bold tracking-tight" style={{ fontFamily: MERRIWEATHER }}>{promo.title}</h3>
             <button onClick={onClose} aria-label="Close" className="text-muted-foreground/70 hover:text-foreground transition-colors shrink-0">
               <X className="h-4 w-4" />
             </button>
@@ -337,9 +343,15 @@ export default function AgentPortalPage() {
     )
   }
 
+  // Keyed per screen so each step change fades in instead of snapping. Opacity only — a
+  // transform here would become the containing block for the screens' `fixed inset-0` layouts.
+  const screenKey = checkingSession ? 'loading' : step === 'login' || step === 'yacht' ? step : 'content'
+
   return (
     <ContentProtection>
-      {body}
+      <div key={screenKey} className="animate-[page-enter_0.5s_ease-out]">
+        {body}
+      </div>
       {generalPromo && <PromoPopup promo={generalPromo} onClose={() => setGeneralPromo(null)} />}
       {yachtPromo && <PromoPopup promo={yachtPromo} onClose={() => setYachtPromo(null)} />}
     </ContentProtection>
@@ -436,7 +448,10 @@ function AgentPortalContentScreen({ step, setStep, logout, agentName, yachts, se
         </div>
       )}
 
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 py-10">
+      {/* Keyed per tab + yacht so switching either fades the new content in. No fill-mode, so the
+          transform is gone once it finishes — the preview modals inside are `fixed` and would
+          otherwise be positioned against this div. */}
+      <div key={`${step}-${selectedYacht?.id}`} className="max-w-5xl mx-auto px-4 sm:px-6 py-10 animate-in fade-in slide-in-from-bottom-2 duration-500 ease-out">
         {step === 'media' && selectedYacht && (
           <MediaKitScreen yacht={selectedYacht} />
         )}
@@ -474,10 +489,10 @@ function YachtSwitcher({ yachts, selectedYacht, onSelect }: {
       >
         <span className="text-neutral-400 font-normal">Yacht:</span>
         {selectedYacht?.name ?? 'Select a yacht'}
-        <ChevronDown className={cn('h-3.5 w-3.5 text-neutral-400 transition-transform', open && 'rotate-180')} />
+        <ChevronDown className={cn('h-3.5 w-3.5 text-neutral-400 transition-transform duration-200', open && 'rotate-180')} />
       </button>
       {open && (
-        <div className="absolute left-0 top-full mt-1.5 w-56 max-h-72 overflow-y-auto rounded-lg border bg-white shadow-lg z-30 py-1">
+        <div className="absolute left-0 top-full mt-1.5 w-56 max-h-72 overflow-y-auto rounded-lg border bg-white shadow-lg z-30 py-1 animate-in fade-in zoom-in-95 slide-in-from-top-1 duration-200 origin-top-left">
           {yachts.map(y => (
             <button
               key={y.id}
@@ -503,10 +518,10 @@ function LoginScreen({ email, setEmail, password, setPassword, error, onSubmit }
 }) {
   return (
     <div className="fixed inset-0 flex items-center justify-center">
-      <img src={FALLBACK_PHOTO_A} alt="Samara fleet" className="absolute inset-0 w-full h-full object-cover" />
+      <img src={FALLBACK_PHOTO_A} alt="Samara fleet" className="absolute inset-0 w-full h-full object-cover motion-safe:animate-in motion-safe:zoom-in-110 duration-[2500ms] ease-out" />
       <div className="absolute inset-0 bg-black/65" />
 
-      <div className="relative w-full max-w-sm mx-4 bg-white rounded-2xl shadow-2xl p-8">
+      <div className="relative w-full max-w-sm mx-4 bg-white rounded-2xl shadow-2xl p-8 animate-in fade-in zoom-in-95 slide-in-from-bottom-4 duration-700 delay-150 ease-out fill-mode-both">
         {/* brightness-0 (no invert) — the source logo's wordmark is white, which
             disappears against this white card; forcing it to a black silhouette
             keeps it visible without needing a separate logo asset. */}
@@ -559,6 +574,39 @@ function LoginScreen({ email, setEmail, password, setPassword, error, onSubmit }
   )
 }
 
+// Every yacht photo stays mounted and stacked, so switching yachts crossfades between two
+// already-loaded images instead of remounting one <img> (which flashed black while the new
+// photo loaded). The active photo also drifts from a slight zoom back to 1x (Ken Burns);
+// `ready` holds everything hidden for the first frame so the opening shot gets that too.
+function HeroImages({ yachts, activeId, className }: { yachts: YachtOption[]; activeId: string; className?: string }) {
+  const [ready, setReady] = useState(false)
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => setReady(true))
+    return () => cancelAnimationFrame(raf)
+  }, [])
+
+  return (
+    <div className={cn('overflow-hidden', className)}>
+      {yachts.map((y, i) => {
+        const isActive = ready && y.id === activeId
+        return (
+          <img
+            key={y.id}
+            src={y.image ?? (i % 2 === 0 ? FALLBACK_PHOTO_A : FALLBACK_PHOTO_B)}
+            alt={isActive ? y.name : ''}
+            aria-hidden={!isActive}
+            className={cn(
+              'absolute inset-0 w-full h-full object-cover will-change-[opacity,transform]',
+              '[transition:opacity_1s_ease-in-out,transform_10s_ease-out] motion-reduce:[transition:opacity_0.4s_ease]',
+              isActive ? 'opacity-100 scale-100' : 'opacity-0 scale-[1.08] motion-reduce:scale-100',
+            )}
+          />
+        )
+      })}
+    </div>
+  )
+}
+
 function YachtScreen({ yachts, loading, agentName, onSelect, onLogout }: {
   yachts: YachtOption[]; loading: boolean; agentName: string
   onSelect: (id: string, target: 'media' | 'calendar') => void; onLogout: () => void
@@ -587,12 +635,8 @@ function YachtScreen({ yachts, loading, agentName, onSelect, onLogout }: {
     )
   }
 
-  const fallbackImage = activeIndex % 2 === 0 ? FALLBACK_PHOTO_A : FALLBACK_PHOTO_B
-
   return (
     <>
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=Merriweather:wght@700&display=swap');`}</style>
-
       {/* Mobile: hero image up top + a scrollable panel with an accordion list of yachts below
           it (tapping a name swaps the hero image/text) — the desktop cinematic layout below
           doesn't translate to a narrow screen (its yacht switcher is a horizontal thumbnail
@@ -607,15 +651,18 @@ function YachtScreen({ yachts, loading, agentName, onSelect, onLogout }: {
         </div>
 
         <div className="flex-1 overflow-y-auto">
-          <div className="relative">
-            <img key={active.id} src={active.image ?? fallbackImage} alt={active.name} className="w-full h-[42vh] object-cover animate-in fade-in duration-700" />
+          <div className="relative h-[42vh]">
+            <HeroImages yachts={yachts} activeId={active.id} className="absolute inset-0" />
             <div className="absolute inset-0 bg-gradient-to-t from-neutral-950 via-neutral-950/10 to-transparent" />
-            <div className="absolute inset-x-0 bottom-0 px-5 pb-4">
-              <h1 className="text-white font-black text-3xl leading-[0.95] tracking-tight" style={{ fontFamily: "'Merriweather', serif" }}>
+            <div key={active.id} className="absolute inset-x-0 bottom-0 px-5 pb-4">
+              <h1
+                className="text-white font-black text-3xl leading-[0.95] tracking-tight animate-in fade-in slide-in-from-bottom-3 duration-700 ease-out fill-mode-both"
+                style={{ fontFamily: MERRIWEATHER }}
+              >
                 {active.name}
               </h1>
               {active.description && (
-                <p className="text-white/75 text-xs mt-2.5 leading-relaxed line-clamp-3">{active.description}</p>
+                <p className="text-white/75 text-xs mt-2.5 leading-relaxed line-clamp-3 animate-in fade-in slide-in-from-bottom-2 duration-700 delay-150 ease-out fill-mode-both">{active.description}</p>
               )}
             </div>
           </div>
@@ -623,14 +670,14 @@ function YachtScreen({ yachts, loading, agentName, onSelect, onLogout }: {
           <div className="flex items-center gap-2.5 px-5 pt-5">
             <button
               onClick={() => onSelect(active.id, 'media')}
-              className="flex-1 inline-flex items-center justify-center gap-2 bg-white text-sm font-semibold px-4 py-3 rounded-full"
+              className="flex-1 inline-flex items-center justify-center gap-2 bg-white text-sm font-semibold px-4 py-3 rounded-full active:scale-[0.97] transition-transform"
               style={{ color: GOLD_DARK }}
             >
               <FileStack className="h-4 w-4" /> Resources
             </button>
             <button
               onClick={() => onSelect(active.id, 'calendar')}
-              className="flex-1 inline-flex items-center justify-center gap-2 bg-white/10 border border-white/20 text-white text-sm font-semibold px-4 py-3 rounded-full"
+              className="flex-1 inline-flex items-center justify-center gap-2 bg-white/10 border border-white/20 text-white text-sm font-semibold px-4 py-3 rounded-full active:scale-[0.97] transition-transform"
             >
               <CalendarDays className="h-4 w-4" /> Calendar
             </button>
@@ -646,9 +693,12 @@ function YachtScreen({ yachts, loading, agentName, onSelect, onLogout }: {
                       <span className={cn('text-sm font-semibold uppercase tracking-widest transition-colors', isActive ? 'text-white' : 'text-white/45')}>
                         {y.name}
                       </span>
-                      {isActive ? <X className="h-3.5 w-3.5 text-[#d9cda3] shrink-0" /> : <Plus className="h-3.5 w-3.5 text-white/30 shrink-0" />}
+                      <Plus className={cn('h-3.5 w-3.5 shrink-0 transition-[transform,color] duration-300', isActive ? 'rotate-45 text-[#d9cda3]' : 'text-white/30')} />
                     </button>
-                    {isActive && <div className="h-0.5 w-10 -mt-4 mb-4 rounded-full" style={{ backgroundColor: GOLD }} />}
+                    <div
+                      className={cn('h-0.5 -mt-4 mb-4 rounded-full origin-left transition-[transform,opacity] duration-500 ease-out', isActive ? 'w-10 scale-x-100 opacity-100' : 'w-10 scale-x-0 opacity-0')}
+                      style={{ backgroundColor: GOLD }}
+                    />
                   </div>
                 )
               })}
@@ -659,12 +709,12 @@ function YachtScreen({ yachts, loading, agentName, onSelect, onLogout }: {
 
       {/* Desktop/tablet: full-bleed cinematic hero + floating thumbnail-strip switcher */}
       <div className="hidden sm:block fixed inset-0 overflow-hidden bg-black">
-        <img key={active.id} src={active.image ?? fallbackImage} alt={active.name} className="absolute inset-0 w-full h-full object-cover animate-in fade-in duration-700" />
+        <HeroImages yachts={yachts} activeId={active.id} className="absolute inset-0" />
       <div className="absolute inset-0 bg-gradient-to-r from-black/85 via-black/40 to-black/10" />
       <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/20" />
 
       {/* Top bar */}
-      <div className="absolute top-0 inset-x-0 flex items-center justify-between p-5 sm:p-8 z-10">
+      <div className="absolute top-0 inset-x-0 flex items-center justify-between p-5 sm:p-8 z-10 animate-in fade-in slide-in-from-top-2 duration-700 ease-out fill-mode-both">
         <div className="flex items-center bg-black/30 backdrop-blur-sm rounded-full pl-3 pr-4 py-2">
           <img src={SAMARA_LOGO} alt="Samara" className="h-4 sm:h-5 w-auto object-contain" />
         </div>
@@ -685,30 +735,33 @@ function YachtScreen({ yachts, loading, agentName, onSelect, onLogout }: {
 
       {/* Left content */}
       <div className="absolute inset-y-0 left-0 flex flex-col justify-center px-6 sm:px-14 lg:px-20 max-w-xl z-10">
-        <p className="text-[#d9cda3] text-xs font-semibold uppercase tracking-[0.3em] mb-4">Travel Partner &amp; Press</p>
+        <p className="text-[#d9cda3] text-xs font-semibold uppercase tracking-[0.3em] mb-4 animate-in fade-in duration-1000 fill-mode-both">Travel Partner &amp; Press</p>
+        {/* Keyed on the yacht so the whole text block replays its staggered entrance on every switch,
+            in step with the photo crossfade — previously only the title animated and the rest snapped. */}
+        <div key={active.id}>
         <h1
-          key={active.id}
-          className="text-white font-black text-6xl sm:text-7xl lg:text-8xl leading-[0.95] tracking-tight animate-in fade-in slide-in-from-bottom-3 duration-500"
-          style={{ fontFamily: "'Merriweather', serif" }}
+          className="text-white font-black text-6xl sm:text-7xl lg:text-8xl leading-[0.95] tracking-tight animate-in fade-in slide-in-from-bottom-3 duration-700 ease-out fill-mode-both"
+          style={{ fontFamily: MERRIWEATHER }}
         >
           {active.name}
         </h1>
-        <p className="text-white/80 text-sm sm:text-base mt-5 max-w-sm">
+        <p className="text-white/80 text-sm sm:text-base mt-5 max-w-sm animate-in fade-in slide-in-from-bottom-3 duration-700 ease-out fill-mode-both delay-100">
           {[active.type, active.cabinCount ? `${active.cabinCount} Cabins` : null, active.capacity ? `${active.capacity} Guests` : null, active.length ? `${active.length}m` : null]
             .filter(Boolean).join(' · ')}
         </p>
         {active.description && (
-          <p className="text-white/70 text-sm mt-3 max-w-sm leading-relaxed">{active.description}</p>
+          <p className="text-white/70 text-sm mt-3 max-w-sm leading-relaxed animate-in fade-in slide-in-from-bottom-3 duration-700 ease-out fill-mode-both delay-200">{active.description}</p>
         )}
         {active.tagline && (
-          <p className="flex items-center gap-1.5 text-[#d9cda3] text-xs sm:text-sm mt-4">
+          <p className="flex items-center gap-1.5 text-[#d9cda3] text-xs sm:text-sm mt-4 animate-in fade-in slide-in-from-bottom-3 duration-700 ease-out fill-mode-both delay-300">
             <MapPin className="h-3.5 w-3.5 shrink-0" /> {active.tagline}
           </p>
         )}
-        <div className="flex items-center flex-wrap gap-3 mt-8">
+        </div>
+        <div className="flex items-center flex-wrap gap-3 mt-8 animate-in fade-in slide-in-from-bottom-3 duration-700 ease-out fill-mode-both delay-300">
           <button
             onClick={() => onSelect(active.id, 'media')}
-            className="inline-flex items-center gap-2 bg-white text-sm font-semibold px-6 py-3.5 rounded-full hover:scale-105 transition-transform shadow-xl"
+            className="inline-flex items-center gap-2 bg-white text-sm font-semibold px-6 py-3.5 rounded-full hover:scale-105 active:scale-100 transition-transform duration-200 shadow-xl"
             style={{ color: GOLD_DARK }}
           >
             <FileStack className="h-4 w-4" /> See Resources
@@ -724,7 +777,7 @@ function YachtScreen({ yachts, loading, agentName, onSelect, onLogout }: {
 
       {/* Floating card row — lower right, peeking off the bottom, hugs the right edge */}
       {yachts.length > 1 && (
-        <div className="hidden sm:flex absolute bottom-8 sm:bottom-10 right-6 sm:right-10 flex-col items-end gap-3 z-10">
+        <div className="hidden sm:flex absolute bottom-8 sm:bottom-10 right-6 sm:right-10 flex-col items-end gap-3 z-10 animate-in fade-in slide-in-from-right-8 duration-1000 delay-300 ease-out fill-mode-both">
           <div className="flex items-end gap-3 sm:gap-4">
             <button
               onClick={prevYacht}
@@ -739,11 +792,11 @@ function YachtScreen({ yachts, loading, agentName, onSelect, onLogout }: {
                 key={y.id}
                 onClick={() => setActiveId(y.id)}
                 className={cn(
-                  'group relative shrink-0 w-28 h-40 sm:w-36 sm:h-56 rounded-xl overflow-hidden border transition-all duration-300',
+                  'group relative shrink-0 w-28 h-40 sm:w-36 sm:h-56 rounded-xl overflow-hidden border transition-[transform,opacity,border-color,box-shadow] duration-500 ease-out',
                   y.id === activeId ? 'border-white/70 shadow-2xl -translate-y-2' : 'border-white/10 opacity-70 hover:opacity-100 hover:-translate-y-1'
                 )}
               >
-                <img src={y.image ?? (i % 2 === 0 ? FALLBACK_PHOTO_A : FALLBACK_PHOTO_B)} alt={y.name} className="absolute inset-0 w-full h-full object-cover" />
+                <img src={y.image ?? (i % 2 === 0 ? FALLBACK_PHOTO_A : FALLBACK_PHOTO_B)} alt={y.name} className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-110" />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/10 to-transparent" />
                 <div className="absolute bottom-2.5 left-2.5 right-2.5">
                   <p className="text-white font-bold text-xs sm:text-sm leading-tight uppercase tracking-tight">{y.name}</p>
@@ -762,7 +815,7 @@ function YachtScreen({ yachts, loading, agentName, onSelect, onLogout }: {
 
           <div className="w-full h-px bg-white/20">
             <div
-              className="h-px bg-white transition-all duration-300"
+              className="h-px bg-white transition-[width] duration-700 ease-out"
               style={{ width: `${((activeIndex + 1) / yachts.length) * 100}%` }}
             />
           </div>
@@ -1129,7 +1182,7 @@ function MediaKitScreen({ yacht }: { yacht: YachtOption }) {
     <div>
       <div className="text-center mb-10">
         <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground/60">What's Included</p>
-        <h2 className="text-2xl sm:text-3xl font-bold tracking-tight mt-2" style={{ fontFamily: "'Merriweather', serif" }}>
+        <h2 className="text-2xl sm:text-3xl font-bold tracking-tight mt-2" style={{ fontFamily: MERRIWEATHER }}>
           <span style={{ color: GOLD_DARK }}>{yacht.name}</span> Media Kit
         </h2>
         <p className="text-muted-foreground text-sm mt-3 max-w-md mx-auto">
@@ -1207,7 +1260,7 @@ function MediaKitScreen({ yacht }: { yacht: YachtOption }) {
           </div>
           <div className="order-1 sm:order-2">
             <p className="text-[11px] font-semibold uppercase tracking-wide text-white/50">About this yacht</p>
-            <h3 className="text-xl font-bold mt-2 text-white" style={{ fontFamily: "'Merriweather', serif" }}>{yacht.name}</h3>
+            <h3 className="text-xl font-bold mt-2 text-white" style={{ fontFamily: MERRIWEATHER }}>{yacht.name}</h3>
             <p className="text-sm text-white/70 mt-3 leading-relaxed">
               {yacht.name} is a {yacht.cabinCount ? `${yacht.cabinCount}-cabin ` : ''}{(yacht.type ?? 'yacht').toLowerCase()}
               {yacht.tagline ? ` sailing ${yacht.tagline}` : ''}. Thoughtfully designed for both comfort and adventure, she pairs
