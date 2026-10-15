@@ -10,17 +10,19 @@ import { notifyAssignedYachtCaptains } from '@/lib/notify-purchasing'
 import { getOrCreateTransferReceiveToken, resolveBaseUrl } from '@/lib/purchasing/receiveLink'
 import { tripFromBooking, tripFromOpenTrip, tripBookingSelect, openTripSelect } from '@/lib/purchasing/tripLink'
 import { resolveAssignedYachtId } from '@/lib/purchasing/yachtScope'
+import { canDispatchFrom, DISPATCH_OWNER_LABEL } from '@/lib/purchasing/dispatchPermission'
 
 const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE']
-// Cruise Director: view + receive only, and only transfers headed to their own yacht.
+// Cruise Director: only transfers to or from their own yacht — receives what arrives there,
+// dispatches what leaves from there (see dispatchPermission.ts), nothing else.
 const YACHT_ROLES = ['CRUISE_DIRECTOR']
 
-async function yachtRoleCanAccess(db: Awaited<ReturnType<typeof getDb>>, userId: string, toLocationId: string): Promise<boolean> {
-  const [yachtId, toLoc] = await Promise.all([
+async function yachtRoleCanAccess(db: Awaited<ReturnType<typeof getDb>>, userId: string, transfer: { fromLocationId: string; toLocationId: string }): Promise<boolean> {
+  const [yachtId, locs] = await Promise.all([
     resolveAssignedYachtId(db, userId),
-    db.stockLocation.findUnique({ where: { id: toLocationId }, select: { yachtId: true } }),
+    db.stockLocation.findMany({ where: { id: { in: [transfer.fromLocationId, transfer.toLocationId] } }, select: { yachtId: true } }),
   ])
-  return !!yachtId && toLoc?.yachtId === yachtId
+  return !!yachtId && locs.some(l => l.yachtId === yachtId)
 }
 
 // For PO-driven transit legs only (transfer.purchaseOrderId set) — ad-hoc transfers made
@@ -66,9 +68,10 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     },
   })
   if (!transfer) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-  if (!roleMatches(role, ALLOWED) && !(await yachtRoleCanAccess(db, session.user.id, transfer.toLocationId))) {
+  if (!roleMatches(role, ALLOWED) && !(await yachtRoleCanAccess(db, session.user.id, transfer))) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
   }
+  const dispatch = await canDispatchFrom(db, transfer.fromLocationId, { id: session.user.id, role })
   const [fromLoc, toLoc] = await Promise.all([
     db.stockLocation.findUnique({ where: { id: transfer.fromLocationId }, select: { id: true, name: true, type: true } }),
     db.stockLocation.findUnique({ where: { id: transfer.toLocationId }, select: { id: true, name: true, type: true } }),
@@ -106,6 +109,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     toLocation: toLoc,
     totalValue,
     items,
+    canDispatch: dispatch.allowed,
+    dispatchOwnerLabel: DISPATCH_OWNER_LABEL[dispatch.owner],
     tripBooking: undefined,
     openTrip: undefined,
     trip: transfer.openTrip ? tripFromOpenTrip(transfer.openTrip) : transfer.tripBooking ? tripFromBooking(transfer.tripBooking) : null,
@@ -131,8 +136,15 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const transfer = await db.stockTransfer.findUnique({ where: { id }, include: { items: true } })
   if (!transfer) return NextResponse.json({ error: 'Not found' }, { status: 404 })
   if (!roleMatches(role, ALLOWED)) {
-    if (!(await yachtRoleCanAccess(db, session.user.id, transfer.toLocationId))) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-    if (action !== 'receive') return NextResponse.json({ error: 'Only receiving is allowed for your role' }, { status: 403 })
+    if (!(await yachtRoleCanAccess(db, session.user.id, transfer))) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    if (action !== 'receive' && action !== 'dispatch') return NextResponse.json({ error: 'Only dispatching/receiving is allowed for your role' }, { status: 403 })
+    if (action === 'receive') {
+      const [yachtId, toLoc] = await Promise.all([
+        resolveAssignedYachtId(db, session.user.id),
+        db.stockLocation.findUnique({ where: { id: transfer.toLocationId }, select: { yachtId: true } }),
+      ])
+      if (!yachtId || toLoc?.yachtId !== yachtId) return NextResponse.json({ error: 'You can only receive transfers arriving on your own yacht' }, { status: 403 })
+    }
   }
 
   // Lets the Packing List print page (src/app/print/stock-transfer/[id]/page.tsx) add a
@@ -207,8 +219,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (action === 'dispatch') {
     if (transfer.status !== 'PENDING') return NextResponse.json({ error: 'Transfer has already been processed' }, { status: 409 })
     if (!dispatchPhotoKey) return NextResponse.json({ error: 'Dispatch photo is required' }, { status: 400 })
-    if (transfer.purchaseOrderId && !(await legLocationAllowsRole(db, transfer.fromLocationId, role))) {
-      return NextResponse.json({ error: 'Only the team managing this location can dispatch from it' }, { status: 403 })
+    const dispatch = await canDispatchFrom(db, transfer.fromLocationId, { id: session.user.id, role })
+    if (!dispatch.allowed) {
+      return NextResponse.json({ error: `Only ${DISPATCH_OWNER_LABEL[dispatch.owner]} responsible for this location can dispatch it` }, { status: 403 })
     }
     const dispatchItems = items as { itemId: string | null; itemName: string; dispatchedQty: number }[]
 

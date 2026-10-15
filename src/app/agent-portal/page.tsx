@@ -899,7 +899,7 @@ function computeFlipbookDims(pageWidthPt: number, pageHeightPt: number) {
   const width = isMobile
     ? Math.min(maxContainerWidth, maxContainerHeight / ratio)
     : Math.min(maxContainerWidth / 2, maxContainerHeight / ratio)
-  return { width: Math.round(width), height: Math.round(width * ratio) }
+  return { width: Math.round(width), height: Math.round(width * ratio), spread: !isMobile }
 }
 
 const FlipPage = forwardRef<HTMLDivElement, { src: string }>(function FlipPage({ src }, ref) {
@@ -926,7 +926,7 @@ function pinchDistance(touches: React.TouchList): number {
 function PdfFlipbook({ url }: { url: string }) {
   const [pages, setPages] = useState<string[] | null>(null)
   const [failed, setFailed] = useState(false)
-  const [dims, setDims] = useState({ width: 400, height: 560 })
+  const [dims, setDims] = useState({ width: 400, height: 560, spread: true })
   const [pageIndex, setPageIndex] = useState(0)
   const [zoom, setZoom] = useState(1)
   // react-pageflip doesn't ship a typed ref shape — `pageFlip()` returns the underlying
@@ -1013,7 +1013,13 @@ function PdfFlipbook({ url }: { url: string }) {
         onTouchMoveCapture={onTouchMoveCapture}
         onTouchEndCapture={onTouchEndCapture}
       >
-        <div className="shrink-0">
+        {/* autoSize makes the book fill this wrapper, and react-pageflip drops to single-page
+            portrait whenever that width is < 2× the page width — so the wrapper must be given
+            the full spread width explicitly, or a content-sized wrapper collapses it to 1 page. */}
+        <div
+          className="shrink-0"
+          style={{ width: dims.width * zoom * (dims.spread ? 2 : 1), height: dims.height * zoom }}
+        >
           <HTMLFlipBook
             ref={flipRef as any}
             width={dims.width * zoom}

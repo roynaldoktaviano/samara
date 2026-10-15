@@ -27,11 +27,11 @@ export function yachtCanViewOrder(
   return !!yachtId && order.deliveryLocation?.yachtId === yachtId
 }
 
-// Transfers a Cruise Director sees — only those headed to their own yacht (the vessel itself
+// Transfers a Cruise Director sees — only those to or from their own yacht (the vessel itself
 // or one of its sub-locations like Bar/Galley, which carry the same yachtId).
 export function yachtTransferWhere(yachtId: string | null): Prisma.StockTransferWhereInput {
   if (!yachtId) return { id: '__none__' } // not assigned a yacht yet — show nothing
-  return { toLocation: { yachtId } }
+  return { OR: [{ toLocation: { yachtId } }, { fromLocation: { yachtId } }] }
 }
 
 // The crew of a Boat Captain/Cruise Director's assigned yacht: employees whose work location

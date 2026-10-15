@@ -49,7 +49,7 @@ interface StockTransfer {
   // Optional link to the charter/departure this transfer's cargo is for.
   trip?: TripOption | null
 }
-interface TransferDetail extends StockTransfer { items: TransferItem[]; expectedReceiverName?: string | null; receivedByName?: string | null }
+interface TransferDetail extends StockTransfer { items: TransferItem[]; expectedReceiverName?: string | null; receivedByName?: string | null; canDispatch?: boolean; dispatchOwnerLabel?: string }
 
 const STATUS_LABEL: Record<string, string> = { PENDING: 'Pending', DISPATCHED: 'In Transit', RECEIVED: 'Received', CANCELLED: 'Cancelled' }
 const STATUS_COLOR: Record<string, string> = { PENDING: 'bg-muted text-muted-foreground', DISPATCHED: 'bg-amber-100 text-amber-700', RECEIVED: 'bg-green-100 text-green-700', CANCELLED: 'bg-red-100 text-red-700' }
@@ -155,8 +155,8 @@ function EmployeeCombobox({ employees, value, onChange }: {
 
 export default function TransfersPage({ deepLinkId, onDeepLinkHandled }: { deepLinkId?: string | null; onDeepLinkHandled?: () => void } = {}) {
   const { data: session } = useSession()
-  // Cruise Director only sees transfers headed to their own yacht (scoped by the API) and
-  // can only confirm receipt — no creating, dispatching, cancelling or editing.
+  // Cruise Director only sees transfers to/from their own yacht (scoped by the API): they
+  // dispatch what leaves their yacht and receive what arrives — no creating, cancelling or editing.
   const receiveOnly = (session?.user as { role?: string })?.role === 'CRUISE_DIRECTOR'
   const [transfers, setTransfers] = useState<StockTransfer[]>([])
   const [loading, setLoading] = useState(true)
@@ -862,8 +862,10 @@ export default function TransfersPage({ deepLinkId, onDeepLinkHandled }: { deepL
                   <FileDown className="h-3.5 w-3.5" /> Packing List
                 </button>
               )}
-              {detail.status === 'PENDING' && !receiveOnly && <button onClick={openDispatch} className="px-3 py-1.5 text-sm bg-amber-600 text-white rounded-md hover:bg-amber-700 font-medium">Dispatch</button>}
-              {detail.status === 'DISPATCHED' && <button onClick={openReceive} className="px-3 py-1.5 text-sm bg-green-600 text-white rounded-md hover:bg-green-700 font-medium">Receive</button>}
+              {detail.status === 'PENDING' && (detail.canDispatch
+                ? <button onClick={openDispatch} className="px-3 py-1.5 text-sm bg-amber-600 text-white rounded-md hover:bg-amber-700 font-medium">Dispatch</button>
+                : <span className="px-3 py-1.5 text-xs text-muted-foreground border border-dashed rounded-md">Waiting for {detail.dispatchOwnerLabel ?? 'the source location'} to dispatch</span>)}
+              {detail.status === 'DISPATCHED' && !(receiveOnly && detail.canDispatch) && <button onClick={openReceive} className="px-3 py-1.5 text-sm bg-green-600 text-white rounded-md hover:bg-green-700 font-medium">Receive</button>}
               {detail.status === 'DISPATCHED' && !receiveOnly && (
                 <button onClick={openCrewLink} className="px-3 py-1.5 text-sm border rounded-md hover:bg-muted font-medium">Get Crew Link</button>
               )}
