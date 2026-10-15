@@ -1223,6 +1223,19 @@ const TYPE_META: Record<string, { label: string; color: string; bg: string }> = 
   TRANSFER:   { label: 'Transfer',   color: 'text-blue-700',   bg: 'bg-blue-100'   },
   ADJUSTMENT: { label: 'Adjustment', color: 'text-amber-700',  bg: 'bg-amber-100'  },
   CONSUME:    { label: 'Consumed',   color: 'text-red-700',    bg: 'bg-red-100'    },
+  INITIAL:      { label: 'Initial Stock', color: 'text-green-700', bg: 'bg-green-100' },
+  RECEIPT:      { label: 'Received',      color: 'text-green-700', bg: 'bg-green-100' },
+  TRANSFER_OUT: { label: 'Transfer Out',  color: 'text-red-700',   bg: 'bg-red-100'   },
+  TRANSFER_IN:  { label: 'Transfer In',   color: 'text-blue-700',  bg: 'bg-blue-100'  },
+}
+
+// Stock movements store a positive quantity; the direction comes from the type, or for
+// ADJUSTMENT/CONSUME from which side has a location (from only = out, to only = in).
+function isOutflow(entry: HistoryEntry) {
+  if (entry.type === 'TRANSFER_OUT' || entry.type === 'CONSUME') return true
+  if (entry.type === 'TRANSFER_IN' || entry.type === 'RECEIVE' || entry.type === 'RECEIPT' || entry.type === 'INITIAL') return false
+  if (entry.type === 'TRANSFER') return !!entry.fromLocation
+  return !!entry.fromLocation && !entry.toLocation
 }
 
 function TimelineRow({ entry }: { entry: HistoryEntry }) {
@@ -1235,7 +1248,7 @@ function TimelineRow({ entry }: { entry: HistoryEntry }) {
     <div className="flex gap-3 py-2.5 group">
       <div className="flex flex-col items-center gap-1 shrink-0">
         <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${meta.bg} ${meta.color}`}>
-          {entry.type === 'RECEIVE' ? '↓' : entry.type === 'TRANSFER' ? '→' : entry.type === 'CONSUME' ? '↑' : '±'}
+          {entry.type === 'RECEIVE' || entry.type === 'RECEIPT' || entry.type === 'INITIAL' ? '↓' : entry.type === 'TRANSFER' || entry.type === 'TRANSFER_IN' || entry.type === 'TRANSFER_OUT' ? '→' : entry.type === 'CONSUME' ? '↑' : '±'}
         </div>
       </div>
       <div className="flex-1 min-w-0 pb-2.5 border-b group-last:border-0">
@@ -1255,8 +1268,8 @@ function TimelineRow({ entry }: { entry: HistoryEntry }) {
             </div>
           </div>
           <div className="text-right shrink-0">
-            <p className={`text-sm font-bold ${meta.color}`}>
-              {entry.type === 'CONSUME' || (entry.type === 'TRANSFER' && entry.fromLocation) ? '-' : '+'}{entry.qty} {entry.unit}
+            <p className={`text-sm font-bold ${isOutflow(entry) ? 'text-red-700' : 'text-green-700'}`}>
+              {isOutflow(entry) ? '-' : '+'}{entry.qty} {entry.unit}
             </p>
             {entry.unitCost != null && entry.unitCost > 0 && (
               <p className="text-xs text-muted-foreground">@ Rp {new Intl.NumberFormat('id-ID').format(entry.unitCost)}</p>
