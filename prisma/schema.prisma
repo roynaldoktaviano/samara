@@ -2012,7 +2012,7 @@ enum PurchaseRequestPurpose {
   REPLACEMENT
 }
 
-enum PurchaseRequestType {
+enum PurchaseRequestItemType {
   NEW
   REPLACEMENT
 }
@@ -2496,10 +2496,6 @@ model PurchaseRequest {
   neededByDate          DateTime?
   isUrgent              Boolean                  @default(false)
   urgentReason          String?
-  // New purchase vs replacing an existing (damaged) item — damageDetail is required by
-  // the API whenever requestType is REPLACEMENT, so Purchasing knows what broke and how.
-  requestType           PurchaseRequestType      @default(NEW)
-  damageDetail          String?
   // One {action}At/{action}ById pair per status transition — lets KPI reporting
   // compute response time between any two steps (e.g. same-day verification, or
   // draft-to-PO turnaround) without re-deriving it from an activity log.
@@ -2595,6 +2591,10 @@ model PurchaseRequestItem {
   // PurchaseItem record, so this only matters when itemId is null. Purely a classification
   // for now: it does not yet change Goods Receipt / StockLot behavior.
   isStockItem            Boolean @default(true)
+  // New purchase vs replacing an existing (damaged) unit — damageDetail is required by
+  // the API whenever requestType is REPLACEMENT, so Purchasing knows what broke and how.
+  requestType            PurchaseRequestItemType @default(NEW)
+  damageDetail           String?
   // Sourcing-evidence tracking for KPI 5 (compliance/quotation rules). exemptionReason:
   // catalogue-price/recurring-agreement exception per the Purchasing Approval Matrix
   // footnote. selectionJustification: expected whenever the chosen supplier isn't the

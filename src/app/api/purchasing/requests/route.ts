@@ -119,11 +119,10 @@ export async function POST(req: NextRequest) {
   if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
   const body = await req.json()
-  const { deliveryLocationId, notes, items, requestedByEmployeeId, neededByDate, isUrgent, urgentReason, requestType, damageDetail, purpose, tripBookingId, openTripId } = body as {
+  const { deliveryLocationId, notes, items, requestedByEmployeeId, neededByDate, isUrgent, urgentReason, purpose, tripBookingId, openTripId } = body as {
     deliveryLocationId?: string; notes?: string
-    items?: { itemId?: string; itemName: string; quantity: number; unit: string; estimatedCost?: number; supplierId?: string; supplierName?: string; notes?: string; imageKeys?: string[]; sourceInventoryItemId?: string }[]
+    items?: { itemId?: string; itemName: string; quantity: number; unit: string; estimatedCost?: number; supplierId?: string; supplierName?: string; notes?: string; imageKeys?: string[]; sourceInventoryItemId?: string; requestType?: 'NEW' | 'REPLACEMENT'; damageDetail?: string }[]
     requestedByEmployeeId?: string; neededByDate?: string; isUrgent?: boolean; urgentReason?: string
-    requestType?: 'NEW' | 'REPLACEMENT'; damageDetail?: string
     purpose?: 'STOCK_INVENTORY' | 'TRIP'; tripBookingId?: string; openTripId?: string
   }
 
@@ -141,11 +140,10 @@ export async function POST(req: NextRequest) {
   if (isUrgent && !urgentReason?.trim()) {
     return NextResponse.json({ error: 'Please explain why this request is urgent' }, { status: 400 })
   }
-  if (requestType && !['NEW', 'REPLACEMENT'].includes(requestType)) {
-    return NextResponse.json({ error: 'Invalid request type' }, { status: 400 })
-  }
-  if (requestType === 'REPLACEMENT' && !damageDetail?.trim()) {
-    return NextResponse.json({ error: 'Please describe the damage on the item being replaced' }, { status: 400 })
+  for (const it of items) {
+    if (it.requestType === 'REPLACEMENT' && !it.damageDetail?.trim()) {
+      return NextResponse.json({ error: `Please describe the damage on "${it.itemName}" (replacement)` }, { status: 400 })
+    }
   }
   if (purpose && !['STOCK_INVENTORY', 'TRIP'].includes(purpose)) {
     return NextResponse.json({ error: 'Invalid purpose' }, { status: 400 })
@@ -201,8 +199,6 @@ export async function POST(req: NextRequest) {
       neededByDate: neededByDate ? new Date(neededByDate) : null,
       isUrgent: !!isUrgent,
       urgentReason: isUrgent ? (urgentReason?.trim() || null) : null,
-      requestType: requestType === 'REPLACEMENT' ? 'REPLACEMENT' : 'NEW',
-      damageDetail: requestType === 'REPLACEMENT' ? (damageDetail?.trim() || null) : null,
       purpose: purpose === 'TRIP' ? 'TRIP' : 'STOCK_INVENTORY',
       tripBookingId: tripLink.tripBookingId,
       openTripId: tripLink.openTripId,
@@ -221,6 +217,8 @@ export async function POST(req: NextRequest) {
           notes: it.notes?.trim() || null,
           imageKeys: Array.isArray(it.imageKeys) ? it.imageKeys.filter(Boolean) : [],
           sourceInventoryItemId: it.sourceInventoryItemId || null,
+          requestType: it.requestType === 'REPLACEMENT' ? 'REPLACEMENT' : 'NEW',
+          damageDetail: it.requestType === 'REPLACEMENT' ? (it.damageDetail?.trim() || null) : null,
         })),
       },
     },
