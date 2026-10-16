@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-import { Search, MessageCircle, Instagram, Mail, Plus, Loader2, Clock, MessageSquarePlus, MessagesSquare, Sailboat, Ship, Anchor } from 'lucide-react'
+import { Search, MessageCircle, Instagram, Facebook, Mail, Plus, Loader2, Clock, MessageSquarePlus, MessagesSquare, Sailboat, Ship, Anchor } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { ChatChannel, InboxView, UnifiedInboxItem } from '@/app/api/chat/inbox/route'
 import { WHATSAPP_BRANDS, WHATSAPP_BRAND_LABELS, type WhatsappBrand } from '@/lib/whatsapp-brands'
@@ -24,6 +24,7 @@ const CHANNEL_BADGE: Record<ChatChannel, { icon: typeof MessageCircle; color: st
   instagram: { icon: Instagram,     color: '#E1306C' },
   email:     { icon: Mail,          color: '#3B82F6' },
 }
+const MESSENGER_BADGE = { icon: Facebook, color: '#0866FF' }
 
 function timeLabel(iso: string) {
   const d = new Date(iso)
@@ -53,7 +54,7 @@ function initials(name: string) {
 }
 
 /**
- * Combined WhatsApp + Instagram inbox — one list, one thread pane, no separate screens to
+ * Combined WhatsApp + Instagram/Messenger inbox — one list, one thread pane, no separate screens to
  * flip between (that's the whole point: replying doesn't need leaving this view). Email
  * stays a genuinely separate screen (different UI on purpose, not chat-bubble shaped) — an
  * email row here still hands off via onOpenEmail rather than opening inline.
@@ -183,7 +184,7 @@ export default function UnifiedInbox({ onOpenEmail, onOpenBooking, initialWhatsa
             <h2 className="text-2xl md:text-lg font-bold tracking-tight">
               <span className="md:hidden">Chats</span><span className="hidden md:inline">All Chats</span>
             </h2>
-            <p className="hidden md:block text-xs text-muted-foreground mt-0.5">WhatsApp &amp; Instagram, newest first</p>
+            <p className="hidden md:block text-xs text-muted-foreground mt-0.5">WhatsApp, Instagram &amp; Messenger, newest first</p>
           </div>
           <Dialog open={newChatOpen} onOpenChange={setNewChatOpen}>
             <DialogTrigger asChild>
@@ -252,7 +253,8 @@ export default function UnifiedInbox({ onOpenEmail, onOpenBooking, initialWhatsa
             </p>
           ) : (
             filtered.map(item => {
-              const badge = CHANNEL_BADGE[item.channel]
+              const isMessenger = item.metaPlatform === 'MESSENGER'
+              const badge = isMessenger ? MESSENGER_BADGE : CHANNEL_BADGE[item.channel]
               const BadgeIcon = badge.icon
               const unread = item.unreadCount > 0
               const isActive = selected?.channel === item.channel && selected.id === item.id
@@ -302,7 +304,9 @@ export default function UnifiedInbox({ onOpenEmail, onOpenBooking, initialWhatsa
                     </div>
                     {(item.channel === 'whatsapp' || !item.assignedToId || (isAdmin && item.assignedToName)) && (
                       <p className="text-[11px] md:text-[10px] text-muted-foreground/70 truncate mt-0.5">
-                        {item.channel === 'whatsapp' ? item.brand && WHATSAPP_BRAND_LABELS[item.brand] : item.channel === 'instagram' ? 'Instagram' : 'Email'}
+                        {item.channel === 'whatsapp' ? item.brand && WHATSAPP_BRAND_LABELS[item.brand]
+                          : item.channel === 'instagram' ? `${isMessenger ? 'Messenger' : 'Instagram'}${item.brand ? ` · ${WHATSAPP_BRAND_LABELS[item.brand]}` : ''}`
+                          : 'Email'}
                         {!item.assignedToId
                           ? <span className="text-amber-600 font-medium"> · Belum di-assign</span>
                           : isAdmin && item.assignedToName && <> · Sales: {item.assignedToName}</>}

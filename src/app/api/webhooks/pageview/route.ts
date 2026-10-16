@@ -10,9 +10,8 @@ import { providedWebhookSecret, webhookSecretMatches } from '@/lib/webhook-secre
 // Called from the client-side tracker on every page load of the tenant's
 // website (not just on form submit), so it's public + CORS-open and its
 // ?secret= is visible in page source by design. That's why it has its own
-// low-value pageviewWebhookSecret, separate from the cf7 (lead) secret.
-// Until that's set, the cf7 secret is still accepted so the live tracker
-// keeps working — set it before rotating the cf7 secret.
+// low-value pageviewWebhookSecret, separate from the cf7 (lead) secret — the
+// cf7 secret is never accepted here, so it can't leak via the tracker.
 // Since the secret is public anyway, the real guards against junk pageviews
 // are the per-IP rate limit and the pageviewAllowedDomains check below.
 const CORS_HEADERS = {
@@ -73,9 +72,8 @@ export async function POST(request: NextRequest) {
     }
     const { db, tenant } = resolved
 
-    const pageviewSecret = await getTenantSecret(tenant.id, 'pageviewWebhookSecret')
-    const expected = pageviewSecret || await getTenantSecret(tenant.id, 'cf7WebhookSecret')
-    if (!webhookSecretMatches(providedWebhookSecret(request), expected)) {
+    const expected = await getTenantSecret(tenant.id, 'pageviewWebhookSecret')
+    if (!webhookSecretMatches(providedWebhookSecret(request, { allowQueryParam: true }), expected)) {
       logWebhookFailure({ source: 'PageView', tenantSlug: tenant.slug, reason: 'unauthorized' })
       return json({ error: 'Unauthorized' }, 401)
     }

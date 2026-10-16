@@ -7,6 +7,7 @@ import { logActivity } from '@/lib/activity'
 import { autoAssignWebsiteLead } from '@/lib/whatsapp-lead'
 import { logWebhookFailure } from '@/lib/webhook-log'
 import { WHATSAPP_GRAPH_VERSION } from '@/lib/whatsapp-brands'
+import { handleMetaMessagingEvents, hasMetaMessagingEvents, type MetaMessagingBody } from '@/lib/meta-dm'
 
 // Meta (Facebook/Instagram) Lead Ads instant-form leads → Lead + Inquiry, same
 // owner resolution as the website CF7 webhook (existing Customer → existing Lead → new Lead).
@@ -425,6 +426,11 @@ export async function POST(request: NextRequest) {
       if (!appSecret || !verifySignature(rawBody, request.headers.get('x-hub-signature-256'), appSecret)) {
         logWebhookFailure({ source: SOURCE, tenantSlug: tenant.slug, reason: 'unauthorized', rawPayload: { body: rawBody.slice(0, 5000) } })
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      }
+      // Messenger DMs arrive on the Page object's single callback URL too — hand them to
+      // the DM inbox (see /api/webhooks/meta-messaging).
+      if (hasMetaMessagingEvents(data as MetaMessagingBody)) {
+        await handleMetaMessagingEvents(db, tenant.id, data as MetaMessagingBody)
       }
       const token = await getTenantSecret(tenant.id, 'metaLeadsPageToken')
       if (!token) {

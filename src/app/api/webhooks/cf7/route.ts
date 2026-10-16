@@ -8,23 +8,12 @@ import { logWebhookFailure } from '@/lib/webhook-log'
 import { getClientIp, countryFromIp } from '@/lib/geo-country'
 import { providedWebhookSecret, webhookSecretMatches } from '@/lib/webhook-secret'
 
-// Should be called server-to-server by the WordPress site (a PHP hook on
+// Called server-to-server only, by the WordPress site (a PHP hook on
 // wpcf7_mail_sent) with the secret in the X-Webhook-Secret header, so the
-// secret never reaches the browser. CORS + ?secret= are kept only so the
-// legacy browser-side caller keeps working until WordPress is switched over
-// and the secret is rotated.
-const CORS_HEADERS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type',
-}
-
-export function OPTIONS() {
-  return new NextResponse(null, { status: 204, headers: CORS_HEADERS })
-}
-
+// secret never reaches the browser. No CORS and no ?secret= — a browser can't
+// call this, and the secret never lands in a URL or access log.
 function json(body: unknown, status = 200) {
-  return NextResponse.json(body, { status, headers: CORS_HEADERS })
+  return NextResponse.json(body, { status })
 }
 
 function pick(data: Record<string, unknown>, ...keys: string[]): string {
@@ -91,7 +80,7 @@ export async function POST(request: NextRequest) {
 
   try {
     // ── Resolve which tenant this lead belongs to ────────────────────────────
-    // Each tenant's WordPress site should post to `?secret=...&tenant=<slug>`.
+    // Each tenant's WordPress site should post to `?tenant=<slug>`.
     // Falls back to 'samara' when omitted, so existing form configs keep working.
     // Resolved before the secret check below, since the secret itself is per-tenant.
     const resolved = await resolveTenantBySlugFull(rawTenantSlug)

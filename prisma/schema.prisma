@@ -4601,16 +4601,27 @@ enum InstagramMessageStatus {
   FAILED
 }
 
+// Meta DMs — Instagram Direct and Facebook Messenger share this model (`platform`), both
+// delivered by /api/webhooks/meta-messaging and replied to via the Graph Send API.
 model InstagramConversation {
-  id                 String   @id @default(cuid())
-  igUsername         String   @unique
+  id                 String         @id @default(cuid())
+  platform           MetaDmPlatform @default(INSTAGRAM)
+  // The customer's IGSID (Instagram) or PSID (Messenger) — scoped to the account they
+  // messaged, so the same person DMing two of our brands gets two threads.
+  externalUserId     String?
+  // Our IG account id / Facebook Page id the DM came in on, and which brand that is.
+  ourAccountId       String?
+  brand              WhatsappBrand?
+  // IG handle (without @) — null for Messenger, which has no usernames.
+  igUsername         String?
   displayName        String?
   profilePicUrl      String?
   // Which of OUR connected IG Business accounts this conversation came in on (e.g.
-  // "samara.liveaboard", "mischief.voyage", "otium") — only meaningful once multiple
-  // accounts are actually connected; the inbound webhook should set this from the
-  // payload's entry[].id (mapped to that account's username) once that's wired up.
+  // "samara.liveaboard", "mischief.voyage", "otium").
   ourAccountUsername String?
+  // Customer's latest inbound message — Meta only allows a normal reply within 24h of it
+  // (7 days with the HUMAN_AGENT tag), see src/lib/instagram.ts.
+  lastInboundAt      DateTime?
   // Sales rep holding this DM — set on first inbound via the INSTAGRAM distribution pool.
   assignedToId       String?
   assignedTo         User?    @relation("InstagramConversationAssignedTo", fields: [assignedToId], references: [id], onDelete: SetNull)
@@ -4622,8 +4633,14 @@ model InstagramConversation {
 
   messages InstagramMessage[]
 
+  @@unique([platform, externalUserId])
   @@index([lastMessageAt])
   @@index([assignedToId])
+}
+
+enum MetaDmPlatform {
+  INSTAGRAM
+  MESSENGER
 }
 
 model InstagramMessage {
@@ -4636,6 +4653,8 @@ model InstagramMessage {
   mediaType         String?
   status            InstagramMessageStatus @default(SENT)
   providerMessageId String?                @unique
+  // Why a reply FAILED (Graph API error), so staff can see the reason.
+  errorMessage      String?
   sentByUserId      String?
   sentByName        String?
   createdAt         DateTime               @default(now())

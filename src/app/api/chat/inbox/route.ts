@@ -5,6 +5,7 @@ import { getDb } from '@/lib/get-db'
 import { WHATSAPP_BRANDS, type WhatsappBrand } from '@/lib/whatsapp-brands'
 import { instagramConversationScope } from '@/lib/whatsapp-distribution'
 import { emailConversationScope } from '@/lib/email-inbox'
+import type { MetaDmPlatform } from '@prisma/client'
 
 export type ChatChannel = 'whatsapp' | 'instagram' | 'email'
 
@@ -19,8 +20,11 @@ export interface UnifiedInboxItem {
   // WhatsApp/Instagram/Email — who this chat is assigned to (see src/lib/whatsapp-distribution.ts).
   assignedToId?: string | null
   assignedToName?: string | null
-  // WhatsApp only — which of the 3 numbers this chat came in on (see src/lib/whatsapp-brands.ts).
+  // WhatsApp / Meta DM — which brand's number or Page/IG account this chat came in on
+  // (see src/lib/whatsapp-brands.ts).
   brand?: WhatsappBrand | null
+  // 'instagram' channel only — Instagram Direct vs Facebook Messenger (see src/lib/meta-dm.ts).
+  metaPlatform?: MetaDmPlatform
   // WhatsApp only — set while the customer's latest message hasn't been answered yet
   // (lastInboundAt later than lastOutboundAt): when they started waiting.
   waitingSince?: string | null
@@ -40,7 +44,7 @@ const isWaiting = (c: { lastInboundAt: Date | null; lastOutboundAt: Date | null 
 // screen once you click through (see UnifiedInbox's onOpenConversation).
 //
 // Query params (all optional): q (name/number/email/last message), brand (WhatsApp brand —
-// hides Instagram/Email like the brand tabs always did), assignee (ADMIN: 'unassigned' or a
+// hides Email and other brands' Instagram/Messenger DMs), assignee (ADMIN: 'unassigned' or a
 // user id), view ('unread' | 'waiting' — waiting is WhatsApp-only, the only channel that
 // tracks reply timestamps).
 export async function GET(request: NextRequest) {
@@ -56,8 +60,9 @@ export async function GET(request: NextRequest) {
   const contains = (field: string) => ({ [field]: { contains: q, mode: 'insensitive' as const } })
   const assigneeWhere = assignee === 'unassigned' ? { assignedToId: null } : assignee ? { assignedToId: assignee } : {}
   const unreadWhere = view === 'unread' ? { unreadCount: { gt: 0 } } : {}
-  // Instagram/Email have no brand and no reply timestamps — skip them for those filters.
+  // Email has no brand, and Instagram/Email have no reply timestamps — skip them for those filters.
   const otherChannels = !brand && view !== 'waiting'
+  const metaDmChannel = view !== 'waiting'
 
   // allSettled so one channel's failure (e.g. a column missing after an un-pushed schema
   // change) doesn't blank the whole inbox — the other channels still show.
@@ -81,9 +86,10 @@ export async function GET(request: NextRequest) {
       take: PER_CHANNEL_LIMIT,
       include: { assignedTo: { select: { id: true, name: true, email: true } } },
     }),
-    otherChannels ? db.instagramConversation.findMany({
+    metaDmChannel ? db.instagramConversation.findMany({
       where: { AND: [
         instagramConversationScope(role, session.user.id), assigneeWhere, unreadWhere,
+        brand ? { brand } : {},
         q ? { OR: [contains('displayName'), contains('igUsername'), contains('lastMessagePreview')] } : {},
       ] },
       orderBy: { lastMessageAt: 'desc' },
@@ -122,9 +128,10 @@ export async function GET(request: NextRequest) {
       waitingSince: isWaiting(c) ? c.lastInboundAt!.toISOString() : null,
     })),
     ...instagram.map((c): UnifiedInboxItem => ({
-      id: c.id, channel: 'instagram', name: c.displayName || c.igUsername, avatarUrl: c.profilePicUrl,
+      id: c.id, channel: 'instagram', name: c.displayName || c.igUsername || (c.platform === 'MESSENGER' ? 'Facebook user' : 'Instagram user'), avatarUrl: c.profilePicUrl,
       preview: c.lastMessagePreview, lastMessageAt: c.lastMessageAt.toISOString(), unreadCount: c.unreadCount,
       assignedToId: c.assignedToId, assignedToName: c.assignedTo?.name || c.assignedTo?.email || null,
+      brand: c.brand, metaPlatform: c.platform,
     })),
     ...email.map((c): UnifiedInboxItem => ({
       id: c.id, channel: 'email', name: c.fromName || c.fromEmail, avatarUrl: null,

@@ -3,11 +3,12 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { salesCanAccessConversation } from '@/lib/whatsapp-distribution'
-import { sendInstagramMessage } from '@/lib/instagram'
+import { sendMetaDm } from '@/lib/meta-dm'
 
 // Admin composes a reply from the Chat UI. The message is saved immediately
-// (so the thread always reflects what was sent), then handed to the Instagram
-// API — if that's not wired up yet for this tenant, it just sits as FAILED.
+// (so the thread always reflects what was sent), then sent through Meta's Send
+// API (Instagram or Messenger, see src/lib/meta-dm.ts) — on failure it sits as
+// FAILED with Meta's reason in errorMessage.
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getServerSession(authOptions)
   const role = (session?.user as { role?: string })?.role ?? ''
@@ -53,12 +54,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const tenantId = (session.user as { tenantId?: string }).tenantId
   const result = tenantId
-    ? await sendInstagramMessage(tenantId, conversation.igUsername, text ?? '')
+    ? await sendMetaDm(tenantId, conversation, { text, mediaUrl, mediaType })
     : { ok: false, error: 'No tenant on session' }
 
+  // The webhook echo may have already filled in providerMessageId — setting it again is a no-op.
   const updated = await db.instagramMessage.update({
     where: { id: message.id },
-    data: result.ok ? { status: 'SENT', providerMessageId: result.providerMessageId } : { status: 'FAILED' },
+    data: result.ok
+      ? { status: 'SENT', providerMessageId: result.providerMessageId }
+      : { status: 'FAILED', errorMessage: result.error ?? 'Send failed' },
     include: { replyTo: { select: { id: true, body: true, direction: true, mediaType: true } } },
   })
 
