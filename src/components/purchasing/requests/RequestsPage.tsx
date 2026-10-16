@@ -74,6 +74,8 @@ interface PurchaseRequest {
   neededByDate: string | null
   isUrgent: boolean
   urgentReason: string | null
+  requestType: 'NEW' | 'REPLACEMENT'
+  damageDetail: string | null
   purpose: 'STOCK_INVENTORY' | 'TRIP'
   division: 'BOAT_OPERATION' | 'BUILDING_MATERIAL' | null
   trip: TripOption | null
@@ -289,6 +291,8 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
   const [neededByDate, setNeededByDate] = useState('')
   const [isUrgent, setIsUrgent] = useState(false)
   const [urgentReason, setUrgentReason] = useState('')
+  const [requestType, setRequestType] = useState<'NEW' | 'REPLACEMENT'>('NEW')
+  const [damageDetail, setDamageDetail] = useState('')
   const [purpose, setPurpose] = useState<'STOCK_INVENTORY' | 'TRIP'>('STOCK_INVENTORY')
   const [trip, setTrip] = useState<TripOption | null>(null)
   const [trips, setTrips] = useState<TripOption[]>([])
@@ -552,6 +556,8 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
     setNeededByDate(detail.neededByDate ? detail.neededByDate.slice(0, 10) : '')
     setIsUrgent(detail.isUrgent)
     setUrgentReason(detail.urgentReason || '')
+    setRequestType(detail.requestType ?? 'NEW')
+    setDamageDetail(detail.damageDetail || '')
     setPurpose(detail.purpose)
     setTrip(detail.trip ?? null)
     setCart(detail.items.map(item => ({
@@ -908,6 +914,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
     if (!deliveryLocationId) { setSaveError('Please select a delivery location'); setSaving(false); return }
     if (cart.length === 0) { setSaveError('Add at least one item to the request'); setSaving(false); return }
     if (isUrgent && !urgentReason.trim()) { setSaveError('Please explain why this request is urgent'); setSaving(false); return }
+    if (requestType === 'REPLACEMENT' && !damageDetail.trim()) { setSaveError('Please describe the damage on the item being replaced'); setSaving(false); return }
     if (purpose === 'TRIP' && !trip) { setSaveError('Please select which trip this request is for'); setSaving(false); return }
 
     if (editingRequestId) {
@@ -919,6 +926,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
           edit: true,
           deliveryLocationId, requestedByEmployeeId: requestedByEmployeeId || undefined, notes,
           neededByDate: neededByDate || undefined, isUrgent, urgentReason: isUrgent ? urgentReason : undefined,
+          requestType, damageDetail: requestType === 'REPLACEMENT' ? damageDetail : undefined,
           purpose, ...(purpose === 'TRIP' ? tripLinkBody(trip) : {}),
           items: cart.map(l => ({
             itemId: l.itemId || undefined, itemName: l.itemName, quantity: l.quantity,
@@ -935,6 +943,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
       setEditingRequestId(null)
       setDeliveryLocationId(''); setRequestedByEmployeeId(''); setNotes('')
       setNeededByDate(''); setIsUrgent(false); setUrgentReason('')
+      setRequestType('NEW'); setDamageDetail('')
       setPurpose('STOCK_INVENTORY'); setTrip(null)
       setCart([]); setCartOpen(false)
       toast.success(`Purchase Request ${data.prNumber} updated`)
@@ -969,6 +978,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
         body: JSON.stringify({
           deliveryLocationId: deliveryLocationId || undefined, requestedByEmployeeId: empId || undefined, notes,
           neededByDate: neededByDate || undefined, isUrgent, urgentReason: isUrgent ? urgentReason : undefined,
+          requestType, damageDetail: requestType === 'REPLACEMENT' ? damageDetail : undefined,
           purpose, ...(purpose === 'TRIP' ? tripLinkBody(trip) : {}),
           items: lines.map(l => ({
             itemId: l.itemId || undefined, itemName: l.itemName, quantity: l.quantity,
@@ -991,6 +1001,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
     setSaving(false)
     setDeliveryLocationId(''); setRequestedByEmployeeId(''); setNotes('')
     setNeededByDate(''); setIsUrgent(false); setUrgentReason('')
+    setRequestType('NEW'); setDamageDetail('')
     setPurpose('STOCK_INVENTORY'); setTrip(null)
     setCart([]); setCartOpen(false)
     if (created.length > 1) {
@@ -1424,6 +1435,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
         notes={notes} setNotes={setNotes}
         neededByDate={neededByDate} setNeededByDate={setNeededByDate}
         isUrgent={isUrgent} setIsUrgent={setIsUrgent} urgentReason={urgentReason} setUrgentReason={setUrgentReason}
+        requestType={requestType} setRequestType={setRequestType} damageDetail={damageDetail} setDamageDetail={setDamageDetail}
         purpose={purpose} setPurpose={setPurpose} trip={trip} setTrip={setTrip} trips={trips}
         cart={cart} cartOpen={cartOpen} setCartOpen={setCartOpen}
         addToCart={addToCart} changeCartQty={changeCartQty} removeCartLine={removeCartLine}
@@ -1650,6 +1662,13 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                     : 'Stock & Inventory'}
                 </p>
               </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Request Type</p>
+                <p className="font-medium">{detail.requestType === 'REPLACEMENT' ? 'Replacement' : 'New'}</p>
+              </div>
+              {detail.requestType === 'REPLACEMENT' && detail.damageDetail && (
+                <div className="col-span-2"><p className="text-xs text-muted-foreground">Damage Details</p><p className="whitespace-pre-line">{detail.damageDetail}</p></div>
+              )}
               {detail.neededByDate && (
                 <div>
                   <p className="text-xs text-muted-foreground">Needed By</p>
@@ -2699,6 +2718,7 @@ function CreateRequestView({
   requestedByEmployeeId, setRequestedByEmployeeId,
   notes, setNotes,
   neededByDate, setNeededByDate, isUrgent, setIsUrgent, urgentReason, setUrgentReason,
+  requestType, setRequestType, damageDetail, setDamageDetail,
   purpose, setPurpose, trip, setTrip, trips,
   cart, cartOpen, setCartOpen,
   addToCart, changeCartQty, removeCartLine,
@@ -2724,6 +2744,8 @@ function CreateRequestView({
   neededByDate: string; setNeededByDate: (v: string) => void
   isUrgent: boolean; setIsUrgent: (v: boolean) => void
   urgentReason: string; setUrgentReason: (v: string) => void
+  requestType: 'NEW' | 'REPLACEMENT'; setRequestType: (v: 'NEW' | 'REPLACEMENT') => void
+  damageDetail: string; setDamageDetail: (v: string) => void
   purpose: 'STOCK_INVENTORY' | 'TRIP'; setPurpose: (v: 'STOCK_INVENTORY' | 'TRIP') => void
   trip: TripOption | null; setTrip: (t: TripOption | null) => void
   trips: TripOption[]
@@ -2973,6 +2995,7 @@ function CreateRequestView({
               notes={notes} setNotes={setNotes}
               neededByDate={neededByDate} setNeededByDate={setNeededByDate}
               isUrgent={isUrgent} setIsUrgent={setIsUrgent} urgentReason={urgentReason} setUrgentReason={setUrgentReason}
+        requestType={requestType} setRequestType={setRequestType} damageDetail={damageDetail} setDamageDetail={setDamageDetail}
               purpose={purpose} setPurpose={setPurpose} trip={trip} setTrip={setTrip} trips={trips}
               catalogSource={catalogSource} setCatalogSource={setCatalogSource}
               submit={submit} saving={saving} editingPrNumber={editingPrNumber}
@@ -2998,6 +3021,7 @@ function CreateRequestView({
                 notes={notes} setNotes={setNotes}
                 neededByDate={neededByDate} setNeededByDate={setNeededByDate}
                 isUrgent={isUrgent} setIsUrgent={setIsUrgent} urgentReason={urgentReason} setUrgentReason={setUrgentReason}
+        requestType={requestType} setRequestType={setRequestType} damageDetail={damageDetail} setDamageDetail={setDamageDetail}
                 purpose={purpose} setPurpose={setPurpose} trip={trip} setTrip={setTrip} trips={trips}
                 catalogSource={catalogSource} setCatalogSource={setCatalogSource}
                 submit={submit} saving={saving} editingPrNumber={editingPrNumber}
@@ -3198,6 +3222,7 @@ function RequestCartPanel({
   employees, requestedByEmployeeId, setRequestedByEmployeeId,
   notes, setNotes,
   neededByDate, setNeededByDate, isUrgent, setIsUrgent, urgentReason, setUrgentReason,
+  requestType, setRequestType, damageDetail, setDamageDetail,
   purpose, setPurpose, trip, setTrip, trips,
   catalogSource, setCatalogSource,
   submit, saving,
@@ -3211,6 +3236,8 @@ function RequestCartPanel({
   neededByDate: string; setNeededByDate: (v: string) => void
   isUrgent: boolean; setIsUrgent: (v: boolean) => void
   urgentReason: string; setUrgentReason: (v: string) => void
+  requestType: 'NEW' | 'REPLACEMENT'; setRequestType: (v: 'NEW' | 'REPLACEMENT') => void
+  damageDetail: string; setDamageDetail: (v: string) => void
   purpose: 'STOCK_INVENTORY' | 'TRIP'; setPurpose: (v: 'STOCK_INVENTORY' | 'TRIP') => void
   trip: TripOption | null; setTrip: (t: TripOption | null) => void
   trips: TripOption[]
@@ -3357,6 +3384,29 @@ function RequestCartPanel({
                 })
               })()}
             </div>
+          )}
+        </div>
+
+        {/* New vs Replacement — a replacement must say what's wrong with the item it
+            replaces, so Purchasing/approvers can judge it without chasing the requester. */}
+        <div className="space-y-1.5">
+          <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Request Type <span className="text-red-500">*</span></label>
+          <div className="inline-flex gap-1 bg-muted rounded-lg p-1 w-full">
+            <button type="button" onClick={() => setRequestType('NEW')}
+              className={`flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${requestType === 'NEW' ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
+              New
+            </button>
+            <button type="button" onClick={() => setRequestType('REPLACEMENT')}
+              className={`flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${requestType === 'REPLACEMENT' ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
+              Replacement
+            </button>
+          </div>
+          {requestType === 'REPLACEMENT' && (
+            <textarea
+              className="w-full border rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-amber-500"
+              rows={3} placeholder="Damage details — what is broken, how it happened, current condition (required)"
+              value={damageDetail} onChange={e => setDamageDetail(e.target.value)}
+            />
           )}
         </div>
 

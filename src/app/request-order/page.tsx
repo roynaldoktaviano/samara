@@ -88,6 +88,8 @@ function RequestOrderContent() {
   const [neededByDate, setNeededByDate] = useState('')
   const [isUrgent, setIsUrgent] = useState(false)
   const [urgentReason, setUrgentReason] = useState('')
+  const [requestType, setRequestType] = useState<'NEW' | 'REPLACEMENT'>('NEW')
+  const [damageDetail, setDamageDetail] = useState('')
   const [purpose, setPurpose] = useState<'STOCK_INVENTORY' | 'TRIP'>('STOCK_INVENTORY')
   const [division, setDivision] = useState<'BOAT_OPERATION' | 'BUILDING_MATERIAL' | ''>('')
   const [trip, setTrip] = useState<TripOption | null>(null)
@@ -206,6 +208,7 @@ function RequestOrderContent() {
     if (!locationId) { setSubmitError('Please select a delivery location'); return }
     if (cart.length === 0) { setSubmitError('Add at least one item to the request'); return }
     if (isUrgent && !urgentReason.trim()) { setSubmitError('Please explain why this request is urgent'); return }
+    if (requestType === 'REPLACEMENT' && !damageDetail.trim()) { setSubmitError('Please describe the damage on the item being replaced'); return }
     if (purpose === 'TRIP' && !trip) { setSubmitError('Please select which trip this request is for'); return }
     if (!division) { setSubmitError('Please select what this request is for'); return }
     setSubmitting(true)
@@ -214,6 +217,7 @@ function RequestOrderContent() {
       body: JSON.stringify({
         employeeId, locationId: locationId || null, notes,
         neededByDate: neededByDate || null, isUrgent, urgentReason: isUrgent ? urgentReason : null,
+        requestType, damageDetail: requestType === 'REPLACEMENT' ? damageDetail : null,
         purpose, ...(purpose === 'TRIP' ? tripLinkBody(trip) : {}),
         division,
         items: cart.map(l => ({ itemId: l.itemId, itemName: l.itemName, quantity: l.quantity, unit: l.unit, notes: l.notes, imageKeys: l.imageKeys })),
@@ -228,6 +232,7 @@ function RequestOrderContent() {
   function resetForm() {
     setCart([]); setEmployeeId(''); setLocationId(''); setNotes('')
     setNeededByDate(''); setIsUrgent(false); setUrgentReason('')
+    setRequestType('NEW'); setDamageDetail('')
     setPurpose('STOCK_INVENTORY'); setDivision(''); setTrip(null)
     setSuccess(null); setCartOpen(false)
   }
@@ -444,6 +449,7 @@ function RequestOrderContent() {
               neededByDate={neededByDate} setNeededByDate={setNeededByDate}
               isUrgent={isUrgent} setIsUrgent={setIsUrgent}
               urgentReason={urgentReason} setUrgentReason={setUrgentReason}
+              requestType={requestType} setRequestType={setRequestType} damageDetail={damageDetail} setDamageDetail={setDamageDetail}
               purpose={purpose} setPurpose={setPurpose} division={division} setDivision={setDivision} trip={trip} setTrip={setTrip} trips={trips}
               submit={submit} submitting={submitting} submitError={submitError}
             />
@@ -470,6 +476,7 @@ function RequestOrderContent() {
                 neededByDate={neededByDate} setNeededByDate={setNeededByDate}
                 isUrgent={isUrgent} setIsUrgent={setIsUrgent}
                 urgentReason={urgentReason} setUrgentReason={setUrgentReason}
+              requestType={requestType} setRequestType={setRequestType} damageDetail={damageDetail} setDamageDetail={setDamageDetail}
                 purpose={purpose} setPurpose={setPurpose} division={division} setDivision={setDivision} trip={trip} setTrip={setTrip} trips={trips}
                 submit={submit} submitting={submitting} submitError={submitError}
                 embedded
@@ -564,6 +571,7 @@ function RequestSidebar({
   locations, locationId, setLocationId,
   notes, setNotes,
   neededByDate, setNeededByDate, isUrgent, setIsUrgent, urgentReason, setUrgentReason,
+  requestType, setRequestType, damageDetail, setDamageDetail,
   purpose, setPurpose, division, setDivision, trip, setTrip, trips,
   submit, submitting, submitError,
   embedded = false,
@@ -576,6 +584,8 @@ function RequestSidebar({
   neededByDate: string; setNeededByDate: (v: string) => void
   isUrgent: boolean; setIsUrgent: (v: boolean) => void
   urgentReason: string; setUrgentReason: (v: string) => void
+  requestType: 'NEW' | 'REPLACEMENT'; setRequestType: (v: 'NEW' | 'REPLACEMENT') => void
+  damageDetail: string; setDamageDetail: (v: string) => void
   purpose: 'STOCK_INVENTORY' | 'TRIP'; setPurpose: (v: 'STOCK_INVENTORY' | 'TRIP') => void
   division: 'BOAT_OPERATION' | 'BUILDING_MATERIAL' | ''; setDivision: (v: 'BOAT_OPERATION' | 'BUILDING_MATERIAL') => void
   trip: TripOption | null; setTrip: (t: TripOption | null) => void
@@ -718,6 +728,28 @@ function RequestSidebar({
                 </div>
               ))}
             </div>
+          )}
+        </div>
+
+        {/* New vs Replacement — a replacement must describe the damage on the item it replaces. */}
+        <div className="space-y-1.5">
+          <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Request Type <span className="text-red-500">*</span></label>
+          <div className="inline-flex gap-1 bg-muted rounded-lg p-1 w-full">
+            <button type="button" onClick={() => setRequestType('NEW')}
+              className={`flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${requestType === 'NEW' ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
+              New
+            </button>
+            <button type="button" onClick={() => setRequestType('REPLACEMENT')}
+              className={`flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${requestType === 'REPLACEMENT' ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
+              Replacement
+            </button>
+          </div>
+          {requestType === 'REPLACEMENT' && (
+            <textarea
+              className="w-full border rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-amber-500"
+              rows={3} placeholder="Damage details — what is broken, how it happened, current condition (required)"
+              value={damageDetail} onChange={e => setDamageDetail(e.target.value)}
+            />
           )}
         </div>
 

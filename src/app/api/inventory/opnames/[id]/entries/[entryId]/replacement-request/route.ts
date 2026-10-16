@@ -72,6 +72,8 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
         approverEmployeeId,
         deliveryLocationId: entry.opname.locationId,
         purpose: 'REPLACEMENT',
+        requestType: 'REPLACEMENT',
+        damageDetail: `Condition ${entry.rating}/5 found during Stock Opname ${entry.opname.opnameNumber}, room ${entry.opname.room.name}.${entry.notes ? ' ' + entry.notes : ''}`,
         status: approverEmployeeId ? 'PENDING_APPROVAL' : 'DRAFT',
         updatedAt: new Date(),
         items: {

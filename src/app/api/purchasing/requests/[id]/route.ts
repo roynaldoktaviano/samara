@@ -160,7 +160,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const body = await req.json()
   const {
     status, transferFulfillments, roomAssignments, edit,
-    deliveryLocationId, requestedByEmployeeId, notes, neededByDate, isUrgent, urgentReason, items: editItems,
+    deliveryLocationId, requestedByEmployeeId, notes, neededByDate, isUrgent, urgentReason, requestType, damageDetail, items: editItems,
     purpose, tripBookingId, openTripId,
   } = body as {
     status?: 'DRAFT' | 'ON_PROCESS' | 'CONVERTED' | 'REJECTED' | 'CANCELLED'
@@ -172,6 +172,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     edit?: boolean
     deliveryLocationId?: string; requestedByEmployeeId?: string; notes?: string
     neededByDate?: string; isUrgent?: boolean; urgentReason?: string
+    requestType?: 'NEW' | 'REPLACEMENT'; damageDetail?: string
     items?: { itemId?: string; itemName: string; quantity: number; unit: string; estimatedCost?: number; supplierId?: string; supplierName?: string; notes?: string; imageKeys?: string[]; sourceInventoryItemId?: string }[]
     purpose?: 'STOCK_INVENTORY' | 'TRIP'; tripBookingId?: string; openTripId?: string
   }
@@ -203,6 +204,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (isUrgent && !urgentReason?.trim()) {
       return NextResponse.json({ error: 'Please explain why this request is urgent' }, { status: 400 })
     }
+    if (requestType && !['NEW', 'REPLACEMENT'].includes(requestType)) {
+      return NextResponse.json({ error: 'Invalid request type' }, { status: 400 })
+    }
+    if (requestType === 'REPLACEMENT' && !damageDetail?.trim()) {
+      return NextResponse.json({ error: 'Please describe the damage on the item being replaced' }, { status: 400 })
+    }
     if (purpose && !['STOCK_INVENTORY', 'TRIP'].includes(purpose)) {
       return NextResponse.json({ error: 'Invalid purpose' }, { status: 400 })
     }
@@ -230,6 +237,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         neededByDate: neededByDate ? new Date(neededByDate) : null,
         isUrgent: !!isUrgent,
         urgentReason: isUrgent ? (urgentReason?.trim() || null) : null,
+        requestType: requestType === 'REPLACEMENT' ? 'REPLACEMENT' : 'NEW',
+        damageDetail: requestType === 'REPLACEMENT' ? (damageDetail?.trim() || null) : null,
         purpose: purpose === 'TRIP' ? 'TRIP' : 'STOCK_INVENTORY',
         tripBookingId: tripLink.tripBookingId,
         openTripId: tripLink.openTripId,

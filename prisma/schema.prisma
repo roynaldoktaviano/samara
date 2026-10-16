@@ -2012,6 +2012,11 @@ enum PurchaseRequestPurpose {
   REPLACEMENT
 }
 
+enum PurchaseRequestType {
+  NEW
+  REPLACEMENT
+}
+
 // Warehouse's physical stock-check decision on a PurchaseRequestItem, made before
 // Purchasing ever sees it — see PurchaseRequestItem.warehouseDecision.
 enum PurchaseRequestItemWarehouseDecision {
@@ -2491,6 +2496,10 @@ model PurchaseRequest {
   neededByDate          DateTime?
   isUrgent              Boolean                  @default(false)
   urgentReason          String?
+  // New purchase vs replacing an existing (damaged) item — damageDetail is required by
+  // the API whenever requestType is REPLACEMENT, so Purchasing knows what broke and how.
+  requestType           PurchaseRequestType      @default(NEW)
+  damageDetail          String?
   // One {action}At/{action}ById pair per status transition — lets KPI reporting
   // compute response time between any two steps (e.g. same-day verification, or
   // draft-to-PO turnaround) without re-deriving it from an activity log.
