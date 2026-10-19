@@ -1,13 +1,11 @@
 import crypto from 'crypto'
 import type { NextRequest } from 'next/server'
 
-// Shared-secret auth for the website webhooks (cf7, pageview). Reads the
-// X-Webhook-Secret header (server-to-server callers, keeps the secret out of
-// access logs). `allowQueryParam` additionally accepts ?secret= — only for the
-// browser page-view tracker, since sendBeacon can't set headers.
-export function providedWebhookSecret(request: NextRequest, { allowQueryParam = false } = {}): string | null {
+// Shared-secret auth for the website webhooks (cf7, pageview). Header only — both
+// are called server-to-server by WordPress, and a header keeps the secret out of
+// URLs and access logs.
+export function providedWebhookSecret(request: NextRequest): string | null {
   return request.headers.get('x-webhook-secret')
-    || (allowQueryParam ? request.nextUrl.searchParams.get('secret') : null)
 }
 
 /** Constant-time compare; false when either side is missing. */

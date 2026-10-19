@@ -2829,7 +2829,7 @@ function CreateRequestView({
         <div className="space-y-4 min-w-0">
           {catalogSource === 'inventory' ? (
             <InventoryPickerPanel
-              vessels={locations.filter(l => l.type === 'VESSEL' && l.isActive)}
+              vessels={locations.filter(l => l.type === 'VESSEL' && l.isActive && !l.parentId)}
               invLocationId={invLocationId} setInvLocationId={setInvLocationId}
               invRoomId={invRoomId} setInvRoomId={setInvRoomId}
               invCategoryId={invCategoryId} setInvCategoryId={setInvCategoryId}
