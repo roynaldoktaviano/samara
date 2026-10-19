@@ -310,9 +310,8 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
   const [catalogType, setCatalogType] = useState<'All' | PurchaseItemType>('BEVERAGE')
   const [catalogCategory, setCatalogCategory] = useState('All')
 
-  // Stock vs Inventory sub-choice, only meaningful while purpose === STOCK_INVENTORY and
-  // delivering to a vessel — "Stock" is the ordinary PurchaseItem catalog above, "Inventory"
-  // browses that vessel's own room/category-based InventoryItems instead (see
+  // Stock vs Inventory sub-choice, only meaningful while purpose === STOCK_INVENTORY —
+  // "Stock" is the ordinary PurchaseItem catalog above, "Inventory" browses a vessel's own room/category-based InventoryItems instead (see
   // InventoryPickerPanel below), for requesting more of something already tracked there.
   const [catalogSource, setCatalogSource] = useState<'stock' | 'inventory'>('stock')
   const [invRoomId, setInvRoomId] = useState('')
@@ -323,19 +322,26 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
   const [invItems, setInvItems] = useState<InventoryItemOption[]>([])
   const [invLoading, setInvLoading] = useState(false)
 
-  // Fall back to Stock whenever the delivery location stops being a vessel (Inventory
-  // is per-vessel only) or purpose isn't Stock & Inventory, so a stale "Inventory" pick
-  // never gets left selected somewhere it no longer makes sense.
+  // Which vessel's InventoryItems the Inventory picker browses — its own filter, not
+  // tied to the delivery location (Goods Receipt tops up the InventoryItem itself via
+  // sourceInventoryItemId, wherever the PR is delivered). Follows the delivery location
+  // whenever that's a vessel, as the sensible default.
+  const [invLocationId, setInvLocationId] = useState('')
   const deliveryIsVessel = locations.find(l => l.id === deliveryLocationId)?.type === 'VESSEL'
   useEffect(() => {
-    if (catalogSource === 'inventory' && (!deliveryIsVessel || purpose !== 'STOCK_INVENTORY')) setCatalogSource('stock')
-  }, [deliveryIsVessel, purpose, catalogSource])
+    if (deliveryIsVessel) setInvLocationId(deliveryLocationId)
+  }, [deliveryIsVessel, deliveryLocationId])
+  // Fall back to Stock when purpose isn't Stock & Inventory, so a stale "Inventory"
+  // pick never gets left selected somewhere it no longer makes sense.
+  useEffect(() => {
+    if (catalogSource === 'inventory' && purpose !== 'STOCK_INVENTORY') setCatalogSource('stock')
+  }, [purpose, catalogSource])
 
   useEffect(() => {
     setInvRoomId(''); setInvCategories([])
-    if (!deliveryLocationId) { setInvPickerRooms([]); return }
-    fetch(`/api/inventory/rooms?locationId=${deliveryLocationId}`).then(r => r.ok ? r.json() : []).then(setInvPickerRooms)
-  }, [deliveryLocationId])
+    if (!invLocationId) { setInvPickerRooms([]); return }
+    fetch(`/api/inventory/rooms?locationId=${invLocationId}`).then(r => r.ok ? r.json() : []).then(setInvPickerRooms)
+  }, [invLocationId])
 
   useEffect(() => {
     setInvCategoryId('')
@@ -344,14 +350,14 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
   }, [invRoomId])
 
   useEffect(() => {
-    if (catalogSource !== 'inventory' || !deliveryLocationId) return
+    if (catalogSource !== 'inventory' || !invLocationId) { setInvItems([]); return }
     setInvLoading(true)
-    const qs = new URLSearchParams({ locationId: deliveryLocationId })
+    const qs = new URLSearchParams({ locationId: invLocationId })
     if (invRoomId) qs.set('roomId', invRoomId)
     if (invCategoryId) qs.set('categoryId', invCategoryId)
     if (invSearch) qs.set('search', invSearch)
     fetch(`/api/inventory/items?${qs}`).then(r => r.ok ? r.json() : []).then(setInvItems).finally(() => setInvLoading(false))
-  }, [catalogSource, deliveryLocationId, invRoomId, invCategoryId, invSearch])
+  }, [catalogSource, invLocationId, invRoomId, invCategoryId, invSearch])
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
   const [supplierModal, setSupplierModal] = useState<'editItem' | 'quotation' | null>(null)
@@ -754,6 +760,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
   // PurchaseItem catalog link at all; sourceInventoryItemId is what tells Goods Receipt
   // to top up that InventoryItem's quantity instead of creating a StockLot.
   function addInventoryItemToCart(item: InventoryItemOption) {
+    if (!deliveryLocationId && invLocationId) setDeliveryLocationId(invLocationId)
     const key = `inv-${item.id}-${requestedByEmployeeId || 'none'}`
     setCart(prev => {
       const existing = prev.find(l => l.key === key)
@@ -1438,7 +1445,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
         catalogSearch={catalogSearch} setCatalogSearch={setCatalogSearch}
         catalogType={catalogType} setCatalogType={setCatalogType}
         catalogCategory={catalogCategory} setCatalogCategory={setCatalogCategory}
-        catalogSource={catalogSource} setCatalogSource={setCatalogSource} deliveryIsVessel={deliveryIsVessel}
+        catalogSource={catalogSource} setCatalogSource={setCatalogSource} invLocationId={invLocationId} setInvLocationId={setInvLocationId}
         invRoomId={invRoomId} setInvRoomId={setInvRoomId} invCategoryId={invCategoryId} setInvCategoryId={setInvCategoryId}
         invSearch={invSearch} setInvSearch={setInvSearch} invRooms={invPickerRooms} invCategories={invCategories}
         invItems={invItems} invLoading={invLoading} addInventoryItemToCart={addInventoryItemToCart}
@@ -2717,7 +2724,7 @@ function CreateRequestView({
   catalogSearch, setCatalogSearch,
   catalogType, setCatalogType,
   catalogCategory, setCatalogCategory,
-  catalogSource, setCatalogSource, deliveryIsVessel,
+  catalogSource, setCatalogSource, invLocationId, setInvLocationId,
   invRoomId, setInvRoomId, invCategoryId, setInvCategoryId, invSearch, setInvSearch,
   invRooms, invCategories, invItems, invLoading, addInventoryItemToCart,
   customModal, setCustomModal,
@@ -2747,7 +2754,8 @@ function CreateRequestView({
   catalogSearch: string; setCatalogSearch: (v: string) => void
   catalogType: 'All' | PurchaseItemType; setCatalogType: (v: 'All' | PurchaseItemType) => void
   catalogCategory: string; setCatalogCategory: (v: string) => void
-  catalogSource: 'stock' | 'inventory'; setCatalogSource: (v: 'stock' | 'inventory') => void; deliveryIsVessel: boolean
+  catalogSource: 'stock' | 'inventory'; setCatalogSource: (v: 'stock' | 'inventory') => void
+  invLocationId: string; setInvLocationId: (v: string) => void
   invRoomId: string; setInvRoomId: (v: string) => void
   invCategoryId: string; setInvCategoryId: (v: string) => void
   invSearch: string; setInvSearch: (v: string) => void
@@ -2821,6 +2829,8 @@ function CreateRequestView({
         <div className="space-y-4 min-w-0">
           {catalogSource === 'inventory' ? (
             <InventoryPickerPanel
+              vessels={locations.filter(l => l.type === 'VESSEL' && l.isActive)}
+              invLocationId={invLocationId} setInvLocationId={setInvLocationId}
               invRoomId={invRoomId} setInvRoomId={setInvRoomId}
               invCategoryId={invCategoryId} setInvCategoryId={setInvCategoryId}
               invSearch={invSearch} setInvSearch={setInvSearch}
@@ -3103,6 +3113,7 @@ function CreateRequestView({
 // of something already tracked there (a "Convert to Stock"-adjacent flow — see
 // ItemsPage.tsx — but the other direction: existing InventoryItem -> new PR line).
 function InventoryPickerPanel({
+  vessels, invLocationId, setInvLocationId,
   invRoomId, setInvRoomId, invCategoryId, setInvCategoryId, invSearch, setInvSearch,
   invRooms, invCategories, invItems, invLoading,
   cart, addInventoryItemToCart, changeCartQty, requestedByEmployeeId,
@@ -3117,6 +3128,7 @@ function InventoryPickerPanel({
   changeCartQty: (key: string, delta: number) => void
   requestedByEmployeeId: string
   setCustomModal: (v: boolean) => void
+  vessels: StockLocation[]; invLocationId: string; setInvLocationId: (v: string) => void
 }) {
   return (
     <>
@@ -3139,9 +3151,17 @@ function InventoryPickerPanel({
 
       <div className="bg-white border rounded-xl shadow-sm p-3.5 flex flex-col sm:flex-row gap-3">
         <div className="flex-1 space-y-1">
-          <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Room</label>
+          <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Vessel</label>
           <select className="w-full h-9 border rounded-md px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
-            value={invRoomId} onChange={e => setInvRoomId(e.target.value)}>
+            value={invLocationId} onChange={e => setInvLocationId(e.target.value)}>
+            <option value="">— Select vessel —</option>
+            {vessels.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+          </select>
+        </div>
+        <div className="flex-1 space-y-1">
+          <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Room</label>
+          <select className="w-full h-9 border rounded-md px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500 disabled:opacity-50"
+            value={invRoomId} onChange={e => setInvRoomId(e.target.value)} disabled={!invLocationId}>
             <option value="">— All rooms —</option>
             {invRooms.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
           </select>
@@ -3156,7 +3176,12 @@ function InventoryPickerPanel({
         </div>
       </div>
 
-      {invLoading ? (
+      {!invLocationId ? (
+        <div className="text-center py-20 text-muted-foreground">
+          <Package className="h-10 w-10 mx-auto mb-3 opacity-20" />
+          <p className="text-sm">Select a vessel to browse its inventory.</p>
+        </div>
+      ) : invLoading ? (
         <div className="text-center py-20 text-muted-foreground text-sm">Loading...</div>
       ) : invItems.length === 0 ? (
         <div className="text-center py-20 text-muted-foreground">
@@ -3233,7 +3258,6 @@ function RequestCartPanel({
   editingPrNumber?: string
   embedded?: boolean
 }) {
-  const deliveryIsVessel = locations.find(l => l.id === deliveryLocationId)?.type === 'VESSEL'
   return (
     <div className={`bg-white rounded-xl border shadow-sm flex flex-col ${!embedded ? 'max-h-[calc(100vh-200px)]' : ''}`}>
       {!embedded && (
@@ -3273,11 +3297,10 @@ function RequestCartPanel({
           {purpose === 'TRIP' && (
             <TripPicker trips={trips} value={trip} onChange={setTrip} suggestedYachtId={locations.find(l => l.id === deliveryLocationId)?.yachtId} />
           )}
-          {/* Stock vs Inventory — only meaningful once a vessel is picked as the delivery
-              location. "Stock" browses the ordinary Purchasing catalog below (as before);
-              "Inventory" instead browses that vessel's own room/category InventoryItems,
-              for requesting more of something already tracked there. */}
-          {purpose === 'STOCK_INVENTORY' && deliveryIsVessel && (
+          {/* Stock vs Inventory — "Stock" browses the ordinary Purchasing catalog below;
+              "Inventory" instead browses a vessel's own room/category InventoryItems (with
+              its own Vessel filter), for requesting more of something already tracked there. */}
+          {purpose === 'STOCK_INVENTORY' && (
             <div className="inline-flex gap-1 bg-muted rounded-lg p-1 w-full mt-1.5">
               <button type="button" onClick={() => setCatalogSource('stock')}
                 className={`flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${catalogSource === 'stock' ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
