@@ -102,7 +102,7 @@ export const navigationItems: NavItem[] = [
   { id: 'purchasing-orders',    label: 'Purchase Orders',   icon: FileText,       roles: ['ADMIN', 'PURCHASING', 'WAREHOUSE', 'BOAT_CAPTAIN', 'CRUISE_DIRECTOR'], group: 'purchasing', feature: 'purchasing' },
   { id: 'purchasing-services',  label: 'Services',          icon: Briefcase,      roles: ['ADMIN', 'PURCHASING'], group: 'purchasing', feature: 'purchasing' },
   { id: 'purchasing-stock',     label: 'Item by Location', icon: Boxes,          roles: ['ADMIN', 'PURCHASING', 'WAREHOUSE'], group: 'purchasing', feature: 'purchasing' },
-  { id: 'purchasing-transfers', label: 'Transfers',          icon: ArrowRightLeft, roles: ['ADMIN', 'PURCHASING', 'WAREHOUSE', 'CRUISE_DIRECTOR'], group: 'purchasing', feature: 'purchasing' },
+  { id: 'purchasing-transfers', label: 'Transfers',          icon: ArrowRightLeft, roles: ['ADMIN', 'PURCHASING', 'WAREHOUSE', 'CRUISE_DIRECTOR', 'BOAT_CAPTAIN'], group: 'purchasing', feature: 'purchasing' },
   { id: 'purchasing-items',        label: 'Items & Pricing',  icon: Package,     roles: ['ADMIN', 'PURCHASING'], group: 'purchasing', feature: 'purchasing' },
   { id: 'purchasing-item-types',   label: 'Item Types',       icon: Tag,         roles: ['ADMIN'], group: 'purchasing', feature: 'purchasing' },
   { id: 'purchasing-locations',    label: 'Locations',        icon: MapPin,      roles: ['ADMIN', 'PURCHASING'], group: 'purchasing', feature: 'purchasing' },

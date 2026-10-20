@@ -126,6 +126,7 @@ export default function MyApprovalsPage() {
   const [loading, setLoading] = useState(true)
   const [actingId, setActingId] = useState<string | null>(null)
   const [rejectModal, setRejectModal] = useState<ApprovalRequest | null>(null)
+  const [rejectReason, setRejectReason] = useState('')
   const [detailModal, setDetailModal] = useState<ApprovalRequest | null>(null)
   const [detail, setDetail] = useState<RequestDetail | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
@@ -189,17 +190,18 @@ export default function MyApprovalsPage() {
     setDetailLoading(false)
   }
 
-  async function act(id: string, action: 'approve' | 'reject') {
+  async function act(id: string, action: 'approve' | 'reject', reason?: string) {
     setActingId(id)
     const res = await fetch(`/api/purchasing/requests/${id}/approval`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action }),
+      body: JSON.stringify({ action, reason }),
     })
     const data = await res.json()
     setActingId(null)
     if (!res.ok) { alert(data.error ?? 'Failed to update'); return }
     setRejectModal(null)
+    setRejectReason('')
     if (detailModal?.id === id) { setDetailModal(null); setDetail(null) }
     setRequests(prev => prev.filter(r => r.id !== id))
   }
@@ -677,14 +679,26 @@ export default function MyApprovalsPage() {
             <div className="px-6 py-4 border-b">
               <h3 className="font-semibold text-base">Reject {rejectModal.prNumber}?</h3>
             </div>
-            <div className="px-6 py-5 text-sm text-muted-foreground">
-              The requester will be notified that this request was rejected. If it's still needed, they'll need to submit a new PR.
+            <div className="px-6 py-5 space-y-3">
+              <p className="text-sm text-muted-foreground">
+                The requester will be notified that this request was rejected. If it's still needed, they'll need to submit a new PR.
+              </p>
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-muted-foreground">Reason (optional, sent to the requester)</label>
+                <textarea
+                  rows={3}
+                  value={rejectReason}
+                  onChange={e => setRejectReason(e.target.value)}
+                  placeholder="Why is this request being rejected?"
+                  className="w-full border rounded-md px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-amber-500"
+                />
+              </div>
             </div>
             <div className="px-6 py-4 border-t flex justify-end gap-2">
-              <button onClick={() => setRejectModal(null)} className="px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">Cancel</button>
+              <button onClick={() => { setRejectModal(null); setRejectReason('') }} className="px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">Cancel</button>
               <button
                 disabled={actingId === rejectModal.id}
-                onClick={() => act(rejectModal.id, 'reject')}
+                onClick={() => act(rejectModal.id, 'reject', rejectReason)}
                 className="px-4 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors">
                 Yes, Reject
               </button>

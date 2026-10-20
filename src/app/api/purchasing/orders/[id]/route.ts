@@ -3,7 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { tripBookingSelect, openTripSelect, tripOf } from '@/lib/purchasing/tripLink'
-import { notifyByRole, notifyAssignedYachtCaptains } from '@/lib/notify-purchasing'
+import { notifyByRole, notifyAssignedYachtCaptains, notifyRequesterForOrder } from '@/lib/notify-purchasing'
 import { getOrCreatePoReceiveToken, resolveBaseUrl } from '@/lib/purchasing/receiveLink'
 import { computePOGrandTotal, summarizePOPayments } from '@/lib/po-payment'
 import { computeCurrentLegLabel } from '@/lib/purchasing/transitChain'
@@ -346,6 +346,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const cleanDiscountType = discountType === 'PERCENT' || discountType === 'FIXED' ? discountType : (discountType !== undefined ? null : undefined)
   const cleanDiscountValue = discountValue !== undefined ? (cleanDiscountType ? Math.max(0, Number(discountValue) || 0) : 0) : undefined
 
+  // Prior status, so requester progress pings below only fire on an actual transition
+  // (re-saving an already-ORDERED PO with status: 'ORDERED' must not re-notify).
+  const prevStatus = status !== undefined
+    ? (await db.purchaseOrder.findUnique({ where: { id }, select: { status: true } }))?.status
+    : undefined
+
   const order = await db.$transaction(async tx => {
     if (items) {
       await tx.purchaseOrderItem.deleteMany({ where: { orderId: id } })
@@ -411,19 +417,30 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const forNotify = await db.purchaseOrder.findUnique({
       where: { id },
       select: {
-        deliveryLocation: { select: { type: true, yachtId: true } },
-        transitStops: { select: { location: { select: { type: true } } } },
+        deliveryLocation: { select: { type: true, yachtId: true, name: true } },
+        transitStops: { orderBy: { sequence: 'asc' }, select: { location: { select: { type: true, name: true } } } },
       },
     })
     const involvesWarehouse = forNotify?.deliveryLocation?.type === 'WAREHOUSE'
       || !!forNotify?.transitStops.some(s => s.location.type === 'WAREHOUSE')
     const notifyRoles = involvesWarehouse ? ['WAREHOUSE', 'ADMIN'] : ['ADMIN']
+    // Name where the goods are actually heading next (first transit stop, else the final
+    // destination) — this used to always say "menuju gudang", even for a PO going to a yacht.
+    const nextStopName = forNotify?.transitStops[0]?.location.name ?? forNotify?.deliveryLocation?.name ?? 'lokasi tujuan'
 
     notifyByRole(db, notifyRoles, 'PO_IN_TRANSIT',
       `Barang Dalam Pengiriman`,
-      `${poNum} dari ${supplier} sedang dalam perjalanan menuju gudang — harap siapkan penerimaan barang`,
+      `${poNum} dari ${supplier} sedang dalam perjalanan menuju ${nextStopName} — harap siapkan penerimaan barang`,
       id,
     ).catch(console.error)
+    if (prevStatus !== 'IN_TRANSIT') {
+      notifyRequesterForOrder(db, id, {
+        type: 'PR_PO_IN_TRANSIT',
+        title: 'Barang request kamu sedang dikirim',
+        body: `${poNum} sedang dalam perjalanan menuju ${nextStopName}.`,
+        skipUserId: session.user.id,
+      }).catch(console.error)
+    }
 
     // Delivery lands directly at a yacht's own stock location — auto-generate (or reuse)
     // the same no-login receive link Purchasing would otherwise send manually, and push
@@ -445,6 +462,15 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         }).catch(console.error)
       }).catch(console.error)
     }
+  } else if (status === 'ORDERED' && prevStatus !== 'ORDERED') {
+    // Still nothing for Warehouse here (see above) — but the requester does want to know
+    // their request has actually been ordered from a supplier.
+    notifyRequesterForOrder(db, id, {
+      type: 'PR_PO_ORDERED',
+      title: 'Barang request kamu sudah dipesan',
+      body: `${poNum} sudah dipesan ke ${supplier} — kamu akan dikabari lagi saat barangnya dikirim.`,
+      skipUserId: session.user.id,
+    }).catch(console.error)
   } else if (status === 'RECEIVED') {
     notifyByRole(db, ['PURCHASING', 'ADMIN'], 'PO_RECEIVED',
       `Barang Diterima`,

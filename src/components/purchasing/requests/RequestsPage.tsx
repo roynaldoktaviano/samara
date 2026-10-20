@@ -63,6 +63,9 @@ interface PurchaseRequest {
   createdBy: { id: string; name: string } | null
   requestedBy: { name: string } | null
   requestedByEmployee: { id: string; fullName: string; employeeNumber: string } | null
+  approverEmployeeId?: string | null
+  approvedBy?: { name: string | null } | null
+  approvedAt?: string | null
   verifiedBy: { name: string } | null
   verifiedAt: string | null
   convertedBy: { name: string } | null
@@ -245,7 +248,12 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
   const [cardPage, setCardPage] = useState(1)
   const CARD_PAGE_SIZE = 10
   const [selected, setSelected] = useState<PurchaseRequest | null>(null)
-  const [detail, setDetail] = useState<(PurchaseRequest & { items: RequestLine[]; canTransfer?: boolean }) | null>(null)
+  const [detail, setDetail] = useState<(PurchaseRequest & {
+    items: RequestLine[]
+    canTransfer?: boolean
+    // Gudang-stock transfers created for this PR — see stockTransfers in GET .../requests/[id].
+    stockTransfers?: { id: string; transferNumber: string; status: string; createdAt: string; dispatchedAt: string | null; receivedAt: string | null; receivedByName: string | null; fromLocationName: string; toLocationName: string }[]
+  }) | null>(null)
   // Set while the "create" view is reused to edit an already-submitted DRAFT PR (see
   // openEditRequest) — routes submit() to PATCH .../[id] instead of creating new PRs, and
   // routes onBack to the detail view instead of the list.
@@ -268,6 +276,9 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
   // Full PO detail (payments, transit legs, receipts) per linked PO id, fetched lazily so
   // the PR Timeline can render each PO's journey exactly like the PO's own Order Timeline.
   const [poFullDetails, setPoFullDetails] = useState<Record<string, PoTimelineDetail>>({})
+  // POs whose full detail couldn't be loaded (e.g. the viewer's role can't open that PO) —
+  // the Timeline falls back to the PO's summary status instead of "Loading…" forever.
+  const [poDetailUnavailable, setPoDetailUnavailable] = useState<Set<string>>(new Set())
   const [timelinePhoto, setTimelinePhoto] = useState<string | null>(null)
   const [approveSummary, setApproveSummary] = useState<{ poNumbers: string[]; poIds: string[]; transferNumbers: string[]; remainingItems: string[] } | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
@@ -487,13 +498,18 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
       const orders = data!.orders ?? []
       if (orders.length > 0) {
         Promise.all(orders.map(async po => {
-          const r = await fetch(`/api/purchasing/orders/${po.id}`)
-          if (!r.ok) return null
+          const r = await fetch(`/api/purchasing/orders/${po.id}`).catch(() => null)
+          if (!r?.ok) return [po.id, null] as const
           return [po.id, await r.json() as PoTimelineDetail] as const
         })).then(results => {
           setPoFullDetails(prev => {
             const next = { ...prev }
-            for (const r of results) if (r) next[r[0]] = r[1]
+            for (const [poId, full] of results) if (full) next[poId] = full
+            return next
+          })
+          setPoDetailUnavailable(prev => {
+            const next = new Set(prev)
+            for (const [poId, full] of results) { if (full) next.delete(poId); else next.add(poId) }
             return next
           })
         })
@@ -1546,8 +1562,10 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                   )
                 })()}
                 {/* Hidden once Warehouse has sent any item via Transfer — deleting the PR
-                    would orphan that Transfer (the API refuses it too). */}
-                {!detail?.items.some(it => it.convertedAt) && (
+                    would orphan that Transfer (the API refuses it too). Own-only roles can
+                    only delete their own PR — Cruise Director/Boat Captain now also see
+                    their crew's PRs for the yacht, which they must not be able to delete. */}
+                {!detail?.items.some(it => it.convertedAt) && (!isWarehouse || selected.createdBy?.id === session?.user?.id) && (
                   <button onClick={() => deleteReq(selected)}
                     className="px-4 py-2 text-sm border rounded-lg text-muted-foreground hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-colors">
                     Delete
@@ -1680,26 +1698,61 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
             // continues straight past "Converted to PO" into each resulting PO's own
             // Ordered/On Delivery/Received progress instead of stopping at "Converted".
             const multiPo = (detail.orders?.length ?? 0) > 1
+            const stockTransfers = (detail.stockTransfers ?? []).filter(t => t.status !== 'CANCELLED')
+            // Every item custom (no catalog itemId) → the PR skipped Cek Gudang entirely.
+            const skippedWarehouse = detail.items.length > 0 && detail.items.every(it => !it.itemId)
+            // Closed out by Gudang alone — every item went out from stock, no PO at all.
+            const fulfilledFromStock = detail.status === 'CONVERTED' && (detail.orders?.length ?? 0) === 0
             const steps: TimelineStep[] = [
               {
                 key: 'created', done: true, label: 'PR Submitted', date: fmtDateTime(detail.createdAt),
                 sub: [detail.requestedByEmployee?.fullName ?? detail.createdBy?.name ?? null, detail.prNumber],
               },
-              {
-                key: 'verified', done: !!detail.verifiedAt, label: 'Verified (On Process)',
-                date: detail.verifiedAt ? fmtDateTime(detail.verifiedAt) : null,
-                sub: [detail.verifiedBy?.name ? `by ${detail.verifiedBy.name}` : null],
-              },
-              {
+              // Only PRs routed to a manager have this step (no manager on file → skipped).
+              ...((detail.approverEmployeeId || detail.approvedAt) ? [{
+                key: 'approved', done: !!detail.approvedAt, label: 'Manager Approved',
+                date: detail.approvedAt ? fmtDateTime(detail.approvedAt) : null,
+                sub: [detail.approvedBy?.name ? `by ${detail.approvedBy.name}` : (detail.status === 'PENDING_APPROVAL' ? 'Waiting for manager' : null)],
+              }] : []),
+              ...(!skippedWarehouse ? [{
+                key: 'verified', done: !!detail.verifiedAt || fulfilledFromStock,
+                label: fulfilledFromStock ? 'Warehouse Check — All From Stock' : 'Warehouse Check — Sent to Purchasing',
+                date: detail.verifiedAt ? fmtDateTime(detail.verifiedAt) : (fulfilledFromStock && detail.convertedAt ? fmtDateTime(detail.convertedAt) : null),
+                sub: [
+                  (detail.verifiedBy?.name ?? (fulfilledFromStock ? detail.convertedBy?.name : null)) ? `by ${detail.verifiedBy?.name ?? detail.convertedBy?.name}` : null,
+                  detail.status === 'DRAFT' ? 'Checking stock in Gudang' : null,
+                ],
+              }] : []),
+              ...(!fulfilledFromStock ? [{
                 key: 'converted', done: !!detail.convertedAt, label: 'Converted to PO',
                 date: detail.convertedAt ? fmtDateTime(detail.convertedAt) : null,
                 sub: [detail.convertedBy?.name ? `by ${detail.convertedBy.name}` : null],
-              },
+              }] : []),
+              // Items Gudang sent from stock — one Dispatched/Arrived pair per transfer.
+              ...stockTransfers.flatMap((t): TimelineStep[] => [
+                {
+                  key: `tr-${t.id}-dispatch`, done: !!t.dispatchedAt, label: `Dispatched from ${t.fromLocationName}`,
+                  date: t.dispatchedAt ? fmtDateTime(t.dispatchedAt) : null,
+                  sub: [t.transferNumber, `to ${t.toLocationName}`],
+                },
+                {
+                  key: `tr-${t.id}-arrive`, done: !!t.receivedAt, label: `Arrived at ${t.toLocationName}`,
+                  date: t.receivedAt ? fmtDateTime(t.receivedAt) : null,
+                  sub: [t.transferNumber, t.receivedByName ? `by ${t.receivedByName}` : null],
+                },
+              ]),
               // Each linked PO's full journey (payments, dispatch, transit leg by leg,
               // receipts) — identical steps to what OrdersPage.tsx's own Timeline shows,
               // built by the same shared function once that PO's full detail has loaded.
               ...(detail.orders ?? []).flatMap((po): TimelineStep[] => {
                 const full = poFullDetails[po.id]
+                if (!full && poDetailUnavailable.has(po.id)) {
+                  return [{
+                    key: `po-summary-${po.id}`, done: true,
+                    label: `${po.poNumber} — ${po.status.replace(/_/g, ' ').toLowerCase().replace(/^./, c => c.toUpperCase())}`,
+                    date: null, sub: [po.currentLegLabel ?? null],
+                  }]
+                }
                 if (!full) {
                   return [{
                     key: `po-loading-${po.id}`, done: false,

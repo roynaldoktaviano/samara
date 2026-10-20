@@ -5,7 +5,7 @@ import { getDb } from '@/lib/get-db'
 
 import { roleMatches } from '@/lib/role-utils'
 import { emitTenantEvent } from '@/lib/realtime-bus'
-import { notifyPurchasingForRequest } from '@/lib/notify-purchasing'
+import { notifyPurchasingForRequest, notifyRequester } from '@/lib/notify-purchasing'
 
 // Warehouse's "done checking" action: closes out the PR straight to CONVERTED if every
 // item was resolved from stock, or forwards the remaining items on to Purchasing
@@ -78,6 +78,12 @@ export async function PATCH(_req: NextRequest, { params }: { params: Promise<{ i
     `${request.prNumber} — ${remaining.length} item tidak tersedia di gudang, perlu dibelikan.`,
     id,
   )
+  await notifyRequester(db, id, {
+    type: 'PR_FORWARDED_FROM_WAREHOUSE',
+    title: 'Request diteruskan ke Purchasing',
+    body: `${request.prNumber} sudah dicek Gudang — ${remaining.length} item perlu dibelikan dan sekarang diproses Purchasing${anyTransferred ? ', sisanya dikirim dari stok gudang' : ''}.`,
+    skipUserId: session.user.id,
+  })
   emitTenantEvent(session.user.tenantId, 'purchasing-requests')
   return NextResponse.json({ ...updated, remainingItems: remaining.map(i => i.itemName) })
 }

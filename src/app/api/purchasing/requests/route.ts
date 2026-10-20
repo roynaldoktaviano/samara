@@ -10,7 +10,7 @@ import { allItemsCustom } from '@/lib/purchasing/requestItems'
 import { emitTenantEvent } from '@/lib/realtime-bus'
 import { sendPushToUser } from '@/lib/push'
 import { resolveTripLink, tripBookingSelect, openTripSelect, tripOf } from '@/lib/purchasing/tripLink'
-import { yachtCrewWhere } from '@/lib/purchasing/yachtScope'
+import { resolveAssignedYachtId, yachtCrewWhere, yachtRequestWhere } from '@/lib/purchasing/yachtScope'
 import { nextSeq } from '@/lib/purchasing/docNumber'
 
 const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE', 'CREW', 'BOAT_CAPTAIN', 'CRUISE_DIRECTOR']
@@ -36,6 +36,10 @@ export async function GET() {
   // Warehouse/Crew/Boat Captain/Cruise Director only ever see their own submissions,
   // not Purchasing's full queue — see OWN_ONLY_ROLES above.
   const isOwnOnly = OWN_ONLY_ROLES.includes(role)
+  // ...except Boat Captain/Cruise Director also see every PR headed to their own yacht.
+  const yachtScope = roleMatches(role, ['BOAT_CAPTAIN', 'CRUISE_DIRECTOR'])
+    ? yachtRequestWhere(await resolveAssignedYachtId(db, session.user.id))
+    : null
 
   // Every Purchasing/Admin user can still see every PR here — division (see
   // User.purchasingDivision / PurchaseRequest.division) is only a client-side DEFAULT
@@ -48,8 +52,12 @@ export async function GET() {
       // DRAFT. But whoever submitted it should still see it here (not just vanish from
       // their own view) so they know it's sitting with their manager — the manager check
       // itself lives in the approval endpoint's identity check, not here.
-      OR: [{ status: { not: 'PENDING_APPROVAL' } }, { requestedById: session.user.id }],
-      ...(isOwnOnly ? { requestedById: session.user.id } : {}),
+      AND: [
+        { OR: [{ status: { not: 'PENDING_APPROVAL' } }, { requestedById: session.user.id }] },
+        ...(isOwnOnly
+          ? [{ OR: [{ requestedById: session.user.id }, ...(yachtScope ? [yachtScope] : [])] }]
+          : []),
+      ],
     },
     orderBy: { createdAt: 'desc' },
     include: {

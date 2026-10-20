@@ -3,6 +3,7 @@ import { movingAverageCost } from '@/lib/valuation'
 import { shipArrivalRouter, shipUsageOnArrival, USAGE_LOCATION_SELECT } from '@/lib/purchasing/usage'
 import { attemptFinalizePOStatus, getRouteLocationIds, resolveNextHop, spawnNextTransitLeg } from '@/lib/purchasing/transitChain'
 import { nextSeq } from '@/lib/purchasing/docNumber'
+import { notifyPoArrivalToRequester, notifyRequester } from '@/lib/notify-purchasing'
 
 // receiveTransferLeg always owns its own $transaction (called with a full client, session-
 // or token-resolved — never from inside an existing transaction), unlike transitChain.ts's
@@ -113,7 +114,7 @@ export async function receiveTransferLeg(db: Db, transferId: string, params: {
   const isFinalStop = !routeLocationIds || !resolveNextHop(routeLocationIds, transfer.toLocationId)
   const route = isFinalStop ? await shipArrivalRouter(db, transfer.toLocationId) : null
 
-  await db.$transaction(async (tx) => {
+  const finalizedPoStatus = await db.$transaction(async (tx) => {
     for (const it of params.items) {
       if (!it.receivedQty) continue
       const qty = Number(it.receivedQty)
@@ -214,10 +215,25 @@ export async function receiveTransferLeg(db: Db, transferId: string, params: {
           }),
         })
       } else {
-        await attemptFinalizePOStatus(tx, transfer.purchaseOrderId)
+        return attemptFinalizePOStatus(tx, transfer.purchaseOrderId)
       }
     }
+    return null
   })
+
+  // Requester progress: a routed PO's last leg finalizing is the moment its goods reach
+  // the final destination; a Gudang stock transfer for a PR (no PO) is done on arrival.
+  if (transfer.purchaseOrderId && finalizedPoStatus) {
+    const po = await db.purchaseOrder.findUnique({ where: { id: transfer.purchaseOrderId }, select: { poNumber: true } })
+    notifyPoArrivalToRequester(db, transfer.purchaseOrderId, finalizedPoStatus, po?.poNumber ?? null, params.receivedById)
+  } else if (transfer.purchaseRequestId && !transfer.purchaseOrderId) {
+    notifyRequester(db, transfer.purchaseRequestId, {
+      type: 'PR_TRANSFER_RECEIVED',
+      title: 'Barang dari gudang sudah sampai',
+      body: `${transfer.transferNumber} (dari stok gudang) sudah diterima di ${toLoc?.name ?? 'lokasi tujuan'}.`,
+      skipUserId: params.receivedById ?? undefined,
+    }).catch(console.error)
+  }
 
   return { ok: true }
 }

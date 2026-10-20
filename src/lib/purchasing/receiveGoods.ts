@@ -1,5 +1,5 @@
 import { getDb } from '@/lib/get-db'
-import { notifyByRole } from '@/lib/notify-purchasing'
+import { notifyByRole, notifyPoArrivalToRequester } from '@/lib/notify-purchasing'
 import { movingAverageCost } from '@/lib/valuation'
 import { shipArrivalRouter, shipUsageOnArrival, USAGE_LOCATION_SELECT } from '@/lib/purchasing/usage'
 import { attemptFinalizePOStatus, resolveNextHop, spawnNextTransitLeg } from '@/lib/purchasing/transitChain'
@@ -334,7 +334,9 @@ export async function receiveGoods(db: Db, params: {
     notifyByRole(db, ['PURCHASING', 'ADMIN'], newStatus === 'RECEIVED' ? 'PO_RECEIVED' : 'PO_PARTIALLY_RECEIVED',
       label, msg, orderId,
     ).catch(console.error)
+    notifyPoArrivalToRequester(db, orderId, newStatus, po.poNumber, params.receivedById)
   }
 
   return { ok: true, gr, newStatus }
 }
+

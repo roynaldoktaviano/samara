@@ -10,8 +10,8 @@ import { nextSeq } from '@/lib/purchasing/docNumber'
 import { resolveAssignedYachtId, yachtTransferWhere } from '@/lib/purchasing/yachtScope'
 
 const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE']
-// Cruise Director can list (not create) transfers — only those headed to their own yacht.
-const VIEW_ALLOWED = [...ALLOWED, 'CRUISE_DIRECTOR']
+// Cruise Director / Boat Captain can list (not create) transfers — only those to or from their own yacht.
+const VIEW_ALLOWED = [...ALLOWED, 'CRUISE_DIRECTOR', 'BOAT_CAPTAIN']
 
 async function generateTrNumber(db: Awaited<ReturnType<typeof getDb>>) {
   const prefix = `TR-${new Date().getFullYear()}${String(new Date().getMonth() + 1).padStart(2, '0')}-`

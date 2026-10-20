@@ -27,6 +27,14 @@ export function yachtCanViewOrder(
   return !!yachtId && order.deliveryLocation?.yachtId === yachtId
 }
 
+// PRs a Boat Captain/Cruise Director sees beyond their own submissions — every PR whose
+// delivery location is their yacht (the vessel or one of its sub-locations), so they can
+// follow crew requests through approval, Gudang and Purchasing, not just once a PO exists.
+export function yachtRequestWhere(yachtId: string | null): Prisma.PurchaseRequestWhereInput {
+  if (!yachtId) return { id: '__none__' } // not assigned a yacht yet — show nothing
+  return { deliveryLocation: { yachtId } }
+}
+
 // Transfers a Cruise Director sees — only those to or from their own yacht (the vessel itself
 // or one of its sub-locations like Bar/Galley, which carry the same yachtId).
 export function yachtTransferWhere(yachtId: string | null): Prisma.StockTransferWhereInput {

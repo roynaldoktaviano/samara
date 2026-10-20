@@ -12,19 +12,14 @@ export async function GET(request: NextRequest) {
   const yachtId = session.yachtId
   if (searchParams.get('yachtId') && searchParams.get('yachtId') !== yachtId) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
-  // A yacht can have several VESSEL-type locations (the general crew location, plus
-  // POS-stock sub-locations like "Bar"/"Galley") — crew are assigned to the general
-  // one, so staff lookup has to span every VESSEL location for this yacht, not just
-  // whichever one a bare findFirst happens to return (that's fine for stock lookups,
-  // which only care about one specific bar/galley, but wrong here).
-  const locations = await withRetry(db, () => db.stockLocation.findMany({
-    where: { yachtId, type: 'VESSEL', isActive: true },
-    select: { id: true },
-  }))
-  if (locations.length === 0) return NextResponse.json({ error: 'No vessel stock location for this yacht' }, { status: 404 })
+  const yacht = await withRetry(db, () => db.yacht.findUnique({ where: { id: yachtId }, select: { name: true } }))
+  if (!yacht) return NextResponse.json({ error: 'Yacht not found' }, { status: 404 })
 
+  // Employee.locationId points at an EmployeeWorkLocation (HR), not a StockLocation — a
+  // yacht's crew are the employees whose work location name matches the yacht's name
+  // (the same crew↔yacht link payroll and yachtCrewWhere in src/lib/purchasing/yachtScope.ts use).
   const employees = await withRetry(db, () => db.employee.findMany({
-    where: { isActive: true, locationId: { in: locations.map(l => l.id) } },
+    where: { isActive: true, location: { name: { equals: yacht.name.trim(), mode: 'insensitive' } } },
     select: { id: true, fullName: true, department: true },
     orderBy: { fullName: 'asc' },
   }))

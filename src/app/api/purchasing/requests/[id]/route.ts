@@ -10,6 +10,7 @@ import { notifyByRole, notifyByRoleForRequest } from '@/lib/notify-purchasing'
 import { createOrAppendTransfer, toBaseQty } from '@/lib/purchasing/transferActions'
 import { resolveTripLink, tripBookingSelect, openTripSelect, tripOf } from '@/lib/purchasing/tripLink'
 import { nextSeq } from '@/lib/purchasing/docNumber'
+import { resolveAssignedYachtId } from '@/lib/purchasing/yachtScope'
 
 const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN']
 
@@ -49,6 +50,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       },
       deliveryLocation: { select: { id: true, name: true, type: true, managedBy: true, yachtId: true } },
       requestedByEmployee: { select: { id: true, fullName: true, employeeNumber: true } },
+      approvedBy: { select: { id: true, name: true } },
       verifiedBy: { select: { id: true, name: true } },
       convertedBy: { select: { id: true, name: true } },
       rejectedBy: { select: { id: true, name: true } },
@@ -65,7 +67,10 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       // Transfers created from this PR (Warehouse's stock check or Purchasing's convert) —
       // used to show each transferred item's transfer number instead of supplier/PO fields.
       transfers: {
-        select: { id: true, transferNumber: true, status: true, fromLocation: { select: { name: true } }, items: { select: { itemId: true } } },
+        select: {
+          id: true, transferNumber: true, status: true, createdAt: true, dispatchedAt: true, receivedAt: true, receivedByName: true,
+          fromLocation: { select: { name: true } }, toLocation: { select: { name: true } }, items: { select: { itemId: true } },
+        },
         orderBy: { createdAt: 'asc' },
       },
     },
@@ -76,6 +81,13 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     // Warehouse can only open their own requests — not Purchasing's whole queue by id-guessing.
     if (roleMatches(role, OWN_ONLY_ROLES) && request.requestedById === session.user.id) {
       // own submission — allowed straight through
+    } else if (
+      roleMatches(role, ['BOAT_CAPTAIN', 'CRUISE_DIRECTOR'])
+      && request.status !== 'PENDING_APPROVAL'
+      && !!request.deliveryLocation?.yachtId
+      && request.deliveryLocation.yachtId === await resolveAssignedYachtId(db, session.user.id)
+    ) {
+      // headed to their own yacht — same scope as the list endpoint (yachtRequestWhere)
     } else {
       // Not on the Purchasing team and not the requester — still let the PR's assigned
       // approver (any role, e.g. a Boat Captain/Cruise Director or department manager)
@@ -148,7 +160,15 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     }
   })
 
-  return NextResponse.json({ ...request, transfers: undefined, tripBooking: undefined, openTrip: undefined, trip: tripOf(request), items, requestedBy: requester, createdBy: requesterUser, canTransfer })
+  // Gudang-stock fulfilment progress for the PR Timeline — the per-item `transfer` above
+  // only says which transfer an item rode on, not when it was sent or arrived.
+  const stockTransfers = request.transfers.map(t => ({
+    id: t.id, transferNumber: t.transferNumber, status: t.status, createdAt: t.createdAt,
+    dispatchedAt: t.dispatchedAt, receivedAt: t.receivedAt, receivedByName: t.receivedByName,
+    fromLocationName: t.fromLocation.name, toLocationName: t.toLocation.name,
+  }))
+
+  return NextResponse.json({ ...request, transfers: undefined, stockTransfers, tripBooking: undefined, openTrip: undefined, trip: tripOf(request), items, requestedBy: requester, createdBy: requesterUser, canTransfer })
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {

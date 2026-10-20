@@ -173,7 +173,7 @@ function SignInScreen({ onSuccess, branding, vesselSlug }: { onSuccess: (v: Vess
   useEffect(() => {
     fetchCached<Vessel[]>('/api/cashier/vessels', cacheKey('vessels'), []).then(({ data: d }) => {
       const all: Vessel[] = Array.isArray(d) ? d : []
-      const locked = vesselSlug ? all.find(v => cashierSlug(v.name) === vesselSlug.toLowerCase()) : undefined
+      const locked = vesselSlug ? all.find(v => cashierSlug(v.name) === cashierSlug(vesselSlug)) : undefined
       if (locked) { setVessels([locked]); setSelected(locked) }
       else { setVessels(all); setUnknownSlug(!!vesselSlug) }
     }).finally(() => setLoading(false))
@@ -1485,7 +1485,7 @@ export default function Cashier({ vesselSlug }: { vesselSlug?: string }) {
   useEffect(() => {
     const t = setTimeout(() => {
       const saved = loadSession<Vessel, Trip>()
-      if (saved && (!vesselSlug || cashierSlug(saved.vessel.name) === vesselSlug.toLowerCase())) {
+      if (saved && (!vesselSlug || cashierSlug(saved.vessel.name) === cashierSlug(vesselSlug))) {
         setVessel(saved.vessel)
         setTrip(saved.tripChosen ? saved.trip : undefined)
         setLocked(saved.locked)

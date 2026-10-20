@@ -7,13 +7,13 @@ import { uploadToR2 } from '@/lib/r2-client'
 import { useFileDrop } from '@/hooks/useFileDrop'
 import {
   Search, Send, Loader2, Mail, Paperclip, X, Star, Pencil, ArrowLeft, Image as ImageIcon, FileText, Inbox,
-  Reply, Forward, Trash2, ChevronDown, Film,
+  Reply, Forward, Trash2, ChevronDown, ChevronLeft, ChevronRight, Film, Plus,
 } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { isHttpUrl } from '@/lib/url-safety'
 import EmailComposer, { SignaturePreview, EMAIL_BODY_CLASSES, type ComposerValue } from './EmailComposer'
 
-const ACCENT = '#1a73e8' // familiar "email" blue
+const ACCENT = '#1f5eff'
 const EMPTY_DRAFT: ComposerValue = { html: '', text: '', isEmpty: true }
 
 interface ConversationSummary {
@@ -44,7 +44,18 @@ interface Message {
 interface ConversationDetail extends Omit<ConversationSummary, 'messageCount' | 'hasReply' | 'attachmentUrls'> {
   messages: Message[]
 }
-type Filter = 'all' | 'unread' | 'starred'
+type Folder = 'inbox' | 'unread' | 'starred' | 'sent'
+type Sort = 'newest' | 'oldest'
+
+// Views over the same thread list — "Sent" = threads we've replied to
+const FOLDERS: { key: Folder; label: string }[] = [
+  { key: 'inbox', label: 'Inbox' },
+  { key: 'unread', label: 'Unread' },
+  { key: 'starred', label: 'Starred' },
+  { key: 'sent', label: 'Sent' },
+]
+
+const iconBtn = 'h-8 w-8 rounded-lg flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-30 disabled:pointer-events-none transition-colors'
 
 // Gmail-like letter avatars: a stable color per address
 const AVATAR_COLORS = ['#e8453c', '#f4511e', '#f6bf26', '#33b679', '#0b8043', '#039be5', '#3f51b5', '#7986cb', '#8e24aa', '#d81b60', '#616161', '#795548']
@@ -69,23 +80,49 @@ function fileNameFromUrl(url: string) {
     return last.replace(/^\d+-/, '') || 'attachment'
   } catch { return 'attachment' }
 }
-function AttachmentIcon({ name }: { name: string }) {
-  const isImage = /\.(png|jpe?g|gif|webp|heic|svg)$/i.test(name)
-  const isVideo = /\.(mp4|mov|m4v|webm|avi|mkv)$/i.test(name)
-  const Icon = isImage ? ImageIcon : isVideo ? Film : /\.pdf$/i.test(name) ? FileText : Paperclip
-  return <span className="h-4 w-4 rounded-sm flex items-center justify-center bg-[#d93025] text-white shrink-0"><Icon className="h-2.5 w-2.5" /></span>
+function FileTypeIcon({ name, className }: { name: string; className?: string }) {
+  if (/\.(png|jpe?g|gif|webp|heic|svg)$/i.test(name)) return <ImageIcon className={className} />
+  if (/\.(mp4|mov|m4v|webm|avi|mkv)$/i.test(name)) return <Film className={className} />
+  return /\.pdf$/i.test(name) ? <FileText className={className} /> : <Paperclip className={className} />
 }
-function AttachmentChip({ url, compact }: { url: string; compact?: boolean }) {
+function AttachmentIcon({ name }: { name: string }) {
+  return <span className="h-4 w-4 rounded-sm flex items-center justify-center bg-[#d93025] text-white shrink-0"><FileTypeIcon name={name} className="h-2.5 w-2.5" /></span>
+}
+/** Small, non-interactive chip for the thread list rows. */
+function AttachmentChip({ url }: { url: string }) {
   const name = fileNameFromUrl(url)
-  const inner = (
-    <>
-      <AttachmentIcon name={name} />
+  return (
+    <span className="flex items-center gap-1 rounded-md border bg-white px-2 py-1 text-[11px] text-foreground/70 max-w-[150px]">
+      <FileTypeIcon name={name} className="h-3 w-3 shrink-0 text-muted-foreground" />
       <span className="truncate">{name}</span>
-    </>
+    </span>
   )
-  const cls = `flex items-center gap-1.5 rounded-full border bg-white text-xs text-foreground/80 ${compact ? 'px-2.5 py-1 max-w-[160px]' : 'px-3 py-1.5 max-w-[240px] hover:bg-muted transition-colors'}`
-  if (compact) return <span className={cls}>{inner}</span>
-  return <a href={url} target="_blank" rel="noopener noreferrer" className={cls}>{inner}</a>
+}
+/** Attachment row inside an opened message. */
+function AttachmentFile({ url }: { url: string }) {
+  const name = fileNameFromUrl(url)
+  const ext = name.includes('.') ? name.split('.').pop()!.toUpperCase() : 'FILE'
+  return (
+    <a href={url} target="_blank" rel="noopener noreferrer" className="group flex items-center gap-3 max-w-[260px]">
+      <span className="h-10 w-10 shrink-0 rounded-full bg-[#f4f5f7] group-hover:bg-[#eceef1] flex items-center justify-center text-muted-foreground transition-colors">
+        <FileTypeIcon name={name} className="h-4 w-4" />
+      </span>
+      <span className="min-w-0">
+        <span className="block truncate text-sm text-foreground group-hover:underline">{name}</span>
+        <span className="block text-[11px] text-muted-foreground">{ext}</span>
+      </span>
+    </a>
+  )
+}
+function downloadAll(urls: string[]) {
+  for (const url of urls) {
+    const a = document.createElement('a')
+    a.href = url
+    a.target = '_blank'
+    a.rel = 'noopener noreferrer'
+    a.download = fileNameFromUrl(url)
+    a.click()
+  }
 }
 
 function fmtListTime(iso: string) {
@@ -103,7 +140,8 @@ export default function EmailInboxPage({ initialConversationId }: { initialConve
   const [conversations, setConversations] = useState<ConversationSummary[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
-  const [filter, setFilter] = useState<Filter>('all')
+  const [folder, setFolder] = useState<Folder>('inbox')
+  const [sort, setSort] = useState<Sort>('newest')
   const [activeId, setActiveId] = useState<string | null>(null)
   const [detail, setDetail] = useState<ConversationDetail | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
@@ -146,6 +184,8 @@ export default function EmailInboxPage({ initialConversationId }: { initialConve
     return () => clearInterval(t)
   }, [activeId, loadDetail])
   useEffect(() => { scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight }) }, [detail?.messages.length])
+  // Reply opened from a message's header — bring the composer at the bottom into view
+  useEffect(() => { if (replyOpen) scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' }) }, [replyOpen])
 
   // Deep-link from the unified inbox (src/components/chat/UnifiedInbox.tsx).
   const deepLinkConsumed = useRef(false)
@@ -206,9 +246,17 @@ export default function EmailInboxPage({ initialConversationId }: { initialConve
     setReplyOpen(false)
   }
 
-  /** Gmail-style Forward of the newest message: quoted header + body + its attachments. */
-  function openForward(d: ConversationDetail) {
-    const last = d.messages[d.messages.length - 1]
+  function openCompose() {
+    setCompose(prev => ({ open: true, key: prev.key + 1 }))
+  }
+  function closeThread() {
+    setActiveId(null)
+    setDetail(null)
+  }
+
+  /** Gmail-style Forward of `msg` (default: the newest message): quoted header + body + its attachments. */
+  function openForward(d: ConversationDetail, msg?: Message) {
+    const last = msg ?? d.messages[d.messages.length - 1]
     if (!last) return
     const out = last.direction === 'OUT'
     const from = out ? (last.sentByName ?? 'Samara Yachting') : `${d.fromName ? `${d.fromName} ` : ''}&lt;${escapeHtml(d.fromEmail)}&gt;`
@@ -228,89 +276,108 @@ export default function EmailInboxPage({ initialConversationId }: { initialConve
   useEffect(() => { sendReplyRef.current = sendReply })
 
   const q = search.trim().toLowerCase()
+  const inFolder = (c: ConversationSummary, f: Folder) =>
+    f === 'inbox' || (f === 'unread' ? c.unreadCount > 0 : f === 'starred' ? c.starred : c.hasReply)
   const filtered = conversations.filter(c =>
-    (filter === 'all' || (filter === 'unread' ? c.unreadCount > 0 : c.starred)) &&
+    inFolder(c, folder) &&
     (!q || (c.fromName ?? '').toLowerCase().includes(q) || c.fromEmail.toLowerCase().includes(q) ||
       c.subject.toLowerCase().includes(q) || (c.lastMessagePreview ?? '').toLowerCase().includes(q)))
+  if (sort === 'oldest') filtered.reverse() // API returns newest first
   const unreadTotal = conversations.filter(c => c.unreadCount > 0).length
+  const folderCounts = Object.fromEntries(FOLDERS.map(f => [f.key, conversations.filter(c => inFolder(c, f.key)).length])) as Record<Folder, number>
+  const folderLabel = FOLDERS.find(f => f.key === folder)!.label
+  const activeIndex = filtered.findIndex(c => c.id === activeId)
 
   return (
-    <div className="h-[calc(100vh-6rem)] flex rounded-xl border overflow-hidden bg-white">
+    <div className="h-[calc(100vh-6rem)] flex rounded-2xl border overflow-hidden bg-white">
       {/* ── Thread list ── */}
-      <div className={`relative w-full md:w-[400px] lg:w-[440px] shrink-0 md:border-r flex-col ${activeId ? 'hidden md:flex' : 'flex'}`}>
-        <div className="px-3 pt-3 pb-2">
-          <div className="flex items-center gap-3 h-12 rounded-full bg-[#eef2f6] px-4 focus-within:bg-white focus-within:shadow-md transition-all">
-            <Search className="h-4 w-4 text-muted-foreground shrink-0" />
-            <input className="flex-1 bg-transparent text-[15px] focus:outline-none placeholder:text-muted-foreground"
-              placeholder="Search in emails" value={search} onChange={e => setSearch(e.target.value)} />
-            {search && <button onClick={() => setSearch('')} className="text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>}
+      <div className={`relative w-full md:w-[340px] xl:w-[380px] shrink-0 md:border-r flex-col ${activeId ? 'hidden md:flex' : 'flex'}`}>
+        <div className="px-5 pt-5 pb-3 space-y-3">
+          <div>
+            <h2 className="text-lg font-semibold leading-tight">{folderLabel}</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">{filtered.length} Messages • {unreadTotal} Unread</p>
           </div>
-          <div className="flex items-center gap-1.5 mt-3">
-            {([['all', 'Inbox'], ['unread', unreadTotal ? `Unread · ${unreadTotal}` : 'Unread'], ['starred', 'Starred']] as const).map(([key, label]) => (
-              <button key={key} onClick={() => setFilter(key)}
-                className={`h-7 px-3 rounded-full text-xs font-medium border transition-colors ${filter === key ? 'bg-[#d3e3fd] border-transparent text-[#041e49]' : 'bg-white text-muted-foreground hover:bg-muted'}`}>
-                {label}
+          <div className="flex gap-2">
+            <div className="flex-1 flex items-center gap-2 h-10 rounded-lg bg-[#f4f5f7] px-3 focus-within:bg-white focus-within:ring-1 focus-within:ring-[#d0d7e2] transition-all">
+              <Search className="h-4 w-4 text-muted-foreground shrink-0" />
+              <input className="flex-1 min-w-0 bg-transparent text-sm focus:outline-none placeholder:text-muted-foreground"
+                placeholder="Search" value={search} onChange={e => setSearch(e.target.value)} />
+              {search && <button onClick={() => setSearch('')} className="text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>}
+            </div>
+            <button onClick={openCompose} title="New message"
+              className="h-10 w-10 shrink-0 rounded-lg bg-[#f4f5f7] hover:bg-[#eceef1] flex items-center justify-center text-foreground/70 transition-colors">
+              <Plus className="h-4 w-4" />
+            </button>
+          </div>
+          <div className="flex gap-1.5 overflow-x-auto">
+            {FOLDERS.map(f => (
+              <button key={f.key} onClick={() => setFolder(f.key)}
+                className={`h-7 px-3 shrink-0 rounded-full text-xs font-medium transition-colors ${folder === f.key ? 'text-white' : 'bg-[#f4f5f7] text-foreground/70 hover:bg-[#eceef1]'}`}
+                style={folder === f.key ? { backgroundColor: ACCENT } : undefined}>
+                {f.label} · {folderCounts[f.key]}
               </button>
             ))}
           </div>
+          <div className="relative inline-flex">
+            <select value={sort} onChange={e => setSort(e.target.value as Sort)}
+              className="appearance-none h-8 pl-3 pr-8 rounded-lg bg-[#f4f5f7] text-xs text-foreground/80 focus:outline-none cursor-pointer">
+              <option value="newest">Newest</option>
+              <option value="oldest">Oldest</option>
+            </select>
+            <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+          </div>
         </div>
-        <p className="px-5 pt-2 pb-1 text-[11px] font-medium tracking-[0.12em] text-muted-foreground uppercase">
-          {filter === 'all' ? 'Inbox' : filter === 'unread' ? 'Unread' : 'Starred'}
-        </p>
 
-        <div className="flex-1 overflow-y-auto pb-24">
+        <div className="flex-1 overflow-y-auto border-t">
           {loading ? (
-            <div className="p-4 space-y-4">{[...Array(6)].map((_, i) => (
-              <div key={i} className="flex gap-3"><div className="h-10 w-10 rounded-full bg-muted animate-pulse" /><div className="flex-1 space-y-2"><div className="h-3 w-1/2 rounded bg-muted animate-pulse" /><div className="h-3 w-4/5 rounded bg-muted animate-pulse" /></div></div>
+            <div className="p-5 space-y-5">{[...Array(6)].map((_, i) => (
+              <div key={i} className="space-y-2"><div className="h-3 w-3/4 rounded bg-muted animate-pulse" /><div className="h-3 w-1/3 rounded bg-muted animate-pulse" /><div className="h-3 w-full rounded bg-muted animate-pulse" /></div>
             ))}</div>
           ) : filtered.length === 0 ? (
             <div className="p-10 text-center text-sm text-muted-foreground">
               <Inbox className="h-10 w-10 mx-auto mb-3 opacity-30" />
-              {conversations.length === 0 ? 'No emails yet — inbound messages will show up here.' : filter === 'starred' ? 'No starred emails' : filter === 'unread' ? 'You’re all caught up' : 'No matches'}
+              {conversations.length === 0 ? 'No emails yet — inbound messages will show up here.'
+                : q ? 'No matches'
+                : folder === 'starred' ? 'No starred emails' : folder === 'unread' ? 'You’re all caught up' : folder === 'sent' ? 'No sent emails' : 'No matches'}
             </div>
           ) : filtered.map(c => {
             const unread = c.unreadCount > 0
-            const who = c.fromName || c.fromEmail
+            const active = activeId === c.id
             return (
               <div key={c.id} role="button" tabIndex={0} onClick={() => openConversation(c)}
                 onKeyDown={e => { if (e.key === 'Enter') openConversation(c) }}
-                className={`flex gap-3 px-4 py-3 cursor-pointer transition-colors ${activeId === c.id ? 'bg-[#e8f0fe]' : 'hover:bg-[#f2f6fc]'}`}>
-                <LetterAvatar name={c.fromName} email={c.fromEmail} />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-baseline justify-between gap-2">
-                    <p className={`truncate text-[15px] ${unread ? 'font-bold text-foreground' : 'text-foreground/80'}`}>
-                      {who}{c.hasReply && <span className="font-normal">, me</span>}
-                      {c.messageCount > 1 && <span className="ml-1.5 text-xs font-normal text-muted-foreground">{c.messageCount}</span>}
+                className={`group relative px-5 py-4 border-b cursor-pointer transition-colors ${active ? 'bg-[#f5f8ff]' : 'hover:bg-[#fafbfc]'}`}>
+                {active && <span className="absolute left-0 inset-y-0 w-[3px]" style={{ backgroundColor: ACCENT }} />}
+                <div className="flex items-center gap-2">
+                  <span className="h-1.5 w-1.5 rounded-full shrink-0" style={{ backgroundColor: unread ? ACCENT : 'transparent' }} />
+                  <p className={`flex-1 truncate text-sm ${unread ? 'font-semibold text-foreground' : 'font-medium text-foreground/70'}`}>{c.subject}</p>
+                  <span className="text-[11px] text-muted-foreground shrink-0">{fmtListTime(c.lastMessageAt)}</span>
+                </div>
+                <div className="pl-3.5">
+                  <div className="flex items-center gap-2 mt-1.5">
+                    <p className="flex-1 truncate text-[13px] text-foreground/80">
+                      {c.fromName || c.fromEmail}
+                      {c.messageCount > 1 && <span className="ml-1.5 text-[11px] text-muted-foreground">({c.messageCount})</span>}
                     </p>
-                    <span className={`text-xs shrink-0 ${unread ? 'font-bold text-foreground' : 'text-muted-foreground'}`}>{fmtListTime(c.lastMessageAt)}</span>
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <div className="min-w-0 flex-1">
-                      <p className={`truncate text-sm ${unread ? 'font-bold text-foreground' : 'text-foreground/80'}`}>{c.subject}</p>
-                      <p className="truncate text-sm text-muted-foreground">{c.lastMessagePreview || '—'}</p>
-                    </div>
+                    {c.hasReply && <span title="Replied"><Reply className="h-3.5 w-3.5 text-muted-foreground" /></span>}
                     <button title={c.starred ? 'Starred' : 'Not starred'} onClick={e => { e.stopPropagation(); toggleStar(c.id, !c.starred) }}
-                      className="mt-1 shrink-0 text-muted-foreground/60 hover:text-muted-foreground">
-                      <Star className={`h-5 w-5 ${c.starred ? 'fill-[#f4b400] text-[#f4b400]' : ''}`} />
+                      className={`shrink-0 text-muted-foreground/60 hover:text-muted-foreground transition-opacity ${c.starred ? '' : 'opacity-0 group-hover:opacity-100 focus:opacity-100'}`}>
+                      <Star className={`h-3.5 w-3.5 ${c.starred ? 'fill-[#f4b400] text-[#f4b400]' : ''}`} />
                     </button>
                   </div>
+                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground line-clamp-2 break-words">{c.lastMessagePreview || '—'}</p>
                   {c.attachmentUrls.length > 0 && (
-                    <div className="flex items-center gap-1.5 mt-2">
-                      {c.attachmentUrls.filter(isHttpUrl).slice(0, 2).map((url, i) => <AttachmentChip key={i} url={url} compact />)}
-                      {c.attachmentUrls.length > 2 && <span className="text-xs text-muted-foreground">+{c.attachmentUrls.length - 2}</span>}
+                    <div className="flex items-center gap-1.5 mt-2.5">
+                      {c.attachmentUrls.filter(isHttpUrl).slice(0, 2).map((url, i) => <AttachmentChip key={i} url={url} />)}
+                      {c.attachmentUrls.length > 2 && <span className="text-[11px] text-muted-foreground">+{c.attachmentUrls.length - 2}</span>}
                     </div>
                   )}
-                  {c.assignedTo && <p className="truncate text-[11px] text-muted-foreground/80 mt-0.5">Owner: {c.assignedTo.name ?? '—'}</p>}
+                  {c.assignedTo && <p className="truncate text-[11px] text-muted-foreground/80 mt-1.5">Owner: {c.assignedTo.name ?? '—'}</p>}
                 </div>
               </div>
             )
           })}
         </div>
-
-        <button onClick={() => setCompose(prev => ({ open: true, key: prev.key + 1 }))}
-          className="absolute bottom-5 right-5 flex items-center gap-3 h-14 pl-5 pr-6 rounded-2xl bg-white shadow-[0_1px_3px_rgba(60,64,67,.3),0_4px_8px_3px_rgba(60,64,67,.15)] hover:shadow-[0_1px_3px_rgba(60,64,67,.3),0_8px_12px_6px_rgba(60,64,67,.15)] transition-shadow text-[#c5221f] font-medium">
-          <Pencil className="h-5 w-5" /> Compose
-        </button>
       </div>
 
       {/* ── Thread ── */}
@@ -325,22 +392,26 @@ export default function EmailInboxPage({ initialConversationId }: { initialConve
           </div>
         ) : (
           <>
-            <div className="flex items-start gap-2 px-4 md:px-6 pt-4 pb-3 shrink-0">
-              <button onClick={() => { setActiveId(null); setDetail(null) }} title="Back to inbox"
-                className="md:hidden -ml-1 mt-0.5 h-8 w-8 rounded-full flex items-center justify-center hover:bg-muted">
-                <ArrowLeft className="h-5 w-5" />
+            <div className="flex items-center gap-2 h-14 px-3 md:px-5 border-b shrink-0">
+              <button onClick={closeThread} title="Back to inbox" className={iconBtn}>
+                <ArrowLeft className="h-[18px] w-[18px]" />
               </button>
-              <div className="min-w-0 flex-1">
-                <h2 className="text-xl md:text-[22px] leading-snug text-foreground break-words">
-                  {detail?.subject}
-                  <span className="ml-2 align-middle inline-flex items-center rounded px-1.5 py-0.5 text-[11px] bg-muted text-muted-foreground">Inbox</span>
-                </h2>
-                {detail && <p className="text-xs text-muted-foreground mt-1">{detail.assignedTo ? `Owner: ${detail.assignedTo.name ?? '—'}` : 'Unassigned'}</p>}
+              <div className="flex-1 flex items-center justify-center gap-1 text-xs text-muted-foreground">
+                {activeIndex >= 0 && (
+                  <>
+                    <button onClick={() => openConversation(filtered[activeIndex - 1])} disabled={activeIndex <= 0} title="Newer" className={iconBtn}>
+                      <ChevronLeft className="h-4 w-4" />
+                    </button>
+                    <span className="px-2 tabular-nums">{activeIndex + 1} of {filtered.length}</span>
+                    <button onClick={() => openConversation(filtered[activeIndex + 1])} disabled={activeIndex >= filtered.length - 1} title="Older" className={iconBtn}>
+                      <ChevronRight className="h-4 w-4" />
+                    </button>
+                  </>
+                )}
               </div>
               {detail && (
-                <button title={detail.starred ? 'Starred' : 'Not starred'} onClick={() => toggleStar(detail.id, !detail.starred)}
-                  className="h-9 w-9 rounded-full flex items-center justify-center text-muted-foreground hover:bg-muted shrink-0">
-                  <Star className={`h-5 w-5 ${detail.starred ? 'fill-[#f4b400] text-[#f4b400]' : ''}`} />
+                <button title={detail.starred ? 'Starred' : 'Not starred'} onClick={() => toggleStar(detail.id, !detail.starred)} className={iconBtn}>
+                  <Star className={`h-[18px] w-[18px] ${detail.starred ? 'fill-[#f4b400] text-[#f4b400]' : ''}`} />
                 </button>
               )}
             </div>
@@ -350,18 +421,24 @@ export default function EmailInboxPage({ initialConversationId }: { initialConve
                 <div className="flex justify-center pt-10"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
               ) : detail && (
                 <>
+                  <div className="px-4 md:px-6 pt-6 pb-2">
+                    <h1 className="text-xl font-semibold leading-snug text-foreground break-words">{detail.subject}</h1>
+                    <p className="text-xs text-muted-foreground mt-1">{detail.assignedTo ? `Owner: ${detail.assignedTo.name ?? '—'}` : 'Unassigned'}</p>
+                  </div>
+
                   {detail.messages.map((m, i) => (
                     <MessageItem key={m.id} m={m} detail={detail}
                       expanded={expanded.has(m.id) || i === detail.messages.length - 1}
-                      onToggle={() => setExpanded(prev => { const n = new Set(prev); if (n.has(m.id)) n.delete(m.id); else n.add(m.id); return n })} />
+                      onToggle={() => setExpanded(prev => { const n = new Set(prev); if (n.has(m.id)) n.delete(m.id); else n.add(m.id); return n })}
+                      onReply={() => setReplyOpen(true)}
+                      onForward={() => openForward(detail, m)} />
                   ))}
 
                   {replyOpen ? (
-                    /* Reply box — Gmail-style card under the thread */
-                    <div className="flex gap-3 px-4 md:px-6 py-4">
+                    <div className="flex gap-3 px-4 md:px-6 py-5">
                       <LetterAvatar name={myName} email={`me:${myName}`} />
-                      <div className="min-w-0 flex-1 rounded-2xl border shadow-[0_1px_2px_rgba(60,64,67,.3),0_2px_6px_2px_rgba(60,64,67,.15)] overflow-hidden">
-                        <div className="flex items-center gap-2 px-4 py-2.5 text-sm text-muted-foreground">
+                      <div className="min-w-0 flex-1 rounded-xl border shadow-sm overflow-hidden">
+                        <div className="flex items-center gap-2 px-4 py-2.5 text-sm text-muted-foreground border-b bg-[#fafbfc]">
                           <Reply className="h-4 w-4 shrink-0" />
                           <span className="truncate">{detail.fromName ? `${detail.fromName} ` : ''}<span className="text-xs">&lt;{detail.fromEmail}&gt;</span></span>
                         </div>
@@ -381,29 +458,27 @@ export default function EmailInboxPage({ initialConversationId }: { initialConve
                           <input ref={fileInputRef} type="file" multiple className="hidden"
                             onChange={e => { replyFiles.upload(Array.from(e.target.files ?? [])); e.target.value = '' }} />
                           <button onClick={sendReply} disabled={(draft.isEmpty && pendingAttachments.length === 0) || sending || uploading}
-                            className="flex items-center gap-2 h-9 px-6 rounded-full text-sm font-medium text-white disabled:opacity-40 transition-colors"
+                            className="flex items-center gap-2 h-9 px-5 rounded-lg text-sm font-medium text-white disabled:opacity-40 transition-colors"
                             style={{ backgroundColor: ACCENT }}>
-                            {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Send
+                            {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-3.5 w-3.5" />} Send
                           </button>
-                          <button onClick={() => fileInputRef.current?.click()} title="Attach files (or drag & drop)"
-                            className="ml-2 h-9 w-9 rounded-full flex items-center justify-center text-muted-foreground hover:bg-muted disabled:opacity-40 transition-colors">
+                          <button onClick={() => fileInputRef.current?.click()} title="Attach files (or drag & drop)" className={`ml-2 ${iconBtn}`}>
                             {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Paperclip className="h-4 w-4" />}
                           </button>
-                          <button onClick={discardReply} title="Discard draft"
-                            className="ml-auto h-9 w-9 rounded-full flex items-center justify-center text-muted-foreground hover:bg-muted transition-colors">
+                          <button onClick={discardReply} title="Discard draft" className={`ml-auto ${iconBtn}`}>
                             <Trash2 className="h-4 w-4" />
                           </button>
                         </div>
                       </div>
                     </div>
                   ) : (
-                    <div className="flex flex-wrap items-center gap-3 pl-[72px] md:pl-[80px] pr-4 py-5">
+                    <div className="flex flex-wrap items-center gap-3 px-4 md:pl-[80px] md:pr-6 py-5">
                       <button onClick={() => setReplyOpen(true)}
-                        className="flex items-center gap-2.5 h-10 px-6 rounded-full border border-[#747775] text-sm font-medium text-foreground/80 hover:bg-muted transition-colors">
+                        className="flex items-center gap-2 h-10 px-5 rounded-lg border border-[#e3e6eb] text-sm font-medium text-foreground/80 hover:bg-[#fafbfc] transition-colors">
                         <Reply className="h-4 w-4" /> Reply
                       </button>
                       <button onClick={() => openForward(detail)}
-                        className="flex items-center gap-2.5 h-10 px-6 rounded-full border border-[#747775] text-sm font-medium text-foreground/80 hover:bg-muted transition-colors">
+                        className="flex items-center gap-2 h-10 px-5 rounded-lg border border-[#e3e6eb] text-sm font-medium text-foreground/80 hover:bg-[#fafbfc] transition-colors">
                         <Forward className="h-4 w-4" /> Forward
                       </button>
                     </div>
@@ -417,7 +492,7 @@ export default function EmailInboxPage({ initialConversationId }: { initialConve
 
       <ComposeDialog open={compose.open} resetKey={compose.key} initial={compose.initial}
         onOpenChange={open => setCompose(prev => ({ ...prev, open }))}
-        onSent={async id => { await loadConversations(); setFilter('all'); openConversation({ id, unreadCount: 0 }) }} />
+        onSent={async id => { await loadConversations(); setFolder('inbox'); openConversation({ id, unreadCount: 0 }) }} />
     </div>
   )
 }
@@ -492,62 +567,75 @@ function escapeHtml(s: string) {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 }
 
-/** One message in the thread — collapsed to a one-line snippet like Gmail, click to expand. */
-function MessageItem({ m, detail, expanded, onToggle }: {
+/** One message in the thread — collapsed to a one-line snippet, click to expand. */
+function MessageItem({ m, detail, expanded, onToggle, onReply, onForward }: {
   m: Message
   detail: ConversationDetail
   expanded: boolean
   onToggle: () => void
+  onReply: () => void
+  onForward: () => void
 }) {
   const out = m.direction === 'OUT'
   const name = out ? (m.sentByName ?? 'You') : (detail.fromName || detail.fromEmail)
   const avatarKey = out ? `me:${m.sentByName ?? ''}` : detail.fromEmail
   const snippet = (m.body ?? '').replace(/\s+/g, ' ').trim() || (m.attachmentUrls.length ? `📎 ${m.attachmentUrls.length} attachment${m.attachmentUrls.length > 1 ? 's' : ''}` : '')
+  const attachments = m.attachmentUrls.filter(isHttpUrl)
 
   if (!expanded) {
     return (
       <div role="button" tabIndex={0} onClick={onToggle} onKeyDown={e => { if (e.key === 'Enter') onToggle() }}
-        className="flex items-center gap-3 px-4 md:px-6 py-3 border-b cursor-pointer hover:bg-[#f2f6fc] transition-colors">
-        <LetterAvatar name={name} email={avatarKey} />
+        className="flex items-center gap-3 px-4 md:px-6 py-3.5 border-b cursor-pointer hover:bg-[#fafbfc] transition-colors">
+        <LetterAvatar name={name} email={avatarKey} size={36} />
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline justify-between gap-3">
-            <p className="text-sm font-bold truncate">{name}</p>
+            <p className="text-sm font-semibold truncate">{name}</p>
             <span className="text-xs text-muted-foreground shrink-0">{fmtListTime(m.createdAt)}</span>
           </div>
-          <p className="text-sm text-muted-foreground truncate">{snippet}</p>
+          <p className="text-xs text-muted-foreground truncate">{snippet}</p>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="flex gap-3 px-4 md:px-6 py-4 border-b">
-      <LetterAvatar name={name} email={avatarKey} />
-      <div className="min-w-0 flex-1">
-        <div role="button" tabIndex={0} onClick={onToggle} onKeyDown={e => { if (e.key === 'Enter') onToggle() }} className="cursor-pointer">
-          <div className="flex items-baseline justify-between gap-3">
-            <p className="text-sm truncate">
-              <span className="font-bold">{name}</span>
-              {!out && <span className="text-xs text-muted-foreground"> &lt;{detail.fromEmail}&gt;</span>}
+    <div className="px-4 md:px-6 py-5 border-b">
+      <div className="flex gap-3">
+        <LetterAvatar name={name} email={avatarKey} size={44} />
+        <div className="min-w-0 flex-1 flex items-start justify-between gap-3">
+          <div role="button" tabIndex={0} onClick={onToggle} onKeyDown={e => { if (e.key === 'Enter') onToggle() }} className="min-w-0 cursor-pointer">
+            <p className="text-[15px] font-semibold truncate">{name}</p>
+            <p className="text-xs text-muted-foreground truncate">
+              From: {out ? 'Me' : detail.fromEmail}<span className="mx-1.5">•</span>To: {out ? detail.fromEmail : 'Me'}
             </p>
-            <span className="text-xs text-muted-foreground shrink-0">{fmtDateTime(m.createdAt)}</span>
           </div>
-          <p className="flex items-center gap-0.5 text-xs text-muted-foreground">
-            {out ? `to ${detail.fromName || detail.fromEmail}` : 'to me'} <ChevronDown className="h-3 w-3" />
-          </p>
+          <div className="shrink-0 flex flex-col items-end">
+            <span className="text-xs text-muted-foreground">{fmtDateTime(m.createdAt)}</span>
+            <div className="mt-1 flex items-center gap-0.5">
+              <button onClick={onReply} title="Reply" className={iconBtn}><Reply className="h-4 w-4" /></button>
+              <button onClick={onForward} title="Forward" className={iconBtn}><Forward className="h-4 w-4" /></button>
+            </div>
+          </div>
         </div>
-        <div className="mt-4 text-sm">
+      </div>
+      <div className="mt-4 md:pl-[56px]">
+        <div className="text-sm">
           {m.bodyHtml
             ? <div className={`break-words ${EMAIL_BODY_CLASSES}`} dangerouslySetInnerHTML={{ __html: m.bodyHtml }} />
             : m.body && <p className="whitespace-pre-wrap break-words leading-relaxed">{m.body}</p>}
         </div>
         {/* Server-rendered by renderEmailSignatureHtml at send time (all values escaped) */}
         {m.signatureHtml && <div className="overflow-x-auto" dangerouslySetInnerHTML={{ __html: m.signatureHtml }} />}
-        {m.attachmentUrls.length > 0 && (
-          <div className="mt-5 pt-4 border-t">
-            <p className="text-xs font-medium text-muted-foreground mb-2">{m.attachmentUrls.length} attachment{m.attachmentUrls.length > 1 ? 's' : ''}</p>
-            <div className="flex flex-wrap gap-2">
-              {m.attachmentUrls.filter(isHttpUrl).map((url, i) => <AttachmentChip key={i} url={url} />)}
+        {attachments.length > 0 && (
+          <div className="mt-6 pt-5 border-t">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">Attachments ({attachments.length})</p>
+              {attachments.length > 1 && (
+                <button onClick={() => downloadAll(attachments)} className="text-xs font-medium hover:underline" style={{ color: ACCENT }}>Download All</button>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-x-8 gap-y-3">
+              {attachments.map((url, i) => <AttachmentFile key={i} url={url} />)}
             </div>
           </div>
         )}

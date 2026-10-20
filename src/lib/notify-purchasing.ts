@@ -102,6 +102,62 @@ export async function notifyPurchasingForRequest(
   await notifyByRoleForRequest(db, PURCHASING_ROLES, type, title, body, requestId)
 }
 
+// Progress updates back to whoever a PR is from — both the ERP login that submitted it
+// (requestedById) and, when filed on someone else's behalf, that employee's own login
+// (requestedByEmployee.userId), de-duplicated. `skipUserId` is the person acting right
+// now, so nobody gets told about their own action. Never throws: progress pings are
+// best-effort and must not fail the action that triggered them.
+export async function notifyRequester(
+  db: Db,
+  requestId: string,
+  opts: { type: string; title: string; body: string; skipUserId?: string },
+) {
+  try {
+    const pr = await db.purchaseRequest.findUnique({
+      where: { id: requestId },
+      select: { requestedById: true, requestedByEmployee: { select: { userId: true } } },
+    })
+    if (!pr) return
+    const userIds = [...new Set([pr.requestedById, pr.requestedByEmployee?.userId].filter((x): x is string => !!x))]
+      .filter(u => u !== opts.skipUserId)
+    if (!userIds.length) return
+    await db.notification.createMany({
+      data: userIds.map(userId => ({ id: crypto.randomUUID(), userId, type: opts.type, title: opts.title, body: opts.body, requestId })),
+      skipDuplicates: true,
+    })
+    sendPushToUsers(db, userIds, { title: opts.title, body: opts.body }).catch(console.error)
+  } catch (e) {
+    console.error('notifyRequester failed', e)
+  }
+}
+
+// Same as notifyRequester, for PO-stage events — resolves the PO's source PR first.
+// No-op for a PO created directly in Purchasing without a PR.
+export async function notifyRequesterForOrder(
+  db: Db,
+  orderId: string,
+  opts: { type: string; title: string; body: string; skipUserId?: string },
+) {
+  const po = await db.purchaseOrder.findUnique({ where: { id: orderId }, select: { requestId: true } }).catch(() => null)
+  if (po?.requestId) await notifyRequester(db, po.requestId, opts)
+}
+
+/** Tells the PR's requester their goods have reached the final destination — called
+ * wherever a PO finalizes (a direct goods receipt in receiveGoods, or the last transit
+ * leg in receiveTransferLeg), since both flows end the PO the same way. */
+export function notifyPoArrivalToRequester(
+  db: Db, orderId: string, newStatus: 'RECEIVED' | 'PARTIALLY_RECEIVED', poNumber: string | null, actingUserId: string | null,
+) {
+  notifyRequesterForOrder(db, orderId, {
+    type: newStatus === 'RECEIVED' ? 'PR_PO_RECEIVED' : 'PR_PO_PARTIALLY_RECEIVED',
+    title: newStatus === 'RECEIVED' ? 'Barang request kamu sudah sampai' : 'Barang request kamu sampai sebagian',
+    body: newStatus === 'RECEIVED'
+      ? `${poNumber ?? 'PO'} sudah diterima lengkap di lokasi tujuan.`
+      : `${poNumber ?? 'PO'} baru diterima sebagian di lokasi tujuan.`,
+    skipUserId: actingUserId ?? undefined,
+  }).catch(console.error)
+}
+
 // Auto-delivers a receive link to whichever Boat Captain/Cruise Director is assigned
 // (User.assignedYachtId) to `yachtId` — fired the moment a PO/Transfer starts moving
 // toward their specific boat, instead of Purchasing manually generating and forwarding

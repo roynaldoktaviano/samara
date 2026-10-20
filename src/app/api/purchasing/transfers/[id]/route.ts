@@ -6,16 +6,18 @@ import { receiveTransferLeg } from '@/lib/purchasing/transferActions'
 
 import { roleMatches } from '@/lib/role-utils'
 import { emitTenantEvent } from '@/lib/realtime-bus'
-import { notifyAssignedYachtCaptains } from '@/lib/notify-purchasing'
+import { notifyAssignedYachtCaptains, notifyRequester } from '@/lib/notify-purchasing'
 import { getOrCreateTransferReceiveToken, resolveBaseUrl } from '@/lib/purchasing/receiveLink'
 import { tripFromBooking, tripFromOpenTrip, tripBookingSelect, openTripSelect } from '@/lib/purchasing/tripLink'
 import { resolveAssignedYachtId } from '@/lib/purchasing/yachtScope'
 import { canDispatchFrom, DISPATCH_OWNER_LABEL } from '@/lib/purchasing/dispatchPermission'
 
 const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE']
-// Cruise Director: only transfers to or from their own yacht — receives what arrives there,
-// dispatches what leaves from there (see dispatchPermission.ts), nothing else.
-const YACHT_ROLES = ['CRUISE_DIRECTOR']
+// Cruise Director / Boat Captain: only transfers to or from their own yacht — receive what
+// arrives there; dispatching what leaves stays Cruise Director-only (see
+// dispatchPermission.ts). Boat Captain is here because notifyAssignedYachtCaptains already
+// pings them about every transfer heading to their yacht.
+const YACHT_ROLES = ['CRUISE_DIRECTOR', 'BOAT_CAPTAIN']
 
 async function yachtRoleCanAccess(db: Awaited<ReturnType<typeof getDb>>, userId: string, transfer: { fromLocationId: string; toLocationId: string }): Promise<boolean> {
   const [yachtId, locs] = await Promise.all([
@@ -295,6 +297,16 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       })
     })
     emitTenantEvent(session.user.tenantId, 'purchasing-transfers')
+
+    // Gudang stock sent out for a PR (no PO involved) — tell the requester it's moving.
+    if (transfer.purchaseRequestId && !transfer.purchaseOrderId) {
+      notifyRequester(db, transfer.purchaseRequestId, {
+        type: 'PR_TRANSFER_DISPATCHED',
+        title: 'Barang dari gudang sedang dikirim',
+        body: `${transfer.transferNumber} (dari stok gudang) sudah dikirim dan sedang dalam perjalanan.`,
+        skipUserId: session.user.id,
+      }).catch(console.error)
+    }
 
     // This leg's destination is a yacht's own stock location — auto-generate (or reuse)
     // the same no-login receive link the manual "Get Receive Link" button would produce,

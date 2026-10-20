@@ -3,7 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { emitTenantEvent } from '@/lib/realtime-bus'
-import { notifyByRoleForRequest, notifyPurchasingForRequest } from '@/lib/notify-purchasing'
+import { notifyByRoleForRequest, notifyPurchasingForRequest, notifyRequester } from '@/lib/notify-purchasing'
 import { allItemsCustom } from '@/lib/purchasing/requestItems'
 
 const WAREHOUSE_ROLES = ['WAREHOUSE', 'ADMIN', 'SUPER_ADMIN']
@@ -22,7 +22,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (!employee) return NextResponse.json({ error: 'Akun kamu belum terhubung ke data karyawan — hubungi Admin/HR.' }, { status: 403 })
 
   const body = await req.json()
-  const { action } = body as { action?: 'approve' | 'reject' }
+  const { action, reason } = body as { action?: 'approve' | 'reject'; reason?: string }
   if (action !== 'approve' && action !== 'reject') return NextResponse.json({ error: 'Invalid action' }, { status: 400 })
 
   const request = await db.purchaseRequest.findUnique({
@@ -43,6 +43,24 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       ? { status: allCustom ? 'ON_PROCESS' : 'DRAFT', approvedById: session.user.id, approvedAt: new Date(), updatedAt: new Date() }
       : { status: 'REJECTED', rejectedById: session.user.id, rejectedAt: new Date(), updatedAt: new Date() },
   })
+
+  // Let the requester know their manager has decided — otherwise a rejected PR just
+  // silently flips status, and an approved one gives no sign it moved on to Gudang.
+  // The optional reason only travels in the notification (PurchaseRequest has no
+  // rejection-reason column).
+  await notifyRequester(db, id, action === 'approve'
+    ? {
+        type: 'PR_APPROVED',
+        title: 'Request disetujui atasan',
+        body: `${request.prNumber} sudah disetujui atasan — ${allCustom ? 'diteruskan ke Purchasing' : 'sekarang dicek stoknya oleh Gudang'}.`,
+        skipUserId: session.user.id,
+      }
+    : {
+        type: 'PR_REJECTED',
+        title: 'Request ditolak atasan',
+        body: `${request.prNumber} ditolak oleh atasan.${reason?.trim() ? ` Alasan: ${reason.trim()}` : ''}`,
+        skipUserId: session.user.id,
+      })
 
   if (action === 'approve') {
     if (allCustom) {
