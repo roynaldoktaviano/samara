@@ -3292,12 +3292,12 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                       <p className="text-[11px] text-amber-600 flex items-center gap-1.5"><Loader2 className="h-3 w-3 animate-spin shrink-0" /> Proof submitted — awaiting confirmation</p>
                     )}
                     {/* Finance edited the invoice and left a note (± proof) explaining what changed */}
-                    {detailActivePmt?.changeProofNote && (
+                    {(detailActivePmt?.changeProofNote || detailActivePmt?.hasChangeProof) && (
                       <div className="rounded-md bg-orange-50 border border-orange-200 px-3 py-2 space-y-1">
                         <p className="text-[11px] font-medium text-orange-700 flex items-center gap-1.5">
                           <AlertCircle className="h-3 w-3 shrink-0" /> Finance note — invoice was updated
                         </p>
-                        <p className="text-[11px] text-orange-700">{detailActivePmt.changeProofNote}</p>
+                        {detailActivePmt.changeProofNote && <p className="text-[11px] text-orange-700">{detailActivePmt.changeProofNote}</p>}
                         {detailActivePmt.hasChangeProof && (
                           changeProofView ? (
                             <FilePreview src={changeProofView} alt="Proof of change" className="max-h-48 w-full object-contain rounded border bg-white mt-1" />

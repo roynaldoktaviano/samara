@@ -57,6 +57,8 @@ interface Payment {
   proofOfTransfer: string | null
   proofOfTransferExtra?: string[]
   hasProof?: boolean
+  changeProofNote?: string | null
+  hasChangeProof?: boolean
   billToType: string | null
   showNetAmount: boolean
   showCommissionNote: boolean
@@ -176,6 +178,7 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
   const [changeProofUrl,     setChangeProofUrl]    = useState('')
   const [changeProofUploading, setChangeProofUploading] = useState(false)
   const changeProofInputRef = useRef<HTMLInputElement>(null)
+  const [changeProofSaving,  setChangeProofSaving] = useState(false)
 
   // ── Convert a foreign-currency amount received into the USD figure for Amount (USD) ──
   const [amtConvertOpen,     setAmtConvertOpen]     = useState(false)
@@ -323,6 +326,81 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
   const { isDragging: changeProofDragging, dropProps: changeProofDropProps } = useFileDrop(files => {
     if (files[0]) handleChangeProofFile(files[0])
   })
+
+  // "What changed?" note + proof-of-change upload — shared by the Edit Invoice form and the
+  // standalone section on additional-DP records (which have no invoice form of their own).
+  const renderChangeProofFields = () => (
+    <>
+      <div className="space-y-1.5">
+        <Label className="text-xs flex items-center gap-1.5">
+          <AlertCircle className="h-3.5 w-3.5" /> What changed? <span className="font-normal text-muted-foreground">(optional — shown to Sales)</span>
+        </Label>
+        <Textarea
+          rows={2} className="text-sm resize-none"
+          placeholder="e.g. Amount received doesn't match the DP on file — actual $500 vs system $600"
+          value={changeProofNote}
+          onChange={e => setChangeProofNote(e.target.value)}
+        />
+      </div>
+      <div className="space-y-1.5">
+        <Label className="text-xs">Proof of change (optional)</Label>
+        {changeProofUrl ? (
+          <div className="relative rounded-lg overflow-hidden border">
+            <FilePreview src={changeProofUrl} alt="Proof of change" className="max-h-40 w-full object-contain bg-muted/30" />
+            <button
+              type="button"
+              onClick={() => setChangeProofUrl('')}
+              className="absolute top-2 right-2 bg-black/50 text-white rounded-full p-1"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        ) : (
+          <div
+            {...changeProofDropProps}
+            onClick={() => changeProofInputRef.current?.click()}
+            className={`flex flex-col items-center justify-center gap-1.5 border-2 border-dashed rounded-lg py-4 cursor-pointer transition-colors ${
+              changeProofDragging ? 'border-blue-400 bg-blue-50 text-blue-700' : 'text-muted-foreground hover:bg-muted/30'
+            }`}
+          >
+            {changeProofUploading ? <Loader2 className="h-5 w-5 animate-spin" /> : <FilePlus className="h-5 w-5" />}
+            <span className="text-xs">{changeProofUploading ? 'Uploading...' : 'Tap or drag to upload image/PDF'}</span>
+          </div>
+        )}
+        <input
+          ref={changeProofInputRef}
+          type="file"
+          accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf"
+          className="hidden"
+          onChange={e => { const f = e.target.files?.[0]; if (f) handleChangeProofFile(f); e.target.value = '' }}
+        />
+      </div>
+    </>
+  )
+
+  // Additional-DP records only — saves the note/proof on its own and notifies Sales.
+  const handleSaveChangeProof = async () => {
+    if (!selected) return
+    setChangeProofSaving(true)
+    try {
+      const res = await fetch(`/api/payments/${selected.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'save_change_proof', changeProofNote: changeProofNote.trim(), changeProofUrl }),
+      })
+      if (!res.ok) throw new Error(await res.text())
+      toast.success(changeProofNote.trim() || changeProofUrl ? 'Change note saved — Sales has been notified' : 'Change note cleared')
+      const note = changeProofNote.trim() || null
+      setSelected(prev => prev ? { ...prev, changeProofNote: note, hasChangeProof: !!changeProofUrl } : prev)
+      setPayments(prev => prev.map(p => p.id === selected.id ? { ...p, changeProofNote: note, hasChangeProof: !!changeProofUrl } : p))
+      window.dispatchEvent(new CustomEvent('payment-updated'))
+    } catch (err) {
+      console.error(err)
+      toast.error('Failed to save change note')
+    } finally {
+      setChangeProofSaving(false)
+    }
+  }
 
   const handleGenerateInvoice = async (silent = false) => {
     if (!selected) return
@@ -479,7 +557,7 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
     setGenInvShowNote(p.showCommissionNote ?? false)
     setGenInvEditing(false)
     setGenInvConfirmEdit(false)
-    setChangeProofNote('')
+    setChangeProofNote(p.changeProofNote ?? '')
     setChangeProofUrl('')
     setConvertOpen(false)
     const savedCurrency = p.currency !== 'USD' ? p.currency : (p.booking.currency !== 'USD' ? p.booking.currency : 'EUR')
@@ -496,6 +574,8 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
         if (res.ok) {
           const full = await res.json()
           setSelected(prev => prev?.id === full.id ? ({ ...prev, proofOfTransfer: full.proofOfTransfer ?? null, proofOfTransferExtra: full.proofOfTransferExtra ?? [], paymentDate: full.paymentDate ?? null, history: full.history ?? [] }) as Payment : prev)
+          // Prefill the saved proof-of-change (stripped from the list) unless Finance already picked a new file
+          if (full.changeProofUrl) setChangeProofUrl(prev => prev || full.changeProofUrl)
         }
       } catch { /* non-critical */ } finally {
         setProofLoading(false)
@@ -1582,50 +1662,7 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                     {!isFirstGeneration && (
                       <>
                         <Separator />
-                        <div className="space-y-1.5">
-                          <Label className="text-xs flex items-center gap-1.5">
-                            <AlertCircle className="h-3.5 w-3.5" /> What changed? <span className="font-normal text-muted-foreground">(optional — shown to Sales)</span>
-                          </Label>
-                          <Textarea
-                            rows={2} className="text-sm resize-none"
-                            placeholder="e.g. Amount received doesn't match the DP on file — actual $500 vs system $600"
-                            value={changeProofNote}
-                            onChange={e => setChangeProofNote(e.target.value)}
-                          />
-                        </div>
-                        <div className="space-y-1.5">
-                          <Label className="text-xs">Proof of change (optional)</Label>
-                          {changeProofUrl ? (
-                            <div className="relative rounded-lg overflow-hidden border">
-                              <FilePreview src={changeProofUrl} alt="Proof of change" className="max-h-40 w-full object-contain bg-muted/30" />
-                              <button
-                                type="button"
-                                onClick={() => setChangeProofUrl('')}
-                                className="absolute top-2 right-2 bg-black/50 text-white rounded-full p-1"
-                              >
-                                <X className="h-3.5 w-3.5" />
-                              </button>
-                            </div>
-                          ) : (
-                            <div
-                              {...changeProofDropProps}
-                              onClick={() => changeProofInputRef.current?.click()}
-                              className={`flex flex-col items-center justify-center gap-1.5 border-2 border-dashed rounded-lg py-4 cursor-pointer transition-colors ${
-                                changeProofDragging ? 'border-blue-400 bg-blue-50 text-blue-700' : 'text-muted-foreground hover:bg-muted/30'
-                              }`}
-                            >
-                              {changeProofUploading ? <Loader2 className="h-5 w-5 animate-spin" /> : <FilePlus className="h-5 w-5" />}
-                              <span className="text-xs">{changeProofUploading ? 'Uploading...' : 'Tap or drag to upload image/PDF'}</span>
-                            </div>
-                          )}
-                          <input
-                            ref={changeProofInputRef}
-                            type="file"
-                            accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf"
-                            className="hidden"
-                            onChange={e => { const f = e.target.files?.[0]; if (f) handleChangeProofFile(f); e.target.value = '' }}
-                          />
-                        </div>
+                        {renderChangeProofFields()}
                       </>
                     )}
 
@@ -1660,6 +1697,31 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                 </>
                 )
               })()}
+
+              {/* What changed / proof of change — additional-DP records have no Edit Invoice form,
+                  so Finance gets this standalone section to explain a discrepancy to Sales. */}
+              {isFinance && selected.hasDocument === false && ['invoice_ready', 'pending_confirmation'].includes(selected.status) && (
+                <>
+                  <Separator />
+                  <div className="space-y-3">
+                    <p className="text-sm font-semibold text-blue-700 flex items-center gap-1.5">
+                      <AlertCircle className="h-4 w-4" /> Change Note for Sales
+                    </p>
+                    {renderChangeProofFields()}
+                    <div className="flex justify-end">
+                      <Button
+                        size="sm"
+                        className="bg-blue-600 hover:bg-blue-700 text-white"
+                        disabled={changeProofSaving || changeProofUploading}
+                        onClick={handleSaveChangeProof}
+                      >
+                        {changeProofSaving ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <CheckCircle2 className="h-4 w-4 mr-1.5" />}
+                        Save & Notify Sales
+                      </Button>
+                    </div>
+                  </div>
+                </>
+              )}
 
               {/* Proof of transfer */}
               {(selected.status === 'pending_confirmation' || selected.status === 'invoice_ready' || selected.status === 'confirmed' || selected.status === 'rejected') && (

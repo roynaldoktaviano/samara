@@ -204,6 +204,53 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       return NextResponse.json({ ok: true, invoiceNumber })
     }
 
+    // ── Finance: attach a "what changed" note + proof without editing the invoice ──
+    // Used for additional-DP records (hasDocument:false) that have no Edit Invoice form of
+    // their own, so Finance can still explain a discrepancy to Sales before confirming.
+    if (action === 'save_change_proof') {
+      if (!['FINANCE', 'ADMIN', 'SUPER_ADMIN'].includes(actorRole)) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      }
+      const changeProofNote = typeof body.changeProofNote === 'string' ? body.changeProofNote.trim() : ''
+      const changeProofUrl  = typeof body.changeProofUrl  === 'string' ? body.changeProofUrl  : ''
+
+      const existing = await withRetry(db, () => db.payment.findUnique({
+        where: { id },
+        include: { booking: { select: { bookingCode: true, salespersonId: true } } },
+      }))
+      if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+      if (!['invoice_ready', 'pending_confirmation'].includes(existing.status)) {
+        return NextResponse.json({ error: 'Change notes can only be added while invoice-ready or pending confirmation' }, { status: 400 })
+      }
+
+      await withRetry(db, () => db.payment.update({
+        where: { id },
+        data: { changeProofNote: changeProofNote || null, changeProofUrl: changeProofUrl || null },
+      }))
+
+      logActivity({
+        userId: actorId, userName: actorName, userRole: actorRole,
+        action: 'UPDATE', entity: 'Payment', entityId: id,
+        detail: `Add change note to ${existing.invoiceNumber} (${existing.booking.bookingCode})${changeProofNote ? ` — ${changeProofNote}` : ''}`,
+      }, db).catch(() => {})
+
+      if (changeProofNote || changeProofUrl) {
+        const targets = new Set<string>([existing.submittedByUserId, existing.booking.salespersonId].filter(Boolean) as string[])
+        const notifTitle = 'Payment updated by Finance — please review'
+        const notifBody  = `${existing.invoiceNumber} (${existing.booking.bookingCode}): ${changeProofNote || 'see attached proof'}${changeProofUrl ? ' (proof attached)' : ''}`
+        for (const recipientId of targets) {
+          db.notification.findFirst({ where: { userId: recipientId, type: 'INVOICE_READY', bookingId: existing.bookingId } })
+            .then(n => n
+              ? db.notification.update({ where: { id: n.id }, data: { isRead: false, title: notifTitle, body: notifBody, paymentId: id, createdAt: new Date() } })
+              : db.notification.create({ data: { userId: recipientId, type: 'INVOICE_READY', title: notifTitle, body: notifBody, paymentId: id, bookingId: existing.bookingId } })
+            ).catch(() => {})
+        }
+      }
+
+      emitTenantEvent(session.user.tenantId, 'payments')
+      return NextResponse.json({ ok: true })
+    }
+
     // ── Finance: set / clear the invoice's payout currency conversion ─────────
     if (action === 'set_currency') {
       if (!['FINANCE', 'ADMIN', 'SUPER_ADMIN'].includes(actorRole)) {
