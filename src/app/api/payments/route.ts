@@ -61,6 +61,7 @@ export async function GET(_: NextRequest) {
             endDate: true,
             destination: true,
             tripType: true,
+            tripNumber: true,
             source: true,
             useB2BCommission: true,
             currency: true,
@@ -71,7 +72,7 @@ export async function GET(_: NextRequest) {
             salespersonUser: { select: { name: true } },
             customer: { select: { name: true, email: true, phone: true } },
             yacht: { select: { name: true, model: true } },
-            openTrip: { select: { title: true, destination: true } },
+            openTrip: { select: { title: true, destination: true, tripNumber: true, endDate: true } },
             agent: { select: { name: true, commissionOpenTrip: true, commissionPrivateCharter: true, commissionB2B: true } },
             // Only ever populated for the automatic per-booking deduction (see
             // src/app/api/bookings/route.ts) — manual ledger adjustments have no bookingId,

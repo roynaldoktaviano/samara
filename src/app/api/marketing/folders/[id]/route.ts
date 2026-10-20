@@ -25,6 +25,42 @@ async function deleteStoredFile(url: string) {
   return del(url).catch(e => console.error('[marketing/folders] blob delete failed:', e))
 }
 
+// PATCH — rename a folder. Names stay unique (case-insensitive) among its siblings,
+// same rule as creating one.
+export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const session = await requireAccess()
+  if (!session) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  const db = await getDb(session)
+  try {
+    const { id } = await params
+    const body = await request.json().catch(() => ({}))
+    const name = typeof body.name === 'string' ? body.name.trim() : ''
+    if (!name) return NextResponse.json({ error: 'Folder name is required' }, { status: 400 })
+
+    const folder = await db.mediaFolder.findUnique({ where: { id } })
+    if (!folder) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
+    const duplicate = await db.mediaFolder.findFirst({
+      where: {
+        id: { not: id }, yachtId: folder.yachtId, categoryId: folder.categoryId, parentId: folder.parentId,
+        name: { equals: name, mode: 'insensitive' },
+      },
+    })
+    if (duplicate) return NextResponse.json({ error: 'A folder with that name already exists here' }, { status: 409 })
+
+    const updated = await db.mediaFolder.update({ where: { id }, data: { name } })
+    if (name !== folder.name) {
+      logActivity({
+        userId: session.user.id, userName: session.user.name ?? session.user.email ?? 'Unknown',
+        userRole: (session.user as { role?: string }).role ?? '',
+        action: 'UPDATE', entity: 'MediaFolder', entityId: id,
+        detail: `Rename media kit folder: ${folder.name} → ${name}`,
+      }, db).catch(() => {})
+    }
+    return NextResponse.json(updated)
+  } catch (e) { console.error(e); return NextResponse.json({ error: 'Failed to rename folder' }, { status: 500 }) }
+}
+
 // DELETE — an empty folder is removed directly. A folder with files/subfolders is only
 // removed with ?force=1 (the UI sends it after the user ticks the confirmation checkbox):
 // then every subfolder and every file inside, at any depth, is deleted too — including

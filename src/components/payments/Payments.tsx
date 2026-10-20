@@ -81,6 +81,7 @@ interface Payment {
     endDate: string
     destination: string | null
     tripType: string
+    tripNumber?: number | null
     source: string | null
     useB2BCommission?: boolean | null
     salesperson: string | null
@@ -90,7 +91,7 @@ interface Payment {
     exchangeRate: number | null
     customer: { name: string; email: string | null; phone: string | null }
     yacht: { name: string; model: string | null } | null
-    openTrip: { title: string; destination: string } | null
+    openTrip: { title: string; destination: string; tripNumber?: number | null; endDate?: string } | null
     agent: { name: string; commissionOpenTrip: number | null; commissionPrivateCharter: number | null; commissionB2B?: number | null } | null
     clawbackEntries: { amount: number }[]
   }
@@ -1174,6 +1175,16 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                   <div>
                     <p className="text-xs text-muted-foreground">Trip Date</p>
                     <p className="font-medium">{fmtDate(selected.booking.startDate)} – {fmtDate(selected.booking.endDate)}</p>
+                    {(() => {
+                      // Open trips carry the number on the OpenTrip, charters on the booking; the
+                      // year is the trip's checkout year, same bucket renumberTripYear() uses.
+                      const b = selected.booking
+                      const isOT = b.tripType === 'OPEN_TRIP'
+                      const no = isOT ? b.openTrip?.tripNumber : b.tripNumber
+                      if (no == null) return null
+                      const year = new Date((isOT ? b.openTrip?.endDate : null) ?? b.endDate).getUTCFullYear()
+                      return <p className="text-xs font-mono text-muted-foreground">Trip #{no}/{year}</p>
+                    })()}
                   </div>
                 </div>
                 {selected.booking.depositDueDate && (

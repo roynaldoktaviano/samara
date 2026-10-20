@@ -81,9 +81,9 @@ function QueueFileIcon({ mime }: { mime: string }) {
 }
 
 function FileCard({
-  file, onDelete, deleting, selectMode, selected, onToggleSelect,
+  file, onDelete, onRename, deleting, selectMode, selected, onToggleSelect,
 }: {
-  file: MediaFile; onDelete: (f: MediaFile) => void; deleting: boolean
+  file: MediaFile; onDelete: (f: MediaFile) => void; onRename: (f: MediaFile) => void; deleting: boolean
   selectMode: boolean; selected: boolean; onToggleSelect: (id: string) => void
 }) {
   return (
@@ -107,6 +107,13 @@ function FileCard({
             {formatSize(file.sizeBytes) ?? 'External link'} · {file.uploadedBy.name ?? file.uploadedBy.email ?? 'Unknown'}
           </p>
         </div>
+        <button
+          onClick={() => onRename(file)}
+          className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors shrink-0"
+          title="Rename"
+        >
+          <Pencil className="h-3.5 w-3.5" />
+        </button>
         <button
           onClick={() => onDelete(file)}
           disabled={deleting}
@@ -159,6 +166,10 @@ export default function MediaKit() {
   const [deletingFolder, setDeletingFolder] = useState(false)
   const [folderToDelete, setFolderToDelete] = useState<MediaFolderRecord | null>(null)
   const [deleteFolderConfirmed, setDeleteFolderConfirmed] = useState(false)
+  // Shared rename dialog for both files and folders
+  const [renameTarget, setRenameTarget] = useState<{ kind: 'file' | 'folder'; id: string; name: string } | null>(null)
+  const [renameValue, setRenameValue] = useState('')
+  const [renaming, setRenaming] = useState(false)
 
   // category management dialog
   const [manageCategoriesOpen, setManageCategoriesOpen] = useState(false)
@@ -623,6 +634,49 @@ export default function MediaKit() {
     finally { setDeletingFolder(false) }
   }
 
+  function openRenameDialog(kind: 'file' | 'folder', id: string, name: string) {
+    setRenameTarget({ kind, id, name })
+    setRenameValue(name)
+  }
+
+  // Extension of an uploaded file's name (".jpg"), so a rename that drops it can keep it.
+  function fileExtension(name: string) {
+    const m = name.match(/(\.[A-Za-z0-9]{1,5})$/)
+    return m ? m[1] : ''
+  }
+
+  async function handleRename() {
+    const target = renameTarget
+    if (!target) return
+    let name = renameValue.trim()
+    if (!name) { toast.error('Name is required'); return }
+    if (target.kind === 'file') {
+      const ext = fileExtension(target.name)
+      if (ext && !name.toLowerCase().endsWith(ext.toLowerCase())) name += ext
+    } else {
+      const folder = mediaFolders.find(f => f.id === target.id)
+      const clash = folder && mediaFolders.some(f =>
+        f.id !== folder.id && f.parentId === folder.parentId && f.categoryId === folder.categoryId &&
+        f.yachtId === folder.yachtId && f.name.toLowerCase() === name.toLowerCase())
+      if (clash) { toast.error('A folder with that name already exists here'); return }
+    }
+    if (name === target.name) { setRenameTarget(null); return }
+    setRenaming(true)
+    try {
+      const url = target.kind === 'file' ? `/api/marketing/media/${target.id}` : `/api/marketing/folders/${target.id}`
+      const res = await fetch(url, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) { toast.error(data.error ?? 'Failed to rename'); return }
+      if (target.kind === 'file') setFiles(prev => prev.map(f => f.id === target.id ? { ...f, name } : f))
+      else setMediaFolders(prev => prev.map(f => f.id === target.id ? { ...f, name } : f))
+      toast.success('Renamed')
+      setRenameTarget(null)
+    } catch (e) { console.error(e); toast.error('Failed to rename') }
+    finally { setRenaming(false) }
+  }
+
   async function handleDelete(file: MediaFile) {
     if (!confirm(`Delete "${file.name}"?`)) return
     setDeletingId(file.id)
@@ -992,6 +1046,14 @@ export default function MediaKit() {
               ))}
               {activeFolder && (
                 <button
+                  onClick={() => openRenameDialog('folder', activeFolder.id, activeFolder.name)}
+                  className="flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors ml-2"
+                >
+                  <Pencil className="h-3 w-3" /> Rename
+                </button>
+              )}
+              {activeFolder && (
+                <button
                   onClick={() => openDeleteFolderDialog(activeFolder)}
                   disabled={deletingFolder}
                   className="flex items-center gap-1 text-muted-foreground hover:text-red-600 transition-colors ml-2"
@@ -1097,6 +1159,13 @@ export default function MediaKit() {
                         </p>
                       </div>
                       <button
+                        onClick={e => { e.stopPropagation(); openRenameDialog('folder', folder.id, folder.name) }}
+                        className="p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"
+                        title="Rename folder"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
+                      <button
                         onClick={e => { e.stopPropagation(); openDeleteFolderDialog(folder) }}
                         className="p-1.5 rounded text-muted-foreground hover:text-red-600 hover:bg-red-50 transition-colors shrink-0"
                         title="Delete folder"
@@ -1108,7 +1177,7 @@ export default function MediaKit() {
                 ))}
                 {currentFiles.map(f => (
                   <FileCard
-                    key={f.id} file={f} onDelete={handleDelete} deleting={deletingId === f.id}
+                    key={f.id} file={f} onDelete={handleDelete} onRename={file => openRenameDialog('file', file.id, file.name)} deleting={deletingId === f.id}
                     selectMode={selectMode} selected={selectedIds.has(f.id)} onToggleSelect={toggleSelect}
                   />
                 ))}
@@ -1315,6 +1384,37 @@ export default function MediaKit() {
             <Button disabled={creatingFolder} onClick={handleCreateFolder} style={{ backgroundColor: ACCENT }} className="text-white">
               {creatingFolder && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
               Create Folder
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!renameTarget} onOpenChange={open => { if (!open && !renaming) setRenameTarget(null) }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><Pencil className="h-4 w-4 text-[#bdac7e]" /> Rename {renameTarget?.kind === 'folder' ? 'Folder' : 'File'}</DialogTitle>
+            <DialogDescription>The new name also shows in the Agent Portal.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-1.5 py-2">
+            <Label htmlFor="rename-value">{renameTarget?.kind === 'folder' ? 'Folder name' : 'File name'}</Label>
+            <Input
+              id="rename-value"
+              value={renameValue}
+              onChange={e => setRenameValue(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleRename()}
+              onFocus={e => {
+                // Select just the base name so typing keeps the file extension.
+                const ext = renameTarget?.kind === 'file' ? fileExtension(e.target.value) : ''
+                e.target.setSelectionRange(0, e.target.value.length - ext.length)
+              }}
+              autoFocus
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" disabled={renaming} onClick={() => setRenameTarget(null)}>Cancel</Button>
+            <Button disabled={renaming} onClick={handleRename} style={{ backgroundColor: ACCENT }} className="text-white">
+              {renaming && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+              Save
             </Button>
           </DialogFooter>
         </DialogContent>

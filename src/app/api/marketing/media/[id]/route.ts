@@ -25,7 +25,8 @@ async function deleteStoredFile(url: string) {
   return del(url).catch(e => console.error('[marketing/media] blob delete failed:', e))
 }
 
-// PATCH — move a file into a different folder (or to the category root with folderId: null)
+// PATCH — rename a file ({ name }) and/or move it into a different folder
+// ({ folderId }, or null for the category root)
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await requireAccess()
   if (!session) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
@@ -33,26 +34,47 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   try {
     const { id } = await params
     const body = await request.json().catch(() => ({}))
-    if (!('folderId' in body)) return NextResponse.json({ error: 'Nothing to update' }, { status: 400 })
-    const { folderId } = body as { folderId: string | null }
+    const hasFolder = 'folderId' in body
+    const hasName = 'name' in body
+    if (!hasFolder && !hasName) return NextResponse.json({ error: 'Nothing to update' }, { status: 400 })
 
     const file = await db.mediaFile.findUnique({ where: { id } })
     if (!file) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-    if (folderId) {
-      const folder = await db.mediaFolder.findUnique({ where: { id: folderId } })
-      if (!folder || folder.categoryId !== file.categoryId || (folder.yachtId ?? null) !== (file.yachtId ?? null)) {
-        return NextResponse.json({ error: 'Invalid target folder' }, { status: 400 })
+    const data: { folderId?: string | null; name?: string } = {}
+
+    if (hasName) {
+      const name = typeof body.name === 'string' ? body.name.trim() : ''
+      if (!name) return NextResponse.json({ error: 'File name is required' }, { status: 400 })
+      data.name = name
+    }
+
+    if (hasFolder) {
+      const folderId = (body as { folderId: string | null }).folderId
+      if (folderId) {
+        const folder = await db.mediaFolder.findUnique({ where: { id: folderId } })
+        if (!folder || folder.categoryId !== file.categoryId || (folder.yachtId ?? null) !== (file.yachtId ?? null)) {
+          return NextResponse.json({ error: 'Invalid target folder' }, { status: 400 })
+        }
       }
+      data.folderId = folderId || null
     }
 
     const updated = await db.mediaFile.update({
       where: { id },
-      data: { folderId: folderId || null },
+      data,
       include: { uploadedBy: { select: { name: true, email: true } }, yacht: { select: { id: true, name: true } } },
     })
+    if (data.name && data.name !== file.name) {
+      logActivity({
+        userId: session.user.id, userName: session.user.name ?? session.user.email ?? 'Unknown',
+        userRole: (session.user as { role?: string }).role ?? '',
+        action: 'UPDATE', entity: 'MediaFile', entityId: id,
+        detail: `Rename media kit file: ${file.name} → ${data.name}`,
+      }, db).catch(() => {})
+    }
     return NextResponse.json(updated)
-  } catch (e) { console.error(e); return NextResponse.json({ error: 'Failed to move media file' }, { status: 500 }) }
+  } catch (e) { console.error(e); return NextResponse.json({ error: 'Failed to update media file' }, { status: 500 }) }
 }
 
 // DELETE — remove a media-kit file's row, and its stored object if it's a real upload
