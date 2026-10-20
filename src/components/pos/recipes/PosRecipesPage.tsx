@@ -1,14 +1,15 @@
 'use client'
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { Plus, Search, Martini, Pencil, Trash2, X, Globe, Anchor, Check } from 'lucide-react'
+import { Plus, Search, Martini, Pencil, Trash2, X, Globe, Anchor, Check, Upload } from 'lucide-react'
+import { useFileDrop } from '@/hooks/useFileDrop'
 
 interface Yacht { id: string; name: string }
 interface Category { id: string; name: string; isActive: boolean }
 interface CatalogItem { id: string; sku: string; name: string; category: string; baseUnit: string }
 interface RecipeLine { id: string; itemId: string; qty: number; unitCost: number; cost: number; item: { id: string; sku: string; name: string; baseUnit: string } }
 interface Recipe {
-  id: string; name: string; description: string | null; categoryId: string; yachtId: string | null; price: number; isActive: boolean
+  id: string; name: string; description: string | null; categoryId: string; yachtId: string | null; price: number; imageKey: string | null; isActive: boolean
   category: { id: string; name: string }; yacht: { id: string; name: string } | null; lines: RecipeLine[]; cost: number
 }
 interface FormLine { itemId: string; name: string; unit: string; qty: string }
@@ -16,7 +17,7 @@ interface FormLine { itemId: string; name: string; unit: string; qty: string }
 const fmtMoney = (n: number) => 'Rp ' + new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(n)
 const fmtQty = (n: number) => new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(n)
 const inp = 'w-full h-9 border rounded-md px-3 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white transition-colors'
-const BLANK_FORM = { name: '', description: '', categoryId: '', price: '', lines: [] as FormLine[] }
+const BLANK_FORM = { name: '', description: '', categoryId: '', price: '', imageKey: null as string | null, lines: [] as FormLine[] }
 
 /** Food cost % of the selling price — the usual bar metric. */
 const costPct = (cost: number, price: number) => (price > 0 ? Math.round(cost / price * 100) : null)
@@ -58,7 +59,7 @@ export default function PosRecipesPage() {
   }
   function openEdit(r: Recipe) {
     setForm({
-      name: r.name, description: r.description ?? '', categoryId: r.categoryId, price: String(r.price),
+      name: r.name, description: r.description ?? '', categoryId: r.categoryId, price: String(r.price), imageKey: r.imageKey,
       lines: r.lines.map(l => ({ itemId: l.itemId, name: l.item.name, unit: l.item.baseUnit, qty: String(l.qty) })),
     })
     setEditId(r.id); setSaveError(''); setShowForm(true)
@@ -73,6 +74,23 @@ export default function PosRecipesPage() {
       fetch(`/api/pos/recipes/item-costs?ids=${missing.join(',')}`).then(r => r.ok ? r.json() : {}).then(d => setExtraCosts(prev => ({ ...prev, ...d })))
     }
   }
+  // Same as Item Master photos: downscaled to 800px JPEG and stored inline as a data URL,
+  // which the cashier POS renders directly on the menu tile.
+  const processImage = (file: File) => {
+    const canvas = document.createElement('canvas')
+    const img = new window.Image()
+    img.onload = () => {
+      const MAX = 800
+      const scale = Math.min(1, MAX / Math.max(img.width, img.height))
+      canvas.width = img.width * scale; canvas.height = img.height * scale
+      canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height)
+      setForm(f => ({ ...f, imageKey: canvas.toDataURL('image/jpeg', 0.8) }))
+      URL.revokeObjectURL(img.src)
+    }
+    img.src = URL.createObjectURL(file)
+  }
+  const { isDragging: isDraggingImage, dropProps: imageDropProps } = useFileDrop(files => { if (files[0]) processImage(files[0]) })
+
   const removeLine = (itemId: string) => setForm(f => ({ ...f, lines: f.lines.filter(l => l.itemId !== itemId) }))
   const setLineQty = (itemId: string, qty: string) => setForm(f => ({ ...f, lines: f.lines.map(l => l.itemId === itemId ? { ...l, qty } : l) }))
 
@@ -90,6 +108,7 @@ export default function PosRecipesPage() {
         name: form.name.trim(), description: form.description.trim() || null, categoryId: form.categoryId,
         ...(!editId && { yachtId: scope === 'global' ? null : scope }),
         price: Number(form.price),
+        imageKey: form.imageKey,
         lines: form.lines.map(l => ({ itemId: l.itemId, qty: Number(l.qty) })),
       }),
     })
@@ -185,8 +204,15 @@ export default function PosRecipesPage() {
                 return (
                   <tr key={r.id} className="hover:bg-muted/30 align-top">
                     <td className="px-4 py-3">
-                      <p className="font-medium">{r.name}</p>
-                      <p className="text-xs text-muted-foreground">{r.category.name}</p>
+                      <div className="flex items-center gap-3">
+                        {r.imageKey
+                          ? <img src={r.imageKey} alt={r.name} className="w-10 h-10 rounded-lg object-cover border shrink-0" />
+                          : <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center shrink-0"><Martini className="h-4 w-4 text-muted-foreground/50" /></div>}
+                        <div>
+                          <p className="font-medium">{r.name}</p>
+                          <p className="text-xs text-muted-foreground">{r.category.name}</p>
+                        </div>
+                      </div>
                     </td>
                     <td className="px-4 py-3 text-xs text-muted-foreground">
                       {r.lines.map(l => (
@@ -239,6 +265,34 @@ export default function PosRecipesPage() {
               </div>
               <div className="p-5 space-y-4 overflow-y-auto flex-1">
                 {saveError && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2">{saveError}</div>}
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium">Photo <span className="text-muted-foreground font-normal">(optional, shown on the POS)</span></label>
+                  <div {...imageDropProps} className={`flex items-center gap-3 rounded-lg p-1.5 -m-1.5 transition-colors ${isDraggingImage ? 'ring-2 ring-amber-400 bg-amber-50' : ''}`}>
+                    {form.imageKey ? (
+                      <div className="relative shrink-0">
+                        <img src={form.imageKey} alt="Menu" className="w-20 h-20 rounded-lg object-cover border" />
+                        <button type="button" onClick={() => setForm(f => ({ ...f, imageKey: null }))}
+                          className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-destructive text-white flex items-center justify-center text-xs">×</button>
+                      </div>
+                    ) : (
+                      <div className="w-20 h-20 rounded-lg border-2 border-dashed border-muted flex items-center justify-center text-muted-foreground shrink-0">
+                        <Martini className="h-6 w-6 opacity-40" />
+                      </div>
+                    )}
+                    <label className="cursor-pointer flex-1">
+                      <div className="flex items-center gap-2 border rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-muted/50 transition-colors">
+                        <Upload className="h-4 w-4" />
+                        <span>{isDraggingImage ? 'Drop to upload' : form.imageKey ? 'Change photo' : 'Upload or drag photo'}</span>
+                      </div>
+                      <input type="file" accept="image/*" className="hidden" onChange={e => {
+                        const file = e.target.files?.[0]
+                        if (!file) return
+                        processImage(file)
+                        e.target.value = ''
+                      }} />
+                    </label>
+                  </div>
+                </div>
                 <div className="space-y-1.5">
                   <label className="text-sm font-medium">Name <span className="text-red-500">*</span></label>
                   <input className={inp} placeholder="e.g. Mojito" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />

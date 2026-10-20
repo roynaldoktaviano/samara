@@ -3,6 +3,9 @@ import { getToken } from 'next-auth/jwt'
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
+// Hard lifetime of a BOT cookie session, measured from login (see token.loginAt in auth.ts).
+const BOT_SESSION_MAX_AGE_MS = 12 * 60 * 60 * 1000
+
 // API routes gated behind a tenant feature flag — checked here so the flag can't be
 // bypassed by calling the endpoint directly once the nav item is hidden client-side.
 const FEATURE_GATED_API_PREFIXES = [
@@ -175,6 +178,12 @@ export default async function middleware(req: NextRequest) {
     const isRead = req.method === 'GET' || req.method === 'HEAD'
     if (!isBotApiPath || !isRead) {
       return NextResponse.json({ error: 'Bot accounts are read-only and limited to /api/bot' }, { status: 403 })
+    }
+    // BOT cookie sessions get a hard 12h lifetime from login instead of the normal 30-day
+    // sliding window. Tokens without loginAt (issued before this rule, or a user switched to
+    // BOT mid-session) count as expired, forcing a fresh login.
+    if (!sessionToken.loginAt || Date.now() - sessionToken.loginAt > BOT_SESSION_MAX_AGE_MS) {
+      return NextResponse.json({ error: 'Bot session expired — log in again' }, { status: 401 })
     }
   }
 

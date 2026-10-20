@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireBotAccess } from '@/lib/bot-api-key'
+import { recordBotCall, requireBotAccess } from '@/lib/bot-api-key'
 import { getDb } from '@/lib/get-db'
 import { BOT_RESOURCES, botSafeFields, botSelect, delegateName, sanitizeForBot } from '@/lib/bot-access'
 
@@ -66,6 +66,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ reso
     })
     const hasMore = rows.length > limit
     const data = hasMore ? rows.slice(0, limit) : rows
+    await recordBotCall(auth, req.nextUrl, resource, data.length)
     return NextResponse.json({
       resource,
       count: data.length,

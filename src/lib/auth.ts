@@ -171,6 +171,8 @@ export const authOptions: NextAuthOptions = {
         token.tenantSlug = u.tenantSlug
         token.tenantLogoUrl = u.tenantLogoUrl
         token.tenantFeatures = u.tenantFeatures
+        // Fixed (non-sliding) lifetime for BOT sessions is enforced in middleware from this.
+        if (u.role === 'BOT') token.loginAt = Date.now()
         return token
       }
       // Refresh name/email on subsequent requests

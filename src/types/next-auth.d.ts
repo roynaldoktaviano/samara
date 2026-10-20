@@ -32,5 +32,8 @@ declare module 'next-auth/jwt' {
     tenantSlug?: string
     tenantLogoUrl?: string
     tenantFeatures?: Record<string, boolean>
+    // BOT accounts only: ms timestamp of the password login — middleware expires a BOT
+    // session a fixed time after it, regardless of the 30-day sliding cookie.
+    loginAt?: number
   }
 }
