@@ -148,3 +148,9 @@
 .email-rich-text a { color: var(--link-color); text-decoration: underline; }
 .email-rich-text strong, .email-rich-text b { font-weight: 700; }
 .email-rich-text em, .email-rich-text i { font-style: italic; }
+
+/* Hide scrollbar but keep scrolling — horizontal chip rows on narrow screens */
+@utility scrollbar-none {
+  scrollbar-width: none;
+  &::-webkit-scrollbar { display: none; }
+}

@@ -157,6 +157,8 @@ export default function MediaKit() {
   const [creatingFolder, setCreatingFolder] = useState(false)
   const [mediaFolders, setMediaFolders] = useState<MediaFolderRecord[]>([])
   const [deletingFolder, setDeletingFolder] = useState(false)
+  const [folderToDelete, setFolderToDelete] = useState<MediaFolderRecord | null>(null)
+  const [deleteFolderConfirmed, setDeleteFolderConfirmed] = useState(false)
 
   // category management dialog
   const [manageCategoriesOpen, setManageCategoriesOpen] = useState(false)
@@ -585,15 +587,38 @@ export default function MediaKit() {
     finally { setCreatingFolder(false) }
   }
 
+  // Everything the folder holds at any depth — shown in the delete confirmation.
+  const folderToDeleteContents = useMemo(() => {
+    if (!folderToDelete) return { files: 0, subfolders: 0 }
+    const ids = new Set([folderToDelete.id])
+    for (let frontier = [folderToDelete.id]; frontier.length;) {
+      frontier = mediaFolders.filter(f => f.parentId && frontier.includes(f.parentId)).map(f => f.id)
+      frontier.forEach(id => ids.add(id))
+    }
+    return { files: files.filter(f => f.folderId && ids.has(f.folderId)).length, subfolders: ids.size - 1 }
+  }, [folderToDelete, mediaFolders, files])
+
+  function openDeleteFolderDialog(folder: MediaFolderRecord) {
+    setFolderToDelete(folder)
+    setDeleteFolderConfirmed(false)
+  }
+
   async function handleDeleteFolder() {
-    if (!activeFolder) return
-    if (!confirm(`Delete folder "${activeFolder.name}"? It must be empty.`)) return
+    const folder = folderToDelete
+    if (!folder) return
+    const hasContents = folderToDeleteContents.files > 0 || folderToDeleteContents.subfolders > 0
+    if (hasContents && !deleteFolderConfirmed) return
     setDeletingFolder(true)
     try {
-      const res = await fetch(`/api/marketing/folders/${activeFolder.id}`, { method: 'DELETE' })
+      const res = await fetch(`/api/marketing/folders/${folder.id}?force=1`, { method: 'DELETE' })
       if (!res.ok) { const d = await res.json().catch(() => ({})); toast.error(d.error ?? 'Failed to delete folder'); return }
-      await fetchFolders()
-      setActiveFolderId(activeFolder.parentId)
+      await Promise.all([fetchFolders(), fetchFiles()])
+      // If the open folder was the deleted one (or inside it), step back out to its parent.
+      if (activeFolderId && (activeFolderId === folder.id || folderPath.some(f => f.id === folder.id))) {
+        setActiveFolderId(folder.parentId)
+      }
+      toast.success(`Folder "${folder.name}" deleted`)
+      setFolderToDelete(null)
     } catch (e) { console.error(e); toast.error('Failed to delete folder') }
     finally { setDeletingFolder(false) }
   }
@@ -965,13 +990,13 @@ export default function MediaKit() {
                   </button>
                 </span>
               ))}
-              {activeFolder && currentFiles.length === 0 && currentFolders.length === 0 && (
+              {activeFolder && (
                 <button
-                  onClick={handleDeleteFolder}
+                  onClick={() => openDeleteFolderDialog(activeFolder)}
                   disabled={deletingFolder}
                   className="flex items-center gap-1 text-muted-foreground hover:text-red-600 transition-colors ml-2"
                 >
-                  {deletingFolder ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />} Delete this folder
+                  <Trash2 className="h-3 w-3" /> Delete this folder
                 </button>
               )}
             </div>
@@ -1071,6 +1096,13 @@ export default function MediaKit() {
                           {folderFileCount(folder.id)} file{folderFileCount(folder.id) === 1 ? '' : 's'}
                         </p>
                       </div>
+                      <button
+                        onClick={e => { e.stopPropagation(); openDeleteFolderDialog(folder) }}
+                        className="p-1.5 rounded text-muted-foreground hover:text-red-600 hover:bg-red-50 transition-colors shrink-0"
+                        title="Delete folder"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
                     </CardContent>
                   </Card>
                 ))}
@@ -1210,6 +1242,50 @@ export default function MediaKit() {
             <Button disabled={yachtSettingsSaving || yachtSettingsLoading} onClick={handleSaveYachtSettings} style={{ backgroundColor: ACCENT }} className="text-white">
               {yachtSettingsSaving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
               Save Changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!folderToDelete} onOpenChange={open => { if (!open && !deletingFolder) setFolderToDelete(null) }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><Trash2 className="h-4 w-4 text-red-600" /> Delete Folder</DialogTitle>
+            <DialogDescription>
+              You are about to delete the folder <span className="font-medium text-foreground">&quot;{folderToDelete?.name}&quot;</span>.
+            </DialogDescription>
+          </DialogHeader>
+          {folderToDeleteContents.files > 0 || folderToDeleteContents.subfolders > 0 ? (
+            <div className="space-y-3 py-2">
+              <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700">
+                All contents of this folder will be permanently deleted:{' '}
+                <span className="font-medium">
+                  {folderToDeleteContents.files} file{folderToDeleteContents.files === 1 ? '' : 's'}
+                  {folderToDeleteContents.subfolders > 0 && ` and ${folderToDeleteContents.subfolders} subfolder${folderToDeleteContents.subfolders === 1 ? '' : 's'}`}
+                </span>
+                . They will also be removed from the Agent Portal. This action cannot be undone.
+              </div>
+              <label className="flex items-start gap-2 text-sm cursor-pointer">
+                <Checkbox
+                  checked={deleteFolderConfirmed}
+                  onCheckedChange={v => setDeleteFolderConfirmed(v === true)}
+                  className="mt-0.5"
+                />
+                <span>I understand that all files and subfolders inside this folder will be permanently deleted.</span>
+              </label>
+            </div>
+          ) : (
+            <p className="py-2 text-sm text-muted-foreground">This folder is empty.</p>
+          )}
+          <DialogFooter>
+            <Button variant="outline" disabled={deletingFolder} onClick={() => setFolderToDelete(null)}>Cancel</Button>
+            <Button
+              variant="destructive"
+              disabled={deletingFolder || ((folderToDeleteContents.files > 0 || folderToDeleteContents.subfolders > 0) && !deleteFolderConfirmed)}
+              onClick={handleDeleteFolder}
+            >
+              {deletingFolder && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+              Delete Folder
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -142,6 +142,19 @@ function useIsCompact() {
   return isCompact
 }
 
+// Tablet and up keeps the order panel docked on the right (always open); only phones use the slide-up drawer.
+const DOCKED_CART_BREAKPOINT = 768
+function useIsCartDocked() {
+  const [docked, setDocked] = useState(true)
+  useEffect(() => {
+    const check = () => setDocked(window.innerWidth >= DOCKED_CART_BREAKPOINT)
+    check()
+    window.addEventListener('resize', check)
+    return () => window.removeEventListener('resize', check)
+  }, [])
+  return docked
+}
+
 // Real per-tenant name + logo (see src/app/api/cashier/branding/route.ts) — used
 // wherever the UI previously printed a hardcoded "Samara" wordmark, so a white-label
 // tenant (e.g. Siloina) sees their own brand here too, not Samara's.
@@ -933,6 +946,8 @@ function SyncPanel({ ops, sales, offline, syncing, onSync, onClose }: {
 // ─── MAIN CASHIER APP ─────────────────────────────────────────────────────────
 function CashierApp({ vessel, trip, onBack, onLock, branding, locked }: { vessel: Vessel; trip: Trip | null; onBack: () => void; onLock: () => void; branding: Branding | null; locked: boolean }) {
   const isCompact = useIsCompact()
+  const cartDocked = useIsCartDocked()
+  const cartDrawer = !cartDocked   // phone only: order panel opens as a full-screen drawer
   const [cartOpen, setCartOpen]   = useState(false)
   const [section, setSection]     = useState('sales')
   const [activeCat, setActiveCat] = useState('All')
@@ -1161,10 +1176,10 @@ function CashierApp({ vessel, trip, onBack, onLock, branding, locked }: { vessel
   const pillIcon = { width: 28, height: 28, borderRadius: '50%', background: '#fbf0d6', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }
   const softSelect = { ...S.input, background: '#f7f5f0', border: '1px solid transparent', borderRadius: 12, fontSize: 13, padding: '10px 12px' }
 
-  // ── Order / cart panel — static column on desktop, full-screen drawer on compact.
+  // ── Order / cart panel — docked right column on desktop/tablet, full-screen drawer on phone.
   const cartPanel = (
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, height: '100%', background: '#fff' }}>
-      {isCompact && (
+      {cartDrawer && (
         <div style={{ display: 'flex', alignItems: 'center', padding: '14px 16px', borderBottom: '1px solid #f1ede2', flexShrink: 0 }}>
           <button onClick={() => setCartOpen(false)} style={{ background: 'none', border: 'none', color: '#8a8378', cursor: 'pointer', fontSize: 14, fontWeight: 600, padding: 0, display: 'flex', alignItems: 'center', gap: 4 }}><ArrowLeft size={14} /> Back to Menu</button>
         </div>
@@ -1310,7 +1325,7 @@ function CashierApp({ vessel, trip, onBack, onLock, branding, locked }: { vessel
     <div style={{ ...S.page, height: '100dvh', overflow: 'hidden', padding: isCompact ? 0 : 16, background: 'radial-gradient(circle at 100% 0%, #f1dca6 0%, #f7f1e3 35%, #f4f3f0 100%)', boxSizing: 'border-box' }}>
       {FONTS}
       <div style={{
-        height: '100%', display: 'grid', gridTemplateColumns: section === 'sales' && !isCompact ? '1fr 380px' : '1fr',
+        height: '100%', display: 'grid', gridTemplateColumns: section === 'sales' && cartDocked ? (isCompact ? '1fr minmax(300px, 36%)' : '1fr 380px') : '1fr',
         background: '#fff', borderRadius: isCompact ? 0 : 22, overflow: 'hidden', boxShadow: isCompact ? 'none' : '0 10px 40px rgba(26,37,47,0.08)',
       }}>
         {/* ── LEFT: top bar + menu / tabs ── */}
@@ -1356,7 +1371,7 @@ function CashierApp({ vessel, trip, onBack, onLock, branding, locked }: { vessel
           </div>
 
           {section === 'sales' && (
-            <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: isCompact ? '0 16px 90px' : '0 20px 20px' }}>
+            <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: isCompact ? (cartDrawer ? '0 16px 90px' : '0 16px 16px') : '0 20px 20px' }}>
               {activeSale && (
                 <div style={{ background: `${GOLD}1c`, border: `1px solid ${GOLD}55`, borderRadius: 12, padding: '10px 14px', marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ fontSize: 13, color: GOLD_DARK, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}><ClipboardList size={14} /> Adding to tab: {activeSale.guestName ?? 'Guest'}{activeSale.employeeId && <StaffTag />} · {fmt(activeSale.total)}</span>
@@ -1444,15 +1459,15 @@ function CashierApp({ vessel, trip, onBack, onLock, branding, locked }: { vessel
           )}
         </div>
 
-        {/* ── RIGHT: order panel (desktop) ── */}
-        {section === 'sales' && !isCompact && <div style={{ borderLeft: '1px solid #f1ede2', minHeight: 0 }}>{cartPanel}</div>}
+        {/* ── RIGHT: order panel (desktop + tablet) ── */}
+        {section === 'sales' && cartDocked && <div style={{ borderLeft: '1px solid #f1ede2', minHeight: 0 }}>{cartPanel}</div>}
       </div>
 
       {syncOpen && <SyncPanel ops={vesselOps} sales={sales} offline={offline} syncing={syncing} onSync={sync} onClose={() => setSyncOpen(false)} />}
 
-      {/* Compact: full-screen order drawer + floating cart bar */}
-      {section === 'sales' && isCompact && cartOpen && <div style={{ position: 'fixed', inset: 0, zIndex: 50 }}>{cartPanel}</div>}
-      {section === 'sales' && isCompact && !cartOpen && (
+      {/* Phone: full-screen order drawer + floating cart bar */}
+      {section === 'sales' && cartDrawer && cartOpen && <div style={{ position: 'fixed', inset: 0, zIndex: 50 }}>{cartPanel}</div>}
+      {section === 'sales' && cartDrawer && !cartOpen && (
         <button onClick={() => setCartOpen(true)} style={{
           ...S.goldBtn, position: 'fixed', left: 16, right: 16, bottom: 16, zIndex: 40,
           display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', borderRadius: 14,

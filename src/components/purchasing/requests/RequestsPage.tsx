@@ -2841,7 +2841,7 @@ function CreateRequestView({
 
   const [customPhotoMenuOpen, setCustomPhotoMenuOpen] = useState(false)
 
-  const PAGE_SIZE = 12
+  const PAGE_SIZE = 24
   const [page, setPage] = useState(1)
   // Jump back to page 1 whenever the filters change — adjusted during render (not
   // an effect) per https://react.dev/learn/you-might-not-need-an-effect
@@ -2856,229 +2856,226 @@ function CreateRequestView({
   const pageItems = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
 
   const totalQty = cart.reduce((s, l) => s + l.quantity, 0)
+  const canBrowseInventory = purpose === 'STOCK_INVENTORY'
+
+  const cartPanelProps = {
+    cart, removeCartLine, changeCartQty, updateCartLine,
+    locations, deliveryLocationId, setDeliveryLocationId,
+    employees,
+    notes, setNotes,
+    neededByDate, setNeededByDate, isUrgent, setIsUrgent, urgentReason, setUrgentReason,
+    purpose, setPurpose, trip, setTrip, trips,
+    submit, saving, saveError, editingPrNumber,
+  }
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <button onClick={onBack} className="text-xs text-muted-foreground hover:text-foreground transition-colors mb-1">
-            ← {editingPrNumber ? `Back to ${editingPrNumber}` : 'Back to Purchase Requests'}
-          </button>
-          <h2 className="text-2xl font-bold tracking-tight">{editingPrNumber ? `Edit ${editingPrNumber}` : 'Create Purchase Request'}</h2>
-        </div>
-        <button
-          onClick={() => setCartOpen(true)}
-          className="lg:hidden relative flex items-center gap-2 border rounded-lg px-3 py-2 text-sm font-medium bg-white hover:bg-muted transition-colors shrink-0"
-        >
-          <ShoppingCart className="h-4 w-4" />
-          {totalQty > 0 && <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[10px] font-bold rounded-full w-4.5 h-4.5 flex items-center justify-center">{totalQty}</span>}
+    <div className="space-y-4 pb-24 md:pb-0">
+      <div>
+        <button onClick={onBack} className="text-xs text-muted-foreground hover:text-foreground transition-colors mb-1">
+          ← {editingPrNumber ? `Back to ${editingPrNumber}` : 'Back to Purchase Requests'}
         </button>
+        <h2 className="text-xl sm:text-2xl font-bold tracking-tight">{editingPrNumber ? `Edit ${editingPrNumber}` : 'Create Purchase Request'}</h2>
       </div>
 
-      {saveError && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3">{saveError}</div>}
-
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-[1fr_300px] xl:grid-cols-[1fr_340px] gap-4 xl:gap-6 items-start">
         {/* ── Catalog ── */}
-        <div className="space-y-4 min-w-0">
-          {catalogSource === 'inventory' ? (
-            <InventoryPickerPanel
-              vessels={locations.filter(l => l.type === 'VESSEL' && l.isActive && !l.parentId)}
-              invLocationId={invLocationId} setInvLocationId={setInvLocationId}
-              invRoomId={invRoomId} setInvRoomId={setInvRoomId}
-              invCategoryId={invCategoryId} setInvCategoryId={setInvCategoryId}
-              invSearch={invSearch} setInvSearch={setInvSearch}
-              invRooms={invRooms} invCategories={invCategories}
-              invItems={invItems} invLoading={invLoading}
-              cart={cart} addInventoryItemToCart={addInventoryItemToCart} changeCartQty={changeCartQty}
-              requestedByEmployeeId={requestedByEmployeeId} setCustomModal={setCustomModal}
-            />
-          ) : (
-          <>
-          <div className="flex flex-col sm:flex-row gap-2.5">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-              <input
-                className="w-full h-10 pl-9 pr-3 text-sm border rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-amber-500"
-                placeholder="Search item name or SKU..."
-                value={catalogSearch} onChange={e => setCatalogSearch(e.target.value)}
-              />
-            </div>
-            <button
-              onClick={() => setCustomModal(true)}
-              className="flex items-center justify-center gap-2 h-10 px-4 rounded-lg border border-amber-300 bg-amber-50 text-amber-700 text-sm font-medium transition-colors hover:bg-amber-100 hover:border-amber-400 shrink-0"
-            >
-              <ImagePlus className="h-4 w-4" /> Custom Request
-            </button>
-          </div>
-
-          <div className="bg-white border rounded-xl shadow-sm p-3.5 space-y-3">
-            <div className="inline-flex gap-1 bg-muted rounded-lg p-1 flex-wrap">
-              {ITEM_TYPES.map(t => (
-                <button key={t} onClick={() => { setCatalogType(t); setCatalogCategory('All') }}
-                  className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${catalogType === t ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
-                  {ITEM_TYPE_LABELS[t]}
-                </button>
-              ))}
-            </div>
-            <div className="flex gap-1.5 flex-wrap pt-2.5 border-t">
-              {categories.map(c => (
-                <button key={c} onClick={() => setCatalogCategory(c)}
-                  className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
-                    catalogCategory === c ? 'bg-amber-600 text-white border-amber-600' : 'bg-white text-muted-foreground border-border hover:border-amber-300 hover:text-foreground'
-                  }`}>
-                  {c === 'All' ? c : toTitleCase(c)}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {filtered.length === 0 ? (
-            <div className="text-center py-20 text-muted-foreground">
-              <Package className="h-10 w-10 mx-auto mb-3 opacity-20" />
-              <p className="text-sm">No items found. Try a different search or use Custom Request.</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-2.5">
-              {pageItems.map(item => {
-                const hasPurchaseUnit = !!(item.purchaseUnit && item.purchaseUnit !== item.baseUnit && item.conversionFactor > 1)
-                const requesterKey = requestedByEmployeeId || 'none'
-                const baseLine = cart.find(l => l.key === `${item.id}-${item.baseUnit}-${requesterKey}`)
-                const purchaseLine = hasPurchaseUnit ? cart.find(l => l.key === `${item.id}-${item.purchaseUnit}-${requesterKey}`) : undefined
-                return (
-                  <div key={item.id} className="bg-white rounded-xl border overflow-hidden flex flex-col shadow-sm hover:shadow-md hover:border-amber-300 transition-all">
-                    <div className="aspect-square bg-muted/40 flex items-center justify-center overflow-hidden">
-                      {item.imageKey ? <img src={item.imageKey} alt={item.name} className="w-full h-full object-cover" /> : <Package className="h-8 w-8 text-muted-foreground/30" />}
-                    </div>
-                    <div className="p-2.5 flex flex-col flex-1">
-                      <span className="text-[9px] font-semibold uppercase tracking-wide text-amber-700">{item.category}</span>
-                      <p className="text-xs font-medium leading-snug mt-0.5 line-clamp-2">{item.name}</p>
-                      <p className="text-[11px] text-muted-foreground mt-0.5">
-                        {hasPurchaseUnit ? `${item.baseUnit} · ${item.purchaseUnit} (${item.conversionFactor}×)` : item.baseUnit}
-                      </p>
-                      <div className="mt-auto pt-2 space-y-1">
-                        {baseLine ? (
-                          <div className="flex items-center justify-between gap-1 bg-muted/50 rounded-lg p-1">
-                            <button onClick={() => changeCartQty(baseLine.key!, -1)} className="w-6 h-6 rounded-md bg-white shadow-sm flex items-center justify-center hover:bg-muted transition-colors">
-                              <Minus className="h-3 w-3" />
-                            </button>
-                            <span className="text-[11px] font-semibold tabular-nums">{baseLine.quantity} {item.baseUnit}</span>
-                            <button onClick={() => changeCartQty(baseLine.key!, 1)} className="w-6 h-6 rounded-md bg-white shadow-sm flex items-center justify-center hover:bg-muted transition-colors">
-                              <Plus className="h-3 w-3" />
-                            </button>
-                          </div>
-                        ) : (
-                          <button onClick={() => addToCart(item, item.baseUnit)}
-                            className="w-full flex items-center justify-center gap-1 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-[11px] font-semibold transition-colors">
-                            <Plus className="h-3 w-3" /> Add {item.baseUnit}
-                          </button>
-                        )}
-
-                        {hasPurchaseUnit && (
-                          purchaseLine ? (
-                            <div className="flex items-center justify-between gap-1 bg-muted/50 rounded-lg p-1">
-                              <button onClick={() => changeCartQty(purchaseLine.key!, -1)} className="w-6 h-6 rounded-md bg-white shadow-sm flex items-center justify-center hover:bg-muted transition-colors">
-                                <Minus className="h-3 w-3" />
-                              </button>
-                              <span className="text-[11px] font-semibold tabular-nums">{purchaseLine.quantity} {item.purchaseUnit}</span>
-                              <button onClick={() => changeCartQty(purchaseLine.key!, 1)} className="w-6 h-6 rounded-md bg-white shadow-sm flex items-center justify-center hover:bg-muted transition-colors">
-                                <Plus className="h-3 w-3" />
-                              </button>
-                            </div>
-                          ) : (
-                            <button onClick={() => addToCart(item, item.purchaseUnit)}
-                              className="w-full flex items-center justify-center gap-1 py-1.5 rounded-lg text-[11px] font-semibold border-2 border-amber-500 text-amber-700 transition-colors hover:bg-amber-50">
-                              <Plus className="h-3 w-3" /> Add {item.purchaseUnit}
-                            </button>
-                          )
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-
-          {pageCount > 1 && (
-            <div className="flex items-center justify-between pt-1">
-              <span className="text-xs text-muted-foreground">
-                {(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(currentPage * PAGE_SIZE, filtered.length)} of {filtered.length}
-              </span>
-              <div className="flex items-center gap-1">
-                <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}
-                  className="h-8 w-8 flex items-center justify-center rounded-md border bg-white hover:bg-muted disabled:opacity-40 disabled:pointer-events-none transition-colors">
-                  <ChevronLeft className="h-4 w-4" />
-                </button>
-                {Array.from({ length: pageCount }, (_, i) => i + 1)
-                  .filter(n => n === 1 || n === pageCount || Math.abs(n - currentPage) <= 1)
-                  .reduce<(number | 'ellipsis')[]>((acc, n) => {
-                    if (acc.length && n - (acc[acc.length - 1] as number) > 1) acc.push('ellipsis')
-                    acc.push(n)
-                    return acc
-                  }, [])
-                  .map((n, i) => n === 'ellipsis' ? (
-                    <span key={`e${i}`} className="w-8 text-center text-xs text-muted-foreground">…</span>
+        <div className="space-y-3 min-w-0">
+          {/* Toolbar — what to browse, search, and who the next items are for */}
+          <div className="bg-white border rounded-xl shadow-sm p-3 space-y-3">
+            <div className="flex flex-col sm:flex-row gap-2">
+              {canBrowseInventory && (
+                <div className="inline-flex gap-1 bg-muted rounded-lg p-1 shrink-0">
+                  <button type="button" onClick={() => setCatalogSource('stock')}
+                    className={`flex-1 sm:flex-none px-3 h-8 text-xs font-semibold rounded-md transition-colors ${catalogSource === 'stock' ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
+                    Catalog
+                  </button>
+                  <button type="button" onClick={() => setCatalogSource('inventory')}
+                    className={`flex-1 sm:flex-none px-3 h-8 text-xs font-semibold rounded-md transition-colors ${catalogSource === 'inventory' ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
+                    Vessel Inventory
+                  </button>
+                </div>
+              )}
+              <div className="flex gap-2 flex-1 min-w-0">
+                <div className="relative flex-1 min-w-0">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                  {catalogSource === 'inventory' ? (
+                    <input
+                      className="w-full h-10 pl-9 pr-3 text-sm border rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-amber-500"
+                      placeholder="Search inventory item..."
+                      value={invSearch} onChange={e => setInvSearch(e.target.value)}
+                    />
                   ) : (
-                    <button key={n} onClick={() => setPage(n)}
-                      className={`h-8 w-8 rounded-md text-xs font-semibold transition-colors ${
-                        n === currentPage ? 'bg-amber-600 text-white' : 'border bg-white hover:bg-muted text-muted-foreground'
-                      }`}>
-                      {n}
-                    </button>
-                  ))}
-                <button onClick={() => setPage(p => Math.min(pageCount, p + 1))} disabled={currentPage === pageCount}
-                  className="h-8 w-8 flex items-center justify-center rounded-md border bg-white hover:bg-muted disabled:opacity-40 disabled:pointer-events-none transition-colors">
-                  <ChevronRight className="h-4 w-4" />
+                    <input
+                      className="w-full h-10 pl-9 pr-3 text-sm border rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-amber-500"
+                      placeholder="Search item name or SKU..."
+                      value={catalogSearch} onChange={e => setCatalogSearch(e.target.value)}
+                    />
+                  )}
+                </div>
+                <button
+                  onClick={() => setCustomModal(true)}
+                  title="Request an item that isn't in the catalog"
+                  className="flex items-center justify-center gap-2 h-10 px-3 sm:px-4 rounded-lg border border-amber-300 bg-amber-50 text-amber-700 text-sm font-medium transition-colors hover:bg-amber-100 hover:border-amber-400 shrink-0"
+                >
+                  <ImagePlus className="h-4 w-4" /> <span className="hidden sm:inline">Custom Item</span>
                 </button>
               </div>
             </div>
-          )}
-          </>
+
+            {catalogSource === 'inventory' ? (
+              <InventoryFilters
+                vessels={locations.filter(l => l.type === 'VESSEL' && l.isActive && !l.parentId)}
+                invLocationId={invLocationId} setInvLocationId={setInvLocationId}
+                invRoomId={invRoomId} setInvRoomId={setInvRoomId}
+                invCategoryId={invCategoryId} setInvCategoryId={setInvCategoryId}
+                invRooms={invRooms} invCategories={invCategories}
+              />
+            ) : (
+              <>
+                {/* Horizontal scroll on narrow screens instead of wrapping into several rows */}
+                <div className="flex gap-1 overflow-x-auto -mx-3 px-3 scrollbar-none">
+                  {ITEM_TYPES.map(t => (
+                    <button key={t} onClick={() => { setCatalogType(t); setCatalogCategory('All') }}
+                      className={`px-3 h-8 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors shrink-0 ${catalogType === t ? 'bg-foreground text-background' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`}>
+                      {ITEM_TYPE_LABELS[t]}
+                    </button>
+                  ))}
+                </div>
+                {categories.length > 2 && (
+                  <div className="flex gap-1.5 overflow-x-auto -mx-3 px-3 scrollbar-none">
+                    {categories.map(c => (
+                      <button key={c} onClick={() => setCatalogCategory(c)}
+                        className={`px-2.5 h-7 rounded-full text-xs font-medium border whitespace-nowrap transition-colors shrink-0 ${
+                          catalogCategory === c ? 'bg-amber-600 text-white border-amber-600' : 'bg-white text-muted-foreground border-border hover:border-amber-300 hover:text-foreground'
+                        }`}>
+                        {c === 'All' ? c : toTitleCase(c)}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* Requested By — who the NEXT items are for (e.g. a ship crew member), separate
+                from who's submitting it (always the logged-in account). Each person ends up as
+                their own PR. Lives here (not in the cart) because it applies at add-time. */}
+            <div className="flex items-center gap-2 pt-3 border-t">
+              <Users className="h-4 w-4 text-muted-foreground shrink-0" />
+              <span className="text-xs text-muted-foreground shrink-0">Adding for</span>
+              <select
+                className="flex-1 min-w-0 h-8 border rounded-md px-2 text-xs bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
+                value={requestedByEmployeeId} onChange={e => setRequestedByEmployeeId(e.target.value)}
+                title="Applies to items you add next — each person becomes their own PR automatically"
+              >
+                <option value="">Myself / general stock</option>
+                {employees.map(e => <option key={e.id} value={e.id}>{e.fullName} ({e.employeeNumber})</option>)}
+              </select>
+            </div>
+          </div>
+
+          {catalogSource === 'inventory' ? (
+            <InventoryPickerPanel
+              invLocationId={invLocationId} invItems={invItems} invLoading={invLoading}
+              cart={cart} addInventoryItemToCart={addInventoryItemToCart} changeCartQty={changeCartQty}
+              requestedByEmployeeId={requestedByEmployeeId}
+            />
+          ) : filtered.length === 0 ? (
+            <div className="text-center py-16 text-muted-foreground bg-white border rounded-xl">
+              <Package className="h-10 w-10 mx-auto mb-3 opacity-20" />
+              <p className="text-sm">No items found.</p>
+              <button onClick={() => setCustomModal(true)} className="mt-3 text-sm font-medium text-amber-700 hover:underline">+ Request a custom item</button>
+            </div>
+          ) : (
+            <>
+              <div className={CARD_GRID}>
+                {pageItems.map(item => {
+                  const hasPurchaseUnit = !!(item.purchaseUnit && item.purchaseUnit !== item.baseUnit && item.conversionFactor > 1)
+                  const requesterKey = requestedByEmployeeId || 'none'
+                  const baseLine = cart.find(l => l.key === `${item.id}-${item.baseUnit}-${requesterKey}`)
+                  const purchaseLine = hasPurchaseUnit ? cart.find(l => l.key === `${item.id}-${item.purchaseUnit}-${requesterKey}`) : undefined
+                  return (
+                    <ItemCard key={item.id} active={!!(baseLine || purchaseLine)}
+                      image={item.imageKey} name={item.name} caption={item.category}
+                      sub={hasPurchaseUnit ? `${item.baseUnit} · ${item.purchaseUnit} = ${item.conversionFactor} ${item.baseUnit}` : item.baseUnit}>
+                      {baseLine
+                        ? <QtyStepper qty={baseLine.quantity} unit={item.baseUnit} onChange={d => changeCartQty(baseLine.key!, d)} />
+                        : <AddButton label={item.baseUnit} onClick={() => addToCart(item, item.baseUnit)} />}
+                      {hasPurchaseUnit && (purchaseLine
+                        ? <QtyStepper qty={purchaseLine.quantity} unit={item.purchaseUnit!} onChange={d => changeCartQty(purchaseLine.key!, d)} />
+                        : <AddButton label={item.purchaseUnit!} outline onClick={() => addToCart(item, item.purchaseUnit!)} />)}
+                    </ItemCard>
+                  )
+                })}
+              </div>
+
+              {pageCount > 1 && (
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-2 pt-1">
+                  <span className="text-xs text-muted-foreground">
+                    {(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(currentPage * PAGE_SIZE, filtered.length)} of {filtered.length}
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}
+                      className="h-9 w-9 flex items-center justify-center rounded-md border bg-white hover:bg-muted disabled:opacity-40 disabled:pointer-events-none transition-colors">
+                      <ChevronLeft className="h-4 w-4" />
+                    </button>
+                    {Array.from({ length: pageCount }, (_, i) => i + 1)
+                      .filter(n => n === 1 || n === pageCount || Math.abs(n - currentPage) <= 1)
+                      .reduce<(number | 'ellipsis')[]>((acc, n) => {
+                        if (acc.length && n - (acc[acc.length - 1] as number) > 1) acc.push('ellipsis')
+                        acc.push(n)
+                        return acc
+                      }, [])
+                      .map((n, i) => n === 'ellipsis' ? (
+                        <span key={`e${i}`} className="w-8 text-center text-xs text-muted-foreground">…</span>
+                      ) : (
+                        <button key={n} onClick={() => setPage(n)}
+                          className={`h-9 w-9 rounded-md text-xs font-semibold transition-colors ${
+                            n === currentPage ? 'bg-amber-600 text-white' : 'border bg-white hover:bg-muted text-muted-foreground'
+                          }`}>
+                          {n}
+                        </button>
+                      ))}
+                    <button onClick={() => setPage(p => Math.min(pageCount, p + 1))} disabled={currentPage === pageCount}
+                      className="h-9 w-9 flex items-center justify-center rounded-md border bg-white hover:bg-muted disabled:opacity-40 disabled:pointer-events-none transition-colors">
+                      <ChevronRight className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
 
-        {/* ── Sidebar (desktop) ── */}
-        <div className="hidden lg:block">
-          {/* top-16 clears the app's own sticky header (h-12 + a little breathing room),
-              so the cart doesn't stick flush under it while scrolling. */}
-          <div className="sticky top-16">
-            <RequestCartPanel
-              cart={cart} removeCartLine={removeCartLine} changeCartQty={changeCartQty} updateCartLine={updateCartLine}
-              locations={locations} deliveryLocationId={deliveryLocationId} setDeliveryLocationId={setDeliveryLocationId}
-              employees={employees} requestedByEmployeeId={requestedByEmployeeId} setRequestedByEmployeeId={setRequestedByEmployeeId}
-              notes={notes} setNotes={setNotes}
-              neededByDate={neededByDate} setNeededByDate={setNeededByDate}
-              isUrgent={isUrgent} setIsUrgent={setIsUrgent} urgentReason={urgentReason} setUrgentReason={setUrgentReason}
-              purpose={purpose} setPurpose={setPurpose} trip={trip} setTrip={setTrip} trips={trips}
-              catalogSource={catalogSource} setCatalogSource={setCatalogSource}
-              submit={submit} saving={saving} editingPrNumber={editingPrNumber}
-            />
-          </div>
+        {/* ── Request panel (tablet + desktop) ── */}
+        {/* top-16 clears the app's own sticky header (h-12 + a little breathing room). */}
+        <div className="hidden md:block sticky top-16">
+          <RequestCartPanel {...cartPanelProps} />
         </div>
       </div>
 
-      {/* ── Mobile cart drawer ── */}
+      {/* ── Phone: floating bar → full-screen request sheet ── */}
+      {!cartOpen && (
+        <button onClick={() => setCartOpen(true)}
+          className="md:hidden fixed left-4 right-4 bottom-4 z-40 flex items-center justify-between gap-3 px-4 py-3.5 rounded-xl bg-amber-600 text-white shadow-lg shadow-amber-600/30">
+          <span className="flex items-center gap-2 text-sm font-semibold">
+            <ShoppingCart className="h-4 w-4" />
+            {cart.length === 0 ? 'Your request' : `${cart.length} item${cart.length > 1 ? 's' : ''} · ${totalQty} qty`}
+          </span>
+          <span className="flex items-center gap-1 text-sm font-semibold">Review <ChevronRight className="h-4 w-4" /></span>
+        </button>
+      )}
       {cartOpen && (
-        <div className="fixed inset-0 z-50 lg:hidden">
+        <div className="fixed inset-0 z-50 md:hidden">
           <div className="absolute inset-0 bg-black/40" onClick={() => setCartOpen(false)} />
-          <div className="absolute inset-x-0 bottom-0 top-16 bg-white rounded-t-2xl flex flex-col">
-            <div className="flex items-center justify-between px-5 py-4 border-b shrink-0">
-              <h3 className="font-semibold">Your Request</h3>
+          <div className="absolute inset-x-0 bottom-0 top-12 bg-white rounded-t-2xl flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-3 border-b shrink-0">
+              <button onClick={() => setCartOpen(false)} className="flex items-center gap-1 text-sm font-medium text-muted-foreground">
+                <ChevronLeft className="h-4 w-4" /> Add more items
+              </button>
               <button onClick={() => setCartOpen(false)}><X className="h-5 w-5 text-muted-foreground" /></button>
             </div>
-            <div className="overflow-y-auto flex-1 p-5">
-              <RequestCartPanel
-                cart={cart} removeCartLine={removeCartLine} changeCartQty={changeCartQty} updateCartLine={updateCartLine}
-                locations={locations} deliveryLocationId={deliveryLocationId} setDeliveryLocationId={setDeliveryLocationId}
-                employees={employees} requestedByEmployeeId={requestedByEmployeeId} setRequestedByEmployeeId={setRequestedByEmployeeId}
-                notes={notes} setNotes={setNotes}
-                neededByDate={neededByDate} setNeededByDate={setNeededByDate}
-                isUrgent={isUrgent} setIsUrgent={setIsUrgent} urgentReason={urgentReason} setUrgentReason={setUrgentReason}
-                purpose={purpose} setPurpose={setPurpose} trip={trip} setTrip={setTrip} trips={trips}
-                catalogSource={catalogSource} setCatalogSource={setCatalogSource}
-                submit={submit} saving={saving} editingPrNumber={editingPrNumber}
-                embedded
-              />
+            <div className="flex-1 min-h-0">
+              <RequestCartPanel {...cartPanelProps} embedded />
             </div>
           </div>
         </div>
@@ -3086,16 +3083,16 @@ function CreateRequestView({
 
       {/* ── Custom Request Modal ── */}
       {customModal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[92vh] flex flex-col overflow-hidden">
-            <div className="flex items-center justify-between px-6 py-5 border-b shrink-0">
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center sm:p-4">
+          <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full max-w-2xl max-h-[92vh] flex flex-col overflow-hidden">
+            <div className="flex items-start justify-between gap-3 px-5 sm:px-6 py-4 sm:py-5 border-b shrink-0">
               <div>
-                <h3 className="font-bold text-lg">Custom Request</h3>
+                <h3 className="font-bold text-lg">Custom Item</h3>
                 <p className="text-xs text-muted-foreground mt-0.5">For items not in the catalog — this won&apos;t create a new catalog item, it&apos;s just added to your request for purchasing to review</p>
               </div>
               <button onClick={() => setCustomModal(false)}><X className="h-5 w-5 text-muted-foreground" /></button>
             </div>
-            <div className="px-6 py-5 space-y-4 flex-1 min-h-0 overflow-y-auto">
+            <div className="px-5 sm:px-6 py-5 space-y-4 flex-1 min-h-0 overflow-y-auto">
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Description <span className="text-red-500">*</span></label>
                 <textarea
@@ -3148,7 +3145,7 @@ function CreateRequestView({
                 </div>
               </div>
             </div>
-            <div className="flex gap-3 justify-end px-6 py-4 border-t bg-muted/20 shrink-0">
+            <div className="flex gap-3 justify-end px-5 sm:px-6 py-4 border-t bg-muted/20 shrink-0">
               <button onClick={() => setCustomModal(false)} className="px-4 py-2 text-sm border rounded-lg hover:bg-muted">Cancel</button>
               <button onClick={addCustomToCart} disabled={!customForm.itemName.trim()}
                 className="px-5 py-2 text-sm text-white rounded-lg font-medium disabled:opacity-40 transition-colors bg-amber-600 hover:bg-amber-700">
@@ -3162,143 +3159,134 @@ function CreateRequestView({
   )
 }
 
-// Browses the delivery vessel's own room/category InventoryItems, for requesting more
-// of something already tracked there (a "Convert to Stock"-adjacent flow — see
-// ItemsPage.tsx — but the other direction: existing InventoryItem -> new PR line).
-function InventoryPickerPanel({
+// ─── Catalog building blocks ──────────────────────────────────────────────────
+const CARD_GRID = 'grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5 gap-2.5'
+
+function ItemCard({ image, name, caption, sub, active, children }: {
+  image?: string | null; name: string; caption: string; sub: string; active: boolean; children: React.ReactNode
+}) {
+  return (
+    <div className={`bg-white rounded-xl border overflow-hidden flex flex-col transition-all ${active ? 'border-amber-500 ring-1 ring-amber-500' : 'hover:border-amber-300 hover:shadow-sm'}`}>
+      {/* Product shots (bottles, cans) are tall — contain + padding keeps them whole without a huge square */}
+      <div className="h-28 sm:h-32 bg-white flex items-center justify-center overflow-hidden border-b border-muted">
+        {image ? <img src={image} alt={name} loading="lazy" className="max-w-full max-h-full object-contain p-2" /> : <Package className="h-7 w-7 text-muted-foreground/25" />}
+      </div>
+      <div className="p-2.5 flex flex-col flex-1">
+        <span className="text-[9px] font-semibold uppercase tracking-wide text-amber-700 truncate">{caption}</span>
+        <p className="text-xs font-medium leading-snug mt-0.5 line-clamp-2">{name}</p>
+        <p className="text-[11px] text-muted-foreground mt-0.5 truncate">{sub}</p>
+        <div className="mt-auto pt-2 space-y-1">{children}</div>
+      </div>
+    </div>
+  )
+}
+
+function AddButton({ label, outline = false, onClick }: { label: string; outline?: boolean; onClick: () => void }) {
+  return (
+    <button onClick={onClick}
+      className={`w-full flex items-center justify-center gap-1 h-8 rounded-lg text-xs font-semibold transition-colors ${
+        outline ? 'border border-amber-500 text-amber-700 hover:bg-amber-50' : 'bg-amber-600 hover:bg-amber-700 text-white'
+      }`}>
+      <Plus className="h-3.5 w-3.5" /> {label}
+    </button>
+  )
+}
+
+function QtyStepper({ qty, unit, onChange, small = false }: { qty: number; unit?: string; onChange: (delta: number) => void; small?: boolean }) {
+  const btn = `${small ? 'w-7 h-7' : 'w-8 h-8'} rounded-md bg-white border flex items-center justify-center hover:bg-muted transition-colors shrink-0`
+  return (
+    <div className={`flex items-center justify-between gap-1 ${small ? '' : 'bg-amber-50 rounded-lg'}`}>
+      <button onClick={() => onChange(-1)} className={btn}><Minus className="h-3.5 w-3.5" /></button>
+      <span className={`text-xs font-semibold tabular-nums text-center ${small ? 'min-w-6' : ''}`}>{qty}{unit ? ` ${unit}` : ''}</span>
+      <button onClick={() => onChange(1)} className={btn}><Plus className="h-3.5 w-3.5" /></button>
+    </div>
+  )
+}
+
+// Vessel / Room / Category filters for browsing a vessel's own InventoryItems — for
+// requesting more of something already tracked there (a "Convert to Stock"-adjacent flow —
+// see ItemsPage.tsx — but the other direction: existing InventoryItem -> new PR line).
+function InventoryFilters({
   vessels, invLocationId, setInvLocationId,
-  invRoomId, setInvRoomId, invCategoryId, setInvCategoryId, invSearch, setInvSearch,
-  invRooms, invCategories, invItems, invLoading,
-  cart, addInventoryItemToCart, changeCartQty, requestedByEmployeeId,
-  setCustomModal,
+  invRoomId, setInvRoomId, invCategoryId, setInvCategoryId,
+  invRooms, invCategories,
 }: {
+  vessels: StockLocation[]; invLocationId: string; setInvLocationId: (v: string) => void
   invRoomId: string; setInvRoomId: (v: string) => void
   invCategoryId: string; setInvCategoryId: (v: string) => void
-  invSearch: string; setInvSearch: (v: string) => void
   invRooms: { id: string; name: string }[]; invCategories: { id: string; name: string }[]
+}) {
+  const sel = 'w-full h-9 border rounded-md px-2.5 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500 disabled:opacity-50'
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+      <select className={sel} value={invLocationId} onChange={e => setInvLocationId(e.target.value)}>
+        <option value="">Select vessel…</option>
+        {vessels.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+      </select>
+      <select className={sel} value={invRoomId} onChange={e => setInvRoomId(e.target.value)} disabled={!invLocationId}>
+        <option value="">All rooms</option>
+        {invRooms.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+      </select>
+      <select className={sel} value={invCategoryId} onChange={e => setInvCategoryId(e.target.value)} disabled={!invRoomId}>
+        <option value="">All categories</option>
+        {invCategories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+      </select>
+    </div>
+  )
+}
+
+function InventoryPickerPanel({
+  invLocationId, invItems, invLoading,
+  cart, addInventoryItemToCart, changeCartQty, requestedByEmployeeId,
+}: {
+  invLocationId: string
   invItems: InventoryItemOption[]; invLoading: boolean
   cart: RequestLine[]; addInventoryItemToCart: (item: InventoryItemOption) => void
   changeCartQty: (key: string, delta: number) => void
   requestedByEmployeeId: string
-  setCustomModal: (v: boolean) => void
-  vessels: StockLocation[]; invLocationId: string; setInvLocationId: (v: string) => void
 }) {
+  const empty = (text: string) => (
+    <div className="text-center py-16 text-muted-foreground bg-white border rounded-xl">
+      <Package className="h-10 w-10 mx-auto mb-3 opacity-20" />
+      <p className="text-sm">{text}</p>
+    </div>
+  )
+  if (!invLocationId) return empty('Select a vessel to browse its inventory.')
+  if (invLoading) return <div className="text-center py-16 text-muted-foreground text-sm">Loading...</div>
+  if (invItems.length === 0) return empty('No inventory items found for this room/category.')
   return (
-    <>
-      <div className="flex flex-col sm:flex-row gap-2.5">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-          <input
-            className="w-full h-10 pl-9 pr-3 text-sm border rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-amber-500"
-            placeholder="Search inventory item name or number..."
-            value={invSearch} onChange={e => setInvSearch(e.target.value)}
-          />
-        </div>
-        <button
-          onClick={() => setCustomModal(true)}
-          className="flex items-center justify-center gap-2 h-10 px-4 rounded-lg border border-amber-300 bg-amber-50 text-amber-700 text-sm font-medium transition-colors hover:bg-amber-100 hover:border-amber-400 shrink-0"
-        >
-          <ImagePlus className="h-4 w-4" /> Custom Request
-        </button>
-      </div>
-
-      <div className="bg-white border rounded-xl shadow-sm p-3.5 flex flex-col sm:flex-row gap-3">
-        <div className="flex-1 space-y-1">
-          <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Vessel</label>
-          <select className="w-full h-9 border rounded-md px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
-            value={invLocationId} onChange={e => setInvLocationId(e.target.value)}>
-            <option value="">— Select vessel —</option>
-            {vessels.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
-          </select>
-        </div>
-        <div className="flex-1 space-y-1">
-          <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Room</label>
-          <select className="w-full h-9 border rounded-md px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500 disabled:opacity-50"
-            value={invRoomId} onChange={e => setInvRoomId(e.target.value)} disabled={!invLocationId}>
-            <option value="">— All rooms —</option>
-            {invRooms.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-          </select>
-        </div>
-        <div className="flex-1 space-y-1">
-          <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Category</label>
-          <select className="w-full h-9 border rounded-md px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500 disabled:opacity-50"
-            value={invCategoryId} onChange={e => setInvCategoryId(e.target.value)} disabled={!invRoomId}>
-            <option value="">— All categories —</option>
-            {invCategories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
-        </div>
-      </div>
-
-      {!invLocationId ? (
-        <div className="text-center py-20 text-muted-foreground">
-          <Package className="h-10 w-10 mx-auto mb-3 opacity-20" />
-          <p className="text-sm">Select a vessel to browse its inventory.</p>
-        </div>
-      ) : invLoading ? (
-        <div className="text-center py-20 text-muted-foreground text-sm">Loading...</div>
-      ) : invItems.length === 0 ? (
-        <div className="text-center py-20 text-muted-foreground">
-          <Package className="h-10 w-10 mx-auto mb-3 opacity-20" />
-          <p className="text-sm">No inventory items found for this room/category.</p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-2.5">
-          {invItems.map(item => {
-            const key = `inv-${item.id}-${requestedByEmployeeId || 'none'}`
-            const line = cart.find(l => l.key === key)
-            return (
-              <div key={item.id} className="bg-white rounded-xl border overflow-hidden flex flex-col shadow-sm hover:shadow-md hover:border-amber-300 transition-all">
-                <div className="aspect-square bg-muted/40 flex items-center justify-center overflow-hidden">
-                  {item.photoKeys?.[0] ? <img src={item.photoKeys[0]} alt={item.name} className="w-full h-full object-cover" /> : <Package className="h-8 w-8 text-muted-foreground/30" />}
-                </div>
-                <div className="p-2.5 flex flex-col flex-1">
-                  <span className="text-[9px] font-semibold uppercase tracking-wide text-amber-700">{item.room.name} · {item.category.name}</span>
-                  <p className="text-xs font-medium leading-snug mt-0.5 line-clamp-2">{item.name}</p>
-                  <p className="text-[11px] text-muted-foreground mt-0.5">Currently {item.quantity} pcs</p>
-                  <div className="mt-auto pt-2">
-                    {line ? (
-                      <div className="flex items-center justify-between gap-1 bg-muted/50 rounded-lg p-1">
-                        <button onClick={() => changeCartQty(line.key!, -1)} className="w-6 h-6 rounded-md bg-white shadow-sm flex items-center justify-center hover:bg-muted transition-colors">
-                          <Minus className="h-3 w-3" />
-                        </button>
-                        <span className="text-[11px] font-semibold tabular-nums">{line.quantity} pcs</span>
-                        <button onClick={() => changeCartQty(line.key!, 1)} className="w-6 h-6 rounded-md bg-white shadow-sm flex items-center justify-center hover:bg-muted transition-colors">
-                          <Plus className="h-3 w-3" />
-                        </button>
-                      </div>
-                    ) : (
-                      <button onClick={() => addInventoryItemToCart(item)}
-                        className="w-full flex items-center justify-center gap-1 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-[11px] font-semibold transition-colors">
-                        <Plus className="h-3 w-3" /> Add pcs
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      )}
-    </>
+    <div className={CARD_GRID}>
+      {invItems.map(item => {
+        const key = `inv-${item.id}-${requestedByEmployeeId || 'none'}`
+        const line = cart.find(l => l.key === key)
+        return (
+          <ItemCard key={item.id} active={!!line} image={item.photoKeys?.[0]} name={item.name}
+            caption={`${item.room.name} · ${item.category.name}`} sub={`Currently ${item.quantity} pcs`}>
+            {line
+              ? <QtyStepper qty={line.quantity} unit="pcs" onChange={d => changeCartQty(line.key!, d)} />
+              : <AddButton label="pcs" onClick={() => addInventoryItemToCart(item)} />}
+          </ItemCard>
+        )
+      })}
+    </div>
   )
 }
 
 function RequestCartPanel({
   cart, removeCartLine, changeCartQty, updateCartLine,
   locations, deliveryLocationId, setDeliveryLocationId,
-  employees, requestedByEmployeeId, setRequestedByEmployeeId,
+  employees,
   notes, setNotes,
   neededByDate, setNeededByDate, isUrgent, setIsUrgent, urgentReason, setUrgentReason,
   purpose, setPurpose, trip, setTrip, trips,
-  catalogSource, setCatalogSource,
-  submit, saving,
+  submit, saving, saveError,
   editingPrNumber,
   embedded = false,
 }: {
   cart: RequestLine[]; removeCartLine: (key: string) => void; changeCartQty: (key: string, delta: number) => void
   updateCartLine: (key: string, patch: Partial<RequestLine>) => void
   locations: StockLocation[]; deliveryLocationId: string; setDeliveryLocationId: (id: string) => void
-  employees: EmployeeOption[]; requestedByEmployeeId: string; setRequestedByEmployeeId: (id: string) => void
+  employees: EmployeeOption[]
   notes: string; setNotes: (v: string) => void
   neededByDate: string; setNeededByDate: (v: string) => void
   isUrgent: boolean; setIsUrgent: (v: boolean) => void
@@ -3306,218 +3294,179 @@ function RequestCartPanel({
   purpose: 'STOCK_INVENTORY' | 'TRIP'; setPurpose: (v: 'STOCK_INVENTORY' | 'TRIP') => void
   trip: TripOption | null; setTrip: (t: TripOption | null) => void
   trips: TripOption[]
-  catalogSource: 'stock' | 'inventory'; setCatalogSource: (v: 'stock' | 'inventory') => void
-  submit: () => void; saving: boolean
+  submit: () => void; saving: boolean; saveError: string
   editingPrNumber?: string
   embedded?: boolean
 }) {
+  const label = 'text-[11px] font-semibold text-muted-foreground uppercase tracking-wide'
+  const groupCount = new Set(cart.map(l => l.requestedByEmployeeId || '')).size
+  const missing = [!deliveryLocationId && 'delivery location', cart.length === 0 && 'items', purpose === 'TRIP' && !trip && 'trip'].filter(Boolean) as string[]
+
   return (
-    <div className={`bg-white rounded-xl border shadow-sm flex flex-col ${!embedded ? 'max-h-[calc(100vh-200px)]' : ''}`}>
-      {!embedded && (
-        <div className="flex items-center gap-2 px-5 py-4 border-b shrink-0 bg-amber-50/60 rounded-t-xl">
-          <ShoppingCart className="h-4 w-4 text-amber-700" />
-          <h3 className="font-semibold text-sm">Your Request {cart.length > 0 && `(${cart.length})`}</h3>
-        </div>
-      )}
+    <div className={`bg-white flex flex-col ${embedded ? 'h-full' : 'rounded-xl border shadow-sm max-h-[calc(100vh-5rem)]'}`}>
+      <div className={`flex items-center gap-2 px-4 py-3 border-b shrink-0 ${embedded ? '' : 'bg-amber-50/60 rounded-t-xl'}`}>
+        <ShoppingCart className="h-4 w-4 text-amber-700" />
+        <h3 className="font-semibold text-sm flex-1">Your Request</h3>
+        {cart.length > 0 && <span className="text-xs font-semibold bg-amber-600 text-white rounded-full px-2 py-0.5">{cart.length}</span>}
+      </div>
 
-      <div className="p-5 space-y-4 overflow-y-auto flex-1">
-        {/* Delivery Location */}
-        <div className="space-y-1.5">
-          <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Delivery Location <span className="text-red-500">*</span></label>
-          <select
-            className="w-full h-10 border rounded-lg px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
-            value={deliveryLocationId} onChange={e => setDeliveryLocationId(e.target.value)}
-          >
-            <option value="">— Select location —</option>
-            {renderLocationOptions(locations, { topLevelOnly: true })}
-          </select>
-        </div>
-
-        {/* Purpose — general restocking vs a specific upcoming trip. Trip requests link
-            to the actual Booking so Purchasing knows which departure to have ready for. */}
-        <div className="space-y-1.5">
-          <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Purpose <span className="text-red-500">*</span></label>
-          <div className="inline-flex gap-1 bg-muted rounded-lg p-1 w-full">
-            <button type="button" onClick={() => setPurpose('STOCK_INVENTORY')}
-              className={`flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${purpose === 'STOCK_INVENTORY' ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
-              Stock & Inventory
-            </button>
-            <button type="button" onClick={() => setPurpose('TRIP')}
-              className={`flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${purpose === 'TRIP' ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
-              Trip
-            </button>
-          </div>
-          {purpose === 'TRIP' && (
-            <TripPicker trips={trips} value={trip} onChange={setTrip} suggestedYachtId={locations.find(l => l.id === deliveryLocationId)?.yachtId} />
-          )}
-          {/* Stock vs Inventory — "Stock" browses the ordinary Purchasing catalog below;
-              "Inventory" instead browses a vessel's own room/category InventoryItems (with
-              its own Vessel filter), for requesting more of something already tracked there. */}
-          {purpose === 'STOCK_INVENTORY' && (
-            <div className="inline-flex gap-1 bg-muted rounded-lg p-1 w-full mt-1.5">
-              <button type="button" onClick={() => setCatalogSource('stock')}
-                className={`flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${catalogSource === 'stock' ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
-                Stock
-              </button>
-              <button type="button" onClick={() => setCatalogSource('inventory')}
-                className={`flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${catalogSource === 'inventory' ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
-                Inventory
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* Requested By — who this is actually for (e.g. a ship crew member), separate
-            from who's submitting it (always the logged-in account). Optional: leave
-            blank if you're requesting for yourself / general stock. */}
-        <div className="space-y-1.5">
-          <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Requested By </label>
-          <select
-            className="w-full h-10 border rounded-lg px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
-            value={requestedByEmployeeId} onChange={e => setRequestedByEmployeeId(e.target.value)}
-          >
-            <option value="">— Myself / general stock —</option>
-            {employees.map(e => <option key={e.id} value={e.id}>{e.fullName} ({e.employeeNumber})</option>)}
-          </select>
-          <p className="text-[11px] text-muted-foreground">Applies to items you add next. Switch this to add items for someone else — each person becomes their own PR automatically.</p>
-        </div>
-
-        {/* Items */}
-        <div className="space-y-1.5">
-          <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Items</label>
+      <div className="flex-1 min-h-0 overflow-y-auto">
+        {/* ── 1. Items ── */}
+        <div className="p-4 space-y-2">
           {cart.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground border-2 border-dashed rounded-lg">
+            <div className="text-center py-6 text-muted-foreground border-2 border-dashed rounded-lg">
               <ShoppingCart className="h-6 w-6 mx-auto mb-2 opacity-30" />
-              <p className="text-xs">No items yet</p>
+              <p className="text-xs">No items yet — tap <span className="font-semibold">+</span> on an item to add it</p>
             </div>
-          ) : (
-            <div className="space-y-4">
-              {(() => {
-                // Grouped into sections by requester — matches how submit() splits the
-                // cart into one PR per requester. Section order follows first-added.
-                const order: string[] = []
-                const groups = new Map<string, RequestLine[]>()
-                for (const line of cart) {
-                  const key = line.requestedByEmployeeId || ''
-                  if (!groups.has(key)) { groups.set(key, []); order.push(key) }
-                  groups.get(key)!.push(line)
-                }
-                return order.map(empId => {
-                  const lines = groups.get(empId)!
-                  const label = empId ? (employees.find(e => e.id === empId)?.fullName ?? 'Unknown') : 'Myself / general stock'
-                  return (
-                    <div key={empId || '__none__'} className="space-y-2">
-                      {order.length > 1 && (
-                        <p className="text-[11px] font-semibold text-amber-700 uppercase tracking-wide flex items-center gap-1">
-                          <Users className="h-3 w-3" /> {label} <span className="font-normal text-muted-foreground normal-case">— will be its own PR</span>
-                        </p>
-                      )}
-                      {lines.map(line => (
-                        <div key={line.key} className="border rounded-lg p-2 space-y-2">
-                        <div className="flex items-center gap-2.5">
-                          <div className="relative w-10 h-10 rounded-md bg-muted/50 shrink-0 overflow-hidden flex items-center justify-center">
-                            {line.imageKeys?.[0] ? <img src={line.imageKeys[0]} alt={line.itemName} className="w-full h-full object-cover" /> : <Package className="h-4 w-4 text-muted-foreground/40" />}
-                            {!!line.imageKeys && line.imageKeys.length > 1 && (
-                              <span className="absolute bottom-0 right-0 bg-black/60 text-white text-[9px] font-semibold px-1 rounded-tl">+{line.imageKeys.length - 1}</span>
-                            )}
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <p className="text-xs font-medium truncate">{line.itemName}</p>
-                            <p className="text-[10px] text-muted-foreground truncate">
-                              {line.isCustom ? 'Custom request' : line.sourceInventoryItem
-                                ? `Inventory · ${line.sourceInventoryItem.room?.name ?? '—'} / ${line.sourceInventoryItem.category?.name ?? '—'}`
-                                : line.itemUnit}
-                            </p>
-                          </div>
-                          {line.isCustom ? (
-                            <span className="text-xs font-semibold tabular-nums shrink-0">{line.quantity} {line.itemUnit}</span>
-                          ) : (
-                            <div className="flex items-center gap-1 shrink-0">
-                              <button onClick={() => changeCartQty(line.key!, -1)} className="w-5 h-5 rounded border flex items-center justify-center hover:bg-muted"><Minus className="h-3 w-3" /></button>
-                              <span className="text-xs font-semibold tabular-nums w-4 text-center">{line.quantity}</span>
-                              <button onClick={() => changeCartQty(line.key!, 1)} className="w-5 h-5 rounded border flex items-center justify-center hover:bg-muted"><Plus className="h-3 w-3" /></button>
-                            </div>
+          ) : (() => {
+            // Grouped into sections by requester — matches how submit() splits the
+            // cart into one PR per requester. Section order follows first-added.
+            const order: string[] = []
+            const groups = new Map<string, RequestLine[]>()
+            for (const line of cart) {
+              const key = line.requestedByEmployeeId || ''
+              if (!groups.has(key)) { groups.set(key, []); order.push(key) }
+              groups.get(key)!.push(line)
+            }
+            return order.map(empId => {
+              const lines = groups.get(empId)!
+              const who = empId ? (employees.find(e => e.id === empId)?.fullName ?? 'Unknown') : 'Myself / general stock'
+              return (
+                <div key={empId || '__none__'} className="space-y-1.5">
+                  {order.length > 1 && (
+                    <p className="text-[11px] font-semibold text-amber-700 uppercase tracking-wide flex items-center gap-1 pt-1">
+                      <Users className="h-3 w-3" /> {who} <span className="font-normal text-muted-foreground normal-case">— own PR</span>
+                    </p>
+                  )}
+                  {lines.map(line => (
+                    <div key={line.key} className="border rounded-lg p-2 space-y-2">
+                      <div className="flex items-center gap-2">
+                        <div className="relative w-9 h-9 rounded-md bg-muted/50 shrink-0 overflow-hidden flex items-center justify-center">
+                          {line.imageKeys?.[0] ? <img src={line.imageKeys[0]} alt={line.itemName} className="w-full h-full object-cover" /> : <Package className="h-4 w-4 text-muted-foreground/40" />}
+                          {!!line.imageKeys && line.imageKeys.length > 1 && (
+                            <span className="absolute bottom-0 right-0 bg-black/60 text-white text-[9px] font-semibold px-1 rounded-tl">+{line.imageKeys.length - 1}</span>
                           )}
-                          <button onClick={() => removeCartLine(line.key!)} className="text-muted-foreground hover:text-destructive shrink-0">
-                            <Trash2 className="h-3.5 w-3.5" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-medium line-clamp-2 leading-snug">{line.itemName}</p>
+                          <p className="text-[10px] text-muted-foreground truncate">
+                            {line.isCustom ? `Custom · ${line.quantity} ${line.itemUnit}` : line.sourceInventoryItem
+                              ? `Inventory · ${line.sourceInventoryItem.room?.name ?? '—'} / ${line.sourceInventoryItem.category?.name ?? '—'}`
+                              : line.itemUnit}
+                          </p>
+                        </div>
+                        <button onClick={() => removeCartLine(line.key!)} className="p-1 text-muted-foreground hover:text-destructive shrink-0" title="Remove">
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {/* New vs Replacement — replacement needs a damage description */}
+                        <div className="flex gap-0.5 bg-muted rounded-md p-0.5 flex-1">
+                          <button type="button" onClick={() => updateCartLine(line.key!, { requestType: 'NEW' })}
+                            className={`flex-1 px-1.5 h-6 text-[11px] font-medium rounded transition-colors ${line.requestType !== 'REPLACEMENT' ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
+                            New
+                          </button>
+                          <button type="button" onClick={() => updateCartLine(line.key!, { requestType: 'REPLACEMENT' })}
+                            className={`flex-1 px-1.5 h-6 text-[11px] font-medium rounded transition-colors ${line.requestType === 'REPLACEMENT' ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
+                            Replace
                           </button>
                         </div>
-                          <div className="flex gap-1 bg-muted rounded-md p-0.5">
-                            <button type="button" onClick={() => updateCartLine(line.key!, { requestType: 'NEW' })}
-                              className={`flex-1 px-2 py-1 text-[11px] font-medium rounded transition-colors ${line.requestType !== 'REPLACEMENT' ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
-                              New
-                            </button>
-                            <button type="button" onClick={() => updateCartLine(line.key!, { requestType: 'REPLACEMENT' })}
-                              className={`flex-1 px-2 py-1 text-[11px] font-medium rounded transition-colors ${line.requestType === 'REPLACEMENT' ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
-                              Replacement
-                            </button>
-                          </div>
-                          {line.requestType === 'REPLACEMENT' && (
-                            <textarea
-                              className="w-full border rounded-md px-2 py-1.5 text-xs resize-none focus:outline-none focus:ring-1 focus:ring-amber-500"
-                              rows={2} placeholder="Damage details — what is broken, how it happened (required)"
-                              value={line.damageDetail ?? ''} onChange={e => updateCartLine(line.key!, { damageDetail: e.target.value })}
-                            />
-                          )}
-                        </div>
-                      ))}
+                        {!line.isCustom && <QtyStepper small qty={line.quantity} onChange={d => changeCartQty(line.key!, d)} />}
+                      </div>
+                      {line.requestType === 'REPLACEMENT' && (
+                        <textarea
+                          className="w-full border rounded-md px-2 py-1.5 text-xs resize-none focus:outline-none focus:ring-1 focus:ring-amber-500"
+                          rows={2} placeholder="Damage details — what is broken, how it happened (required)"
+                          value={line.damageDetail ?? ''} onChange={e => updateCartLine(line.key!, { damageDetail: e.target.value })}
+                        />
+                      )}
                     </div>
-                  )
-                })
-              })()}
+                  ))}
+                </div>
+              )
+            })
+          })()}
+        </div>
+
+        {/* ── 2. Request details ── */}
+        <div className="p-4 space-y-3.5 border-t bg-muted/20">
+          <div className="space-y-1">
+            <label className={label}>Deliver to <span className="text-red-500">*</span></label>
+            <select
+              className={`w-full h-10 border rounded-lg px-3 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-amber-500 ${!deliveryLocationId && cart.length > 0 ? 'border-amber-400' : ''}`}
+              value={deliveryLocationId} onChange={e => setDeliveryLocationId(e.target.value)}
+            >
+              <option value="">Select location…</option>
+              {renderLocationOptions(locations, { topLevelOnly: true })}
+            </select>
+          </div>
+
+          {/* Purpose — general restocking vs a specific upcoming trip. Trip requests link
+              to the actual Booking so Purchasing knows which departure to have ready for. */}
+          <div className="space-y-1.5">
+            <label className={label}>Purpose <span className="text-red-500">*</span></label>
+            <div className="flex gap-1 bg-muted rounded-lg p-1">
+              <button type="button" onClick={() => setPurpose('STOCK_INVENTORY')}
+                className={`flex-1 px-2 h-8 text-xs font-medium rounded-md transition-colors ${purpose === 'STOCK_INVENTORY' ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
+                Stock & Inventory
+              </button>
+              <button type="button" onClick={() => setPurpose('TRIP')}
+                className={`flex-1 px-2 h-8 text-xs font-medium rounded-md transition-colors ${purpose === 'TRIP' ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
+                Trip
+              </button>
             </div>
-          )}
-        </div>
+            {purpose === 'TRIP' && (
+              <TripPicker trips={trips} value={trip} onChange={setTrip} suggestedYachtId={locations.find(l => l.id === deliveryLocationId)?.yachtId} />
+            )}
+          </div>
 
-        {/* Needed by */}
-        <div className="space-y-1.5">
-          <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Needed By</label>
-          <input
-            type="date"
-            className="w-full h-10 border rounded-lg px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
-            value={neededByDate} onChange={e => setNeededByDate(e.target.value)}
-          />
-        </div>
-
-        {/* Urgent */}
-        <div className="space-y-2">
-          <label className="flex items-center gap-2 text-sm font-medium cursor-pointer">
-            <input type="checkbox" checked={isUrgent} onChange={e => setIsUrgent(e.target.checked)} className="h-4 w-4" />
-            <span className="text-red-600">This request is urgent</span>
-          </label>
-          {isUrgent && (
-            <textarea
-              className="w-full border border-red-300 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-red-400"
-              rows={2} placeholder="Why is this urgent? (required)"
-              value={urgentReason} onChange={e => setUrgentReason(e.target.value)}
+          <div className="space-y-1">
+            <label className={label}>Needed by</label>
+            <input
+              type="date"
+              className="w-full h-10 border rounded-lg px-3 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-amber-500"
+              value={neededByDate} onChange={e => setNeededByDate(e.target.value)}
             />
-          )}
-        </div>
+          </div>
 
-        {/* Notes */}
-        <div className="space-y-1.5">
-          <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Notes</label>
-          <textarea
-            className="w-full border rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-amber-500"
-            rows={2} placeholder="Additional notes for the purchasing team..."
-            value={notes} onChange={e => setNotes(e.target.value)}
-          />
+          <div className="space-y-2">
+            <label className="flex items-center gap-2 text-sm font-medium cursor-pointer">
+              <input type="checkbox" checked={isUrgent} onChange={e => setIsUrgent(e.target.checked)} className="h-4 w-4 accent-red-600" />
+              <span className="text-red-600">Urgent</span>
+            </label>
+            {isUrgent && (
+              <textarea
+                className="w-full border border-red-300 rounded-lg px-3 py-2 text-sm resize-none bg-white focus:outline-none focus:ring-1 focus:ring-red-400"
+                rows={2} placeholder="Why is this urgent? (required)"
+                value={urgentReason} onChange={e => setUrgentReason(e.target.value)}
+              />
+            )}
+          </div>
+
+          <div className="space-y-1">
+            <label className={label}>Notes</label>
+            <textarea
+              className="w-full border rounded-lg px-3 py-2 text-sm resize-none bg-white focus:outline-none focus:ring-1 focus:ring-amber-500"
+              rows={2} placeholder="Optional notes for the purchasing team..."
+              value={notes} onChange={e => setNotes(e.target.value)}
+            />
+          </div>
         </div>
       </div>
 
-      <div className="p-5 border-t shrink-0">
-        {(() => {
-          const groupCount = new Set(cart.map(l => l.requestedByEmployeeId || '')).size
-          return (
-            <button
-              onClick={submit} disabled={saving || cart.length === 0}
-              className="w-full flex items-center justify-center gap-2 py-3 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold disabled:opacity-40 transition-colors"
-            >
-              {saving ? <div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Send className="h-4 w-4" />}
-              {saving ? 'Saving…' : editingPrNumber ? 'Save Changes' : groupCount > 1 ? `Submit ${groupCount} Requests` : 'Submit Request'}
-            </button>
-          )
-        })()}
+      <div className="p-4 border-t shrink-0 space-y-2 bg-white rounded-b-xl">
+        {saveError ? (
+          <p className="text-xs text-red-600 flex items-start gap-1.5"><AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-px" /> {saveError}</p>
+        ) : missing.length > 0 && (
+          <p className="text-[11px] text-muted-foreground">Still needed: {missing.join(', ')}</p>
+        )}
+        <button
+          onClick={submit} disabled={saving || cart.length === 0}
+          className="w-full flex items-center justify-center gap-2 h-11 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold disabled:opacity-40 transition-colors"
+        >
+          {saving ? <div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Send className="h-4 w-4" />}
+          {saving ? 'Saving…' : editingPrNumber ? 'Save Changes' : groupCount > 1 ? `Submit ${groupCount} Requests` : 'Submit Request'}
+        </button>
       </div>
     </div>
   )
