@@ -13,6 +13,7 @@ import { currentLocationLabel } from '@/lib/purchasing/currentLocationLabel'
 import { renderLocationOptions } from '@/components/purchasing/LocationOptions'
 import { TripPicker, tripDates, tripShortLabel, tripLinkBody, type TripOption } from '@/components/purchasing/TripPicker'
 import { roleMatches } from '@/lib/role-utils'
+import { poLineTotal, poLineDiscount } from '@/lib/po-payment'
 
 
 interface PaymentRequest {
@@ -30,6 +31,7 @@ interface Reimbursement {
 interface DeliveryLocation { id: string; name: string; type: string; managedBy: string; yachtId: string | null; parentId?: string | null }
 interface OrderItem {
   id: string; itemId: string; itemName: string; orderedQty: number; unitCost: number; receivedQty?: number; unit?: string | null
+  discountType?: string | null; discountValue?: number
   inventoryRoomId?: string | null; inventoryCategoryId?: string | null
   inventoryRoom?: { name: string } | null; inventoryCategory?: { name: string } | null
   sourceInventoryItemId?: string | null
@@ -318,6 +320,8 @@ type OrderLine = {
   // editing this PO doesn't silently drop the link that tells Goods Receipt to top up
   // that InventoryItem instead of creating a StockLot.
   sourceInventoryItemId?: string | null
+  // Per-line discount — see poLineTotal() in src/lib/po-payment.ts. Absent = no discount.
+  discountType?: 'PERCENT' | 'FIXED'; discountValue?: number
 }
 
 // Portal-based so the dropdown isn't clipped by the line-items table's
@@ -437,41 +441,99 @@ function ItemPickerCell({ idx, line, locked, purchaseItems, historicalCustomItem
 }
 
 
-function ItemsDetailModal({ order, onClose }: { order: PurchaseOrder; onClose: () => void }) {
+// Quick look at a PO from the list — where it's going, who asked for it, and what's in it —
+// without leaving the list. "Open full detail" goes to the full detail view.
+function PoPreview({ order: o, onOpen, onClose, sheet = false }: { order: PurchaseOrder; onOpen: () => void; onClose: () => void; sheet?: boolean }) {
+  const total = o.items.reduce((s, i) => s + poLineTotal(i), 0)
+  const stops = [...(o.transitStops ?? [])].sort((a, b) => a.sequence - b.sequence)
+  const row = (label: string, value: React.ReactNode) => (
+    <div className="flex gap-3 py-1.5">
+      <span className="w-24 shrink-0 text-xs text-muted-foreground">{label}</span>
+      <span className="min-w-0 flex-1 text-sm">{value}</span>
+    </div>
+  )
   return (
-    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-5 py-4 border-b shrink-0">
-          <div>
-            <p className="text-sm font-semibold">{order.poNumber}</p>
-            <p className="text-xs text-muted-foreground">{order.supplierName ?? 'TBD'}</p>
+    <div className={`bg-white border shadow-sm flex flex-col min-h-0 ${sheet ? 'rounded-t-2xl max-h-[88vh]' : 'rounded-xl max-h-[calc(100vh-5rem)]'}`}>
+      <div className="flex items-start justify-between gap-3 px-4 py-3 border-b shrink-0">
+        <div className="min-w-0">
+          <p className="font-mono text-sm font-semibold">{o.poNumber}</p>
+          <div className="flex flex-wrap items-center gap-1.5 mt-1">
+            <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${STATUS_COLOR[o.status] ?? ''}`}>{o.currentLegLabel ?? STATUS_LABEL[o.status] ?? o.status}</span>
+            <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium whitespace-nowrap ${PAYMENT_STATUS_COLOR[o.paymentStatus] ?? ''}`}>{PAYMENT_STATUS_LABEL[o.paymentStatus] ?? o.paymentStatus}</span>
           </div>
-          <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors">
-            <X className="h-4 w-4" />
-          </button>
         </div>
-        <div className="overflow-y-auto">
-          <div className="overflow-x-auto"><table className="w-full text-sm">
-            <thead className="text-xs text-muted-foreground bg-muted/30 sticky top-0">
-              <tr>
-                <th className="text-left px-4 py-2.5 font-medium">Item</th>
-                <th className="text-right px-4 py-2.5 font-medium">Qty</th>
-                <th className="text-right px-4 py-2.5 font-medium">Unit Price</th>
-                <th className="text-right px-4 py-2.5 font-medium">Received</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              {order.items.map(i => (
-                <tr key={i.id}>
-                  <td className="px-4 py-2.5">{i.itemName}</td>
-                  <td className="px-4 py-2.5 text-right whitespace-nowrap">{i.orderedQty}{i.unit ? ` ${i.unit}` : ''}</td>
-                  <td className="px-4 py-2.5 text-right whitespace-nowrap">{fmtMoney(i.unitCost)}</td>
-                  <td className="px-4 py-2.5 text-right whitespace-nowrap">{i.receivedQty ?? 0}/{i.orderedQty}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table></div>
+        <button onClick={onClose} className="p-1 text-muted-foreground hover:text-foreground transition-colors shrink-0"><X className="h-4 w-4" /></button>
+      </div>
+
+      <div className="overflow-y-auto flex-1 min-h-0">
+        <div className="px-4 py-2 divide-y">
+          {row('Deliver to', (
+            <span className="flex items-center gap-1 font-medium"><MapPin className="h-3.5 w-3.5 text-muted-foreground shrink-0" />{o.deliveryLocation?.name ?? '—'}</span>
+          ))}
+          {stops.length > 0 && row('Route', (
+            <span className="text-xs">{[...stops.map(s => s.location.name), o.deliveryLocation?.name ?? '—'].join(' → ')}</span>
+          ))}
+          {row('Now at', <span className="text-xs">{currentLocationLabel(o)}</span>)}
+          {row('Requested by', o.requestedByName ? (
+            <span>
+              <span className="font-medium">{o.requestedByName}</span>
+              {(o.requestedByOffice || o.requestedByDepartment) && (
+                <span className="block text-xs text-muted-foreground">{[o.requestedByOffice, o.requestedByDepartment].filter(Boolean).join(' · ')}</span>
+              )}
+            </span>
+          ) : '—')}
+          {row('Supplier', o.supplierName ?? <span className="italic text-muted-foreground">TBD</span>)}
+          {o.trip && row('Trip', <span className="text-xs">{tripShortLabel(o.trip)} · {tripDates(o.trip)}</span>)}
+          {row('Ordered', <span className="text-xs">{fmtDate(o.orderedAt)}{o.expectedAt && <span className="text-muted-foreground"> · expected {fmtDate(o.expectedAt)}</span>}</span>)}
+          {row('PO by', <span className="text-xs">{o.createdByName ?? '—'}</span>)}
         </div>
+
+        <div className="px-4 pt-3 pb-2 border-t">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">Items ({o.items.length})</p>
+          {o.items.length === 0 ? <p className="text-xs text-muted-foreground">—</p> : (
+            <div className="divide-y rounded-lg border">
+              {o.items.map(i => {
+                const received = i.receivedQty ?? 0
+                return (
+                  <div key={i.id} className="flex items-start gap-3 px-3 py-2">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-medium leading-snug">{i.itemName}</p>
+                      <p className="text-[11px] text-muted-foreground">
+                        {fmtMoney(i.unitCost)} / {i.unit ?? 'unit'}
+                        {poLineDiscount(i) > 0 && <span className="text-green-700"> · disc {i.discountType === 'PERCENT' ? `${i.discountValue}%` : fmtMoney(poLineDiscount(i))}</span>}
+                      </p>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <p className="text-xs font-semibold tabular-nums">{i.orderedQty}{i.unit ? ` ${i.unit}` : ''}</p>
+                      {received > 0 && (
+                        <p className={`text-[10px] tabular-nums ${received >= i.orderedQty ? 'text-green-700' : 'text-orange-600'}`}>recv {received}/{i.orderedQty}</p>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+          {total > 0 && (
+            <div className="flex items-center justify-between pt-2 text-xs">
+              <span className="text-muted-foreground">Items total</span>
+              <span className="font-semibold tabular-nums">{fmtMoney(total)}</span>
+            </div>
+          )}
+        </div>
+
+        {o.notes && (
+          <div className="px-4 py-3 border-t">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-1">Notes</p>
+            <p className="text-xs whitespace-pre-wrap">{o.notes}</p>
+          </div>
+        )}
+      </div>
+
+      <div className="p-3 border-t shrink-0">
+        <button onClick={onOpen} className="w-full flex items-center justify-center gap-1.5 h-10 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold transition-colors">
+          Open full detail <ChevronRight className="h-4 w-4" />
+        </button>
       </div>
     </div>
   )
@@ -497,15 +559,10 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
   const [filterDate, setFilterDate] = useState('')
   const [itemSearch, setItemSearch] = useState('')
   const [statusTab, setStatusTab] = useState<string>('ALL')
-  const [itemsPopoverOrder, setItemsPopoverOrder] = useState<PurchaseOrder | null>(null)
-  const [page, setPage] = useState(1)
-  const PAGE_SIZE = 14
-  // Separate pagination for the tablet/mobile card layout (< lg) — a 10-column-wide
-  // table doesn't fit a tablet screen even with horizontal scroll, so below `lg` we
-  // swap to stacked two-line cards instead. Own page size/state since the card layout
-  // fits fewer rows per screen than the desktop table.
+  const [previewOrder, setPreviewOrder] = useState<PurchaseOrder | null>(null)
+  // List is compact three-line cards on every width (with a preview panel beside it on lg+).
   const [cardPage, setCardPage] = useState(1)
-  const CARD_PAGE_SIZE = 10
+  const CARD_PAGE_SIZE = 12
 
   // master data
   const [purchaseItems, setPurchaseItems] = useState<PurchaseItem[]>([])
@@ -762,6 +819,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
         requestedByEmployeeId: requestedByEmployeeId || undefined,
         items: lines.map(l => ({
           itemId: l.itemId || undefined, itemName: l.itemName, orderedQty: l.orderedQty, unitCost: l.unitCost, unit: l.itemId ? undefined : (l.itemUnit || undefined),
+          discountType: l.discountValue ? (l.discountType ?? 'PERCENT') : null, discountValue: l.discountValue || 0,
           inventoryRoomId: l.inventoryRoomId || undefined, inventoryCategoryId: l.inventoryCategoryId || undefined,
         })),
         extraCharges: extraCharges.filter(c => c.label.trim() || c.amount),
@@ -874,10 +932,9 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
     ...STATUS_TAB_ORDER.map(s => ({ key: s, label: STATUS_LABEL[s], count: preStatusOrders.filter(o => o.status === s).length })),
   ]
   const visibleOrders = statusTab === 'ALL' ? preStatusOrders : preStatusOrders.filter(o => o.status === statusTab)
-  const totalPages = Math.max(1, Math.ceil(visibleOrders.length / PAGE_SIZE))
-  const currentPage = Math.min(page, totalPages)
-  const pageOrders = visibleOrders.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
 
+  // Read the previewed PO back from the latest list so it doesn't go stale after a reload.
+  const preview = previewOrder ? orders.find(x => x.id === previewOrder.id) ?? previewOrder : null
   const cardTotalPages = Math.max(1, Math.ceil(visibleOrders.length / CARD_PAGE_SIZE))
   const cardCurrentPage = Math.min(cardPage, cardTotalPages)
   const cardPageOrders = visibleOrders.slice((cardCurrentPage - 1) * CARD_PAGE_SIZE, cardCurrentPage * CARD_PAGE_SIZE)
@@ -896,7 +953,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
         {statusTabs.map(t => (
           <button
             key={t.key}
-            onClick={() => { setStatusTab(t.key); setPage(1); setCardPage(1) }}
+            onClick={() => { setStatusTab(t.key); setCardPage(1) }}
             className={`shrink-0 px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${statusTab === t.key ? 'border-amber-600 text-amber-700' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
           >
             {t.label} <span className="text-xs">({t.count})</span>
@@ -913,26 +970,26 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
             className="h-9 w-full border rounded-md pl-9 pr-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500 transition-colors"
             placeholder="Search item..."
             value={itemSearch}
-            onChange={e => { setItemSearch(e.target.value); setPage(1); setCardPage(1) }}
+            onChange={e => { setItemSearch(e.target.value); setCardPage(1) }}
           />
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-        <select className="h-9 w-full border rounded-md px-2.5 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500 transition-colors" value={filterSupplier} onChange={e => { setFilterSupplier(e.target.value); setPage(1); setCardPage(1) }}>
+        <select className="h-9 w-full border rounded-md px-2.5 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500 transition-colors" value={filterSupplier} onChange={e => { setFilterSupplier(e.target.value); setCardPage(1) }}>
           <option value="">All suppliers</option>
           {supplierOptions.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
-        <select className="h-9 w-full border rounded-md px-2.5 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500 transition-colors" value={filterDestination} onChange={e => { setFilterDestination(e.target.value); setPage(1); setCardPage(1) }}>
+        <select className="h-9 w-full border rounded-md px-2.5 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500 transition-colors" value={filterDestination} onChange={e => { setFilterDestination(e.target.value); setCardPage(1) }}>
           <option value="">All destinations</option>
           {destinationOptions.map(d => <option key={d} value={d}>{d}</option>)}
         </select>
-        <select className="h-9 w-full border rounded-md px-2.5 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500 transition-colors" value={filterRequestedBy} onChange={e => { setFilterRequestedBy(e.target.value); setPage(1); setCardPage(1) }}>
+        <select className="h-9 w-full border rounded-md px-2.5 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500 transition-colors" value={filterRequestedBy} onChange={e => { setFilterRequestedBy(e.target.value); setCardPage(1) }}>
           <option value="">All requesters</option>
           {requestedByOptions.map(r => <option key={r} value={r}>{r}</option>)}
         </select>
-        <input type="date" className="h-9 w-full border rounded-md px-2.5 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500 transition-colors" value={filterDate} onChange={e => { setFilterDate(e.target.value); setPage(1); setCardPage(1) }} />
+        <input type="date" className="h-9 w-full border rounded-md px-2.5 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500 transition-colors" value={filterDate} onChange={e => { setFilterDate(e.target.value); setCardPage(1) }} />
         {hasActiveFilters && (
           <button
-            onClick={() => { setFilterSupplier(''); setFilterDestination(''); setFilterRequestedBy(''); setFilterDate(''); setItemSearch(''); setPage(1); setCardPage(1) }}
+            onClick={() => { setFilterSupplier(''); setFilterDestination(''); setFilterRequestedBy(''); setFilterDate(''); setItemSearch(''); setCardPage(1) }}
             className="col-span-2 sm:col-span-3 text-right text-xs text-muted-foreground hover:text-foreground underline underline-offset-2 transition-colors"
           >
             Clear filters
@@ -940,195 +997,111 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
         )}
         </div>
       </div>
-      {/* Desktop table — full column set, only makes sense at lg+ width */}
-      <div className="hidden desktop:block rounded-lg border overflow-hidden">
-        <div className="overflow-x-auto"><table className="w-full text-sm">
-          <thead className="bg-muted/50 text-xs text-muted-foreground">
-            <tr>
-              <th className="text-left px-4 py-3 font-medium">PO No.</th>
-              <th className="text-left px-4 py-3 font-medium w-72">Items</th>
-              <th className="text-left px-4 py-3 font-medium w-28">Supplier</th>
-              <th className="text-left px-4 py-3 font-medium">Current Location</th>
-              <th className="text-left px-4 py-3 font-medium">Date</th>
-              <th className="text-left px-4 py-3 font-medium">Status</th>
-              <th className="text-left px-4 py-3 font-medium">Payment</th>
-              <th className="text-left px-4 py-3 font-medium">PO Created By</th>
-              <th className="text-left px-4 py-3 font-medium">Requested By</th>
-              <th className="px-4 py-3" />
-            </tr>
-          </thead>
-          <tbody className="divide-y">
-            {loading ? <>
-              {[...Array(5)].map((_, i) => (
-                <tr key={i} className="border-t">
-                  <td className="px-4 py-3.5"><div className="h-3.5 w-28 rounded bg-muted animate-pulse" /></td>
-                  <td className="px-4 py-3.5"><div className="h-3.5 w-24 rounded bg-muted animate-pulse" /></td>
-                  <td className="px-4 py-3.5"><div className="h-3.5 w-20 rounded bg-muted animate-pulse" /></td>
-                  <td className="px-4 py-3.5"><div className="h-3.5 w-20 rounded bg-muted animate-pulse" /></td>
-                  <td className="px-4 py-3.5"><div className="h-3.5 w-24 rounded bg-muted animate-pulse" /></td>
-                  <td className="px-4 py-3.5"><div className="h-3.5 w-20 rounded bg-muted animate-pulse" /></td>
-                  <td className="px-4 py-3.5"><div className="h-3.5 w-20 rounded bg-muted animate-pulse" /></td>
-                  <td className="px-4 py-3.5"><div className="h-5 w-20 rounded-full bg-muted animate-pulse" /></td>
-                  <td className="px-4 py-3.5"><div className="h-5 w-20 rounded-full bg-muted animate-pulse" /></td>
-                  <td className="px-4 py-3.5" />
-                </tr>
-              ))}
-            </>
-              : visibleOrders.length === 0 ? <tr><td colSpan={10} className="text-center py-12 text-muted-foreground text-sm">{hasActiveFilters ? 'No matching purchase orders.' : warehouseView ? 'Tidak ada PO yang perlu diproses.' : 'No POs yet.'}</td></tr>
-              : pageOrders.map(o => {
-                return (
-                  <tr key={o.id} className="hover:bg-muted/30 cursor-pointer" onClick={() => openDetail(o)}>
-                    <td className="px-4 py-3 font-mono text-xs font-medium">{o.poNumber}</td>
-                    <td className="px-4 py-3 max-w-72">
-                      {o.items.length === 0 ? (
-                        <span className="text-muted-foreground/40 text-xs">—</span>
-                      ) : (
-                        <button
-                          title={o.items.map(i => i.itemName).join(', ')}
-                          onClick={e => { e.stopPropagation(); setItemsPopoverOrder(o) }}
-                          className="block w-full truncate text-left text-xs font-medium text-amber-700 hover:text-amber-900 hover:underline underline-offset-2 transition-colors"
-                        >
-                          {o.items[0].itemName}
-                          {o.items.length > 1 && <span className="text-muted-foreground font-normal"> +{o.items.length - 1} more</span>}
-                        </button>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 max-w-28 truncate text-xs" title={o.supplierName ?? undefined}>{o.supplierName ?? <span className="text-muted-foreground italic">TBD</span>}</td>
-                    <td className="px-4 py-3 text-muted-foreground text-xs">
-                      <span className="flex items-center gap-1"><MapPin className="h-3 w-3 shrink-0" />{currentLocationLabel(o)}</span>
-                    </td>
-                    <td className="px-4 py-3 text-muted-foreground">{fmtDate(o.orderedAt)}</td>
-                    <td className="px-4 py-3">
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLOR[o.status] ?? ''}`}>{o.currentLegLabel ?? STATUS_LABEL[o.status] ?? o.status}</span>
-                      {o.lastReceivedBy && (
-                        <p className="text-[10px] text-muted-foreground mt-0.5">by {o.lastReceivedBy}</p>
-                      )}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${PAYMENT_STATUS_COLOR[o.paymentStatus] ?? ''}`}>{PAYMENT_STATUS_LABEL[o.paymentStatus] ?? o.paymentStatus}</span>
-                      {o.paymentStatus === 'PAID' && o.status === 'ORDERED' && (
-                        <p className="mt-0.5"><span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-100 text-blue-700 whitespace-nowrap">Needs to be Delivered</span></p>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-muted-foreground text-xs">{o.createdByName ?? '—'}</td>
-                    <td className="px-4 py-3 text-muted-foreground text-xs">
-                      {o.requestedByName ? (
-                        <div>
-                          <p>{o.requestedByName}</p>
-                          {(o.requestedByOffice || o.requestedByDepartment) && (
-                            <p className="text-[10px] text-muted-foreground/70">
-                              {[o.requestedByOffice, o.requestedByDepartment].filter(Boolean).join(' · ')}
-                            </p>
-                          )}
-                        </div>
-                      ) : '—'}
-                    </td>
-                    <td className="px-4 py-3"><ChevronRight className="h-4 w-4 text-muted-foreground" /></td>
-                  </tr>
-                )
-              })}
-          </tbody>
-        </table></div>
-      </div>
-      {!loading && visibleOrders.length > 0 && totalPages > 1 && (
-        <div className="hidden desktop:flex items-center justify-between">
-          <p className="text-xs text-muted-foreground">
-            Page {currentPage} of {totalPages} · {visibleOrders.length} purchase order{visibleOrders.length !== 1 ? 's' : ''}
-          </p>
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => setPage(p => Math.max(1, p - 1))}
-              disabled={currentPage <= 1}
-              className="h-8 px-3 text-sm border rounded-md hover:bg-muted transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
-            >
-              Prev
-            </button>
-            <span className="text-sm text-muted-foreground px-2">{currentPage} / {totalPages}</span>
-            <button
-              onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-              disabled={currentPage >= totalPages}
-              className="h-8 px-3 text-sm border rounded-md hover:bg-muted transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
-            >
-              Next
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Tablet/mobile card layout — one PO per card, two lines, own 10-per-page pagination */}
-      <div className="desktop:hidden space-y-2">
-        {loading ? (
-          [...Array(5)].map((_, i) => (
-            <div key={i} className="rounded-lg border p-3 space-y-2 animate-pulse">
-              <div className="h-3.5 w-32 rounded bg-muted" />
-              <div className="h-3.5 w-48 rounded bg-muted" />
+      {/* List + preview — on lg+ the preview sits beside a narrower list; below lg it
+          opens as a bottom sheet. Full detail is one click away from the preview. */}
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_380px] xl:grid-cols-[minmax(0,1fr)_420px] gap-4 items-start">
+        <div className="space-y-2 min-w-0">
+          {loading ? (
+            [...Array(5)].map((_, i) => (
+              <div key={i} className="rounded-lg border p-3 space-y-2 animate-pulse">
+                <div className="h-3.5 w-32 rounded bg-muted" />
+                <div className="h-3.5 w-48 rounded bg-muted" />
+              </div>
+            ))
+          ) : visibleOrders.length === 0 ? (
+            <div className="text-center py-12 text-muted-foreground text-sm border rounded-lg">
+              {hasActiveFilters ? 'No matching purchase orders.' : warehouseView ? 'Tidak ada PO yang perlu diproses.' : 'No POs yet.'}
             </div>
-          ))
-        ) : visibleOrders.length === 0 ? (
-          <div className="text-center py-12 text-muted-foreground text-sm border rounded-lg">
-            {hasActiveFilters ? 'No matching purchase orders.' : warehouseView ? 'Tidak ada PO yang perlu diproses.' : 'No POs yet.'}
-          </div>
-        ) : cardPageOrders.map(o => (
-          <button
-            key={o.id}
-            onClick={() => openDetail(o)}
-            className="w-full text-left rounded-lg border p-3 space-y-1.5 hover:bg-muted/30 active:bg-muted/50 transition-colors"
-          >
-            <div className="flex items-center justify-between gap-2">
-              <span className="font-mono text-xs font-semibold">{o.poNumber}</span>
-              <div className="flex items-center gap-1.5 shrink-0">
-                <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${STATUS_COLOR[o.status] ?? ''}`}>{o.currentLegLabel ?? STATUS_LABEL[o.status] ?? o.status}</span>
-                <span className="text-xs text-muted-foreground">{fmtDate(o.orderedAt)}</span>
+          ) : cardPageOrders.map(o => {
+            const selected = preview?.id === o.id
+            return (
+              <button
+                key={o.id}
+                onClick={() => setPreviewOrder(selected ? null : o)}
+                onDoubleClick={() => openDetail(o)}
+                className={`w-full text-left rounded-lg border bg-white p-3 space-y-1.5 transition-colors ${selected ? 'border-amber-500 ring-1 ring-amber-500 bg-amber-50/40' : 'hover:bg-muted/30 active:bg-muted/50'}`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-mono text-xs font-semibold">{o.poNumber}</span>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${STATUS_COLOR[o.status] ?? ''}`}>{o.currentLegLabel ?? STATUS_LABEL[o.status] ?? o.status}</span>
+                    <span className="text-xs text-muted-foreground hidden sm:inline">{fmtDate(o.orderedAt)}</span>
+                  </div>
+                </div>
+                <p className="text-xs truncate">
+                  {o.items.length === 0 ? <span className="text-muted-foreground">—</span> : (
+                    <>
+                      <span className="font-medium">{o.items[0].itemName}</span>
+                      {o.items.length > 1 && <span className="text-muted-foreground"> +{o.items.length - 1} more</span>}
+                    </>
+                  )}
+                  <span className="text-muted-foreground"> · {o.supplierName ?? 'TBD'}</span>
+                </p>
+                <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
+                  <span className="flex items-center gap-1 min-w-0 truncate">
+                    <MapPin className="h-3 w-3 shrink-0" />
+                    <span className="truncate">{o.deliveryLocation?.name ?? '—'}</span>
+                    {o.requestedByName && <span className="truncate hidden sm:inline"> · {o.requestedByName}</span>}
+                  </span>
+                  <span className="flex items-center gap-1 shrink-0">
+                    {o.paymentStatus === 'PAID' && o.status === 'ORDERED' && (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-100 text-blue-700 whitespace-nowrap hidden sm:inline">Needs to be Delivered</span>
+                    )}
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium whitespace-nowrap ${PAYMENT_STATUS_COLOR[o.paymentStatus] ?? ''}`}>{PAYMENT_STATUS_LABEL[o.paymentStatus] ?? o.paymentStatus}</span>
+                  </span>
+                </div>
+              </button>
+            )
+          })}
+
+          {!loading && visibleOrders.length > 0 && cardTotalPages > 1 && (
+            <div className="flex items-center justify-between pt-1">
+              <p className="text-xs text-muted-foreground">
+                Page {cardCurrentPage} of {cardTotalPages} · {visibleOrders.length} PO{visibleOrders.length !== 1 ? 's' : ''}
+              </p>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setCardPage(p => Math.max(1, p - 1))}
+                  disabled={cardCurrentPage <= 1}
+                  className="h-8 px-3 text-sm border rounded-md hover:bg-muted transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+                >
+                  Prev
+                </button>
+                <span className="text-sm text-muted-foreground px-2">{cardCurrentPage} / {cardTotalPages}</span>
+                <button
+                  onClick={() => setCardPage(p => Math.min(cardTotalPages, p + 1))}
+                  disabled={cardCurrentPage >= cardTotalPages}
+                  className="h-8 px-3 text-sm border rounded-md hover:bg-muted transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+                >
+                  Next
+                </button>
               </div>
             </div>
-            <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
-              <span className="truncate min-w-0">
-                {o.items.length === 0 ? '—' : (
-                  <>
-                    <span className="font-medium text-foreground">{o.items[0].itemName}</span>
-                    {o.items.length > 1 && <span> +{o.items.length - 1} more</span>}
-                    {' · '}{o.supplierName ?? 'TBD'}
-                  </>
-                )}
-              </span>
-              <span className="flex items-center gap-1 shrink-0"><MapPin className="h-3 w-3" />{currentLocationLabel(o)}</span>
+          )}
+        </div>
+
+        {/* Preview — side panel on lg+ (top-16 clears the app's sticky header) */}
+        <div className="hidden lg:block sticky top-16">
+          {preview ? (
+            <PoPreview order={preview} onOpen={() => openDetail(preview)} onClose={() => setPreviewOrder(null)} />
+          ) : (
+            <div className="rounded-xl border border-dashed bg-muted/10 py-16 px-6 text-center text-muted-foreground">
+              <FileText className="h-8 w-8 mx-auto mb-2 opacity-30" />
+              <p className="text-sm">Select a PO to preview</p>
+              <p className="text-xs mt-1">Destination, requester and items show here</p>
             </div>
-            <div className="flex items-center gap-1.5">
-              <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium whitespace-nowrap ${PAYMENT_STATUS_COLOR[o.paymentStatus] ?? ''}`}>{PAYMENT_STATUS_LABEL[o.paymentStatus] ?? o.paymentStatus}</span>
-              {o.paymentStatus === 'PAID' && o.status === 'ORDERED' && (
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-100 text-blue-700 whitespace-nowrap">Needs to be Delivered</span>
-              )}
-            </div>
-          </button>
-        ))}
+          )}
+        </div>
       </div>
-      {!loading && visibleOrders.length > 0 && cardTotalPages > 1 && (
-        <div className="desktop:hidden flex items-center justify-between">
-          <p className="text-xs text-muted-foreground">
-            Page {cardCurrentPage} of {cardTotalPages} · {visibleOrders.length} purchase order{visibleOrders.length !== 1 ? 's' : ''}
-          </p>
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => setCardPage(p => Math.max(1, p - 1))}
-              disabled={cardCurrentPage <= 1}
-              className="h-8 px-3 text-sm border rounded-md hover:bg-muted transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
-            >
-              Prev
-            </button>
-            <span className="text-sm text-muted-foreground px-2">{cardCurrentPage} / {cardTotalPages}</span>
-            <button
-              onClick={() => setCardPage(p => Math.min(cardTotalPages, p + 1))}
-              disabled={cardCurrentPage >= cardTotalPages}
-              className="h-8 px-3 text-sm border rounded-md hover:bg-muted transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
-            >
-              Next
-            </button>
+
+      {/* Preview — bottom sheet below lg */}
+      {preview && (
+        <div className="fixed inset-0 z-50 lg:hidden" onClick={() => setPreviewOrder(null)}>
+          <div className="absolute inset-0 bg-black/40" />
+          <div className="absolute inset-x-0 bottom-0 max-h-[88vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <PoPreview order={preview} onOpen={() => { setPreviewOrder(null); openDetail(preview) }} onClose={() => setPreviewOrder(null)} sheet />
           </div>
         </div>
-      )}
-
-      {itemsPopoverOrder && (
-        <ItemsDetailModal order={itemsPopoverOrder} onClose={() => setItemsPopoverOrder(null)} />
       )}
     </div>
   )
@@ -1144,7 +1117,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
     // Route can only be edited before dispatch — matches the server-side guard in
     // PATCH /api/purchasing/orders/[id]. Only applies in Edit (Create has no detail yet).
     const routeLocked = editPOModal && !!detail?.dispatchedAt
-    const itemsTotal = lines.reduce((s, l) => s + l.orderedQty * l.unitCost, 0)
+    const itemsTotal = lines.reduce((s, l) => s + poLineTotal(l), 0)
     const chargesTotal = extraCharges.reduce((s, c) => s + c.amount, 0)
     const discountAmount = Math.min(itemsTotal, discountType === 'PERCENT' ? itemsTotal * (discountValue / 100) : discountValue)
     const afterDiscount = itemsTotal - discountAmount
@@ -1293,6 +1266,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                 <th className="text-left px-3 py-2.5 font-medium w-28">Qty</th>
                 <th className="text-left px-3 py-2.5 font-medium w-28">Unit</th>
                 <th className="text-left px-3 py-2.5 font-medium w-36">Unit Price</th>
+                <th className="text-left px-3 py-2.5 font-medium w-40">Discount</th>
                 {isVesselDelivery && <th className="text-left px-3 py-2.5 font-medium w-36">Room</th>}
                 {isVesselDelivery && <th className="text-left px-3 py-2.5 font-medium w-36">Category</th>}
                 <th className="text-right px-4 py-2.5 font-medium w-32">Subtotal</th>
@@ -1301,7 +1275,8 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
             </thead>
             <tbody className="divide-y">
               {lines.map((line, idx) => {
-                const subtotal = line.orderedQty * line.unitCost
+                const gross = line.orderedQty * line.unitCost
+                const subtotal = poLineTotal(line)
                 const numInp = `${inp} [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none text-right`
                 return (
                   <tr key={idx} className="group hover:bg-muted/20 transition-colors">
@@ -1353,6 +1328,23 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                         }}
                       />
                     </td>
+                    <td className="px-2 py-2.5">
+                      <div className="flex">
+                        <input disabled={locked} type="number" min={0} step="any" placeholder="0"
+                          className={`${numInp} rounded-r-none min-w-0`} value={line.discountValue || ''}
+                          onChange={e => setLines(l => l.map((li, i) => i !== idx ? li : { ...li, discountValue: Math.max(0, Number(e.target.value) || 0), discountType: li.discountType ?? 'PERCENT' }))}
+                        />
+                        <div className="flex border border-l-0 rounded-r-md overflow-hidden h-9 shrink-0">
+                          {(['PERCENT', 'FIXED'] as const).map(t => (
+                            <button key={t} type="button" disabled={locked}
+                              onClick={() => setLines(l => l.map((li, i) => i !== idx ? li : { ...li, discountType: t }))}
+                              className={`px-2 text-xs font-medium transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${(line.discountType ?? 'PERCENT') === t ? 'bg-amber-500 text-white' : 'text-muted-foreground hover:bg-muted bg-white'}`}>
+                              {t === 'PERCENT' ? '%' : 'Rp'}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </td>
                     {isVesselDelivery && (
                       <td className="px-2 py-2.5">
                         <select disabled={locked} className={inp} value={line.inventoryRoomId}
@@ -1372,7 +1364,12 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                       </td>
                     )}
                     <td className="px-4 py-2.5 text-right font-semibold whitespace-nowrap">
-                      {subtotal > 0 ? fmtMoney(subtotal) : <span className="text-muted-foreground font-normal">—</span>}
+                      {gross > 0 ? (
+                        <>
+                          {subtotal < gross && <span className="block text-[11px] font-normal text-muted-foreground line-through">{fmtMoney(gross)}</span>}
+                          {fmtMoney(subtotal)}
+                        </>
+                      ) : <span className="text-muted-foreground font-normal">—</span>}
                     </td>
                     <td className="px-2 py-2.5 text-center">
                       {!locked && (
@@ -1722,6 +1719,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
         baseUnit: catalogItem?.baseUnit ?? '', purchaseUnit: catalogItem?.purchaseUnit ?? '',
         itemUnit: it.unit ?? catalogItem?.purchaseUnit ?? '',
         orderedQty: it.orderedQty, unitCost: it.unitCost,
+        discountType: it.discountType === 'FIXED' ? 'FIXED' as const : 'PERCENT' as const, discountValue: it.discountValue || 0,
         search: '', open: false,
         inventoryRoomId: it.inventoryRoomId ?? '', inventoryCategoryId: it.inventoryCategoryId ?? '',
         sourceInventoryItemId: it.sourceInventoryItemId ?? null,
@@ -1757,6 +1755,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
         ...(!locked && {
           items: lines.map(l => ({
             itemId: l.itemId || undefined, itemName: l.itemName, orderedQty: l.orderedQty, unitCost: l.unitCost, unit: l.itemId ? undefined : (l.itemUnit || undefined),
+          discountType: l.discountValue ? (l.discountType ?? 'PERCENT') : null, discountValue: l.discountValue || 0,
             inventoryRoomId: l.inventoryRoomId || undefined, inventoryCategoryId: l.inventoryCategoryId || undefined,
             sourceInventoryItemId: l.sourceInventoryItemId || undefined,
           })),
@@ -1774,7 +1773,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
 
   const poGrandTotal = detail
     ? (() => {
-        const itemsSubtotal = detail.items.reduce((s, i) => s + i.orderedQty * i.unitCost, 0)
+        const itemsSubtotal = detail.items.reduce((s, i) => s + poLineTotal(i), 0)
         const discountAmount = detail.discountType
           ? Math.min(itemsSubtotal, detail.discountType === 'PERCENT' ? itemsSubtotal * ((detail.discountValue ?? 0) / 100) : (detail.discountValue ?? 0))
           : 0
@@ -2061,12 +2060,20 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                       {it.unit && <span className="text-muted-foreground text-xs"> {it.unit}</span>}
                     </td>
                     <td className="px-5 py-3 text-right text-muted-foreground">{fmtMoney(it.unitCost)}</td>
-                    <td className="px-5 py-3 text-right font-medium">{fmtMoney(it.orderedQty * it.unitCost)}</td>
+                    <td className="px-5 py-3 text-right font-medium whitespace-nowrap">
+                      {poLineDiscount(it) > 0 && (
+                        <span className="block text-[11px] font-normal text-muted-foreground">
+                          <span className="line-through">{fmtMoney(it.orderedQty * it.unitCost)}</span>
+                          <span className="text-green-700"> −{it.discountType === 'PERCENT' ? `${it.discountValue}%` : fmtMoney(poLineDiscount(it))}</span>
+                        </span>
+                      )}
+                      {fmtMoney(poLineTotal(it))}
+                    </td>
                   </tr>
                 ))}
               </tbody>
               {(() => {
-                const itemsSubtotal = detail.items.reduce((s, i) => s + i.orderedQty * i.unitCost, 0)
+                const itemsSubtotal = detail.items.reduce((s, i) => s + poLineTotal(i), 0)
                 const discountAmount = detail.discountType
                   ? Math.min(itemsSubtotal, detail.discountType === 'PERCENT' ? itemsSubtotal * ((detail.discountValue ?? 0) / 100) : (detail.discountValue ?? 0))
                   : 0

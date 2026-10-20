@@ -201,7 +201,7 @@ export async function notifyIfPOFullyPaid(db: Db, orderId: string) {
     select: {
       status: true, poNumber: true, supplierName: true,
       discountType: true, discountValue: true, extraCharges: true,
-      items: { select: { orderedQty: true, unitCost: true } },
+      items: { select: { orderedQty: true, unitCost: true, discountType: true, discountValue: true } },
       paymentRequests: { select: { amount: true, status: true } },
       reimbursements: { select: { amount: true, status: true } },
     },

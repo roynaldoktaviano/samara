@@ -2861,7 +2861,7 @@ function CreateRequestView({
   const cartPanelProps = {
     cart, removeCartLine, changeCartQty, updateCartLine,
     locations, deliveryLocationId, setDeliveryLocationId,
-    employees,
+    employees, requestedByEmployeeId, setRequestedByEmployeeId,
     notes, setNotes,
     neededByDate, setNeededByDate, isUrgent, setIsUrgent, urgentReason, setUrgentReason,
     purpose, setPurpose, trip, setTrip, trips,
@@ -2955,22 +2955,6 @@ function CreateRequestView({
                 )}
               </>
             )}
-
-            {/* Requested By — who the NEXT items are for (e.g. a ship crew member), separate
-                from who's submitting it (always the logged-in account). Each person ends up as
-                their own PR. Lives here (not in the cart) because it applies at add-time. */}
-            <div className="flex items-center gap-2 pt-3 border-t">
-              <Users className="h-4 w-4 text-muted-foreground shrink-0" />
-              <span className="text-xs text-muted-foreground shrink-0">Adding for</span>
-              <select
-                className="flex-1 min-w-0 h-8 border rounded-md px-2 text-xs bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
-                value={requestedByEmployeeId} onChange={e => setRequestedByEmployeeId(e.target.value)}
-                title="Applies to items you add next — each person becomes their own PR automatically"
-              >
-                <option value="">Myself / general stock</option>
-                {employees.map(e => <option key={e.id} value={e.id}>{e.fullName} ({e.employeeNumber})</option>)}
-              </select>
-            </div>
           </div>
 
           {catalogSource === 'inventory' ? (
@@ -3275,7 +3259,7 @@ function InventoryPickerPanel({
 function RequestCartPanel({
   cart, removeCartLine, changeCartQty, updateCartLine,
   locations, deliveryLocationId, setDeliveryLocationId,
-  employees,
+  employees, requestedByEmployeeId, setRequestedByEmployeeId,
   notes, setNotes,
   neededByDate, setNeededByDate, isUrgent, setIsUrgent, urgentReason, setUrgentReason,
   purpose, setPurpose, trip, setTrip, trips,
@@ -3286,7 +3270,7 @@ function RequestCartPanel({
   cart: RequestLine[]; removeCartLine: (key: string) => void; changeCartQty: (key: string, delta: number) => void
   updateCartLine: (key: string, patch: Partial<RequestLine>) => void
   locations: StockLocation[]; deliveryLocationId: string; setDeliveryLocationId: (id: string) => void
-  employees: EmployeeOption[]
+  employees: EmployeeOption[]; requestedByEmployeeId: string; setRequestedByEmployeeId: (id: string) => void
   notes: string; setNotes: (v: string) => void
   neededByDate: string; setNeededByDate: (v: string) => void
   isUrgent: boolean; setIsUrgent: (v: boolean) => void
@@ -3300,6 +3284,14 @@ function RequestCartPanel({
 }) {
   const label = 'text-[11px] font-semibold text-muted-foreground uppercase tracking-wide'
   const groupCount = new Set(cart.map(l => l.requestedByEmployeeId || '')).size
+  const deliveryYachtId = locations.find(l => l.id === deliveryLocationId)?.yachtId ?? null
+  // The trip list follows the delivery location's yacht — so a picked trip on another yacht
+  // no longer fits once the location changes.
+  const changeDeliveryLocation = (id: string) => {
+    setDeliveryLocationId(id)
+    const nextYachtId = locations.find(l => l.id === id)?.yachtId ?? null
+    if (trip && nextYachtId && trip.yacht?.id !== nextYachtId) setTrip(null)
+  }
   const missing = [!deliveryLocationId && 'delivery location', cart.length === 0 && 'items', purpose === 'TRIP' && !trip && 'trip'].filter(Boolean) as string[]
 
   return (
@@ -3311,6 +3303,21 @@ function RequestCartPanel({
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto">
+        {/* Requested By — who the NEXT items are for (e.g. a ship crew member), separate
+            from who's submitting it (always the logged-in account). Optional: leave blank
+            if you're requesting for yourself / general stock. */}
+        <div className="px-4 pt-4 space-y-1">
+          <label className={label}>Adding items for</label>
+          <select
+            className="w-full h-10 border rounded-lg px-3 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-amber-500"
+            value={requestedByEmployeeId} onChange={e => setRequestedByEmployeeId(e.target.value)}
+          >
+            <option value="">Myself / general stock</option>
+            {employees.map(e => <option key={e.id} value={e.id}>{e.fullName} ({e.employeeNumber})</option>)}
+          </select>
+          <p className="text-[11px] text-muted-foreground">Applies to items you add next — each person becomes their own PR.</p>
+        </div>
+
         {/* ── 1. Items ── */}
         <div className="p-4 space-y-2">
           {cart.length === 0 ? (
@@ -3394,7 +3401,7 @@ function RequestCartPanel({
             <label className={label}>Deliver to <span className="text-red-500">*</span></label>
             <select
               className={`w-full h-10 border rounded-lg px-3 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-amber-500 ${!deliveryLocationId && cart.length > 0 ? 'border-amber-400' : ''}`}
-              value={deliveryLocationId} onChange={e => setDeliveryLocationId(e.target.value)}
+              value={deliveryLocationId} onChange={e => changeDeliveryLocation(e.target.value)}
             >
               <option value="">Select location…</option>
               {renderLocationOptions(locations, { topLevelOnly: true })}
@@ -3415,9 +3422,9 @@ function RequestCartPanel({
                 Trip
               </button>
             </div>
-            {purpose === 'TRIP' && (
-              <TripPicker trips={trips} value={trip} onChange={setTrip} suggestedYachtId={locations.find(l => l.id === deliveryLocationId)?.yachtId} />
-            )}
+            {purpose === 'TRIP' && (deliveryLocationId
+              ? <TripPicker yachtFromLocation trips={trips} value={trip} onChange={setTrip} suggestedYachtId={deliveryYachtId} />
+              : <p className="text-[11px] text-muted-foreground">Select the delivery location first — its trips will show here.</p>)}
           </div>
 
           <div className="space-y-1">

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
+import { poLineTotal } from '@/lib/po-payment'
 
 import { roleMatches } from '@/lib/role-utils'
 
@@ -19,7 +20,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     db.purchaseOrder.findMany({
       where: { supplierId: id },
       orderBy: { createdAt: 'desc' },
-      include: { items: { select: { orderedQty: true, unitCost: true } } },
+      include: { items: { select: { orderedQty: true, unitCost: true, discountType: true, discountValue: true } } },
     }),
   ])
   if (!supplier) return NextResponse.json({ error: 'Not found' }, { status: 404 })
@@ -31,7 +32,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     orderedAt: o.orderedAt,
     expectedAt: o.expectedAt,
     itemCount: o.items.length,
-    totalValue: o.items.reduce((s, i) => s + i.orderedQty * i.unitCost, 0),
+    totalValue: o.items.reduce((s, i) => s + poLineTotal(i), 0),
   }))
 
   const totalSpend = history.reduce((s, o) => s + o.totalValue, 0)

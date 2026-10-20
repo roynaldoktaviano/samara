@@ -22,7 +22,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
           poNumber: true, supplierName: true, status: true, orderedAt: true, expectedAt: true, notes: true,
           extraCharges: true, discountType: true, discountValue: true,
           deliveryLocation: { select: { name: true } },
-          items: { select: { id: true, itemName: true, orderedQty: true, unitCost: true, unit: true } },
+          items: { select: { id: true, itemName: true, orderedQty: true, unitCost: true, unit: true, discountType: true, discountValue: true } },
         },
       },
       createdBy: { select: { name: true } },

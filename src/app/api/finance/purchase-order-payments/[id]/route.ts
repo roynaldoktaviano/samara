@@ -24,7 +24,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
           poNumber: true, supplierName: true, deliveryLocation: { select: { name: true } },
           requestedByName: true, requestedByOffice: true, requestedByDepartment: true, requestedByRole: true,
           discountType: true, discountValue: true, extraCharges: true,
-          items: { select: { id: true, itemName: true, unit: true, orderedQty: true, receivedQty: true, unitCost: true } },
+          items: { select: { id: true, itemName: true, unit: true, orderedQty: true, receivedQty: true, unitCost: true, discountType: true, discountValue: true } },
         },
       },
       requestedBy: { select: { name: true } },

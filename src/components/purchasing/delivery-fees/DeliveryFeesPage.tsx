@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useSession } from 'next-auth/react'
 import { Plus, ChevronRight, Search, Package, Wallet, CheckCircle2, Banknote, Pencil, Truck } from 'lucide-react'
 import { FilePreview, MultiFilePicker } from '@/components/ui/file-preview'
+import { poLineTotal, poLineDiscount } from '@/lib/po-payment'
 
 interface PaymentRequest {
   id: string; amount: number; notePhotoKeys: string[]; notes: string | null; notaDate: string | null; status: string; paymentMethod: string
@@ -23,7 +24,7 @@ interface DeliveryFee {
 }
 interface OrderOption { id: string; poNumber: string; supplierName: string | null }
 interface ReimburseAccountOption { id: string; accountHolderName: string; bankName: string; accountNumber: string }
-interface PoSummaryItem { id: string; itemName: string; orderedQty: number; unitCost: number; unit?: string | null }
+interface PoSummaryItem { id: string; itemName: string; orderedQty: number; unitCost: number; unit?: string | null; discountType?: string | null; discountValue?: number }
 interface PoSummary {
   poNumber: string; supplierName: string | null; status: string
   orderedAt: string; expectedAt: string | null; notes: string | null
@@ -57,7 +58,7 @@ const PAYMENT_STATUS_LABEL: Record<string, string> = { UNPAID: 'Unpaid', PENDING
 const PAYMENT_STATUS_COLOR: Record<string, string> = { UNPAID: 'bg-muted text-muted-foreground', PENDING: 'bg-amber-100 text-amber-700', PAID: 'bg-green-100 text-green-700' }
 
 function PoSummaryCard({ po }: { po: PoSummary }) {
-  const itemsSubtotal = po.items.reduce((s, it) => s + it.orderedQty * it.unitCost, 0)
+  const itemsSubtotal = po.items.reduce((s, it) => s + poLineTotal(it), 0)
   const discountAmount = po.discountType
     ? Math.min(itemsSubtotal, po.discountType === 'PERCENT' ? itemsSubtotal * ((po.discountValue ?? 0) / 100) : (po.discountValue ?? 0))
     : 0
@@ -98,7 +99,7 @@ function PoSummaryCard({ po }: { po: PoSummary }) {
                 <td className="px-3 py-1.5">{it.itemName}</td>
                 <td className="px-3 py-1.5 text-right text-muted-foreground">{it.orderedQty}{it.unit ? ` ${it.unit}` : ''}</td>
                 <td className="px-3 py-1.5 text-right text-muted-foreground">{fmtMoney(it.unitCost)}</td>
-                <td className="px-3 py-1.5 text-right font-medium">{fmtMoney(it.orderedQty * it.unitCost)}</td>
+                <td className="px-3 py-1.5 text-right font-medium">{poLineDiscount(it) > 0 && <span className="block text-[10px] font-normal text-green-700">−{it.discountType === 'PERCENT' ? `${it.discountValue}%` : fmtMoney(poLineDiscount(it))}</span>}{fmtMoney(poLineTotal(it))}</td>
               </tr>
             ))}
           </tbody>

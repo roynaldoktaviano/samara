@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { Wallet, X, Upload, MapPin, ArrowLeft } from 'lucide-react'
 import { isPdfDataUrl } from '@/lib/fileUpload'
 import { FilePreview, MultiFilePicker } from '@/components/ui/file-preview'
+import { poLineTotal, poLineDiscount } from '@/lib/po-payment'
 
 interface PaymentRequest {
   id: string
@@ -34,7 +35,7 @@ interface PaymentRequest {
     requestedByName: string | null; requestedByOffice: string | null; requestedByDepartment: string | null; requestedByRole: string | null
     discountType: string | null; discountValue: number | null
     extraCharges: { label: string; amount: number }[] | null
-    items: { id: string; itemName: string; unit: string | null; orderedQty: number; receivedQty: number; unitCost: number }[]
+    items: { id: string; itemName: string; unit: string | null; orderedQty: number; receivedQty: number; unitCost: number; discountType?: string | null; discountValue?: number }[]
   }
 }
 
@@ -197,7 +198,7 @@ export default function PurchaseOrderPayments({ deepLinkId, onDeepLinkHandled }:
             )}
 
             {selected.order.items.length > 0 && (() => {
-              const itemsSubtotal = selected.order.items.reduce((s, i) => s + i.orderedQty * i.unitCost, 0)
+              const itemsSubtotal = selected.order.items.reduce((s, i) => s + poLineTotal(i), 0)
               const discountAmount = selected.order.discountType
                 ? Math.min(itemsSubtotal, selected.order.discountType === 'PERCENT' ? itemsSubtotal * ((selected.order.discountValue ?? 0) / 100) : (selected.order.discountValue ?? 0))
                 : 0
@@ -223,7 +224,7 @@ export default function PurchaseOrderPayments({ deepLinkId, onDeepLinkHandled }:
                             <td className="px-3 py-2 font-medium">{it.itemName}</td>
                             <td className="px-3 py-2 text-right">{it.orderedQty} <span className="text-muted-foreground text-xs">{it.unit ?? ''}</span></td>
                             <td className="px-3 py-2 text-right text-muted-foreground">{fmtMoney(it.unitCost)}</td>
-                            <td className="px-3 py-2 text-right font-medium">{fmtMoney(it.orderedQty * it.unitCost)}</td>
+                            <td className="px-3 py-2 text-right font-medium">{poLineDiscount(it) > 0 && <span className="block text-[10px] font-normal text-green-700">−{it.discountType === 'PERCENT' ? `${it.discountValue}%` : fmtMoney(poLineDiscount(it))}</span>}{fmtMoney(poLineTotal(it))}</td>
                           </tr>
                         ))}
                       </tbody>

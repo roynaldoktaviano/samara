@@ -1508,12 +1508,12 @@ export default function Home() {
             </div>
           </header>
 
-          {/* overflow-x-hidden only — a plain overflow-hidden here clips `position: sticky`
-              on anything inside (e.g. the Create PR cart sidebar), since sticky needs an
-              unbroken chain of visible/scroll overflow up to its scrolling ancestor
-              (`main.overflow-auto` above). pageVariants is opacity-only now (no x/y), so
-              there's no transition overflow left to worry about on either axis anyway. */}
-          <div className="p-3 sm:p-4 xl:p-6 overflow-x-hidden">
+          {/* overflow-x-clip, NOT overflow-x-hidden — `hidden` on one axis forces the other
+              to `auto`, turning this div into its own (non-scrolling) scroll container, which
+              silently kills `position: sticky` on anything inside (e.g. the Create PR request
+              sidebar). `clip` cuts horizontal overflow without creating a scroll container, so
+              sticky resolves against `main.overflow-auto` above. */}
+          <div className="p-3 sm:p-4 xl:p-6 overflow-x-clip">
             <AnimatePresence mode="wait">
               <motion.div
                 key={activeView}

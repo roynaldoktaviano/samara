@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
           poNumber: true, supplierName: true, createdAt: true, deliveryLocation: { select: { name: true } },
           requestedByName: true, requestedByOffice: true, requestedByDepartment: true, requestedByRole: true,
           discountType: true, discountValue: true, extraCharges: true,
-          items: { select: { orderedQty: true, unitCost: true } },
+          items: { select: { orderedQty: true, unitCost: true, discountType: true, discountValue: true } },
           // Only needed to compute the PO's overall payment status below —
           // a PO can be paid across multiple DP/final-settlement installments.
           paymentRequests: { select: { amount: true, status: true } },

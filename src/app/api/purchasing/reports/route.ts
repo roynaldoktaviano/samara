@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
+import { poLineTotal } from '@/lib/po-payment'
 
 import { roleMatches } from '@/lib/role-utils'
 
@@ -19,7 +20,7 @@ export async function GET() {
   const [orders, lots, locations, movements, items, exceptions] = await Promise.all([
     db.purchaseOrder.findMany({
       where: { createdAt: { gte: startOf6Months } },
-      include: { items: { select: { orderedQty: true, unitCost: true } } },
+      include: { items: { select: { orderedQty: true, unitCost: true, discountType: true, discountValue: true } } },
     }),
     db.stockLot.findMany({ include: { item: { select: { name: true, baseUnit: true, standardCost: true } } } }),
     db.stockLocation.findMany({ select: { id: true, name: true, type: true } }),
@@ -49,7 +50,7 @@ export async function GET() {
   for (const o of orders) {
     const key = `${o.createdAt.getFullYear()}-${String(o.createdAt.getMonth() + 1).padStart(2, '0')}`
     const label = o.createdAt.toLocaleString('id-ID', { month: 'short', year: 'numeric' })
-    const value = o.items.reduce((s, i) => s + i.orderedQty * i.unitCost, 0)
+    const value = o.items.reduce((s, i) => s + poLineTotal(i), 0)
     if (!byMonth[key]) byMonth[key] = { label, totalValue: 0, poCount: 0 }
     byMonth[key].totalValue += value
     byMonth[key].poCount += 1
@@ -122,7 +123,7 @@ export async function GET() {
   // ── KPI summary ──
   const thisMonth = new Date(now.getFullYear(), now.getMonth(), 1)
   const thisMonthOrders = orders.filter(o => o.createdAt >= thisMonth)
-  const thisMonthSpend = thisMonthOrders.reduce((s, o) => s + o.items.reduce((is, i) => is + i.orderedQty * i.unitCost, 0), 0)
+  const thisMonthSpend = thisMonthOrders.reduce((s, o) => s + o.items.reduce((is, i) => is + poLineTotal(i), 0), 0)
 
   return NextResponse.json({
     summary: {

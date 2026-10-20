@@ -6,15 +6,45 @@
 // by allowing more than one POPaymentRequest/POReimbursement row per order —
 // everything here is derived at read time from those existing rows.
 
+export interface POLineInput { orderedQty: number; unitCost: number; discountType?: string | null; discountValue?: number | null }
+
+// Per-line (per-product) discount — 'PERCENT' of qty × unitCost, or a flat 'FIXED' Rupiah
+// amount off the whole line. Clamped so a line never goes negative.
+export function poLineDiscount(l: POLineInput): number {
+  const gross = l.orderedQty * l.unitCost
+  const v = Number(l.discountValue) || 0
+  if (!l.discountType || v <= 0 || gross <= 0) return 0
+  return Math.min(gross, l.discountType === 'PERCENT' ? gross * (v / 100) : v)
+}
+
+export function poLineTotal(l: POLineInput): number {
+  return l.orderedQty * l.unitCost - poLineDiscount(l)
+}
+
+// Fraction of the line price actually paid after its discount (1 = no discount) — used to
+// turn a unit price into a net unit cost for stock valuation / outstanding value.
+export function poLineNetRatio(l: POLineInput): number {
+  const gross = l.orderedQty * l.unitCost
+  return gross > 0 ? poLineTotal(l) / gross : 1
+}
+
+// Sanitizes a line's discount from a request body into the PurchaseOrderItem columns.
+export function lineDiscountData(it: { discountType?: unknown; discountValue?: unknown }) {
+  const type = it.discountType === 'PERCENT' || it.discountType === 'FIXED' ? it.discountType : null
+  const raw = type ? Math.max(0, Number(it.discountValue) || 0) : 0
+  const value = type === 'PERCENT' ? Math.min(100, raw) : raw
+  return { discountType: value > 0 ? type : null, discountValue: value > 0 ? value : 0 }
+}
+
 export interface POPricingInput {
-  items: { orderedQty: number; unitCost: number }[]
+  items: POLineInput[]
   discountType: string | null
   discountValue: number
   extraCharges: unknown
 }
 
 export function computePOGrandTotal(order: POPricingInput): number {
-  const itemsSubtotal = order.items.reduce((s, i) => s + i.orderedQty * i.unitCost, 0)
+  const itemsSubtotal = order.items.reduce((s, i) => s + poLineTotal(i), 0)
   const discountAmount = order.discountType
     ? Math.min(itemsSubtotal, order.discountType === 'PERCENT' ? itemsSubtotal * (order.discountValue / 100) : order.discountValue)
     : 0

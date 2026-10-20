@@ -4,6 +4,7 @@ import { movingAverageCost } from '@/lib/valuation'
 import { shipArrivalRouter, shipUsageOnArrival, USAGE_LOCATION_SELECT } from '@/lib/purchasing/usage'
 import { attemptFinalizePOStatus, resolveNextHop, spawnNextTransitLeg } from '@/lib/purchasing/transitChain'
 import { nextSeq } from '@/lib/purchasing/docNumber'
+import { poLineNetRatio } from '@/lib/po-payment'
 
 type Db = Awaited<ReturnType<typeof getDb>>
 
@@ -102,6 +103,14 @@ export async function receiveGoods(db: Db, params: {
         : tx.purchaseOrderItem.findFirst({ where: { orderId, itemId: it.itemId || null, itemName: it.itemName } }),
     ))
 
+    // Received value uses the PO line's price AFTER its per-line discount, so stock lots /
+    // moving-average cost reflect what was actually paid.
+    const netUnitCost = (i: number) => {
+      const raw = Number(items[i].unitCost) || 0
+      const po = poItemsByLineIndex[i]
+      return po ? raw * poLineNetRatio(po) : raw
+    }
+
     const gr = await tx.goodsReceipt.create({
       data: {
         id: crypto.randomUUID(),
@@ -120,7 +129,7 @@ export async function receiveGoods(db: Db, params: {
             itemId: it.itemId || null,
             itemName: it.itemName,
             receivedQty: Number(it.receivedQty),
-            unitCost: Number(it.unitCost) || 0,
+            unitCost: netUnitCost(i),
             outcome: it.outcome || 'ACCEPTED',
             condition: it.outcome || 'good',
             batch: it.batch?.trim() || null,
@@ -163,7 +172,7 @@ export async function receiveGoods(db: Db, params: {
       // custom lines are keyed by (itemName, locationId) instead of itemId.
       const factor = it.itemId ? (conversionMap.get(it.itemId) ?? 1) : 1
       const baseQty = purchaseQty * factor                                // e.g. 1 carton × 24 = 24 cans
-      const purchaseUnitCost = Number(it.unitCost) || 0                   // actual invoice price
+      const purchaseUnitCost = netUnitCost(i)                            // actual invoice price
       const baseCostPerUnit = factor > 1 && purchaseUnitCost > 0         // e.g. 48000 / 24 = 2000/can
         ? purchaseUnitCost / factor
         : purchaseUnitCost
@@ -232,7 +241,7 @@ export async function receiveGoods(db: Db, params: {
         const discrepancy = purchaseQty - remaining
         if (Math.abs(discrepancy) > 0.0001) {
           const itemInfo = itemDataMap.get(it.itemId)
-          const unitCostForValue = Number(it.unitCost) || itemInfo?.standardCost || 0
+          const unitCostForValue = netUnitCost(i) || itemInfo?.standardCost || 0
           await tx.inventoryException.create({
             data: {
               id: crypto.randomUUID(),
@@ -271,7 +280,7 @@ export async function receiveGoods(db: Db, params: {
             locationId: effectiveLocationId,
             locationName: locationNameForExceptions,
             qty: purchaseQty,
-            value: purchaseQty * (Number(it.unitCost) || itemDataMap.get(it.itemId)?.standardCost || 0),
+            value: purchaseQty * (netUnitCost(i) || itemDataMap.get(it.itemId)?.standardCost || 0),
             reason: `${outcomeLabel[outcome]}: ${purchaseQty} ${itemDataMap.get(it.itemId)?.baseUnit ?? ''} on ${po.poNumber ?? orderId} from ${po.supplierName ?? 'supplier'}`,
             referenceId: gr.id,
             referenceType: 'GoodsReceipt',

@@ -2576,21 +2576,21 @@ model ReimburseAccount {
 }
 
 model PurchaseRequestItem {
-  id                     String  @id @default(cuid())
+  id                     String                  @id @default(cuid())
   requestId              String
   itemId                 String?
   itemName               String
   quantity               Float
   unit                   String
-  estimatedCost          Float   @default(0)
+  estimatedCost          Float                   @default(0)
   supplierId             String?
   supplierName           String?
   notes                  String?
-  imageKeys              Json    @default("[]") // reference photos for custom requests — array of base64/URL strings
+  imageKeys              Json                    @default("[]") // reference photos for custom requests — array of base64/URL strings
   // Custom (non-catalog) requests only — catalog items are always stock-tracked via their
   // PurchaseItem record, so this only matters when itemId is null. Purely a classification
   // for now: it does not yet change Goods Receipt / StockLot behavior.
-  isStockItem            Boolean @default(true)
+  isStockItem            Boolean                 @default(true)
   // New purchase vs replacing an existing (damaged) unit — damageDetail is required by
   // the API whenever requestType is REPLACEMENT, so Purchasing knows what broke and how.
   requestType            PurchaseRequestItemType @default(NEW)
@@ -2997,6 +2997,11 @@ model PurchaseOrderItem {
   orderedQty            Float
   receivedQty           Float   @default(0)
   unitCost              Float   @default(0)
+  // Per-line discount, applied before the PO-level discount/extraCharges (see
+  // poLineTotal() in src/lib/po-payment.ts). 'PERCENT' = % of qty × unitCost,
+  // 'FIXED' = flat Rupiah off the whole line. Null/0 = no discount.
+  discountType          String?
+  discountValue         Float   @default(0)
   // Which Inventory Room/Category this item is destined for — required (enforced at the
   // API layer) whenever the PO's deliveryLocation is a ship (StockLocation.type ===
   // 'VESSEL'), so goods purchased for a vessel already know where they'll live in the
@@ -4633,12 +4638,12 @@ model InstagramConversation {
   lastInboundAt      DateTime?
   // Sales rep holding this DM — set on first inbound via the INSTAGRAM distribution pool.
   assignedToId       String?
-  assignedTo         User?    @relation("InstagramConversationAssignedTo", fields: [assignedToId], references: [id], onDelete: SetNull)
-  lastMessageAt      DateTime @default(now())
+  assignedTo         User?          @relation("InstagramConversationAssignedTo", fields: [assignedToId], references: [id], onDelete: SetNull)
+  lastMessageAt      DateTime       @default(now())
   lastMessagePreview String?
-  unreadCount        Int      @default(0)
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  unreadCount        Int            @default(0)
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
 
   messages InstagramMessage[]
 

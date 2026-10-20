@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState, useRef } from 'react'
 import { useParams } from 'next/navigation'
+import { poLineTotal, poLineDiscount } from '@/lib/po-payment'
 
 interface CompanyInfo {
   name:    string
@@ -25,6 +26,8 @@ interface OrderItem {
   itemName: string
   orderedQty: number
   unitCost: number
+  discountType?: string | null
+  discountValue?: number
   unit: string | null
 }
 
@@ -98,7 +101,7 @@ export default function PurchaseOrderPrintPage() {
   }
 
   const supplierLoc = order.supplier?.locations?.[0] ?? null
-  const total = order.items.reduce((s, it) => s + it.orderedQty * it.unitCost, 0)
+  const total = order.items.reduce((s, it) => s + poLineTotal(it), 0)
 
   return (
     <>
@@ -191,10 +194,17 @@ export default function PurchaseOrderPrintPage() {
 
                   {order.items.map((it, i) => (
                     <div key={i} className="nc" style={{ display: 'flex', alignItems: 'center', padding: '8px 32px', borderBottom: '1px solid #e5e7eb' }}>
-                      <span style={{ flex: 1, fontSize: 11, color: '#111827', fontWeight: 600 }}>{it.itemName}</span>
+                      <span style={{ flex: 1, fontSize: 11, color: '#111827', fontWeight: 600 }}>
+                        {it.itemName}
+                        {poLineDiscount(it) > 0 && (
+                          <span style={{ display: 'block', fontSize: 9, color: '#6b7280', fontWeight: 400 }}>
+                            Discount{it.discountType === 'PERCENT' ? ` ${it.discountValue}%` : ''} (−Rp {new Intl.NumberFormat('id-ID').format(poLineDiscount(it))})
+                          </span>
+                        )}
+                      </span>
                       <span style={{ width: 80, textAlign: 'right', fontSize: 11, color: '#374151' }}>{it.orderedQty} {it.unit ?? ''}</span>
                       <span style={{ width: 100, textAlign: 'right', fontSize: 11, color: '#374151' }}>Rp {new Intl.NumberFormat('id-ID').format(it.unitCost)}</span>
-                      <span style={{ width: 110, textAlign: 'right', fontSize: 11, color: '#111827', fontWeight: 600 }}>Rp {new Intl.NumberFormat('id-ID').format(it.orderedQty * it.unitCost)}</span>
+                      <span style={{ width: 110, textAlign: 'right', fontSize: 11, color: '#111827', fontWeight: 600 }}>Rp {new Intl.NumberFormat('id-ID').format(poLineTotal(it))}</span>
                     </div>
                   ))}
 

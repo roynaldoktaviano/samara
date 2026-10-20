@@ -5,7 +5,7 @@ import { getDb } from '@/lib/get-db'
 import { tripBookingSelect, openTripSelect, tripOf } from '@/lib/purchasing/tripLink'
 import { notifyByRole, notifyAssignedYachtCaptains, notifyRequesterForOrder } from '@/lib/notify-purchasing'
 import { getOrCreatePoReceiveToken, resolveBaseUrl } from '@/lib/purchasing/receiveLink'
-import { computePOGrandTotal, summarizePOPayments } from '@/lib/po-payment'
+import { computePOGrandTotal, summarizePOPayments, lineDiscountData } from '@/lib/po-payment'
 import { computeCurrentLegLabel } from '@/lib/purchasing/transitChain'
 import { resolveWarehouseLocationId, warehouseCanViewOrder } from '@/lib/purchasing/warehouseScope'
 import { resolveAssignedYachtId, yachtCanViewOrder } from '@/lib/purchasing/yachtScope'
@@ -151,7 +151,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   } = body as {
     status?: string; supplierName?: string; expectedAt?: string; notes?: string; dispatchPhotoKey?: string; cancellationReason?: string
     supplierId?: string; deliveryLocationId?: string; requestedByEmployeeId?: string; bookingId?: string; openTripId?: string
-    items?: { itemId?: string; itemName: string; orderedQty: number; unitCost?: number; unit?: string; inventoryRoomId?: string; inventoryCategoryId?: string; sourceInventoryItemId?: string }[]
+    items?: { itemId?: string; itemName: string; orderedQty: number; unitCost?: number; unit?: string; inventoryRoomId?: string; inventoryCategoryId?: string; sourceInventoryItemId?: string; discountType?: string | null; discountValue?: number }[]
     extraCharges?: { label?: string; amount?: number }[]; discountType?: 'PERCENT' | 'FIXED'; discountValue?: number
     transitStops?: string[]
   }
@@ -196,7 +196,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const existing = await db.purchaseOrder.findUnique({
       where: { id },
       select: {
-        items: { select: { orderedQty: true, unitCost: true, receivedQty: true } },
+        items: { select: { orderedQty: true, unitCost: true, receivedQty: true, discountType: true, discountValue: true } },
         discountType: true, discountValue: true, extraCharges: true,
         paymentRequests: { select: { id: true, amount: true, status: true } },
         reimbursements: { select: { id: true, amount: true, status: true } },
@@ -268,7 +268,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         where: { id },
         select: {
           orderType: true, discountType: true, discountValue: true, extraCharges: true,
-          items: { select: { orderedQty: true, unitCost: true } },
+          items: { select: { orderedQty: true, unitCost: true, discountType: true, discountValue: true } },
           paymentRequests: { select: { amount: true, status: true } },
           reimbursements: { select: { amount: true, status: true } },
         },
@@ -361,6 +361,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
           itemId: it.itemId || null, itemName: it.itemName,
           unit: it.itemId ? null : (it.unit?.trim() || null),
           orderedQty: Number(it.orderedQty), unitCost: Number(it.unitCost) || 0,
+          ...lineDiscountData(it),
           inventoryRoomId: it.inventoryRoomId || null, inventoryCategoryId: it.inventoryCategoryId || null,
           sourceInventoryItemId: it.sourceInventoryItemId || null,
         })),

@@ -3,7 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { tripBookingSelect, openTripSelect, tripOf } from '@/lib/purchasing/tripLink'
-import { computePOGrandTotal, summarizePOPayments } from '@/lib/po-payment'
+import { computePOGrandTotal, summarizePOPayments, lineDiscountData } from '@/lib/po-payment'
 import { computeCurrentLegLabel } from '@/lib/purchasing/transitChain'
 import { resolveWarehouseLocationId, warehouseOrderWhere } from '@/lib/purchasing/warehouseScope'
 import { resolveAssignedYachtId, yachtOrderWhere } from '@/lib/purchasing/yachtScope'
@@ -46,7 +46,7 @@ export async function GET(req: NextRequest) {
     where,
     orderBy: { createdAt: 'desc' },
     include: {
-      items: { select: { id: true, itemName: true, unit: true, orderedQty: true, receivedQty: true, unitCost: true } },
+      items: { select: { id: true, itemName: true, unit: true, orderedQty: true, receivedQty: true, unitCost: true, discountType: true, discountValue: true } },
       deliveryLocation: { select: { id: true, name: true, type: true, managedBy: true, yachtId: true } },
       booking: { select: tripBookingSelect },
       openTrip: { select: openTripSelect },
@@ -139,6 +139,7 @@ export async function POST(req: NextRequest) {
   type OrderItemInput = {
     itemId?: string; itemName: string; orderedQty: number; unitCost?: number; unit?: string
     inventoryRoomId?: string; inventoryCategoryId?: string
+    discountType?: string | null; discountValue?: number
   }
   const typedItems = items as OrderItemInput[]
   if (orderType !== 'SERVICE' && deliveryLocationId) {
@@ -236,6 +237,7 @@ export async function POST(req: NextRequest) {
           unit: it.itemId ? null : (it.unit?.trim() || null),
           orderedQty: Number(it.orderedQty),
           unitCost: Number(it.unitCost) || 0,
+          ...lineDiscountData(it),
           inventoryRoomId: it.inventoryRoomId || null,
           inventoryCategoryId: it.inventoryCategoryId || null,
         })),

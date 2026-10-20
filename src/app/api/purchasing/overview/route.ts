@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
+import { poLineNetRatio } from '@/lib/po-payment'
 
 import { roleMatches } from '@/lib/role-utils'
 
@@ -25,7 +26,7 @@ export async function GET() {
     db.inventoryException.findMany({ orderBy: { createdAt: 'desc' }, take: 200 }),
     db.purchaseOrder.findMany({
       where: { status: { notIn: ['RECEIVED', 'CANCELLED'] } },
-      include: { items: { select: { orderedQty: true, receivedQty: true, unitCost: true } } },
+      include: { items: { select: { orderedQty: true, receivedQty: true, unitCost: true, discountType: true, discountValue: true } } },
     }),
     db.stockMovement.findMany({
       orderBy: { createdAt: 'desc' },
@@ -58,7 +59,7 @@ export async function GET() {
     0,
   )
   const poInTransitValue = poInTransit.reduce(
-    (sum, o) => sum + o.items.reduce((s, i) => s + Math.max(0, i.orderedQty - i.receivedQty) * i.unitCost, 0),
+    (sum, o) => sum + o.items.reduce((s, i) => s + Math.max(0, i.orderedQty - i.receivedQty) * i.unitCost * poLineNetRatio(i), 0),
     0,
   )
   const inTransitValue = transferInTransitValue + poInTransitValue

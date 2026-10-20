@@ -36,13 +36,16 @@ export function tripLinkBody(t: TripOption | null, bookingField: 'bookingId' | '
   }
 }
 
-export function TripPicker({ trips, value, onChange, suggestedYachtId }: {
+export function TripPicker({ trips, value, onChange, suggestedYachtId, yachtFromLocation = false }: {
   trips: TripOption[]
   value: TripOption | null
   onChange: (t: TripOption | null) => void
   // Yacht of the delivery/destination location when it's a vessel — preselects the Kapal
   // dropdown (still changeable).
   suggestedYachtId?: string | null
+  // No Kapal dropdown: the trip list is just suggestedYachtId's trips (the delivery location
+  // decides the yacht). A non-vessel location (no yacht) lists every yacht's trips instead.
+  yachtFromLocation?: boolean
 }) {
   // Derived, not synced: the picked trip's yacht wins, then a manual Kapal choice, then the
   // suggestion from the delivery location.
@@ -54,6 +57,15 @@ export function TripPicker({ trips, value, onChange, suggestedYachtId }: {
   const yachts = [...new Map([...trips, ...(value ? [value] : [])].filter(t => t.yacht).map(t => [t.yacht!.id, t.yacht!])).values()]
     .sort((a, b) => a.name.localeCompare(b.name))
 
+  if (yachtFromLocation) {
+    return (
+      <div className="space-y-2">
+        <TripCombobox value={value} trips={trips} yachtId={suggestedYachtId ?? ''} allYachts={!suggestedYachtId} onChange={onChange} />
+        {value && <TripSummary value={value} />}
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-2">
       <div className="grid grid-cols-2 gap-2">
@@ -64,38 +76,43 @@ export function TripPicker({ trips, value, onChange, suggestedYachtId }: {
         </select>
         <TripCombobox value={value} trips={trips} yachtId={yachtId} onChange={onChange} />
       </div>
-      {value && (
-        <div className="rounded-lg border border-[#bdac7e]/40 bg-[#bdac7e]/10 px-3 py-2.5 text-xs space-y-0.5">
-          <p><span className="text-muted-foreground">Yacht:</span> <span className="font-semibold">{value.yacht?.name ?? '—'}</span></p>
-          <p><span className="text-muted-foreground">Trip No.:</span> {tripNo(value) ?? '—'} <span className="text-muted-foreground">({tripKindLabel(value)})</span></p>
-          <p><span className="text-muted-foreground">Dates:</span> {tripDates(value)}</p>
-          <p className="truncate"><span className="text-muted-foreground">{value.kind === 'charter' ? 'Guest:' : 'Trip:'}</span> {value.label}</p>
-        </div>
-      )}
+      {value && <TripSummary value={value} />}
     </div>
   )
 }
 
-function TripCombobox({ value, trips, yachtId, onChange }: {
-  value: TripOption | null; trips: TripOption[]; yachtId: string; onChange: (t: TripOption | null) => void
+function TripSummary({ value }: { value: TripOption }) {
+  return (
+    <div className="rounded-lg border border-[#bdac7e]/40 bg-[#bdac7e]/10 px-3 py-2.5 text-xs space-y-0.5">
+      <p><span className="text-muted-foreground">Yacht:</span> <span className="font-semibold">{value.yacht?.name ?? '—'}</span></p>
+      <p><span className="text-muted-foreground">Trip No.:</span> {tripNo(value) ?? '—'} <span className="text-muted-foreground">({tripKindLabel(value)})</span></p>
+      <p><span className="text-muted-foreground">Dates:</span> {tripDates(value)}</p>
+      <p className="truncate"><span className="text-muted-foreground">{value.kind === 'charter' ? 'Guest:' : 'Trip:'}</span> {value.label}</p>
+    </div>
+  )
+}
+
+function TripCombobox({ value, trips, yachtId, allYachts = false, onChange }: {
+  value: TripOption | null; trips: TripOption[]; yachtId: string; allYachts?: boolean; onChange: (t: TripOption | null) => void
 }) {
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
   const q = search.trim().toLowerCase()
   // No cap — a yacht can have years of future charters booked. Already soonest-first.
-  const opts = trips.filter(t => t.yacht?.id === yachtId).filter(t => {
+  const opts = trips.filter(t => allYachts || t.yacht?.id === yachtId).filter(t => {
     if (!q) return true
     return t.label.toLowerCase().includes(q)
+      || (allYachts && !!t.yacht?.name.toLowerCase().includes(q))
       || (t.tripNumber != null && (tripNo(t)!.includes(q) || String(t.tripNumber) === q))
       || fmtDate(t.startDate).toLowerCase().includes(q)
   })
 
   return (
     <>
-      <button type="button" disabled={!yachtId} onClick={() => { setOpen(true); setSearch('') }}
+      <button type="button" disabled={!yachtId && !allYachts} onClick={() => { setOpen(true); setSearch('') }}
         className="w-full h-9 border rounded-md px-3 text-sm text-left flex items-center justify-between bg-background focus:outline-none focus:ring-1 focus:ring-[#bdac7e]/50 focus:border-[#bdac7e] transition disabled:opacity-50 disabled:cursor-not-allowed">
         <span className={`truncate ${value ? '' : 'text-muted-foreground'}`}>
-          {value ? tripDates(value) : yachtId ? 'Select trip...' : 'Select a yacht first'}
+          {value ? tripDates(value) : (yachtId || allYachts) ? 'Select trip...' : 'Select a yacht first'}
         </span>
         <Ship className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
       </button>
@@ -121,7 +138,7 @@ function TripCombobox({ value, trips, yachtId, onChange }: {
                 </button>
               )}
               {opts.length === 0 && (
-                <p className="px-5 py-6 text-sm text-muted-foreground text-center">No upcoming trips for this yacht</p>
+                <p className="px-5 py-6 text-sm text-muted-foreground text-center">{allYachts ? 'No upcoming trips' : 'No upcoming trips for this yacht'}</p>
               )}
               {opts.map(t => (
                 <button key={`${t.kind}:${t.id}`} type="button" onClick={() => { onChange(t); setOpen(false); setSearch('') }}
@@ -129,7 +146,7 @@ function TripCombobox({ value, trips, yachtId, onChange }: {
                   <Ship className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
                   <span className="min-w-0 flex-1">
                     <span className="block font-medium truncate">{tripDates(t)}</span>
-                    <span className="block text-xs text-muted-foreground truncate mt-0.5">{tripKindLabel(t)} · {t.label}</span>
+                    <span className="block text-xs text-muted-foreground truncate mt-0.5">{allYachts && t.yacht ? `${t.yacht.name} · ` : ''}{tripKindLabel(t)} · {t.label}</span>
                   </span>
                   {tripNo(t) && <span className="shrink-0 text-[11px] text-muted-foreground/70 tabular-nums mt-0.5">{tripNo(t)}</span>}
                 </button>
