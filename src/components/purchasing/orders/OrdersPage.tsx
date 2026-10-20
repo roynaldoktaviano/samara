@@ -3,7 +3,7 @@
 import { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useSession } from 'next-auth/react'
-import { Plus, ChevronRight, X, Search, Package, Trash2, Camera, Upload, MapPin, Building2, FileDown, Wallet, CheckCircle2, Banknote, Users, Pencil, AlertTriangle, Lock, Ship, FileText } from 'lucide-react'
+import { Plus, ChevronRight, X, Search, Package, Sparkles, Loader2, Trash2, Camera, Upload, MapPin, Building2, FileDown, Wallet, CheckCircle2, Banknote, Users, Pencil, AlertTriangle, Lock, Ship, FileText } from 'lucide-react'
 import { FilePreview, MultiFilePicker, PhotoSourceMenu } from '@/components/ui/file-preview'
 import { useFileDrop } from '@/hooks/useFileDrop'
 import { Timeline, type TimelineStep } from '@/components/purchasing/Timeline'
@@ -14,6 +14,9 @@ import { renderLocationOptions } from '@/components/purchasing/LocationOptions'
 import { TripPicker, tripDates, tripShortLabel, tripLinkBody, type TripOption } from '@/components/purchasing/TripPicker'
 import { roleMatches } from '@/lib/role-utils'
 import { poLineTotal, poLineDiscount } from '@/lib/po-payment'
+import { readUploadFile } from '@/lib/fileUpload'
+import { toast } from 'sonner'
+import type { ExtractedInvoice } from '@/app/api/purchasing/orders/extract-invoice/route'
 
 
 interface PaymentRequest {
@@ -595,6 +598,8 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
   const [extraCharges, setExtraCharges] = useState<{ label: string; amount: number }[]>([])
   const [discountType, setDiscountType] = useState<'PERCENT' | 'FIXED'>('PERCENT')
   const [discountValue, setDiscountValue] = useState(0)
+  const [importingInvoice, setImportingInvoice] = useState(false)
+  const invoiceInputRef = useRef<HTMLInputElement | null>(null)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
 
@@ -757,6 +762,57 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
   // open: true so the new row's item search box (which is `autoFocus`) grabs focus right
   // away — lets you keep typing the next item without reaching for the mouse.
   function addLine() { setLines(l => [...l, { itemId: '', itemName: '', baseUnit: '', purchaseUnit: '', itemUnit: '', orderedQty: 1, unitCost: 0, search: '', open: true, inventoryRoomId: '', inventoryCategoryId: '' }]) }
+  // "Import from invoice" — Claude reads a supplier invoice/quotation (photo or PDF) and
+  // returns lines already mapped to catalog items where it's confident (see
+  // /api/purchasing/orders/extract-invoice). Rows land in the form for review; nothing saves.
+  async function importInvoice(file: File) {
+    setImportingInvoice(true)
+    try {
+      // Bigger/sharper than the usual photo upload — small print on invoices needs it.
+      const dataUrl = await readUploadFile(file, 2400, 0.9)
+      const res = await fetch('/api/purchasing/orders/extract-invoice', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ file: dataUrl }),
+      })
+      const data = await res.json() as ExtractedInvoice & { error?: string }
+      if (!res.ok) { toast.error(data.error ?? 'Could not import the invoice'); return }
+      if (data.lines.length === 0) { toast.error('No item lines found in this file'); return }
+
+      const imported: OrderLine[] = data.lines.map(l => {
+        const item = l.catalogItemId ? purchaseItems.find(p => p.id === l.catalogItemId) : undefined
+        const disc = l.discountType !== 'NONE' && l.discountValue > 0 ? { discountType: l.discountType, discountValue: l.discountValue } : {}
+        const base = { orderedQty: l.quantity, unitCost: l.unitPrice, search: '', open: false, inventoryRoomId: '', inventoryCategoryId: '', ...disc }
+        return item
+          ? { ...base, itemId: item.id, itemName: item.name, baseUnit: item.baseUnit, purchaseUnit: item.purchaseUnit, itemUnit: l.catalogUnit === 'BASE' ? item.baseUnit : item.purchaseUnit }
+          : { ...base, itemId: '', itemName: l.description.trim(), baseUnit: '', purchaseUnit: '', itemUnit: l.unit ?? '' }
+      })
+      // Keep rows already filled in; drop the blank starter row(s).
+      setLines(prev => [...prev.filter(p => p.itemName.trim()), ...imported])
+
+      if (!supplier.trim() && data.supplierName) {
+        const name = data.supplierName.trim().toLowerCase()
+        const known = suppliers.find(s => s.name.toLowerCase() === name)
+          ?? suppliers.find(s => s.name.toLowerCase().includes(name) || name.includes(s.name.toLowerCase()))
+        if (known) { setSupplier(known.name); setSupplierId(known.id) }
+        else { setSupplier(data.supplierName.trim()); setSupplierId('') }
+      }
+      const charges = data.extraCharges.filter(c => c.amount > 0 && c.label.trim())
+      if (charges.length) setExtraCharges(c => [...c, ...charges])
+      if (data.invoiceDiscountAmount && data.invoiceDiscountAmount > 0 && !discountValue) {
+        setDiscountType('FIXED'); setDiscountValue(data.invoiceDiscountAmount)
+      }
+      if (data.invoiceNumber && !notes.includes(data.invoiceNumber)) {
+        setNotes(n => [n.trim(), `Invoice/Quotation: ${data.invoiceNumber}`].filter(Boolean).join('\n'))
+      }
+
+      const matched = imported.filter(l => l.itemId).length
+      toast.success(`${imported.length} line${imported.length > 1 ? 's' : ''} imported — ${matched} matched to catalog${imported.length - matched ? `, ${imported.length - matched} as custom item` : ''}. Please review qty & prices.`)
+    } catch {
+      toast.error('Could not import the invoice')
+    } finally {
+      setImportingInvoice(false)
+      if (invoiceInputRef.current) invoiceInputRef.current.value = ''
+    }
+  }
   function removeLine(i: number) { setLines(l => l.filter((_, idx) => idx !== i)) }
   function addCharge() { setExtraCharges(c => [...c, { label: '', amount: 0 }]) }
   function removeCharge(i: number) { setExtraCharges(c => c.filter((_, idx) => idx !== i)) }
@@ -1245,10 +1301,20 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
           <div className="flex items-center justify-between px-5 py-4 border-b rounded-t-xl">
             <h3 className="text-sm font-semibold">Items</h3>
             {!locked && (
-              <button onClick={addLine}
-                className="flex items-center gap-1.5 text-xs font-semibold text-amber-700 hover:text-amber-900 border border-amber-200 bg-amber-50 hover:bg-amber-100 px-3 py-1.5 rounded-lg transition-colors">
-                <Plus className="h-3.5 w-3.5" /> Add Row
-              </button>
+              <div className="flex items-center gap-2">
+                <input ref={invoiceInputRef} type="file" accept="image/*,application/pdf" className="hidden"
+                  onChange={e => { const f = e.target.files?.[0]; if (f) importInvoice(f) }} />
+                <button onClick={() => invoiceInputRef.current?.click()} disabled={importingInvoice}
+                  title="Upload a supplier invoice or quotation (photo/PDF) — items & prices are filled in automatically"
+                  className="flex items-center gap-1.5 text-xs font-semibold text-violet-700 hover:text-violet-900 border border-violet-200 bg-violet-50 hover:bg-violet-100 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-60">
+                  {importingInvoice ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+                  {importingInvoice ? 'Reading invoice…' : 'Import from Invoice'}
+                </button>
+                <button onClick={addLine}
+                  className="flex items-center gap-1.5 text-xs font-semibold text-amber-700 hover:text-amber-900 border border-amber-200 bg-amber-50 hover:bg-amber-100 px-3 py-1.5 rounded-lg transition-colors">
+                  <Plus className="h-3.5 w-3.5" /> Add Row
+                </button>
+              </div>
             )}
           </div>
 
@@ -1258,18 +1324,21 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
             </div>
           )}
 
-          <div className="overflow-x-auto"><table className="w-full text-sm">
+          {/* table-fixed + a min width: the number inputs keep real widths instead of being
+              squeezed to a sliver by a long item name (e.g. inside the Edit PO modal) — the
+              table scrolls sideways on narrow screens rather than shrinking the fields. */}
+          <div className="overflow-x-auto"><table className={`w-full text-sm table-fixed ${isVesselDelivery ? 'min-w-[1240px]' : 'min-w-[940px]'}`}>
             <thead className="text-xs text-muted-foreground border-b bg-muted/30">
               <tr>
                 <th className="text-center w-10 px-3 py-2.5 font-medium">#</th>
                 <th className="text-left px-3 py-2.5 font-medium">Item</th>
-                <th className="text-left px-3 py-2.5 font-medium w-28">Qty</th>
+                <th className="text-left px-3 py-2.5 font-medium w-24">Qty</th>
                 <th className="text-left px-3 py-2.5 font-medium w-28">Unit</th>
                 <th className="text-left px-3 py-2.5 font-medium w-36">Unit Price</th>
-                <th className="text-left px-3 py-2.5 font-medium w-40">Discount</th>
+                <th className="text-left px-3 py-2.5 font-medium w-44">Discount</th>
                 {isVesselDelivery && <th className="text-left px-3 py-2.5 font-medium w-36">Room</th>}
                 {isVesselDelivery && <th className="text-left px-3 py-2.5 font-medium w-36">Category</th>}
-                <th className="text-right px-4 py-2.5 font-medium w-32">Subtotal</th>
+                <th className="text-right px-4 py-2.5 font-medium w-36">Subtotal</th>
                 <th className="w-10" />
               </tr>
             </thead>
