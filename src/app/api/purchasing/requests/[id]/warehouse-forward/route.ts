@@ -6,7 +6,7 @@ import { getDb } from '@/lib/get-db'
 import { roleMatches } from '@/lib/role-utils'
 import { emitTenantEvent } from '@/lib/realtime-bus'
 import { notifyPurchasingForRequest, notifyRequester } from '@/lib/notify-purchasing'
-import { computeStockChecks } from '@/lib/purchasing/stockCheck'
+import { computeStockChecks, type StockCheckRequest } from '@/lib/purchasing/stockCheck'
 import { generatePrNumber } from '@/lib/purchasing/docNumber'
 
 // Warehouse's "done checking" action: closes out the PR straight to CONVERTED if every
@@ -105,7 +105,7 @@ export async function PATCH(_req: NextRequest, { params }: { params: Promise<{ i
 // purchase units when the item buys in a bigger unit (e.g. 1100 ml short → 2 bottles).
 async function createRestockRequests(
   db: Awaited<ReturnType<typeof getDb>>,
-  request: Parameters<typeof computeStockChecks>[1] & { prNumber: string; division: string | null },
+  request: Omit<StockCheckRequest, 'items'> & { prNumber: string; division: string | null; items: (StockCheckRequest['items'][number] & { itemName: string })[] },
   userId: string,
 ): Promise<string[]> {
   const { checks } = await computeStockChecks(db, request)
