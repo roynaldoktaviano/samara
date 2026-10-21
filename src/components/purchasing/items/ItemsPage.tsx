@@ -24,6 +24,7 @@ interface PurchaseItem {
   sellingPrice: number
   valuationMethod: string
   minStock: number
+  minStockUnit?: string
   reorderQty: number
   imageKey: string | null
   isActive: boolean
@@ -272,6 +273,7 @@ export default function ItemsPage() {
       sellingPrice: item.sellingPrice,
       valuationMethod: item.valuationMethod,
       minStock: item.minStock,
+      minStockUnit: item.minStockUnit === 'PURCHASE' ? 'PURCHASE' : 'BASE',
       reorderQty: item.reorderQty,
       imageKey: item.imageKey,
       isSoldInPos: item.isSoldInPos,

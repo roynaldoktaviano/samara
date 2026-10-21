@@ -8,6 +8,7 @@ import { itemRequiresQuotationApproval } from '@/lib/purchasing/quotationApprova
 import { emitTenantEvent } from '@/lib/realtime-bus'
 import { notifyByRole, notifyByRoleForRequest } from '@/lib/notify-purchasing'
 import { createOrAppendTransfer, toBaseQty } from '@/lib/purchasing/transferActions'
+import { computeStockChecks } from '@/lib/purchasing/stockCheck'
 import { resolveTripLink, tripBookingSelect, openTripSelect, tripOf } from '@/lib/purchasing/tripLink'
 import { nextSeq } from '@/lib/purchasing/docNumber'
 import { resolveAssignedYachtId } from '@/lib/purchasing/yachtScope'
@@ -69,7 +70,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       transfers: {
         select: {
           id: true, transferNumber: true, status: true, createdAt: true, dispatchedAt: true, receivedAt: true, receivedByName: true,
-          fromLocation: { select: { name: true } }, toLocation: { select: { name: true } }, items: { select: { itemId: true } },
+          fromLocationId: true, fromLocation: { select: { name: true } }, toLocation: { select: { name: true } }, items: { select: { itemId: true } },
         },
         orderBy: { createdAt: 'asc' },
       },
@@ -100,11 +101,17 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   const itemIds = request.items.map(i => i.itemId).filter(Boolean) as string[]
-  const [requesterUser, lots, purchaseItems, warehouses] = await Promise.all([
+  const [requesterUser, lots, purchaseItems, warehouses, { checks: stockChecks, reservedMap }, restockLinks] = await Promise.all([
     db.user.findUnique({ where: { id: request.requestedById }, select: { id: true, name: true } }),
     itemIds.length ? db.stockLot.findMany({ where: { itemId: { in: itemIds }, quantity: { gt: 0 } }, select: { itemId: true, locationId: true, quantity: true } }) : ([] as { itemId: string | null; locationId: string; quantity: number }[]),
     itemIds.length ? db.purchaseItem.findMany({ where: { id: { in: itemIds } }, select: { id: true, minStock: true, baseUnit: true, purchaseUnit: true, conversionFactor: true } }) : ([] as { id: string; minStock: number; baseUnit: string; purchaseUnit: string; conversionFactor: number }[]),
     db.stockLocation.findMany({ where: { type: 'WAREHOUSE', isActive: true }, select: { id: true, name: true } }),
+    computeStockChecks(db, request),
+    // Restock PRs this one triggered, or the vessel PR this Restock PR was created for.
+    db.purchaseRequest.findMany({
+      where: { OR: [{ restockForRequestId: id }, ...(request.restockForRequestId ? [{ id: request.restockForRequestId }] : [])] },
+      select: { id: true, prNumber: true, status: true, restockForRequestId: true },
+    }),
   ])
   // Requests submitted via the internal Request Order page carry a real requestedByEmployee;
   // prefer that for display, falling back to the ERP user for requests created inside Purchasing.
@@ -137,7 +144,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     const warehouseStock = (canTransfer && item.itemId)
       ? [...warehouseIds]
           .filter(locationId => locationId !== request.deliveryLocationId)
-          .map(locationId => ({ locationId, qty: stockByLocationMap.get(`${item.itemId}:${locationId}`) ?? 0 }))
+          // Free stock only — qty already reserved by other PENDING transfers isn't offerable.
+          .map(locationId => ({ locationId, qty: (stockByLocationMap.get(`${item.itemId}:${locationId}`) ?? 0) - (reservedMap.get(`${item.itemId}:${locationId}`) ?? 0) }))
           .filter(l => l.qty >= requiredBaseQty)
           .map(l => ({ locationId: l.locationId, locationName: warehouseNameMap.get(l.locationId) ?? '—', qty: l.qty }))
       : []
@@ -149,6 +157,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 
     return {
       ...item,
+      stockCheck: stockChecks.get(item.id) ?? null,
       transfer: tr ? { id: tr.id, transferNumber: tr.transferNumber, status: tr.status, fromLocationName: tr.fromLocation.name } : null,
       currentStock: item.itemId ? (stockMap.get(item.itemId) ?? 0) : null,
       minStock: master?.minStock ?? 0,
@@ -168,7 +177,10 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     fromLocationName: t.fromLocation.name, toLocationName: t.toLocation.name,
   }))
 
-  return NextResponse.json({ ...request, transfers: undefined, stockTransfers, tripBooking: undefined, openTrip: undefined, trip: tripOf(request), items, requestedBy: requester, createdBy: requesterUser, canTransfer })
+  const restockRequests = restockLinks.filter(r => r.restockForRequestId === id).map(({ restockForRequestId: _, ...r }) => r)
+  const restockFor = restockLinks.find(r => r.id === request.restockForRequestId) ?? null
+
+  return NextResponse.json({ ...request, restockRequests, restockFor: restockFor ? { id: restockFor.id, prNumber: restockFor.prNumber } : null, transfers: undefined, stockTransfers, tripBooking: undefined, openTrip: undefined, trip: tripOf(request), items, requestedBy: requester, createdBy: requesterUser, canTransfer })
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {

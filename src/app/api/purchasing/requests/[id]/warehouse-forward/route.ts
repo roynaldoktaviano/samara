@@ -6,6 +6,8 @@ import { getDb } from '@/lib/get-db'
 import { roleMatches } from '@/lib/role-utils'
 import { emitTenantEvent } from '@/lib/realtime-bus'
 import { notifyPurchasingForRequest, notifyRequester } from '@/lib/notify-purchasing'
+import { computeStockChecks } from '@/lib/purchasing/stockCheck'
+import { generatePrNumber } from '@/lib/purchasing/docNumber'
 
 // Warehouse's "done checking" action: closes out the PR straight to CONVERTED if every
 // item was resolved from stock, or forwards the remaining items on to Purchasing
@@ -20,7 +22,13 @@ export async function PATCH(_req: NextRequest, { params }: { params: Promise<{ i
   if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
 
-  const request = await db.purchaseRequest.findUnique({ where: { id }, select: { status: true, prNumber: true, division: true, requestedById: true } })
+  const request = await db.purchaseRequest.findUnique({
+    where: { id },
+    select: {
+      id: true, status: true, prNumber: true, division: true, requestedById: true, deliveryLocationId: true,
+      transfers: { select: { id: true, status: true, fromLocationId: true, items: { select: { itemId: true } } } },
+    },
+  })
   if (!request) return NextResponse.json({ error: 'Request not found' }, { status: 404 })
   if (request.status !== 'DRAFT') {
     return NextResponse.json({ error: 'Only a request pending Warehouse review can be forwarded' }, { status: 409 })
@@ -28,7 +36,7 @@ export async function PATCH(_req: NextRequest, { params }: { params: Promise<{ i
 
   const items = await db.purchaseRequestItem.findMany({
     where: { requestId: id },
-    select: { id: true, itemId: true, itemName: true, convertedAt: true, warehouseDecision: true, verifyRejectedAt: true },
+    select: { id: true, itemId: true, itemName: true, quantity: true, unit: true, convertedAt: true, convertedPoId: true, warehouseDecision: true, verifyRejectedAt: true },
   })
 
   // Every catalog item needs an explicit decision first — custom/non-catalog items (no
@@ -49,6 +57,9 @@ export async function PATCH(_req: NextRequest, { params }: { params: Promise<{ i
     return NextResponse.json({ error: 'Semua item ditolak — reject PR ini langsung, bukan diteruskan' }, { status: 409 })
   }
 
+  const restocks = await createRestockRequests(db, { ...request, items }, session.user.id)
+  const restockNote = restocks.length ? ` Restock gudang: ${restocks.join(', ')}.` : ''
+
   if (remaining.length === 0) {
     const updated = await db.purchaseRequest.update({
       where: { id },
@@ -65,7 +76,7 @@ export async function PATCH(_req: NextRequest, { params }: { params: Promise<{ i
       },
     })
     emitTenantEvent(session.user.tenantId, 'purchasing-requests')
-    return NextResponse.json({ ...updated, remainingItems: [] })
+    return NextResponse.json({ ...updated, remainingItems: [], restockRequests: restocks })
   }
 
   const updated = await db.purchaseRequest.update({
@@ -75,7 +86,7 @@ export async function PATCH(_req: NextRequest, { params }: { params: Promise<{ i
   await notifyPurchasingForRequest(
     db, request.division ?? null, 'PR_FORWARDED_FROM_WAREHOUSE',
     'Request Diteruskan dari Gudang',
-    `${request.prNumber} — ${remaining.length} item tidak tersedia di gudang, perlu dibelikan.`,
+    `${request.prNumber} — ${remaining.length} item tidak tersedia di gudang, perlu dibelikan.${restockNote}`,
     id,
   )
   await notifyRequester(db, id, {
@@ -85,5 +96,78 @@ export async function PATCH(_req: NextRequest, { params }: { params: Promise<{ i
     skipUserId: session.user.id,
   })
   emitTenantEvent(session.user.tenantId, 'purchasing-requests')
-  return NextResponse.json({ ...updated, remainingItems: remaining.map(i => i.itemName) })
+  return NextResponse.json({ ...updated, remainingItems: remaining.map(i => i.itemName), restockRequests: restocks })
+}
+
+// Lines whose source warehouse would end below Min. Stock (To Be Order > 0) get ordered
+// back up to it via a separate "Restock" PR per warehouse — delivered to that warehouse,
+// straight to Purchasing (ON_PROCESS, no stock check of its own). Qty is rounded UP to whole
+// purchase units when the item buys in a bigger unit (e.g. 1100 ml short → 2 bottles).
+async function createRestockRequests(
+  db: Awaited<ReturnType<typeof getDb>>,
+  request: Parameters<typeof computeStockChecks>[1] & { prNumber: string; division: string | null },
+  userId: string,
+): Promise<string[]> {
+  const { checks } = await computeStockChecks(db, request)
+  const lines = request.items
+    .map(item => ({ item, check: checks.get(item.id) }))
+    .filter((l): l is { item: typeof l.item; check: NonNullable<typeof l.check> } => !!l.check && l.check.restockQty > 0)
+  if (!lines.length) return []
+
+  const masters = await db.purchaseItem.findMany({
+    where: { id: { in: lines.map(l => l.item.itemId!) } },
+    select: { id: true, name: true, baseUnit: true, purchaseUnit: true, conversionFactor: true },
+  })
+  const masterMap = new Map(masters.map(m => [m.id, m]))
+  const byWarehouse = new Map<string, typeof lines>()
+  for (const l of lines) byWarehouse.set(l.check.locationId, [...(byWarehouse.get(l.check.locationId) ?? []), l])
+
+  const created: string[] = []
+  for (const [locationId, whLines] of byWarehouse) {
+    const prNumber = await generatePrNumber(db)
+    const now = new Date()
+    const restock = await db.purchaseRequest.create({
+      data: {
+        id: crypto.randomUUID(),
+        prNumber,
+        requestedById: userId,
+        deliveryLocationId: locationId,
+        restockForRequestId: request.id,
+        division: request.division as never,
+        purpose: 'STOCK_INVENTORY',
+        notes: `Restock to Min. Stock — triggered by ${request.prNumber}`,
+        status: 'ON_PROCESS',
+        verifiedById: userId,
+        verifiedAt: now,
+        updatedAt: now,
+        items: {
+          create: whLines.map(({ item, check }) => {
+            const m = masterMap.get(item.itemId!)
+            const conv = m?.conversionFactor || 1
+            const inPurchaseUnit = !!m && m.purchaseUnit !== m.baseUnit && conv > 1
+            return {
+              id: crypto.randomUUID(),
+              itemId: item.itemId,
+              itemName: m?.name ?? item.itemName,
+              quantity: inPurchaseUnit ? Math.ceil(check.restockQty / conv - 1e-9) : Math.ceil(check.restockQty * 100 - 1e-9) / 100,
+              unit: inPurchaseUnit ? m!.purchaseUnit : (m?.baseUnit ?? item.unit),
+              warehouseDecision: 'PURCHASE',
+              warehouseCheckedById: userId,
+              warehouseCheckedAt: now,
+              notes: `Ending ${check.ending} · Min ${check.minStock} · On order ${check.onOrder} (${m?.baseUnit ?? ''})`,
+            }
+          }),
+        },
+      },
+      select: { id: true, prNumber: true },
+    })
+    await notifyPurchasingForRequest(
+      db, request.division, 'PR_RESTOCK_CREATED',
+      'Restock Gudang',
+      `${restock.prNumber} — ${whLines.length} item perlu dibeli supaya stok gudang kembali ke Min. Stock (dari ${request.prNumber}).`,
+      restock.id,
+    )
+    created.push(restock.prNumber)
+  }
+  return created
 }

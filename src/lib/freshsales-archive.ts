@@ -329,23 +329,21 @@ export async function syncDealsIndex(db: PrismaClient, fs: FreshsalesClient) {
   })
 }
 
+// Freshsales only returns a relation id (owner, contacts, lost reason, currency…) when the matching
+// `include` was requested — GET /api/deals/{id} without it silently omits the key. A missing key
+// therefore means "not fetched", never "empty": those columns are left untouched instead of being
+// overwritten with null (which once wiped owner/contacts/currency on every deal).
+const DEAL_DETAIL_INCLUDE = 'notes,owner,contacts,deal_reason,currency,deal_type,lead_source,campaign,deal_payment_status,sales_account'
+
 function dealDetailRow(d: Json) {
-  return {
+  const has = (k: string) => Object.prototype.hasOwnProperty.call(d, k)
+  const row: Record<string, unknown> = {
     name: str(d.name) ?? `Deal ${d.id}`,
     amount: num(d.amount),
     baseCurrencyAmount: num(d.base_currency_amount),
-    currencyFsId: str(d.currency_id),
     pipelineFsId: str(d.deal_pipeline_id),
     stageFsId: str(d.deal_stage_id),
     stageUpdatedAt: date(d.stage_updated_time),
-    lostReasonFsId: str(d.deal_reason_id),
-    dealTypeFsId: str(d.deal_type_id),
-    leadSourceFsId: str(d.lead_source_id),
-    campaignFsId: str(d.campaign_id),
-    paymentStatusFsId: str(d.deal_payment_status_id),
-    ownerFsId: str(d.owner_id),
-    contactFsIds: (d.contact_ids ?? []).map(String),
-    salesAccountFsId: str(d.sales_account_id),
     probability: int(d.probability),
     forecastCategory: str(d.forecast_category),
     expectedClose: date(d.expected_close),
@@ -356,20 +354,39 @@ function dealDetailRow(d: Json) {
     fsUpdatedAt: date(d.updated_at),
     raw: json(slim(d)),
   }
+  const relations: [string, string, (v: unknown) => unknown][] = [
+    ['currency_id', 'currencyFsId', str],
+    ['deal_reason_id', 'lostReasonFsId', str],
+    ['deal_type_id', 'dealTypeFsId', str],
+    ['lead_source_id', 'leadSourceFsId', str],
+    ['campaign_id', 'campaignFsId', str],
+    ['deal_payment_status_id', 'paymentStatusFsId', str],
+    ['owner_id', 'ownerFsId', str],
+    ['contact_ids', 'contactFsIds', v => ((v as unknown[] | null) ?? []).map(String)],
+    ['sales_account_id', 'salesAccountFsId', str],
+  ]
+  for (const [key, column, conv] of relations) if (has(key)) row[column] = conv(d[key])
+  return row
 }
+
+// Details pulled before this moment came from the include-less GET (no owner/contacts/lost reason)
+// and are fetched again. A separate cutoff — rather than resetting detailSyncedAt — so a server
+// still running the old code doesn't see them as pending and re-pull them the broken way.
+export const DEAL_DETAIL_COMPLETE_SINCE = new Date('2026-10-21T03:30:00Z')
+const dealDetailPending = { OR: [{ detailSyncedAt: null }, { detailSyncedAt: { lt: DEAL_DETAIL_COMPLETE_SINCE } }] }
 
 /** Full GET per deal (custom fields, lost reason, closed date, notes). Resumable. */
 export async function syncDealDetails(db: PrismaClient, fs: FreshsalesClient, opts: { limit?: number; log?: (m: string) => void } = {}) {
   const log = opts.log ?? console.log
   return track(db, 'dealDetails', async () => {
-    const total = await db.freshsalesDeal.count({ where: { detailSyncedAt: null } })
+    const total = await db.freshsalesDeal.count({ where: dealDetailPending })
     await state(db, 'dealDetails', { total })
     let n = 0
     for (;;) {
-      const batch = await retryDb(db, () => db.freshsalesDeal.findMany({ where: { detailSyncedAt: null }, select: { id: true }, orderBy: { fsCreatedAt: 'desc' }, take: 50 }))
+      const batch = await retryDb(db, () => db.freshsalesDeal.findMany({ where: dealDetailPending, select: { id: true }, orderBy: { fsCreatedAt: 'desc' }, take: 50 }))
       if (!batch.length) break
       for (const { id } of batch) {
-        const data = await fs.get(`/api/deals/${id}?include=notes`)
+        const data = await fs.get(`/api/deals/${id}?include=${DEAL_DETAIL_INCLUDE}`)
         if (!data?.deal) {
           await retryDb(db, () => db.freshsalesDeal.update({ where: { id }, data: { isDeleted: true, detailSyncedAt: new Date() } }))
         } else {
@@ -642,7 +659,7 @@ export async function archiveCrawlComplete(db: PrismaClient) {
   const [conv, tl, deals] = await Promise.all([
     db.freshsalesContact.count({ where: { isDeleted: false, conversationsSyncedAt: null } }),
     db.freshsalesContact.count({ where: { isDeleted: false, timelineSyncedAt: null } }),
-    db.freshsalesDeal.count({ where: { detailSyncedAt: null } }),
+    db.freshsalesDeal.count({ where: dealDetailPending }),
   ])
   return conv + tl + deals === 0
 }

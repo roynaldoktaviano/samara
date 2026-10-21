@@ -15,7 +15,7 @@ import {
   GripVertical, Trash2, Copy, Eye, Pencil, Search, Monitor, Smartphone, Mail, Undo2, Redo2, LayoutGrid, Sparkles, Lock, X,
 } from 'lucide-react'
 import {
-  createBlock, cloneBlockWithNewIds, renderBlocksToHtml, DEFAULT_EMAIL_SETTINGS, paddingStyle, effectivePadding, outerSidePadding, contentCornerRadius,
+  createBlock, cloneBlockWithNewIds, renderBlocksToHtml, DEFAULT_EMAIL_SETTINGS, paddingStyle, effectivePadding, effectiveMargin, marginStyle, columnWidths, outerSidePadding, contentCornerRadius,
   type EmailBlock, type EmailSettings, type ColumnsBlock, type SectionBlock, type FooterBlock, BLOCK_LABELS, backgroundImageStyle } from '@/lib/email-builder'
 import BlockPreview from './BlockPreview'
 import BlockInspector from './BlockInspector'
@@ -478,7 +478,10 @@ function SortableCanvasBlock({
           <GripVertical className="h-3.5 w-3.5" />
         </button>
       </div>
-      {children ?? <BlockPreview block={block} mobile={mobile} />}
+      {/* Image/logo/button apply their margin to the element itself, inside BlockPreview. */}
+      {block.type === 'image' || block.type === 'logo' || block.type === 'button' || block.type === 'footer'
+        ? (children ?? <BlockPreview block={block} mobile={mobile} />)
+        : <div style={marginStyle(effectiveMargin(block, mobile))}>{children ?? <BlockPreview block={block} mobile={mobile} />}</div>}
       {selected && (
         <div className="absolute top-1.5 right-1.5 flex gap-0.5 bg-white border rounded-md shadow-sm">
           <button onClick={e => { e.stopPropagation(); onDuplicate() }} className="p-1.5 hover:bg-gray-50 rounded-l-md" title="Duplicate">
@@ -528,7 +531,7 @@ function BlockList({
             mobile={mobile}
           >
             {block.type === 'columns' ? (
-              <div style={{ ...paddingStyle(effectivePadding(block, mobile)), gap: mobile && block.stackOnMobile ? (block.mobile?.gap ?? block.gap ?? 24) : (block.gap ?? 24), gridTemplateColumns: mobile && block.stackOnMobile ? '1fr' : `repeat(${block.columns.length}, minmax(0, 1fr))`, alignItems: COLUMN_ALIGN_ITEMS[block.verticalAlign ?? 'top'] }} className="grid">
+              <div style={{ ...paddingStyle(effectivePadding(block, mobile)), gap: mobile && block.stackOnMobile ? (block.mobile?.gap ?? block.gap ?? 24) : (block.gap ?? 24), gridTemplateColumns: mobile && block.stackOnMobile ? '1fr' : columnWidths(block).map(w => `minmax(0, ${w}fr)`).join(' '), alignItems: COLUMN_ALIGN_ITEMS[block.verticalAlign ?? 'top'] }} className="grid">
                 {block.columns.map((colList, i) => (
                   <div key={i} className="min-w-0" style={{ order: mobile && block.stackOnMobile && block.reverseOnMobile ? block.columns.length - i : i }}>
                     <BlockList containerId={childContainerId(containerId, `col:${block.id}:${i}`)} blocks={colList} selectedId={selectedId} onSelect={onSelect} onDelete={onDelete} onDuplicate={onDuplicate} emptyLabel="Drop here" mobile={mobile} />

@@ -48,12 +48,15 @@ interface InventoryItemOption {
   id: string; itemNumber: string; name: string; quantity: number; unitPrice: number; photoKeys?: string[]
   category: { id: string; name: string }; room: { id: string; name: string }
 }
-interface RequestLine { id?: string; key?: string; itemId: string; itemName: string; baseUnit: string; purchaseUnit: string; itemUnit: string; unit?: string; quantity: number; estimatedCost: number; supplierId: string; supplierName: string; supplierSearch: string; supplierOpen: boolean; notes: string; search: string; open: boolean; currentStock?: number | null; minStock?: number | null; conversionFactor?: number | null; imageKeys?: string[]; isCustom?: boolean; isStockItem?: boolean; sourceInventoryItemId?: string | null; sourceInventoryItem?: { id: string; itemNumber: string; name: string; room: { name: string } | null; category: { name: string } | null } | null; warehouseStock?: { locationId: string; locationName: string; qty: number }[]; transferEligible?: boolean; quotations?: Quotation[]; exemptionReason?: string | null; selectionJustification?: string | null; requestedByEmployeeId?: string; quotationApproverId?: string | null; quotationApprover?: { id: string; name: string | null } | null; quotationSubmittedAt?: string | null; quotationApprovedById?: string | null; quotationApprovedBy?: { id: string; name: string | null } | null; quotationApprovedAt?: string | null; quotationRejectedBy?: { id: string; name: string | null } | null; quotationRejectedAt?: string | null; quotationRejectionReason?: string | null; convertedAt?: string | null; convertedPoId?: string | null; verifyRejectedById?: string | null; verifyRejectedBy?: { id: string; name: string | null } | null; verifyRejectedAt?: string | null; verifyRejectionReason?: string | null; warehouseDecision?: 'TRANSFER' | 'PURCHASE' | null; warehouseCheckedAt?: string | null; warehouseCheckNote?: string | null; requestType?: 'NEW' | 'REPLACEMENT'; damageDetail?: string | null; transfer?: { id: string; transferNumber: string; status: string; fromLocationName: string } | null }
+interface RequestLine { id?: string; key?: string; itemId: string; itemName: string; baseUnit: string; purchaseUnit: string; itemUnit: string; unit?: string; quantity: number; estimatedCost: number; supplierId: string; supplierName: string; supplierSearch: string; supplierOpen: boolean; notes: string; search: string; open: boolean; currentStock?: number | null; minStock?: number | null; stockCheck?: { locationId: string; locationName: string; requested: number; availability: number; reserve: number; onOrder: number; ending: number; shortage: number; minStock: number; toBeOrder: number; restockQty: number } | null; conversionFactor?: number | null; imageKeys?: string[]; isCustom?: boolean; isStockItem?: boolean; sourceInventoryItemId?: string | null; sourceInventoryItem?: { id: string; itemNumber: string; name: string; room: { name: string } | null; category: { name: string } | null } | null; warehouseStock?: { locationId: string; locationName: string; qty: number }[]; transferEligible?: boolean; quotations?: Quotation[]; exemptionReason?: string | null; selectionJustification?: string | null; requestedByEmployeeId?: string; quotationApproverId?: string | null; quotationApprover?: { id: string; name: string | null } | null; quotationSubmittedAt?: string | null; quotationApprovedById?: string | null; quotationApprovedBy?: { id: string; name: string | null } | null; quotationApprovedAt?: string | null; quotationRejectedBy?: { id: string; name: string | null } | null; quotationRejectedAt?: string | null; quotationRejectionReason?: string | null; convertedAt?: string | null; convertedPoId?: string | null; verifyRejectedById?: string | null; verifyRejectedBy?: { id: string; name: string | null } | null; verifyRejectedAt?: string | null; verifyRejectionReason?: string | null; warehouseDecision?: 'TRANSFER' | 'PURCHASE' | null; warehouseCheckedAt?: string | null; warehouseCheckNote?: string | null; requestType?: 'NEW' | 'REPLACEMENT'; damageDetail?: string | null; transfer?: { id: string; transferNumber: string; status: string; fromLocationName: string } | null }
 interface PurchaseRequest {
   id: string
   prNumber: string
   status: string
   deliveryLocationId: string | null
+  // Auto "Restock" PRs this PR triggered on Warehouse forward / the vessel PR a Restock PR is for.
+  restockRequests?: { id: string; prNumber: string; status: string }[]
+  restockFor?: { id: string; prNumber: string } | null
   deliveryLocation: { id: string; name: string; type: string; managedBy: string } | null
   itemCount: number
   itemNames: string[]
@@ -200,7 +203,7 @@ function TransferBadge({ transfer, onOpen }: { transfer?: RequestLine['transfer'
         {transfer?.transferNumber ?? 'Transfer from stock'}
         {clickable && <ChevronRight className="h-3 w-3" />}
       </button>
-      <p className="text-[10px] text-muted-foreground">
+      <p className="text-[10px] text-muted-foreground whitespace-nowrap">
         From warehouse stock{transfer ? ` · ${TRANSFER_STATUS_LABEL[transfer.status] ?? transfer.status}` : ''}
       </p>
     </div>
@@ -544,6 +547,14 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
     setPoFullDetails({})
     setPrFollowUps([])
     await fetchDetail(req.id)
+  }
+
+  // Jump to a linked Restock / source PR — only an id in hand, so same full-fetch-first
+  // approach as the deep link below.
+  async function openLinkedRequest(id: string) {
+    setApproveSummary(null); setFulfillment({}); setRoomAssignment({}); setPoFullDetails({}); setPrFollowUps([])
+    const data = await fetchDetail(id)
+    if (data) { setSelected(data); setView('detail') }
   }
 
   // Deep-link from a notification click — unlike openDetail (which can show a stub row
@@ -1120,6 +1131,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
     if (!res.ok) { toast.error(data.error ?? 'Gagal meneruskan request'); return }
     if (data.status) setSelected(s => s ? { ...s, status: data.status } : s)
     toast.success(data.remainingItems?.length ? 'Diteruskan ke Purchasing' : 'Request selesai — semua dari stok gudang')
+    if (data.restockRequests?.length) toast.success(`Restock gudang dibuat: ${data.restockRequests.join(', ')}`)
     await fetchDetail(detail.id)
     load()
   }
@@ -1798,12 +1810,34 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
               const rank = firstIdxByKey.get(keyA)! - firstIdxByKey.get(keyB)!
               return rank !== 0 ? rank : a.idx - b.idx
             }).map(x => x.item)
+            // Warehouse reviewing an incoming PR gets the full stock breakdown (against the
+            // source warehouse, base units) in place of the single Current Stock figure.
+            const showStockCheck = detail.status === 'DRAFT' && canWarehouseCheck
+            const fmtQty = (n: number) => Math.round(n * 100) / 100
+            const stockLocations = [...new Set(sortedItems.map(it => it.stockCheck?.locationName).filter(Boolean) as string[])]
             return (
               <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-6 items-start">
                 <div className="space-y-6 min-w-0">
                 <div className="rounded-lg border overflow-hidden min-w-0">
-                  <div className="px-5 py-3 bg-muted/50 border-b">
+                  <div className="px-5 py-3 bg-muted/50 border-b flex items-center justify-between gap-3">
                     <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Item List</p>
+                    {(detail.restockRequests?.length || detail.restockFor) ? (
+                      <div className="flex items-center gap-1.5 flex-wrap text-xs">
+                        <span className="text-muted-foreground">{detail.restockFor ? 'Restock for' : 'Restock order'}</span>
+                        {(detail.restockFor ? [detail.restockFor] : detail.restockRequests!).map(r => (
+                          <button key={r.id} type="button"
+                            onClick={() => openLinkedRequest(r.id)}
+                            className="font-medium text-violet-700 bg-violet-50 border border-violet-200 rounded-md px-2 py-0.5 hover:bg-violet-100">
+                            {r.prNumber}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                    {showStockCheck && stockLocations.length > 0 && (
+                      <p className="text-xs text-muted-foreground">
+                        Stock at <span className="font-medium text-foreground">{stockLocations.join(', ')}</span> · base units
+                      </p>
+                    )}
                   </div>
                   <div className="overflow-x-auto"><table className="w-full text-sm">
               <thead className="border-b text-xs text-muted-foreground bg-muted/20">
@@ -1811,10 +1845,22 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                   <th className="text-left px-5 py-2.5 font-medium">Item</th>
                   <th className="text-left px-5 py-2.5 font-medium">Supplier</th>
                   {detail.orders && detail.orders.length > 0 && <th className="text-left px-5 py-2.5 font-medium">PO</th>}
-                  <th className="text-right px-5 py-2.5 font-medium">Requested</th>
-                  <th className="text-right px-5 py-2.5 font-medium">Current Stock</th>
-                  {['DRAFT', 'ON_PROCESS'].includes(detail.status) && <th className="text-left px-5 py-2.5 font-medium">Decision</th>}
-                  {detail.status === 'DRAFT' && canWarehouseCheck && <th className="text-left px-5 py-2.5 font-medium">Cek Gudang</th>}
+                  <th className="text-right px-5 py-2.5 font-medium whitespace-nowrap">Requested</th>
+                  {showStockCheck ? (
+                    <>
+                      <th className="text-right pl-4 pr-3 py-2.5 font-medium whitespace-nowrap bg-slate-50 border-l">Availability</th>
+                      <th className="text-right px-3 py-2.5 font-medium whitespace-nowrap bg-slate-50">Reserve</th>
+                      <th className="text-right px-3 py-2.5 font-medium whitespace-nowrap bg-slate-50" title="Already ordered to this warehouse (open PR/PO), not yet received">On Order</th>
+                      <th className="text-right px-3 py-2.5 font-medium whitespace-nowrap bg-slate-50">Ending</th>
+                      <th className="text-right px-3 py-2.5 font-medium whitespace-nowrap bg-slate-50">Shortage</th>
+                      <th className="text-right px-3 py-2.5 font-medium whitespace-nowrap bg-slate-50">Min. Stock</th>
+                      <th className="text-right pl-3 pr-4 py-2.5 font-medium whitespace-nowrap bg-blue-50/60 text-blue-800 border-r">To Be Order</th>
+                    </>
+                  ) : (
+                    <th className="text-right px-5 py-2.5 font-medium">Current Stock</th>
+                  )}
+                  {['DRAFT', 'ON_PROCESS'].includes(detail.status) && <th className="text-left px-5 py-2.5 font-medium whitespace-nowrap">Decision</th>}
+                  {detail.status === 'DRAFT' && canWarehouseCheck && <th className="text-left px-5 py-2.5 font-medium whitespace-nowrap">Cek Gudang</th>}
                   {detail.status === 'ON_PROCESS' && !isWarehouse && <th className="text-left px-5 py-2.5 font-medium">Fulfillment</th>}
                   {detail.status === 'ON_PROCESS' && !isWarehouse && detail.deliveryLocation?.type === 'VESSEL' && <th className="text-left px-5 py-2.5 font-medium">Room / Category</th>}
                   <th className="w-10" />
@@ -1842,7 +1888,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                       className={`hover:bg-muted/20 ${isCustom ? 'cursor-pointer' : ''} ${isRejected ? 'opacity-50' : ''} ${isNewPoGroup ? 'border-t-2 border-t-slate-200' : ''}`}
                       onClick={() => isCustom && openEditItem(item)}
                     >
-                      <td className="px-5 py-3">
+                      <td className="px-5 py-3 min-w-[180px]">
                         <div className="flex items-start gap-2.5">
                           {!!photos.length && (
                             <div className="flex -space-x-2 shrink-0">
@@ -1878,8 +1924,8 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                         ) : detail.status !== 'ON_PROCESS' || isWarehouse ? (
                           <>
                             {item.supplierName ?? <span className="text-muted-foreground/50 italic">—</span>}
-                            {item.transferEligible && !!item.warehouseStock?.length && detail.deliveryLocation?.type !== 'WAREHOUSE' && (
-                              <p className="text-[10px] text-blue-600 mt-0.5">
+                            {item.transferEligible && !item.convertedAt && !!item.warehouseStock?.length && detail.deliveryLocation?.type !== 'WAREHOUSE' && (
+                              <p className="text-[10px] text-blue-600 mt-0.5 whitespace-nowrap">
                                 Possible transfer from {item.warehouseStock[0].locationName}
                                 {item.warehouseStock.length > 1 ? ` +${item.warehouseStock.length - 1} more` : ''}
                               </p>
@@ -1929,7 +1975,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                           )}
                         </td>
                       )}
-                      <td className="px-5 py-3 text-right">
+                      <td className="px-5 py-3 text-right whitespace-nowrap tabular-nums">
                         <span>{item.quantity} {item.unit ?? item.purchaseUnit ?? item.itemUnit}</span>
                         {item.baseUnit && item.purchaseUnit && item.baseUnit !== item.purchaseUnit && item.conversionFactor && (
                           <span className="text-xs text-muted-foreground ml-1">
@@ -1937,12 +1983,36 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                           </span>
                         )}
                       </td>
-                      <td className="px-5 py-3 text-right">
-                        {stock === null
-                          ? <span className="text-muted-foreground">—</span>
-                          : <span className={stockColor}>{stock} <span className="text-xs font-normal text-muted-foreground">{item.baseUnit ?? ''}</span></span>
-                        }
-                      </td>
+                      {showStockCheck ? (() => {
+                        const sc = item.stockCheck
+                        const cell = 'px-3 py-3 text-right tabular-nums whitespace-nowrap'
+                        const bg = 'bg-slate-50/60'
+                        if (!sc) return Array.from({ length: 7 }, (_, k) => (
+                          <td key={k} className={`${cell} text-muted-foreground/50 ${k === 6 ? 'border-r pr-4 bg-blue-50/40' : bg} ${k === 0 ? 'border-l pl-4' : ''}`}>—</td>
+                        ))
+                        const muted = (n: number) => n === 0 ? 'text-muted-foreground/60' : ''
+                        return (
+                          <>
+                            <td className={`${cell} ${bg} border-l pl-4`}>
+                              {fmtQty(sc.availability)}
+                              {stockLocations.length > 1 && <p className="text-[10px] text-muted-foreground">{sc.locationName}</p>}
+                            </td>
+                            <td className={`${cell} ${bg} ${sc.reserve > 0 ? 'text-amber-600 font-medium' : muted(0)}`}>{fmtQty(sc.reserve)}</td>
+                            <td className={`${cell} ${bg} ${sc.onOrder > 0 ? 'text-violet-600 font-medium' : muted(0)}`}>{fmtQty(sc.onOrder)}</td>
+                            <td className={`${cell} ${bg} font-semibold ${sc.ending < 0 ? 'text-red-600' : sc.ending < sc.minStock ? 'text-orange-500' : 'text-green-700'}`}>{fmtQty(sc.ending)}</td>
+                            <td className={`${cell} ${bg} ${sc.shortage > 0 ? 'text-red-600 font-semibold' : muted(0)}`}>{fmtQty(sc.shortage)}</td>
+                            <td className={`${cell} ${bg} ${muted(sc.minStock) || 'text-muted-foreground'}`}>{fmtQty(sc.minStock)}</td>
+                            <td className={`${cell} border-r pr-4 bg-blue-50/40 ${sc.toBeOrder > 0 ? 'text-blue-700 font-semibold' : muted(0)}`}>{fmtQty(sc.toBeOrder)}</td>
+                          </>
+                        )
+                      })() : (
+                        <td className="px-5 py-3 text-right">
+                          {stock === null
+                            ? <span className="text-muted-foreground">—</span>
+                            : <span className={stockColor}>{stock} <span className="text-xs font-normal text-muted-foreground">{item.baseUnit ?? ''}</span></span>
+                          }
+                        </td>
+                      )}
                       {['DRAFT', 'ON_PROCESS'].includes(detail.status) && (
                         <td className="px-5 py-3" onClick={e => e.stopPropagation()}>
                           {isRejected ? (

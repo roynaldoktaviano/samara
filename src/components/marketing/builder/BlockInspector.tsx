@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { FONT_OPTIONS, customFontOptions, leadingFontFamily, uniformPadding, type EmailBlock, type BlockAlign, type Padding, type HideOn, type BackgroundImageFields, type ColumnsVerticalAlign } from '@/lib/email-builder'
+import { FONT_OPTIONS, customFontOptions, leadingFontFamily, uniformPadding, columnWidths, type EmailBlock, type BlockAlign, type Padding, type HideOn, type BackgroundImageFields, type ColumnsVerticalAlign, type ColumnsBlock } from '@/lib/email-builder'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -217,6 +217,103 @@ function ResponsivePaddingField({ block, onChange }: { block: EmailBlock & { pad
             ? <ResetMobileLink onClick={() => onChange({ ...block, mobilePadding: undefined } as EmailBlock)} />
             : <p className="text-[10px] text-muted-foreground">Same as desktop until you change it.</p>}
         </>
+      )}
+    </div>
+  )
+}
+
+type MarginBlock = EmailBlock & { margin?: Padding; mobile?: { margin?: Padding } }
+
+/** Margin (outside the block, negative allowed) with its own Desktop/Mobile switch — Mobile edits `mobile.margin`, applied below 600px wide. */
+function ResponsiveMarginField({ block, onChange }: { block: MarginBlock; onChange: (block: EmailBlock) => void }) {
+  const [device, setDevice] = useState<'desktop' | 'mobile'>('desktop')
+  const desktop = block.margin ?? uniformPadding(0)
+  return (
+    <div className="space-y-2">
+      <DeviceToggle device={device} onChange={setDevice} />
+      {device === 'desktop' ? (
+        <PaddingField key="desktop" label="Margin" min={-200} value={desktop} onChange={margin => onChange({ ...block, margin } as EmailBlock)} />
+      ) : (
+        <>
+          <PaddingField key="mobile" label="Mobile margin" min={-200} value={block.mobile?.margin ?? desktop} onChange={margin => onChange({ ...block, mobile: { ...block.mobile, margin } } as EmailBlock)} />
+          {block.mobile?.margin
+            ? <ResetMobileLink onClick={() => onChange({ ...block, mobile: { ...block.mobile, margin: undefined } } as EmailBlock)} />
+            : <p className="text-[10px] text-muted-foreground">Same as desktop until you change it.</p>}
+        </>
+      )}
+      <p className="text-[10px] text-muted-foreground">Space outside the block — negative values pull it into its neighbours. Outlook desktop ignores margins.</p>
+    </div>
+  )
+}
+
+const MIN_COL_WIDTH = 5
+
+const COLUMN_PRESETS: Record<number, number[][]> = {
+  2: [[50, 50], [33, 67], [67, 33], [25, 75], [75, 25], [40, 60], [60, 40]],
+  3: [[33, 34, 33], [25, 50, 25], [50, 25, 25], [25, 25, 50], [20, 60, 20], [40, 30, 30]],
+  4: [[25, 25, 25, 25], [40, 20, 20, 20], [20, 30, 30, 20]],
+}
+
+/** Even integer split (remainder goes to the middle column(s)) — what an unset `widths` shows as. */
+function evenWidths(n: number): number[] {
+  const base = Math.floor(100 / n)
+  const w = Array.from({ length: n }, () => base)
+  let rest = 100 - base * n
+  for (let i = Math.floor((n - 1) / 2); rest > 0; i = (i + 1) % n, rest--) w[i]++
+  return w
+}
+
+/** Per-column width (%). Changing one column takes the difference from its right-hand neighbour (left-hand for the last column), so the total always stays 100. */
+function ColumnWidthsField({ block, onChange }: { block: ColumnsBlock; onChange: (block: EmailBlock) => void }) {
+  const n = block.columns.length
+  if (n < 2) return null
+  const current = block.widths && block.widths.length === n ? columnWidths(block).map(Math.round) : evenWidths(n)
+  // Rounding can leave the stored total at 99/101 — fold the drift into the last column.
+  current[n - 1] += 100 - current.reduce((a, b) => a + b, 0)
+  const setWidth = (i: number, raw: number) => {
+    const j = i < n - 1 ? i + 1 : i - 1
+    const pair = current[i] + current[j]
+    const v = Math.min(pair - MIN_COL_WIDTH, Math.max(MIN_COL_WIDTH, Math.round(raw)))
+    const next = [...current]
+    next[i] = v
+    next[j] = pair - v
+    onChange({ ...block, widths: next })
+  }
+  const label = (i: number) => n === 2 ? (i === 0 ? 'Left' : 'Right') : n === 3 ? ['Left', 'Center', 'Right'][i] : `Col ${i + 1}`
+  const presets = COLUMN_PRESETS[n] ?? []
+  const same = (a: number[]) => a.every((x, k) => x === current[k])
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between">
+        <Label className="text-xs">Column widths (%)</Label>
+        {block.widths && (
+          <button type="button" onClick={() => onChange({ ...block, widths: undefined })} className="text-[11px] text-muted-foreground underline underline-offset-2 hover:text-foreground">
+            Equal
+          </button>
+        )}
+      </div>
+      <div className="flex h-5 overflow-hidden rounded border">
+        {current.map((w, i) => (
+          <div key={i} style={{ width: `${w}%` }} className={`flex items-center justify-center text-[10px] font-medium ${i % 2 ? 'bg-[#bdac7e]/25' : 'bg-[#bdac7e]/50'} ${i > 0 ? 'border-l border-white' : ''}`}>{w}%</div>
+        ))}
+      </div>
+      <div className={`grid gap-2 ${n === 2 ? 'grid-cols-2' : 'grid-cols-3'}`}>
+        {current.map((w, i) => (
+          <div key={i} className="space-y-1">
+            <Label className="text-[10px] text-muted-foreground">{label(i)}</Label>
+            <Stepper value={w} onChange={v => setWidth(i, v)} min={MIN_COL_WIDTH} max={100 - MIN_COL_WIDTH * (n - 1)} />
+          </div>
+        ))}
+      </div>
+      {presets.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {presets.map(p => (
+            <button key={p.join('/')} type="button" onClick={() => onChange({ ...block, widths: p })}
+              className={`h-6 rounded border px-1.5 text-[10px] transition-colors ${same(p) ? 'bg-[#bdac7e] text-white border-[#bdac7e]' : 'text-muted-foreground hover:bg-muted/50'}`}>
+              {p.join(' / ')}
+            </button>
+          ))}
+        </div>
       )}
     </div>
   )
@@ -479,7 +576,7 @@ export default function BlockInspector({ block, onChange }: { block: EmailBlock;
               <AlignField value={block.mobile?.align ?? block.align} onChange={align => onChange({ ...block, mobile: { ...block.mobile, align } })} />
               <NumberField label="Font size" value={block.mobile?.fontSize ?? block.fontSize} onChange={fontSize => onChange({ ...block, mobile: { ...block.mobile, fontSize } })} {...sizeRange} />
               <ColorField label="Text color" value={block.mobile?.color ?? block.color} onChange={color => onChange({ ...block, mobile: { ...block.mobile, color } })} />
-              {block.mobile && <ResetMobileLink onClick={() => onChange({ ...block, mobile: undefined })} />}
+              {block.mobile && Object.keys(block.mobile).some(k => k !== 'margin' && block.mobile?.[k as keyof typeof block.mobile] !== undefined) && <ResetMobileLink onClick={() => onChange({ ...block, mobile: block.mobile?.margin ? { margin: block.mobile.margin } : undefined })} />}
             </>
           )}
           <ColorField label="Link color" value={block.linkColor} onChange={linkColor => onChange({ ...block, linkColor })} />
@@ -487,6 +584,8 @@ export default function BlockInspector({ block, onChange }: { block: EmailBlock;
           <NumberField label="Letter spacing" value={block.letterSpacing} onChange={letterSpacing => onChange({ ...block, letterSpacing })} min={-5} max={20} />
           <SectionHeader label="Block options" />
           <ResponsivePaddingField block={block} onChange={onChange} />
+          <SectionHeader label="Margin" />
+          <ResponsiveMarginField block={block} onChange={onChange} />
           <HideOnField value={block.hideOn} onChange={hideOn => onChange({ ...block, hideOn })} />
         </div>
       )
@@ -540,15 +639,7 @@ export default function BlockInspector({ block, onChange }: { block: EmailBlock;
           <SectionHeader label="Block options" />
           <ResponsivePaddingField block={block} onChange={onChange} />
           <SectionHeader label="Margin" />
-          <DeviceToggle device={device} onChange={setDevice} />
-          {device === 'desktop' ? (
-            <PaddingField label="Margin" min={-100} value={block.margin ?? uniformPadding(0)} onChange={margin => onChange({ ...block, margin })} />
-          ) : (
-            <>
-              <PaddingField label="Margin (mobile)" min={-100} value={block.mobile?.margin ?? block.margin ?? uniformPadding(0)} onChange={margin => onChange({ ...block, mobile: { ...block.mobile, margin } })} />
-              {block.mobile?.margin && <ResetMobileLink onClick={() => onChange({ ...block, mobile: { ...block.mobile, margin: undefined } })} />}
-            </>
-          )}
+          <ResponsiveMarginField block={block} onChange={onChange} />
           <HideOnField value={block.hideOn} onChange={hideOn => onChange({ ...block, hideOn })} />
         </div>
       )
@@ -566,6 +657,8 @@ export default function BlockInspector({ block, onChange }: { block: EmailBlock;
           <AlignField value={block.align} onChange={align => onChange({ ...block, align })} />
           <SectionHeader label="Block options" />
           <ResponsivePaddingField block={block} onChange={onChange} />
+          <SectionHeader label="Margin" />
+          <ResponsiveMarginField block={block} onChange={onChange} />
           <HideOnField value={block.hideOn} onChange={hideOn => onChange({ ...block, hideOn })} />
         </div>
       )
@@ -580,6 +673,8 @@ export default function BlockInspector({ block, onChange }: { block: EmailBlock;
           </div>
           <SectionHeader label="Block options" />
           <ResponsivePaddingField block={block} onChange={onChange} />
+          <SectionHeader label="Margin" />
+          <ResponsiveMarginField block={block} onChange={onChange} />
           <HideOnField value={block.hideOn} onChange={hideOn => onChange({ ...block, hideOn })} />
         </div>
       )
@@ -624,22 +719,14 @@ export default function BlockInspector({ block, onChange }: { block: EmailBlock;
               <NumberField label="Font size" value={block.mobile?.fontSize ?? block.fontSize} onChange={fontSize => onChange({ ...block, mobile: { ...block.mobile, fontSize } })} min={10} max={30} />
               <ColorField label="Background" value={block.mobile?.bgColor ?? block.bgColor} onChange={bgColor => onChange({ ...block, mobile: { ...block.mobile, bgColor } })} />
               <ColorField label="Text color" value={block.mobile?.textColor ?? block.textColor} onChange={textColor => onChange({ ...block, mobile: { ...block.mobile, textColor } })} />
-              {block.mobile && <ResetMobileLink onClick={() => onChange({ ...block, mobile: undefined })} />}
+              {block.mobile && Object.keys(block.mobile).some(k => k !== 'margin' && block.mobile?.[k as keyof typeof block.mobile] !== undefined) && <ResetMobileLink onClick={() => onChange({ ...block, mobile: block.mobile?.margin ? { margin: block.mobile.margin } : undefined })} />}
             </>
           )}
           <NumberField label="Corner radius" value={block.borderRadius} onChange={borderRadius => onChange({ ...block, borderRadius })} min={0} max={40} />
           <SectionHeader label="Block options" />
           <ResponsivePaddingField block={block} onChange={onChange} />
           <SectionHeader label="Margin" />
-          <DeviceToggle device={device} onChange={setDevice} />
-          {device === 'desktop' ? (
-            <PaddingField label="Margin" min={-100} value={block.margin ?? uniformPadding(0)} onChange={margin => onChange({ ...block, margin })} />
-          ) : (
-            <>
-              <PaddingField label="Margin (mobile)" min={-100} value={block.mobile?.margin ?? block.margin ?? uniformPadding(0)} onChange={margin => onChange({ ...block, mobile: { ...block.mobile, margin } })} />
-              {block.mobile?.margin && <ResetMobileLink onClick={() => onChange({ ...block, mobile: { ...block.mobile, margin: undefined } })} />}
-            </>
-          )}
+          <ResponsiveMarginField block={block} onChange={onChange} />
           <HideOnField value={block.hideOn} onChange={hideOn => onChange({ ...block, hideOn })} />
         </div>
       )
@@ -653,6 +740,8 @@ export default function BlockInspector({ block, onChange }: { block: EmailBlock;
           <AlignField value={block.align} onChange={align => onChange({ ...block, align })} />
           <SectionHeader label="Block options" />
           <ResponsivePaddingField block={block} onChange={onChange} />
+          <SectionHeader label="Margin" />
+          <ResponsiveMarginField block={block} onChange={onChange} />
           <HideOnField value={block.hideOn} onChange={hideOn => onChange({ ...block, hideOn })} />
         </div>
       )
@@ -662,6 +751,7 @@ export default function BlockInspector({ block, onChange }: { block: EmailBlock;
         <div className="space-y-3">
           <NumberField label="Height" value={block.height} onChange={height => onChange({ ...block, height })} min={4} max={200} />
           <SectionHeader label="Block options" />
+          <ResponsiveMarginField block={block} onChange={onChange} />
           <HideOnField value={block.hideOn} onChange={hideOn => onChange({ ...block, hideOn })} />
         </div>
       )
@@ -679,19 +769,20 @@ export default function BlockInspector({ block, onChange }: { block: EmailBlock;
               kept[n - 1] = [...kept[n - 1], ...overflow]
               return kept
             })()
-        onChange({ ...block, columns })
+        onChange({ ...block, columns, widths: undefined })
       }
       return (
         <div className="space-y-3">
           <p className="text-xs text-muted-foreground">Drag blocks from the palette directly into each column on the canvas.</p>
           <NumberField label="Number of columns" value={count} onChange={setCount} min={1} max={6} />
+          <ColumnWidthsField block={block} onChange={onChange} />
           <DeviceToggle device={device} onChange={setDevice} />
           {device === 'desktop' ? (
             <NumberField label="Gap between columns" value={block.gap ?? 24} onChange={gap => onChange({ ...block, gap })} max={80} />
           ) : (
             <>
               <NumberField label="Gap between columns" value={block.mobile?.gap ?? block.gap ?? 24} onChange={gap => onChange({ ...block, mobile: { ...block.mobile, gap } })} max={80} />
-              {block.mobile?.gap !== undefined && <ResetMobileLink onClick={() => onChange({ ...block, mobile: undefined })} />}
+              {block.mobile?.gap !== undefined && <ResetMobileLink onClick={() => onChange({ ...block, mobile: { ...block.mobile, gap: undefined } })} />}
             </>
           )}
           <div className="flex items-center justify-between">
@@ -710,6 +801,8 @@ export default function BlockInspector({ block, onChange }: { block: EmailBlock;
           <VerticalAlignField value={block.verticalAlign ?? 'top'} onChange={verticalAlign => onChange({ ...block, verticalAlign })} />
           <SectionHeader label="Block options" />
           <ResponsivePaddingField block={block} onChange={onChange} />
+          <SectionHeader label="Margin" />
+          <ResponsiveMarginField block={block} onChange={onChange} />
           <HideOnField value={block.hideOn} onChange={hideOn => onChange({ ...block, hideOn })} />
         </div>
       )
@@ -723,6 +816,8 @@ export default function BlockInspector({ block, onChange }: { block: EmailBlock;
           <BackgroundImageField value={block} onChange={bg => onChange({ ...block, ...bg })} />
           <SectionHeader label="Block options" />
           <ResponsivePaddingField block={block} onChange={onChange} />
+          <SectionHeader label="Margin" />
+          <ResponsiveMarginField block={block} onChange={onChange} />
           <HideOnField value={block.hideOn} onChange={hideOn => onChange({ ...block, hideOn })} />
         </div>
       )
@@ -753,6 +848,8 @@ export default function BlockInspector({ block, onChange }: { block: EmailBlock;
           <AlignField value={block.align} onChange={align => onChange({ ...block, align })} />
           <SectionHeader label="Block options" />
           <ResponsivePaddingField block={block} onChange={onChange} />
+          <SectionHeader label="Margin" />
+          <ResponsiveMarginField block={block} onChange={onChange} />
           <HideOnField value={block.hideOn} onChange={hideOn => onChange({ ...block, hideOn })} />
         </div>
       )

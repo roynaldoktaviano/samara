@@ -2094,6 +2094,10 @@ model PurchaseItem {
   sellingPrice      Float    @default(0)
   valuationMethod   String   @default("FIFO")
   minStock          Float    @default(0)
+  // Unit Min Stock was entered in on the item form — display only. minStock itself is
+  // ALWAYS stored in baseUnit (every stock comparison is in base units); "PURCHASE" just
+  // means the form shows/accepts it as minStock / conversionFactor (e.g. 2 bottle vs 1500 ml).
+  minStockUnit      String   @default("BASE")
   reorderQty        Float    @default(0)
   imageKey          String?
   isActive          Boolean  @default(true)
@@ -2477,6 +2481,10 @@ model PurchaseRequest {
   approverEmployeeId    String?
   deliveryLocationId    String?
   notes                 String?
+  // Set on an auto-created "Restock" PR: the vessel PR whose Warehouse forward found the
+  // source warehouse would end below Min. Stock (To Be Order > 0). Delivered to that
+  // warehouse, goes straight to Purchasing. See src/lib/purchasing/stockCheck.ts.
+  restockForRequestId   String?
   status                PurchaseRequestStatus    @default(DRAFT)
   // What this request is for — general restocking, or a specific upcoming trip. Trip
   // requests link to the actual Booking so Purchasing knows which charter/departure the
@@ -2528,8 +2536,11 @@ model PurchaseRequest {
   transfers           StockTransfer[]
   notifications       Notification[]
   followUps           PurchaseRequestFollowUp[]
+  restockFor          PurchaseRequest?          @relation("PRRestock", fields: [restockForRequestId], references: [id], onDelete: SetNull)
+  restockRequests     PurchaseRequest[]         @relation("PRRestock")
 
   @@index([status])
+  @@index([restockForRequestId])
   @@index([createdAt])
   @@index([requestedById])
   @@index([requestedByEmployeeId])

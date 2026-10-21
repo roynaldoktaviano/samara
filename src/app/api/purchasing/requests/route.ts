@@ -11,7 +11,7 @@ import { emitTenantEvent } from '@/lib/realtime-bus'
 import { sendPushToUser } from '@/lib/push'
 import { resolveTripLink, tripBookingSelect, openTripSelect, tripOf } from '@/lib/purchasing/tripLink'
 import { resolveAssignedYachtId, yachtCrewWhere, yachtRequestWhere } from '@/lib/purchasing/yachtScope'
-import { nextSeq } from '@/lib/purchasing/docNumber'
+import { generatePrNumber } from '@/lib/purchasing/docNumber'
 
 const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE', 'CREW', 'BOAT_CAPTAIN', 'CRUISE_DIRECTOR']
 const WAREHOUSE_ROLES = ['WAREHOUSE', 'ADMIN', 'SUPER_ADMIN']
@@ -19,14 +19,6 @@ const WAREHOUSE_ROLES = ['WAREHOUSE', 'ADMIN', 'SUPER_ADMIN']
 // is deliberately NOT here: they now need to see every DRAFT PR pending their stock check,
 // not just ones they happened to submit themselves (see the Warehouse stock-check flow).
 const OWN_ONLY_ROLES = ['CREW', 'BOAT_CAPTAIN', 'CRUISE_DIRECTOR']
-
-async function generatePrNumber(db: Awaited<ReturnType<typeof getDb>>) {
-  const year = new Date().getFullYear()
-  const month = String(new Date().getMonth() + 1).padStart(2, '0')
-  const prefix = `PR-${year}${month}-`
-  const seq = nextSeq((await db.purchaseRequest.findMany({ where: { prNumber: { startsWith: prefix } }, select: { prNumber: true } })).map(r => r.prNumber))
-  return `${prefix}${String(seq).padStart(3, '0')}`
-}
 
 export async function GET() {
   const session = await getServerSession(authOptions)

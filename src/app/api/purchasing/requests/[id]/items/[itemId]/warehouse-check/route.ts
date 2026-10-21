@@ -77,7 +77,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const master = await db.purchaseItem.findUnique({ where: { id: existingItem.itemId }, select: { baseUnit: true, purchaseUnit: true, conversionFactor: true } })
   const baseQty = toBaseQty(existingItem.quantity, existingItem.unit, master)
   const lots = await db.stockLot.findMany({ where: { itemId: existingItem.itemId, locationId: fromLocationId }, select: { quantity: true } })
-  const available = lots.reduce((s, l) => s + l.quantity, 0)
+  // Stock already reserved (PENDING transfers out of this warehouse, not yet dispatched so
+  // still in StockLot) can't be promised again to this line.
+  const reserved = await db.stockTransferItem.aggregate({
+    where: { itemId: existingItem.itemId, transfer: { status: 'PENDING', fromLocationId } },
+    _sum: { requestedQty: true },
+  })
+  const available = lots.reduce((s, l) => s + l.quantity, 0) - (reserved._sum.requestedQty ?? 0)
   if (available < baseQty) {
     return NextResponse.json({ error: `Stok "${existingItem.itemName}" tidak cukup di lokasi ini (tersedia: ${available})` }, { status: 409 })
   }

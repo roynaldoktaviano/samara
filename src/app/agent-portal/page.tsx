@@ -120,13 +120,14 @@ function formatDateRange(start: string, end: string) {
   return `${s.toLocaleDateString('en-US', opts)}–${e.toLocaleDateString('en-US', { ...opts, year: 'numeric' })}`
 }
 
-type DayStatus = 'available' | 'onhold' | 'pending' | 'booked'
+type DayStatus = 'available' | 'onhold' | 'pending' | 'booked' | 'shared'
 
 const DAY_STATUS_STYLE: Record<DayStatus, string> = {
   available: 'bg-white border border-neutral-200 text-neutral-500',
   onhold: 'bg-emerald-500 text-white',
   pending: 'bg-amber-400 text-white',
   booked: 'bg-red-500 text-white',
+  shared: 'bg-blue-500 text-white',
 }
 
 interface CalendarBooking { id: string; startDate: string; endDate: string; status: string; tripType: string }
@@ -142,11 +143,26 @@ function dayStatusFromBookingStatus(status: string): DayStatus {
   return 'booked' // confirmed, partially_paid, fully_paid, completed, on_trip, pending_refund
 }
 
-function statusForDate(bookings: CalendarBooking[], date: Date): DayStatus {
+function inRange(startDate: string, endDate: string, date: Date) {
+  const start = new Date(startDate.split('T')[0] + 'T00:00:00')
+  const end = new Date(endDate.split('T')[0] + 'T00:00:00')
+  return date >= start && date < end
+}
+
+// Private charters / blocking events win; otherwise any day inside a shared (open) trip's
+// departure window shows as 'shared' while cabins are left, 'booked' once it's full.
+// OPEN_TRIP bookings are per-cabin, so they don't make the whole yacht "booked" on their own.
+function statusForDate(bookings: CalendarBooking[], openTrips: CalendarOpenTrip[], date: Date): DayStatus {
   for (const b of bookings) {
-    const start = new Date(b.startDate.split('T')[0] + 'T00:00:00')
-    const end = new Date(b.endDate.split('T')[0] + 'T00:00:00')
-    if (date >= start && date < end) {
+    if (b.tripType === 'OPEN_TRIP') continue
+    if (inRange(b.startDate, b.endDate, date)) {
+      return dayStatusFromBookingStatus(getEffectiveBookingStatus(b.status, b.startDate, b.endDate))
+    }
+  }
+  const trip = openTrips.find(t => inRange(t.startDate, t.endDate, date))
+  if (trip) return trip.spotsAvailable > 0 && trip.status !== 'closed' ? 'shared' : 'booked'
+  for (const b of bookings) {
+    if (b.tripType === 'OPEN_TRIP' && inRange(b.startDate, b.endDate, date)) {
       return dayStatusFromBookingStatus(getEffectiveBookingStatus(b.status, b.startDate, b.endDate))
     }
   }
@@ -1398,6 +1414,7 @@ function CalendarScreen({ yacht }: { yacht: YachtOption }) {
             <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full inline-block bg-emerald-500" /> On Hold</span>
             <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full inline-block bg-amber-400" /> Pending</span>
             <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full inline-block bg-red-500" /> Booked</span>
+            {hasSharedTrip && <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full inline-block bg-blue-500" /> Shared Trip (available)</span>}
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-5">
@@ -1417,7 +1434,7 @@ function CalendarScreen({ yacht }: { yacht: YachtOption }) {
                   <div className="grid grid-cols-7 gap-1">
                     {cells.map((day, i) => {
                       if (day === null) return <div key={i} />
-                      const status = statusForDate(bookings, new Date(year, monthIndex, day))
+                      const status = statusForDate(bookings, openTrips, new Date(year, monthIndex, day))
                       return (
                         <div
                           key={i}

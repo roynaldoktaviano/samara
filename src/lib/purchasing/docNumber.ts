@@ -7,3 +7,12 @@
 export function nextSeq(numbers: string[]): number {
   return numbers.reduce((max, n) => Math.max(max, parseInt(n.split('-').pop() ?? '0') || 0), 0) + 1
 }
+
+/** Next PR-YYYYMM-NNN number. */
+export async function generatePrNumber(db: { purchaseRequest: { findMany: (args: { where: { prNumber: { startsWith: string } }; select: { prNumber: true } }) => Promise<{ prNumber: string }[]> } }) {
+  const year = new Date().getFullYear()
+  const month = String(new Date().getMonth() + 1).padStart(2, '0')
+  const prefix = `PR-${year}${month}-`
+  const seq = nextSeq((await db.purchaseRequest.findMany({ where: { prNumber: { startsWith: prefix } }, select: { prNumber: true } })).map(r => r.prNumber))
+  return `${prefix}${String(seq).padStart(3, '0')}`
+}

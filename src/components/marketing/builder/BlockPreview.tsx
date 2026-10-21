@@ -1,4 +1,4 @@
-import { paddingStyle, marginStyle, effectivePadding, type EmailBlock, backgroundImageStyle } from '@/lib/email-builder'
+import { paddingStyle, marginStyle, effectivePadding, effectiveMargin, columnWidths, type EmailBlock, backgroundImageStyle } from '@/lib/email-builder'
 import { ImageOff, Play, Code2, Facebook, Instagram, MessageCircle, Link2, LinkedinIcon } from 'lucide-react'
 
 /**
@@ -34,7 +34,7 @@ export default function BlockPreview({ block, mobile = false }: { block: EmailBl
             block.fillHeight ? (
               <img src={block.src} alt={block.alt} className="h-full w-full object-cover block" />
             ) : (
-              <img src={block.src} alt={block.alt} style={block.autoWidth ? { ...marginStyle(block.margin), maxWidth: '100%', display: 'inline-block' } : { ...marginStyle(block.margin), width: `${block.width}%`, maxWidth: '100%', display: 'inline-block' }} />
+              <img src={block.src} alt={block.alt} style={block.autoWidth ? { ...marginStyle(effectiveMargin(block, mobile)), maxWidth: '100%', display: 'inline-block' } : { ...marginStyle(effectiveMargin(block, mobile)), width: `${block.width}%`, maxWidth: '100%', display: 'inline-block' }} />
             )
           ) : (
             <div className={`inline-flex flex-col items-center justify-center gap-1 text-muted-foreground bg-muted rounded-md py-8 px-6 w-full ${block.fillHeight ? 'h-full' : ''}`}>
@@ -81,7 +81,7 @@ export default function BlockPreview({ block, mobile = false }: { block: EmailBl
         <div style={{ ...paddingStyle(effectivePadding(block, mobile)), textAlign: block.align }}>
           <span
             style={{
-              ...marginStyle(block.margin),
+              ...marginStyle(effectiveMargin(block, mobile)),
               display: 'inline-block', background: block.bgColor, color: block.textColor, fontFamily: block.fontFamily,
               padding: '12px 28px', borderRadius: block.borderRadius, fontSize: block.fontSize, fontWeight: 600, lineHeight: block.lineHeight,
             }}
@@ -107,7 +107,7 @@ export default function BlockPreview({ block, mobile = false }: { block: EmailBl
 
     case 'columns':
       return (
-        <div style={{ ...paddingStyle(effectivePadding(block, mobile)), gap: block.gap ?? 24, gridTemplateColumns: `repeat(${block.columns.length}, minmax(0, 1fr))`, alignItems: { top: 'start', middle: 'center', bottom: 'end' }[block.verticalAlign ?? 'top'] }} className="grid">
+        <div style={{ ...paddingStyle(effectivePadding(block, mobile)), gap: block.gap ?? 24, gridTemplateColumns: columnWidths(block).map(w => `minmax(0, ${w}fr)`).join(' '), alignItems: { top: 'start', middle: 'center', bottom: 'end' }[block.verticalAlign ?? 'top'] }} className="grid">
           {block.columns.map((col, i) => (
             <div key={i} className="space-y-1">
               {col.length === 0 ? (

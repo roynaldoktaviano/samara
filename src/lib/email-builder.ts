@@ -30,6 +30,13 @@ export function marginStyle(m?: Padding): { marginTop: number; marginRight: numb
   return { marginTop: m?.top ?? 0, marginRight: m?.right ?? 0, marginBottom: m?.bottom ?? 0, marginLeft: m?.left ?? 0 }
 }
 
+/** The margin a block shows at the given device — its mobile margin override when editing/previewing at mobile width, else its own. */
+export function effectiveMargin(block: EmailBlock, mobile: boolean): Padding | undefined {
+  const m = 'margin' in block ? block.margin : undefined
+  const mm = 'mobile' in block ? block.mobile?.margin : undefined
+  return mobile && mm ? mm : m
+}
+
 /** Which viewport a block is hidden on, via a CSS media-query class injected into the exported HTML's <head>. */
 export type HideOn = 'none' | 'desktop' | 'mobile'
 
@@ -154,6 +161,7 @@ export interface TextMobileOverride {
   fontSize?: number
   align?: BlockAlign
   color?: string
+  margin?: Padding
 }
 
 export interface TextBlock {
@@ -169,6 +177,7 @@ export interface TextBlock {
   letterSpacing: number
   padding: Padding
   mobilePadding?: Padding // mobile-only (max-width:600px) padding override — see pdClass()/collectExtraStyles
+  margin?: Padding // space outside the block (can be negative) — see wrapWithMargin
   hideOn: HideOn
   mobile?: TextMobileOverride
 }
@@ -186,6 +195,7 @@ export interface HeadingBlock {
   letterSpacing: number
   padding: Padding
   mobilePadding?: Padding // mobile-only (max-width:600px) padding override — see pdClass()/collectExtraStyles
+  margin?: Padding // space outside the block (can be negative) — see wrapWithMargin
   hideOn: HideOn
   mobile?: TextMobileOverride
 }
@@ -242,7 +252,9 @@ export interface VideoBlock {
   align: BlockAlign
   padding: Padding
   mobilePadding?: Padding // mobile-only (max-width:600px) padding override — see pdClass()/collectExtraStyles
+  margin?: Padding // space outside the block (can be negative) — see wrapWithMargin
   hideOn: HideOn
+  mobile?: MarginMobileOverride
 }
 
 export interface HtmlBlock {
@@ -251,7 +263,9 @@ export interface HtmlBlock {
   code: string
   padding: Padding
   mobilePadding?: Padding // mobile-only (max-width:600px) padding override — see pdClass()/collectExtraStyles
+  margin?: Padding // space outside the block (can be negative) — see wrapWithMargin
   hideOn: HideOn
+  mobile?: MarginMobileOverride
 }
 
 // See TextMobileOverride — same mobile-only-override mechanism, applied to a button's own fields.
@@ -291,14 +305,18 @@ export interface DividerBlock {
   align: BlockAlign
   padding: Padding
   mobilePadding?: Padding // mobile-only (max-width:600px) padding override — see pdClass()/collectExtraStyles
+  margin?: Padding // space outside the block (can be negative) — see wrapWithMargin
   hideOn: HideOn
+  mobile?: MarginMobileOverride
 }
 
 export interface SpacerBlock {
   id: string
   type: 'spacer'
   height: number
+  margin?: Padding
   hideOn: HideOn
+  mobile?: MarginMobileOverride
 }
 
 // See TextMobileOverride — same mobile-only-override mechanism: the vertical space
@@ -306,6 +324,7 @@ export interface SpacerBlock {
 // gap used when they sit side by side on desktop.
 export interface ColumnsMobileOverride {
   gap?: number
+  margin?: Padding
 }
 
 // A column holds a nested list of content blocks — anything except another
@@ -313,7 +332,8 @@ export interface ColumnsMobileOverride {
 export interface ColumnsBlock {
   id: string
   type: 'columns'
-  columns: EmailBlock[][] // 1-6 columns, evenly split
+  columns: EmailBlock[][] // 1-6 columns
+  widths?: number[] // per-column width in % (sums to 100) — undefined = evenly split; see columnWidths()
   padding: Padding
   mobilePadding?: Padding // mobile-only (max-width:600px) padding override — see pdClass()/collectExtraStyles
   gap: number // total horizontal space between side-by-side columns, in px
@@ -321,7 +341,19 @@ export interface ColumnsBlock {
   stackOnMobile: boolean // below 600px, drop each column to full width, one per row
   reverseOnMobile?: boolean // when stacked, show the last column first (e.g. text|image row → image on top)
   verticalAlign?: ColumnsVerticalAlign // align columns of unequal height against each other (default top)
+  margin?: Padding // space outside the block (can be negative) — see wrapWithMargin
   mobile?: ColumnsMobileOverride // gap: vertical space between stacked columns, in px
+}
+
+/** Each column's width in % (always sums to 100). Stored widths that don't match the column count (or are invalid) fall back to an even split. */
+export function columnWidths(block: Pick<ColumnsBlock, 'columns' | 'widths'>): number[] {
+  const n = block.columns.length || 1
+  const w = block.widths
+  if (w && w.length === n && w.every(x => typeof x === 'number' && x > 0)) {
+    const sum = w.reduce((a, b) => a + b, 0)
+    return w.map(x => (x * 100) / sum)
+  }
+  return Array.from({ length: n }, () => 100 / n)
 }
 
 export type ColumnsVerticalAlign = 'top' | 'middle' | 'bottom'
@@ -374,7 +406,9 @@ export interface SectionBlock {
   backgroundImage: string // '' = none
   backgroundSize: BackgroundSize
   backgroundRepeat: BackgroundRepeat
+  margin?: Padding // space outside the block (can be negative) — see wrapWithMargin
   hideOn: HideOn
+  mobile?: MarginMobileOverride
 }
 
 export interface SocialLink {
@@ -389,7 +423,9 @@ export interface SocialBlock {
   align: BlockAlign
   padding: Padding
   mobilePadding?: Padding // mobile-only (max-width:600px) padding override — see pdClass()/collectExtraStyles
+  margin?: Padding // space outside the block (can be negative) — see wrapWithMargin
   hideOn: HideOn
+  mobile?: MarginMobileOverride
 }
 
 export interface FooterBlock {
@@ -889,8 +925,36 @@ function renderFooterSocialRow(block: FooterBlock): string {
 // Outlook desktop is unambiguously a desktop context, so simply not hiding it there
 // (i.e. doing nothing) already gives the right answer.
 function renderBlock(block: EmailBlock, contentWidth: number): string {
-  const html = renderBlockInner(block, contentWidth)
+  const html = wrapWithMargin(block, renderBlockInner(block, contentWidth))
   return ('hideOn' in block && block.hideOn === 'desktop') ? `<!--[if !mso]><!-->${html}<!--<![endif]-->` : html
+}
+
+// Image/logo/button put their margin on the <img>/<a> itself (see their cases below).
+const ELEMENT_MARGIN_TYPES: EmailBlock['type'][] = ['image', 'logo', 'button', 'footer']
+
+function isZeroMargin(m?: Padding): boolean {
+  return !m || (m.top === 0 && m.right === 0 && m.bottom === 0 && m.left === 0)
+}
+
+/** Whether a block needs the margin wrapper (desktop margin set, or any mobile margin override). */
+function needsMarginWrap(block: EmailBlock): boolean {
+  if (ELEMENT_MARGIN_TYPES.includes(block.type)) return false
+  const m = 'margin' in block ? block.margin : undefined
+  const mm = 'mobile' in block ? block.mobile?.margin : undefined
+  return !isZeroMargin(m) || !!mm
+}
+
+// Every other block renders as a single <tr><td>…</td></tr> whose <td> carries its
+// padding — and margin on a <td> does nothing in any client. So a block with a margin
+// gets its row nested inside a <div> that carries it (negative values pull the block
+// into its neighbours, as on the web), with the mobile override swapped in via the
+// .mg-<id> class in collectExtraStyles. Support for negative margins varies (Outlook
+// desktop ignores margin on a <div> entirely), so the block simply sits flush there.
+function wrapWithMargin(block: EmailBlock, rowHtml: string): string {
+  if (!needsMarginWrap(block)) return rowHtml
+  const m = 'margin' in block ? block.margin : undefined
+  const hide = 'hideOn' in block ? hideOnClass(block.hideOn) : ''
+  return `<tr><td${classAttr(hide)} style="padding:0;"><div class="mg-${block.id}" style="margin:${marginCss(m)};"><table role="presentation" width="100%" cellpadding="0" cellspacing="0">${rowHtml}</table></div></td></tr>`
 }
 
 function renderBlockInner(block: EmailBlock, contentWidth: number): string {
@@ -969,9 +1033,10 @@ function renderBlockInner(block: EmailBlock, contentWidth: number): string {
       const n = block.columns.length || 1
       const gap = block.gap ?? 24
       const halfGap = gap / 2
-      const width = (100 / n).toFixed(4)
+      const pcts = columnWidths(block)
+      const widthOf = (i: number) => pcts[i].toFixed(4)
       const innerWidth = contentWidth - block.padding.left - block.padding.right
-      const colMaxPx = Math.max(40, Math.floor((innerWidth - (n - 1) * gap) / n))
+      const colMaxPxOf = (i: number) => Math.max(40, Math.floor(((innerWidth - (n - 1) * gap) * pcts[i]) / 100))
       const soleFillImageOf = (list: EmailBlock[]) =>
         list.length === 1 && (list[0].type === 'image' || list[0].type === 'logo') && list[0].fillHeight ? (list[0] as ImageBlock | LogoBlock) : null
       const hasFillImage = block.columns.some(list => soleFillImageOf(list) !== null)
@@ -1008,14 +1073,14 @@ function renderBlockInner(block: EmailBlock, contentWidth: number): string {
               // Outlook (Word engine) doesn't render background-image on a <td>
               // without a VML fallback, and can't match an unknown sibling height
               // either way — natural size is a better fallback than a blank cell.
-              const autoWidthPx = Math.max(1, Math.round(colMaxPx - p.left - p.right))
+              const autoWidthPx = Math.max(1, Math.round(colMaxPxOf(i) - p.left - p.right))
               const img = `<img src="${esc(fillImage.src)}" alt="${esc(fillImage.alt)}" width="${autoWidthPx}" style="max-width:100%;height:auto;display:block;border:0;" />`
               const inner = fillImage.link ? `<a href="${esc(fillImage.link)}" target="_blank" rel="noopener noreferrer">${img}</a>` : img
-              return `<td width="${width}%" valign="top" class="${cls}" style="${padding}">${inner}</td>`
+              return `<td width="${widthOf(i)}%" valign="top" class="${cls}" style="${padding}">${inner}</td>`
             }
-            return renderFillHeightCell(fillImage, width, padding, cls)
+            return renderFillHeightCell(fillImage, widthOf(i), padding, cls)
           }
-          return `<td width="${width}%" valign="${valign}"${ltrAttr} class="${cls}" style="padding-left:${padLeft}px;padding-right:${padRight}px;vertical-align:${valign};">${renderColumnCell(list, colMaxPx)}</td>`
+          return `<td width="${widthOf(i)}%" valign="${valign}"${ltrAttr} class="${cls}" style="padding-left:${padLeft}px;padding-right:${padRight}px;vertical-align:${valign};">${renderColumnCell(list, colMaxPxOf(i))}</td>`
         }), mso).join('')
         const msoTable = `<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>${cellsFor(true)}</tr></table>`
         const table = `<table role="presentation" width="100%" cellpadding="0" cellspacing="0"${reverse ? ' dir="rtl"' : ''}><tr>${cellsFor(false)}</tr></table>`
@@ -1028,7 +1093,7 @@ function renderBlockInner(block: EmailBlock, contentWidth: number): string {
       const tdCells = block.columns.map((list, i) => {
         const padLeft = i === 0 ? 0 : halfGap
         const padRight = i === n - 1 ? 0 : halfGap
-        return `<td width="${width}%" valign="${valign}" style="padding-left:${padLeft}px;padding-right:${padRight}px;vertical-align:${valign};">${renderColumnCell(list, colMaxPx)}</td>`
+        return `<td width="${widthOf(i)}%" valign="${valign}" style="padding-left:${padLeft}px;padding-right:${padRight}px;vertical-align:${valign};">${renderColumnCell(list, colMaxPxOf(i))}</td>`
       }).join('')
       const tdTable = `<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>${tdCells}</tr></table>`
       if (!block.stackOnMobile) {
@@ -1070,7 +1135,7 @@ function renderBlockInner(block: EmailBlock, contentWidth: number): string {
         // Reversed, the stacked gap belongs under every column except the one that
         // ends up last in DOM order — the original first column.
         const padBottomFinal = reverse ? (i === 0 ? 0 : mobileGap) : padBottom
-        return `<div class="col-${block.id}-${i}"${ltrAttr} style="display:inline-block;vertical-align:${valign};width:100%;max-width:${colMaxPx}px;box-sizing:border-box;padding:0 ${padRight}px ${padBottomFinal}px ${padLeft}px;font-size:14px;">${renderColumnCell(list, colMaxPx)}</div>`
+        return `<div class="col-${block.id}-${i}"${ltrAttr} style="display:inline-block;vertical-align:${valign};width:100%;max-width:${colMaxPxOf(i)}px;box-sizing:border-box;padding:0 ${padRight}px ${padBottomFinal}px ${padLeft}px;font-size:14px;">${renderColumnCell(list, colMaxPxOf(i))}</div>`
       })
       // Same reverse trick as the fill-image branch: reversed DOM order + direction:rtl
       // keeps desktop's left-to-right order while wrapping (stacking) puts the last
@@ -1137,6 +1202,9 @@ function renderBlockInner(block: EmailBlock, contentWidth: number): string {
 function collectExtraStyles(blocks: EmailBlock[]): string[] {
   const rules: string[] = []
   for (const b of blocks) {
+    if (needsMarginWrap(b) && 'mobile' in b && b.mobile?.margin) {
+      rules.push(`@media only screen and (max-width:600px){.mg-${b.id}{margin:${marginCss(b.mobile.margin)} !important;}}`)
+    }
     if ('mobilePadding' in b && b.mobilePadding) {
       rules.push(`@media only screen and (max-width:600px){.pd-${b.id}{padding:${paddingCss(b.mobilePadding)} !important;}}`)
     }

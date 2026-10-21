@@ -30,7 +30,7 @@ export const EMPTY_ITEM_FORM = {
   sku: '', name: '', type: '', category: '',
   baseUnit: 'pcs', purchaseUnit: 'pcs', conversionFactor: 1,
   standardCost: 0, sellingPrice: 0, valuationMethod: 'FIFO',
-  minStock: 0, reorderQty: 0, imageKey: null as string | null,
+  minStock: 0, minStockUnit: 'BASE' as 'BASE' | 'PURCHASE', reorderQty: 0, imageKey: null as string | null,
   isSoldInPos: true, isStockTracked: true,
 }
 export type ItemForm = typeof EMPTY_ITEM_FORM
@@ -282,7 +282,30 @@ export function ItemFormFields({ form, setForm, isEditing, typeConfigs, existing
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <label className="text-sm font-medium">Min Stock</label>
-              <input type="number" min={0} className={num} placeholder="0" value={form.minStock} onChange={e => setForm(f => ({ ...f, minStock: Number(e.target.value) }))} />
+              {/* form.minStock stays in base units; the unit picker only changes how it's
+                  entered/shown (÷/× conversionFactor). Always shown; with identical units it's a no-op. */}
+              {(() => {
+                const conv = form.conversionFactor || 1
+                const sameUnit = form.purchaseUnit === form.baseUnit
+                const inPurchase = form.minStockUnit === 'PURCHASE'
+                const shown = inPurchase ? Math.round((form.minStock / conv) * 1000) / 1000 : form.minStock
+                return (
+                  <>
+                    <div className="flex gap-2">
+                      <input type="number" min={0} className={`${num} flex-1 min-w-0`} placeholder="0" value={shown}
+                        onChange={e => { const v = Number(e.target.value); setForm(f => ({ ...f, minStock: inPurchase ? v * conv : v })) }} />
+                      <select className="h-9 border rounded-md px-2 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white shrink-0" value={form.minStockUnit}
+                        onChange={e => setForm(f => ({ ...f, minStockUnit: e.target.value as 'BASE' | 'PURCHASE' }))}>
+                        <option value="BASE">{form.baseUnit}{sameUnit ? ' (base)' : ''}</option>
+                        <option value="PURCHASE">{form.purchaseUnit}{sameUnit ? ' (purchase)' : ''}</option>
+                      </select>
+                    </div>
+                    {inPurchase && conv !== 1 && form.minStock > 0 && (
+                      <p className="text-xs text-muted-foreground">= {Math.round(form.minStock * 1000) / 1000} {form.baseUnit}</p>
+                    )}
+                  </>
+                )
+              })()}
             </div>
             <div className="space-y-1.5">
               <label className="text-sm font-medium">Reorder Qty</label>

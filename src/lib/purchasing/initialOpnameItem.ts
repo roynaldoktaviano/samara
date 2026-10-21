@@ -7,7 +7,7 @@ export const OPNAME_ITEM_SELECT = {
   id: true, sku: true, name: true, type: true, category: true,
   baseUnit: true, purchaseUnit: true, conversionFactor: true,
   standardCost: true, sellingPrice: true, valuationMethod: true,
-  minStock: true, reorderQty: true, imageKey: true, isSoldInPos: true, isStockTracked: true,
+  minStock: true, minStockUnit: true, reorderQty: true, imageKey: true, isSoldInPos: true, isStockTracked: true,
 } as const
 
 /** Validates the Items & Pricing form body; returns the PurchaseItem fields to write or an error. */
@@ -33,6 +33,7 @@ export async function parseOpnameItemForm(db: PrismaClient, body: Record<string,
       conversionFactor: Number(body.conversionFactor) || 1,
       sellingPrice: Number(body.sellingPrice) || 0,
       minStock: Number(body.minStock) || 0,
+      minStockUnit: body.minStockUnit === 'PURCHASE' ? 'PURCHASE' : 'BASE',
       reorderQty: Number(body.reorderQty) || 0,
       imageKey: typeof body.imageKey === 'string' && body.imageKey ? body.imageKey : null,
       isSoldInPos: body.isSoldInPos !== undefined ? Boolean(body.isSoldInPos) : true,

@@ -101,6 +101,22 @@ export async function sendMetaDm(
   return { ok: true, providerMessageId }
 }
 
+/**
+ * Instagram hands out two encodings of the same message id: the Send API returns
+ * "ig_dm_item:1:IGMessageID:…" while the echo webhook carries "new_ig_dm_item:1:IGMessageID:…"
+ * (both base64, with Meta's Z-escapes: ZA='Z', ZB='+', ZC='/', ZD='='). Reduce either to the
+ * shared IGMessageID tail so an echo can be matched to the row the ERP already stored.
+ */
+export function canonicalMetaMid(mid: string): string {
+  try {
+    const b64 = mid.replace(/Z([A-D])/g, (_, c: string) => ({ A: 'Z', B: '+', C: '/', D: '=' } as Record<string, string>)[c])
+    const decoded = Buffer.from(b64, 'base64').toString('utf8')
+    const at = decoded.indexOf('IGMessageID:')
+    if (at >= 0) return decoded.slice(at)
+  } catch { /* not Meta's encoding — fall through */ }
+  return mid
+}
+
 // ── Inbound webhook events ──────────────────────────────────────────────────────
 
 interface MetaAttachment { type?: string; payload?: { url?: string; title?: string } | null }
@@ -241,6 +257,19 @@ export async function handleMetaMessagingEvents(db: PrismaClient, tenantId: stri
       // ── Echo: a reply sent from our side ──
       if (isEcho) {
         const conv = await db.instagramConversation.findUnique({ where: key, select: { id: true } })
+        if (conv && mid) {
+          // The Send API already returned this message's id, but in a different encoding than
+          // the echo's mid — compare the canonical form so it isn't stored a second time.
+          const canon = canonicalMetaMid(mid)
+          const recentSent = await db.instagramMessage.findMany({
+            where: {
+              conversationId: conv.id, direction: 'OUT', sentByUserId: { not: null }, providerMessageId: { not: null },
+              createdAt: { gte: new Date(Date.now() - 10 * 60_000) },
+            },
+            select: { providerMessageId: true },
+          })
+          if (recentSent.some(r => canonicalMetaMid(r.providerMessageId!) === canon)) continue
+        }
         if (conv) {
           // A reply sent from the ERP echoes back, sometimes before the Send API call returned
           // its id — match it to that still-unconfirmed row instead of storing it twice.
