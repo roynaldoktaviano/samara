@@ -5,6 +5,9 @@ import type { NextRequest } from 'next/server'
 
 // Hard lifetime of a BOT cookie session, measured from login (see token.loginAt in auth.ts).
 const BOT_SESSION_MAX_AGE_MS = 12 * 60 * 60 * 1000
+// Create-only endpoints a BOT may POST to (exact paths). Everything else under /api/bot stays
+// GET-only, and no PUT/PATCH/DELETE is ever allowed — bots can add, never edit or delete.
+const BOT_WRITE_PATHS = new Set(['/api/bot/talent-pool'])
 
 // API routes gated behind a tenant feature flag — checked here so the flag can't be
 // bypassed by calling the endpoint directly once the nav item is hidden client-side.
@@ -163,12 +166,14 @@ export default async function middleware(req: NextRequest) {
   // (POST/PUT/PATCH/DELETE) is refused here, before any route handler runs — so the bot can
   // never post, approve or delete anything regardless of what individual routes allow.
   const isBotApiPath = pathname === '/api/bot' || pathname.startsWith('/api/bot/')
+  // The only writes a BOT may make: create-only endpoints (no edit, no delete) listed here.
+  const isBotWrite = req.method === 'POST' && BOT_WRITE_PATHS.has(pathname)
   // BOT API key (`Authorization: Bearer sbk_…`, see src/lib/bot-api-key.ts): no cookie session,
   // so it can't pass withAuth below — let it through to /api/bot/* reads only. The route handler
   // verifies the key and always treats it as the BOT role. Off /api/bot the header is ignored.
   if (isBotApiPath && /^Bearer\s+sbk_/i.test(req.headers.get('authorization') ?? '')) {
-    if (req.method !== 'GET' && req.method !== 'HEAD') {
-      return NextResponse.json({ error: 'Bot API keys are read-only' }, { status: 403 })
+    if (req.method !== 'GET' && req.method !== 'HEAD' && !isBotWrite) {
+      return NextResponse.json({ error: 'Bot API keys are read-only (except POST /api/bot/talent-pool)' }, { status: 403 })
     }
     return NextResponse.next()
   }
@@ -176,7 +181,7 @@ export default async function middleware(req: NextRequest) {
   const sessionToken = await getToken({ req, secret: process.env.NEXTAUTH_SECRET })
   if (sessionToken?.role === 'BOT') {
     const isRead = req.method === 'GET' || req.method === 'HEAD'
-    if (!isBotApiPath || !isRead) {
+    if (!isBotApiPath || (!isRead && !isBotWrite)) {
       return NextResponse.json({ error: 'Bot accounts are read-only and limited to /api/bot' }, { status: 403 })
     }
     // BOT cookie sessions get a hard 12h lifetime from login instead of the normal 30-day

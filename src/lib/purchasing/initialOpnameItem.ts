@@ -1,4 +1,5 @@
 import type { PrismaClient } from '@prisma/client'
+import { defaultTreatmentForType } from '@/lib/purchasing/treatment'
 
 // Stock Opname Awal's Add/Edit Product popups use the same full form as Items & Pricing
 // (see components/purchasing/items/ItemFormFields), so the opname routes return and accept
@@ -7,7 +8,7 @@ export const OPNAME_ITEM_SELECT = {
   id: true, sku: true, name: true, type: true, category: true,
   baseUnit: true, purchaseUnit: true, conversionFactor: true,
   standardCost: true, sellingPrice: true, valuationMethod: true,
-  minStock: true, minStockUnit: true, reorderQty: true, imageKey: true, isSoldInPos: true, isStockTracked: true,
+  minStock: true, minStockUnit: true, treatment: true, reorderQty: true, imageKey: true, isSoldInPos: true, isStockTracked: true,
 } as const
 
 /** Validates the Items & Pricing form body; returns the PurchaseItem fields to write or an error. */
@@ -34,6 +35,7 @@ export async function parseOpnameItemForm(db: PrismaClient, body: Record<string,
       sellingPrice: Number(body.sellingPrice) || 0,
       minStock: Number(body.minStock) || 0,
       minStockUnit: body.minStockUnit === 'PURCHASE' ? 'PURCHASE' : 'BASE',
+      treatment: (['CONSUMABLE', 'ASSET', 'SPARE_PART'] as const).find(t => t === body.treatment) ?? defaultTreatmentForType(type),
       reorderQty: Number(body.reorderQty) || 0,
       imageKey: typeof body.imageKey === 'string' && body.imageKey ? body.imageKey : null,
       isSoldInPos: body.isSoldInPos !== undefined ? Boolean(body.isSoldInPos) : true,

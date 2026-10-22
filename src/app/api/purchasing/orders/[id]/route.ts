@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
+import { resolvePoLineTreatments } from '@/lib/purchasing/poLineTreatment'
+import type { Treatment } from '@/lib/purchasing/treatment'
 import { tripBookingSelect, openTripSelect, tripOf } from '@/lib/purchasing/tripLink'
 import { notifyByRole, notifyAssignedYachtCaptains, notifyRequesterForOrder } from '@/lib/notify-purchasing'
 import { getOrCreatePoReceiveToken, resolveBaseUrl } from '@/lib/purchasing/receiveLink'
@@ -151,7 +153,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   } = body as {
     status?: string; supplierName?: string; expectedAt?: string; notes?: string; dispatchPhotoKey?: string; cancellationReason?: string
     supplierId?: string; deliveryLocationId?: string; requestedByEmployeeId?: string; bookingId?: string; openTripId?: string
-    items?: { itemId?: string; itemName: string; orderedQty: number; unitCost?: number; unit?: string; inventoryRoomId?: string; inventoryCategoryId?: string; sourceInventoryItemId?: string; discountType?: string | null; discountValue?: number }[]
+    items?: { itemId?: string; itemName: string; orderedQty: number; unitCost?: number; unit?: string; inventoryRoomId?: string; inventoryCategoryId?: string; sourceInventoryItemId?: string; treatment?: string; discountType?: string | null; discountValue?: number }[]
     extraCharges?: { label?: string; amount?: number }[]; discountType?: 'PERCENT' | 'FIXED'; discountValue?: number
     transitStops?: string[]
   }
@@ -192,6 +194,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   // schema.prisma's PurchaseOrder.extraCharges comment already documents for
   // extraCharges alone.
   const financialFieldsTouched = items !== undefined || extraCharges !== undefined || discountType !== undefined || discountValue !== undefined
+  // Per-line treatment for the replacement item set (src/lib/purchasing/treatment.ts).
+  let lineTreatments: Treatment[] = []
   if (editFieldsTouched) {
     const existing = await db.purchaseOrder.findUnique({
       where: { id },
@@ -222,14 +226,15 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       }
       if (!items || items.length === 0) return NextResponse.json({ error: 'Minimal 1 item dibutuhkan' }, { status: 400 })
 
-      // Same rule as PO creation: a ship-bound PO must say, per item, which Inventory
-      // Room/Category it's destined for. Never applies to services.
+      // Same rule as PO creation: an ASSET line on a ship-bound PO must say which Inventory
+      // Room/Category it lands in. Never applies to services.
+      lineTreatments = await resolvePoLineTreatments(db, items)
       const effectiveDeliveryLocationId = deliveryLocationId !== undefined ? (deliveryLocationId || null) : existing.deliveryLocationId
       if (existing.orderType !== 'SERVICE' && effectiveDeliveryLocationId) {
         const deliveryLocation = await db.stockLocation.findUnique({ where: { id: effectiveDeliveryLocationId }, select: { type: true } })
         if (deliveryLocation?.type === 'VESSEL') {
-          if (items.some(it => !it.inventoryRoomId || !it.inventoryCategoryId)) {
-            return NextResponse.json({ error: 'Setiap item wajib menentukan Ruangan dan Kategori Barang untuk PO ke kapal' }, { status: 400 })
+          if (items.some((it, i) => lineTreatments[i] === 'ASSET' && !it.sourceInventoryItemId && (!it.inventoryRoomId || !it.inventoryCategoryId))) {
+            return NextResponse.json({ error: 'Item Asset wajib menentukan Ruangan dan Kategori Barang' }, { status: 400 })
           }
           const roomIds = [...new Set(items.map(it => it.inventoryRoomId).filter((x): x is string => !!x))]
           const categoryIds = [...new Set(items.map(it => it.inventoryCategoryId).filter((x): x is string => !!x))]
@@ -356,8 +361,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (items) {
       await tx.purchaseOrderItem.deleteMany({ where: { orderId: id } })
       await tx.purchaseOrderItem.createMany({
-        data: items.map(it => ({
+        data: items.map((it, i) => ({
           id: crypto.randomUUID(), orderId: id,
+          treatment: lineTreatments[i] ?? null,
           itemId: it.itemId || null, itemName: it.itemName,
           unit: it.itemId ? null : (it.unit?.trim() || null),
           orderedQty: Number(it.orderedQty), unitCost: Number(it.unitCost) || 0,

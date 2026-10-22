@@ -16,6 +16,7 @@ import { currentLocationLabel } from '@/lib/purchasing/currentLocationLabel'
 import { renderLocationOptions } from '@/components/purchasing/LocationOptions'
 import { TripPicker, tripDates, tripShortLabel, tripLinkBody, type TripOption } from '@/components/purchasing/TripPicker'
 import { RupiahInput } from '@/components/ui/rupiah-input'
+import { TREATMENTS, TREATMENT_LABEL, type Treatment } from '@/lib/purchasing/treatment'
 
 type FileDropProps = ReturnType<typeof useFileDrop>['dropProps']
 
@@ -48,7 +49,7 @@ interface InventoryItemOption {
   id: string; itemNumber: string; name: string; quantity: number; unitPrice: number; photoKeys?: string[]
   category: { id: string; name: string }; room: { id: string; name: string }
 }
-interface RequestLine { id?: string; key?: string; itemId: string; itemName: string; baseUnit: string; purchaseUnit: string; itemUnit: string; unit?: string; quantity: number; estimatedCost: number; supplierId: string; supplierName: string; supplierSearch: string; supplierOpen: boolean; notes: string; search: string; open: boolean; currentStock?: number | null; minStock?: number | null; stockCheck?: { locationId: string; locationName: string; requested: number; availability: number; reserve: number; onOrder: number; ending: number; shortage: number; minStock: number; toBeOrder: number; restockQty: number } | null; conversionFactor?: number | null; imageKeys?: string[]; isCustom?: boolean; isStockItem?: boolean; sourceInventoryItemId?: string | null; sourceInventoryItem?: { id: string; itemNumber: string; name: string; room: { name: string } | null; category: { name: string } | null } | null; warehouseStock?: { locationId: string; locationName: string; qty: number }[]; transferEligible?: boolean; quotations?: Quotation[]; exemptionReason?: string | null; selectionJustification?: string | null; requestedByEmployeeId?: string; quotationApproverId?: string | null; quotationApprover?: { id: string; name: string | null } | null; quotationSubmittedAt?: string | null; quotationApprovedById?: string | null; quotationApprovedBy?: { id: string; name: string | null } | null; quotationApprovedAt?: string | null; quotationRejectedBy?: { id: string; name: string | null } | null; quotationRejectedAt?: string | null; quotationRejectionReason?: string | null; convertedAt?: string | null; convertedPoId?: string | null; verifyRejectedById?: string | null; verifyRejectedBy?: { id: string; name: string | null } | null; verifyRejectedAt?: string | null; verifyRejectionReason?: string | null; warehouseDecision?: 'TRANSFER' | 'PURCHASE' | null; backorderQty?: number; backorderLocationId?: string | null; viaWarehouse?: boolean; warehouseCheckedAt?: string | null; warehouseCheckNote?: string | null; requestType?: 'NEW' | 'REPLACEMENT'; damageDetail?: string | null; transfer?: { id: string; transferNumber: string; status: string; fromLocationName: string } | null }
+interface RequestLine { id?: string; key?: string; itemId: string; itemName: string; baseUnit: string; purchaseUnit: string; itemUnit: string; unit?: string; quantity: number; estimatedCost: number; supplierId: string; supplierName: string; supplierSearch: string; supplierOpen: boolean; notes: string; search: string; open: boolean; currentStock?: number | null; onHandStock?: number | null; itemTreatment?: Treatment | null; reservedStock?: number; minStock?: number | null; stockCheck?: { locationId: string; locationName: string; requested: number; availability: number; reserve: number; onOrder: number; ending: number; shortage: number; minStock: number; toBeOrder: number; restockQty: number } | null; conversionFactor?: number | null; imageKeys?: string[]; isCustom?: boolean; isStockItem?: boolean; sourceInventoryItemId?: string | null; sourceInventoryItem?: { id: string; itemNumber: string; name: string; room: { name: string } | null; category: { name: string } | null } | null; warehouseStock?: { locationId: string; locationName: string; qty: number }[]; transferEligible?: boolean; quotations?: Quotation[]; exemptionReason?: string | null; selectionJustification?: string | null; requestedByEmployeeId?: string; quotationApproverId?: string | null; quotationApprover?: { id: string; name: string | null } | null; quotationSubmittedAt?: string | null; quotationApprovedById?: string | null; quotationApprovedBy?: { id: string; name: string | null } | null; quotationApprovedAt?: string | null; quotationRejectedBy?: { id: string; name: string | null } | null; quotationRejectedAt?: string | null; quotationRejectionReason?: string | null; convertedAt?: string | null; convertedPoId?: string | null; verifyRejectedById?: string | null; verifyRejectedBy?: { id: string; name: string | null } | null; verifyRejectedAt?: string | null; verifyRejectionReason?: string | null; warehouseDecision?: 'TRANSFER' | 'PURCHASE' | null; backorderQty?: number; backorderLocationId?: string | null; viaWarehouse?: boolean; warehouseCheckedAt?: string | null; warehouseCheckNote?: string | null; requestType?: 'NEW' | 'REPLACEMENT'; damageDetail?: string | null; transfer?: { id: string; transferNumber: string; status: string; fromLocationName: string } | null }
 interface PurchaseRequest {
   id: string
   prNumber: string
@@ -318,7 +319,9 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
   // Per-item Inventory Room/Category, required before converting an item into a PO when
   // the PR's delivery location is a ship (not needed for items fulfilled via transfer
   // instead — see convertToPO). Mirrors OrdersPage.tsx's own Room/Category pickers.
-  const [roomAssignment, setRoomAssignment] = useState<Record<string, { roomId: string; categoryId: string }>>({})
+  // Per PO-bound line on a ship PR: treatment (custom lines pick it; catalog lines follow the
+  // item master) and, for ASSET lines only, the Inventory Room/Category it lands in.
+  const [roomAssignment, setRoomAssignment] = useState<Record<string, { roomId: string; categoryId: string; treatment?: Treatment }>>({})
   const [invRooms, setInvRooms] = useState<{ id: string; name: string }[]>([])
   const [invCategoriesByRoom, setInvCategoriesByRoom] = useState<Record<string, { id: string; name: string }[]>>({})
   // Full PO detail (payments, transit legs, receipts) per linked PO id, fetched lazily so
@@ -644,6 +647,10 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
     setView('create')
   }
 
+  // A PO-bound line's treatment on the ship: the item master's, or Purchasing's pick for custom lines.
+  const lineTreatmentOf = (item: RequestLine): Treatment =>
+    item.itemId ? (item.itemTreatment ?? 'CONSUMABLE') : (roomAssignment[item.id!]?.treatment ?? 'CONSUMABLE')
+
   async function convertToPO() {
     if (!selected || !detail || converting) return
     const settleable = detail.items.filter(item => !item.verifyRejectedAt && !item.convertedAt)
@@ -657,9 +664,9 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
     // directly, see OrdersPage.tsx.
     if (detail.deliveryLocation?.type === 'VESSEL') {
       const poBound = settleable.filter(item => item.supplierId && !fulfillment[item.id!] && !item.sourceInventoryItemId)
-      const missingRoom = poBound.filter(item => !roomAssignment[item.id!]?.roomId || !roomAssignment[item.id!]?.categoryId)
+      const missingRoom = poBound.filter(item => lineTreatmentOf(item) === 'ASSET' && (!roomAssignment[item.id!]?.roomId || !roomAssignment[item.id!]?.categoryId))
       if (missingRoom.length > 0) {
-        alert(`Set a Room and Category first for: ${missingRoom.map(i => i.itemName).join(', ')}`)
+        alert(`Assets need a Room and Category (where they go in the ship Inventory): ${missingRoom.map(i => i.itemName).join(', ')}`)
         return
       }
     }
@@ -671,7 +678,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
       .map(([requestItemId, fromLocationId]) => ({ requestItemId, fromLocationId: fromLocationId as string }))
     const roomAssignments = Object.entries(roomAssignment)
       .filter(([requestItemId]) => !fulfillment[requestItemId])
-      .map(([requestItemId, a]) => ({ requestItemId, roomId: a.roomId, categoryId: a.categoryId }))
+      .map(([requestItemId, a]) => ({ requestItemId, roomId: a.roomId, categoryId: a.categoryId, treatment: a.treatment }))
     setConverting(true)
     const res = await fetch(`/api/purchasing/requests/${selected.id}`, {
       method: 'PATCH',
@@ -1873,8 +1880,9 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
             // Warehouse reviewing an incoming PR gets the full stock breakdown (against the
             // source warehouse, base units) in place of the single Current Stock figure.
             const showStockCheck = canWarehouseCheck && isWarehousePending(detail)
-            // Mark each line's route only when the PR mixes both — otherwise it's noise.
-            const mixedRoute = detail.items.some(it => it.viaWarehouse) && detail.items.some(it => !it.viaWarehouse)
+            // Mark each line's route only while it still matters — the PR mixes both kinds AND
+            // Warehouse hasn't finished its check. Afterwards every line is Purchasing's anyway.
+            const mixedRoute = isWarehousePending(detail) && detail.items.some(it => it.viaWarehouse) && detail.items.some(it => !it.viaWarehouse)
             const fmtQty = (n: number) => Math.round(n * 100) / 100
             const stockLocations = [...new Set(sortedItems.map(it => it.stockCheck?.locationName).filter(Boolean) as string[])]
             return (
@@ -1924,7 +1932,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                   {['DRAFT', 'ON_PROCESS'].includes(detail.status) && <th className="text-left px-5 py-2.5 font-medium whitespace-nowrap">Decision</th>}
                   {showStockCheck && <th className="text-left px-5 py-2.5 font-medium whitespace-nowrap">Cek Gudang</th>}
                   {detail.status === 'ON_PROCESS' && !isWarehouse && <th className="text-left px-5 py-2.5 font-medium">Fulfillment</th>}
-                  {detail.status === 'ON_PROCESS' && !isWarehouse && detail.deliveryLocation?.type === 'VESSEL' && <th className="text-left px-5 py-2.5 font-medium">Room / Category</th>}
+                  {detail.status === 'ON_PROCESS' && !isWarehouse && detail.deliveryLocation?.type === 'VESSEL' && <th className="text-left px-5 py-2.5 font-medium whitespace-nowrap" title="Consumable = trip usage · Asset = ship Inventory (needs Room/Category) · Spare part = maintenance">On the ship</th>}
                   <th className="w-10" />
                 </tr>
               </thead>
@@ -2092,7 +2100,14 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                         <td className="px-5 py-3 text-right">
                           {stock === null
                             ? <span className="text-muted-foreground">—</span>
-                            : <span className={stockColor}>{stock} <span className="text-xs font-normal text-muted-foreground">{item.baseUnit ?? ''}</span></span>
+                            : <>
+                                <span className={stockColor}>{stock} <span className="text-xs font-normal text-muted-foreground">{item.baseUnit ?? ''}</span></span>
+                                {!!item.reservedStock && (
+                                  <span className="block text-[10px] text-muted-foreground whitespace-nowrap" title="Free stock = on hand − reserved by pending transfers">
+                                    {item.onHandStock} on hand · {Math.round(item.reservedStock * 100) / 100} reserved
+                                  </span>
+                                )}
+                              </>
                           }
                         </td>
                       )}
@@ -2225,11 +2240,24 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                           {chosenFromLocationId || transferred ? (
                             <span className="text-xs text-muted-foreground/60 italic">— (transfer, not needed)</span>
                           ) : (
+                            <div className="space-y-1.5">
+                              {isCustom ? (
+                                <select
+                                  className="text-xs border rounded-md px-2 py-1 focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white"
+                                  value={roomAssignment[item.id!]?.treatment ?? 'CONSUMABLE'}
+                                  onChange={e => setRoomAssignment(a => ({ ...a, [item.id!]: { roomId: a[item.id!]?.roomId ?? '', categoryId: a[item.id!]?.categoryId ?? '', treatment: e.target.value as Treatment } }))}
+                                >
+                                  {TREATMENTS.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                                </select>
+                              ) : (
+                                <span className="text-xs text-muted-foreground" title="Set on the item in Items & Pricing">{TREATMENT_LABEL[lineTreatmentOf(item)]}</span>
+                              )}
+                              {lineTreatmentOf(item) === 'ASSET' && (
                             <div className="flex items-center gap-1.5">
                               <select
                                 className="text-xs border rounded-md px-2 py-1 focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white max-w-28"
                                 value={roomAssignment[item.id!]?.roomId ?? ''}
-                                onChange={e => setRoomAssignment(a => ({ ...a, [item.id!]: { roomId: e.target.value, categoryId: '' } }))}
+                                onChange={e => setRoomAssignment(a => ({ ...a, [item.id!]: { ...a[item.id!], roomId: e.target.value, categoryId: '' } }))}
                               >
                                 <option value="">Room...</option>
                                 {invRooms.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
@@ -2238,11 +2266,13 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                                 className="text-xs border rounded-md px-2 py-1 focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white max-w-28 disabled:opacity-50"
                                 value={roomAssignment[item.id!]?.categoryId ?? ''}
                                 disabled={!roomAssignment[item.id!]?.roomId}
-                                onChange={e => setRoomAssignment(a => ({ ...a, [item.id!]: { roomId: a[item.id!]?.roomId ?? '', categoryId: e.target.value } }))}
+                                onChange={e => setRoomAssignment(a => ({ ...a, [item.id!]: { ...a[item.id!], roomId: a[item.id!]?.roomId ?? '', categoryId: e.target.value } }))}
                               >
                                 <option value="">Category...</option>
                                 {(invCategoriesByRoom[roomAssignment[item.id!]?.roomId ?? ''] ?? []).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                               </select>
+                            </div>
+                              )}
                             </div>
                           )}
                         </td>

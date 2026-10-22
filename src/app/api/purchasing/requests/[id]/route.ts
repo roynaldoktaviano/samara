@@ -9,6 +9,7 @@ import { emitTenantEvent } from '@/lib/realtime-bus'
 import { notifyByRole, notifyByRoleForRequest } from '@/lib/notify-purchasing'
 import { createOrAppendTransfer, toBaseQty } from '@/lib/purchasing/transferActions'
 import { computeStockChecks } from '@/lib/purchasing/stockCheck'
+import { effectiveTreatment, type Treatment } from '@/lib/purchasing/treatment'
 import { routePrLines, initialPrStatus, notifyPrRouted } from '@/lib/purchasing/requestItems'
 import { resolveTripLink, tripBookingSelect, openTripSelect, tripOf } from '@/lib/purchasing/tripLink'
 import { nextSeq } from '@/lib/purchasing/docNumber'
@@ -105,7 +106,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const [requesterUser, lots, purchaseItems, warehouses, { checks: stockChecks, reservedMap }, restockLinks] = await Promise.all([
     db.user.findUnique({ where: { id: request.requestedById }, select: { id: true, name: true } }),
     itemIds.length ? db.stockLot.findMany({ where: { itemId: { in: itemIds }, quantity: { gt: 0 } }, select: { itemId: true, locationId: true, quantity: true } }) : ([] as { itemId: string | null; locationId: string; quantity: number }[]),
-    itemIds.length ? db.purchaseItem.findMany({ where: { id: { in: itemIds } }, select: { id: true, minStock: true, baseUnit: true, purchaseUnit: true, conversionFactor: true } }) : ([] as { id: string; minStock: number; baseUnit: string; purchaseUnit: string; conversionFactor: number }[]),
+    itemIds.length ? db.purchaseItem.findMany({ where: { id: { in: itemIds } }, select: { id: true, minStock: true, baseUnit: true, purchaseUnit: true, conversionFactor: true, treatment: true } }) : ([] as { id: string; minStock: number; baseUnit: string; purchaseUnit: string; conversionFactor: number; treatment: Treatment }[]),
     db.stockLocation.findMany({ where: { type: 'WAREHOUSE', isActive: true }, select: { id: true, name: true } }),
     computeStockChecks(db, request),
     // Restock PRs this one triggered, or the vessel PR this Restock PR was created for.
@@ -127,6 +128,11 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     stockMap.set(lot.itemId, (stockMap.get(lot.itemId) ?? 0) + lot.quantity)
     const key = `${lot.itemId}:${lot.locationId}`
     stockByLocationMap.set(key, (stockByLocationMap.get(key) ?? 0) + lot.quantity)
+  }
+  const reservedByItem = new Map<string, number>()
+  for (const [key, qty] of reservedMap) {
+    const itemKey = key.split(':')[0]
+    reservedByItem.set(itemKey, (reservedByItem.get(itemKey) ?? 0) + qty)
   }
   const itemMasterMap = new Map(purchaseItems.map(i => [i.id, i]))
   const warehouseIds = new Set(warehouses.map(w => w.id))
@@ -160,11 +166,17 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       ...item,
       stockCheck: stockChecks.get(item.id) ?? null,
       transfer: tr ? { id: tr.id, transferNumber: tr.transferNumber, status: tr.status, fromLocationName: tr.fromLocation.name } : null,
-      currentStock: item.itemId ? (stockMap.get(item.itemId) ?? 0) : null,
+      // Free stock, not raw on-hand: what PENDING transfers already reserved (StockLot only drops
+      // on dispatch) isn't available to anyone else. onHand/reserved let the UI show the split.
+      currentStock: item.itemId ? Math.max(0, (stockMap.get(item.itemId) ?? 0) - (reservedByItem.get(item.itemId) ?? 0)) : null,
+      onHandStock: item.itemId ? (stockMap.get(item.itemId) ?? 0) : null,
+      reservedStock: item.itemId ? (reservedByItem.get(item.itemId) ?? 0) : 0,
       minStock: master?.minStock ?? 0,
       baseUnit: master?.baseUnit ?? null,
       purchaseUnit: master?.purchaseUnit ?? null,
       conversionFactor: master?.conversionFactor ?? 1,
+      // How the item master says it's treated on a ship — custom lines pick one at convert.
+      itemTreatment: master?.treatment ?? null,
       warehouseStock,
       transferEligible: warehouseStock.length > 0,
     }
@@ -201,7 +213,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     // Which Inventory Room/Category each item is destined for — required (validated
     // below) when the PR's delivery location is a ship, for every item converting into
     // a PO (not needed for items fulfilled via transfer instead).
-    roomAssignments?: { requestItemId: string; roomId: string; categoryId: string }[]
+    roomAssignments?: { requestItemId: string; roomId?: string; categoryId?: string; treatment?: Treatment }[]
     edit?: boolean
     deliveryLocationId?: string; requestedByEmployeeId?: string; notes?: string
     neededByDate?: string; isUrgent?: boolean; urgentReason?: string
@@ -446,16 +458,26 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   // A PR delivering to a ship must say, per item, which Inventory Room/Category it's
   // destined for — same rule as creating/editing a PO directly (see
   // src/app/api/purchasing/orders/route.ts). Doesn't apply to inventory-linked items.
+  // Treatment per PO line: the item master's for catalog lines, Purchasing's pick for custom
+  // ones (default CONSUMABLE). Only ASSET lines become Inventory on a ship, so only they
+  // need a Room/Category (see receiveGoods).
+  const poMasterTreatment = new Map((await db.purchaseItem.findMany({
+    where: { id: { in: poItems.map(it => it.itemId).filter(Boolean) as string[] } },
+    select: { id: true, treatment: true },
+  })).map(m => [m.id, m.treatment]))
+  const lineTreatment = (it: { id: string; itemId: string | null }): Treatment =>
+    it.itemId ? effectiveTreatment(null, poMasterTreatment.get(it.itemId)) : effectiveTreatment(roomAssignmentByItemId.get(it.id)?.treatment, null)
+
   if (poItems.length > 0 && current.deliveryLocationId) {
     const deliveryLocation = await db.stockLocation.findUnique({ where: { id: current.deliveryLocationId }, select: { type: true } })
     if (deliveryLocation?.type === 'VESSEL') {
-      const roomAssignable = poItems.filter(it => !it.sourceInventoryItemId)
+      const roomAssignable = poItems.filter(it => !it.sourceInventoryItemId && lineTreatment(it) === 'ASSET')
       const missing = roomAssignable.filter(it => !roomAssignmentByItemId.get(it.id)?.roomId || !roomAssignmentByItemId.get(it.id)?.categoryId)
       if (missing.length > 0) {
-        return NextResponse.json({ error: `Setiap item wajib menentukan Ruangan dan Kategori Barang untuk PO ke kapal: ${missing.map(it => it.itemName).join(', ')}` }, { status: 400 })
+        return NextResponse.json({ error: `Item Asset wajib menentukan Ruangan dan Kategori Barang: ${missing.map(it => it.itemName).join(', ')}` }, { status: 400 })
       }
-      const roomIds = [...new Set(roomAssignable.map(it => roomAssignmentByItemId.get(it.id)!.roomId))]
-      const categoryIds = [...new Set(roomAssignable.map(it => roomAssignmentByItemId.get(it.id)!.categoryId))]
+      const roomIds = [...new Set(roomAssignable.map(it => roomAssignmentByItemId.get(it.id)!.roomId!))]
+      const categoryIds = [...new Set(roomAssignable.map(it => roomAssignmentByItemId.get(it.id)!.categoryId!))]
       const [validRooms, validCategories] = await Promise.all([
         db.inventoryRoom.count({ where: { id: { in: roomIds }, locationId: current.deliveryLocationId } }),
         db.inventoryCategory.count({ where: { id: { in: categoryIds }, room: { locationId: current.deliveryLocationId } } }),
@@ -527,8 +549,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
             unit: it.itemId ? null : it.unit,
             orderedQty: it.quantity,
             unitCost: it.estimatedCost,
-            inventoryRoomId: sourceInv ? sourceInv.roomId : (roomAssignmentByItemId.get(it.id)?.roomId ?? null),
-            inventoryCategoryId: sourceInv ? sourceInv.categoryId : (roomAssignmentByItemId.get(it.id)?.categoryId ?? null),
+            inventoryRoomId: sourceInv ? sourceInv.roomId : (roomAssignmentByItemId.get(it.id)?.roomId || null),
+            inventoryCategoryId: sourceInv ? sourceInv.categoryId : (roomAssignmentByItemId.get(it.id)?.categoryId || null),
+            treatment: lineTreatment(it),
             sourceInventoryItemId: it.sourceInventoryItemId ?? null,
           }
         })

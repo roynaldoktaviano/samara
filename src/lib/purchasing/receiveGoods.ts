@@ -6,6 +6,8 @@ import { attemptFinalizePOStatus, resolveNextHop, spawnNextTransitLeg } from '@/
 import { nextSeq } from '@/lib/purchasing/docNumber'
 import { poLineNetRatio } from '@/lib/po-payment'
 import { allocateBackorders } from '@/lib/purchasing/backorders'
+import { effectiveTreatment, usageTypeForTreatment } from '@/lib/purchasing/treatment'
+import { nextVal } from '@/lib/counter'
 
 type Db = Awaited<ReturnType<typeof getDb>>
 
@@ -89,7 +91,7 @@ export async function receiveGoods(db: Db, params: {
   const itemIds = items.map(it => it.itemId).filter(Boolean) as string[]
   const purchaseItemsData = await db.purchaseItem.findMany({
     where: { id: { in: itemIds } },
-    select: { id: true, conversionFactor: true, standardCost: true, baseUnit: true, name: true, isStockTracked: true, type: true },
+    select: { id: true, conversionFactor: true, standardCost: true, baseUnit: true, name: true, isStockTracked: true, type: true, treatment: true },
   })
   const conversionMap = new Map(purchaseItemsData.map(i => [i.id, i.conversionFactor]))
   const itemDataMap = new Map(purchaseItemsData.map(i => [i.id, i]))
@@ -168,6 +170,38 @@ export async function receiveGoods(db: Db, params: {
         continue
       }
 
+      // How this line is treated on a ship (src/lib/purchasing/treatment.ts). An ASSET reaching
+      // its final ship destination with a Room/Category on its PO line becomes an InventoryItem
+      // there — equipment, not usage, so no stock lot / usage movement and never a trip cost.
+      const treatment = effectiveTreatment(poItem?.treatment, it.itemId ? itemDataMap.get(it.itemId)?.treatment : null)
+      const arrivalLoc = route?.(it.itemId ? itemDataMap.get(it.itemId)?.type : null) ?? null
+      if (treatment === 'ASSET' && arrivalLoc?.yachtId && poItem?.inventoryCategoryId) {
+        const category = await tx.inventoryCategory.findUnique({
+          where: { id: poItem.inventoryCategoryId },
+          select: { id: true, roomId: true, room: { select: { locationId: true } } },
+        })
+        if (category) {
+          await tx.inventoryItem.create({
+            data: {
+              id: crypto.randomUUID(),
+              itemNumber: 'INV-' + String(await nextVal('inventory-item', db)).padStart(4, '0'),
+              name: it.itemId ? (itemDataMap.get(it.itemId)?.name ?? it.itemName) : it.itemName,
+              categoryId: category.id,
+              roomId: category.roomId,
+              locationId: category.room.locationId,
+              quantity: Math.max(1, Math.round(purchaseQty)),
+              unitPrice: netUnitCost(i),
+              vendorName: po.supplierName ?? null,
+              purchaseDate: new Date(),
+              sourcePoId: orderId,
+              notes: `Received on ${grNumber} (${po.poNumber ?? 'PO'})`,
+              createdById: params.movementCreatedById,
+            },
+          })
+          continue
+        }
+      }
+
       // Stock lot / movement: applies to catalog items and to custom/non-catalog
       // PO lines alike (e.g. one-off purchases like "Grab" or event flowers) —
       // custom lines are keyed by (itemName, locationId) instead of itemId.
@@ -189,6 +223,9 @@ export async function receiveGoods(db: Db, params: {
       const dest = route?.(it.itemId ? itemDataMap.get(it.itemId)?.type : null) ?? receivingLoc
       const destId = dest?.id ?? effectiveLocationId
       const usage = dest ? shipUsageOnArrival(null, dest) : null
+      // CONSUMABLE → trip usage, SPARE_PART → ship maintenance, ASSET (no Room/Category to land
+      // in) → no usage at all — it's still equipment, just held as stock until registered.
+      const usageType = usageTypeForTreatment(treatment)
       const incomingCost = baseCostPerUnit || (it.itemId ? itemDataMap.get(it.itemId)?.standardCost ?? 0 : 0)
       if (it.itemId && isStockTracked) {
         // Moving average: the location's running cost is re-blended with this receipt's
@@ -222,8 +259,8 @@ export async function receiveGoods(db: Db, params: {
           ...(it.itemId ? { itemId: it.itemId } : { itemName: it.itemName }),
           unitCost: incomingCost,
           totalCost: baseQty * incomingCost,
-          ...(usage && {
-            usageType: 'SHIP_USAGE' as const,
+          ...(usage && usageType && {
+            usageType,
             yachtId: usage.yachtId,
             openTripId: po.openTripId,
             tripBookingId: po.bookingId,

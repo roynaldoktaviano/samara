@@ -5,6 +5,7 @@ import { attemptFinalizePOStatus, getRouteLocationIds, resolveNextHop, spawnNext
 import { nextSeq } from '@/lib/purchasing/docNumber'
 import { notifyPoArrivalToRequester, notifyRequester } from '@/lib/notify-purchasing'
 import { allocateBackorders } from '@/lib/purchasing/backorders'
+import { effectiveTreatment, usageTypeForTreatment } from '@/lib/purchasing/treatment'
 
 // receiveTransferLeg always owns its own $transaction (called with a full client, session-
 // or token-resolved — never from inside an existing transaction), unlike transitChain.ts's
@@ -104,7 +105,8 @@ export async function receiveTransferLeg(db: Db, transferId: string, params: {
   ])
   // Fallback cost for legacy lines dispatched before unitCost was snapshotted.
   const catalogIds = transfer.items.map(ti => ti.itemId).filter(Boolean) as string[]
-  const catalog = await db.purchaseItem.findMany({ where: { id: { in: catalogIds } }, select: { id: true, standardCost: true, type: true } })
+  const catalog = await db.purchaseItem.findMany({ where: { id: { in: catalogIds } }, select: { id: true, standardCost: true, type: true, treatment: true } })
+  const treatmentMap = new Map(catalog.map(i => [i.id, i.treatment]))
   const stdCostMap = new Map(catalog.map(i => [i.id, i.standardCost]))
   const typeMap = new Map(catalog.map(i => [i.id, i.type]))
 
@@ -156,8 +158,9 @@ export async function receiveTransferLeg(db: Db, transferId: string, params: {
           ...(it.itemId ? { itemId: it.itemId } : { itemName: it.itemName }),
           unitCost: incomingCost,
           totalCost: qty * incomingCost * (usage?.sign ?? 1),
-          ...(usage && {
-            usageType: 'SHIP_USAGE' as const,
+          // CONSUMABLE → trip usage, SPARE_PART → ship maintenance, ASSET → none (equipment).
+          ...(usage && usageTypeForTreatment(effectiveTreatment(null, it.itemId ? treatmentMap.get(it.itemId) : null)) && {
+            usageType: usageTypeForTreatment(effectiveTreatment(null, it.itemId ? treatmentMap.get(it.itemId) : null))!,
             yachtId: usage.yachtId,
             openTripId: transfer.openTripId,
             tripBookingId: transfer.tripBookingId,

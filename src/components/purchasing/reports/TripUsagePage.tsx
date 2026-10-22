@@ -6,7 +6,7 @@ import { RefreshCw, Search, ChevronRight, ChevronDown, Download } from 'lucide-r
 // Purchasing › Trip Usage — what each trip took as usage (pemakaian), per yacht & year.
 // Same ledger and trip-matching rule as Finance › Trip Stats (see api/purchasing/reports/trip-usage).
 
-type UsageKey = 'SHIP_USAGE' | 'BAR_COGS' | 'COMPLIMENTARY' | 'SHRINKAGE'
+type UsageKey = 'SHIP_USAGE' | 'BAR_COGS' | 'COMPLIMENTARY' | 'SHRINKAGE' | 'MAINTENANCE'
 interface Line {
   date: string
   itemId: string | null
@@ -28,9 +28,11 @@ interface Data {
   itemTypes: { code: string; label: string }[]
   trips: Trip[]
   unassigned: Line[]
+  // Spare parts that reached this ship this year — ship upkeep, never a trip's cost.
+  maintenance: Line[]
 }
 
-const USAGE_LABEL: Record<UsageKey, string> = { SHIP_USAGE: 'Ship Usage', BAR_COGS: 'Bar Sale', COMPLIMENTARY: 'Complimentary', SHRINKAGE: 'Shrinkage' }
+const USAGE_LABEL: Record<UsageKey, string> = { SHIP_USAGE: 'Ship Usage', BAR_COGS: 'Bar Sale', COMPLIMENTARY: 'Complimentary', SHRINKAGE: 'Shrinkage', MAINTENANCE: 'Maintenance' }
 const fmtNum = (n: number) => new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 }).format(n)
 const fmtMoney = (n: number) => `${n < 0 ? '-' : ''}Rp ${new Intl.NumberFormat('id-ID').format(Math.round(Math.abs(n)))}`
 const fmtDate = (s: string) => new Date(s).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
@@ -309,7 +311,7 @@ export default function TripUsagePage() {
   const [search, setSearch] = useState('')
   const [hideEmpty, setHideEmpty] = useState(true)
   const [mode, setMode] = useState<'item' | 'detail'>('item')
-  const [view, setView] = useState<'trips' | 'pattern'>('trips')
+  const [view, setView] = useState<'trips' | 'pattern' | 'maintenance'>('trips')
   const [open, setOpen] = useState<Set<string>>(new Set())
   const [data, setData] = useState<Data | null>(null)
   const [loading, setLoading] = useState(true)
@@ -341,6 +343,7 @@ export default function TripUsagePage() {
   const allTrips = useMemo(() => (data?.trips ?? []).map(t => ({ ...t, lines: filterLines(t.lines) })), [data, filterLines])
   const unassigned = useMemo(() => filterLines(data?.unassigned ?? []), [data, filterLines])
   const unassignedTotal = unassigned.reduce((s, l) => s + l.cost, 0)
+  const maintenance = useMemo(() => filterLines(data?.maintenance ?? []), [data, filterLines])
   const grandTotal = trips.reduce((s, t) => s + t.total, 0)
   const withUsage = trips.filter(t => t.lines.length > 0)
   const toggle = (id: string) => setOpen(s => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n })
@@ -369,7 +372,7 @@ export default function TripUsagePage() {
       </div>
 
       <div className="flex gap-6 border-b -mt-2">
-        {([['trips', 'Per Trip'], ['pattern', 'Order Pattern']] as const).map(([v, label]) => (
+        {([['trips', 'Per Trip'], ['pattern', 'Order Pattern'], ['maintenance', 'Maintenance']] as const).map(([v, label]) => (
           <button key={v} onClick={() => setView(v)}
             className={`-mb-px pb-2.5 text-sm font-medium border-b-2 transition-colors ${view === v ? 'border-foreground text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}>
             {label}
@@ -400,7 +403,29 @@ export default function TripUsagePage() {
         <Stat label="Unassigned" value={fmtMoney(unassignedTotal)} sub={unassigned.length ? `${unassigned.length} lines` : undefined} tone={unassigned.length ? 'amber' : undefined} />
       </div>
 
-      {view === 'pattern' ? (
+      {view === 'maintenance' ? (
+        <div className="rounded-lg border overflow-hidden">
+          <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 border-b">
+            <p className="text-sm font-medium">
+              {yachtName ?? 'Ship'} <span className="text-muted-foreground font-normal">· spare parts received in {year} — ship upkeep, not charged to any trip</span>
+            </p>
+            <div className="flex items-center gap-4">
+              <p className="text-sm font-semibold tabular-nums">{fmtMoney(maintenance.reduce((s, l) => s + l.cost, 0))}</p>
+              <div className="inline-flex rounded-md bg-muted p-0.5 text-xs">
+                {(['item', 'detail'] as const).map(m => (
+                  <button key={m} onClick={() => setMode(m)}
+                    className={`px-2.5 py-1 rounded font-medium transition-colors ${mode === m ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
+                    {m === 'item' ? 'By item' : 'Detail'}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+          {loading && !data
+            ? <p className="px-5 py-10 text-center text-sm text-muted-foreground">Loading…</p>
+            : <div className="overflow-x-auto"><LinesTable lines={maintenance} mode={mode} /></div>}
+        </div>
+      ) : view === 'pattern' ? (
         <div className="rounded-lg border overflow-hidden">
           <div className="px-4 py-2.5 border-b">
             <p className="text-sm font-medium">

@@ -17,6 +17,7 @@ import { poLineTotal, poLineDiscount } from '@/lib/po-payment'
 import { readUploadFile } from '@/lib/fileUpload'
 import { toast } from 'sonner'
 import type { ExtractedInvoice } from '@/app/api/purchasing/orders/extract-invoice/route'
+import { TREATMENTS, TREATMENT_LABEL, type Treatment } from '@/lib/purchasing/treatment'
 
 
 interface PaymentRequest {
@@ -37,6 +38,7 @@ interface OrderItem {
   discountType?: string | null; discountValue?: number
   inventoryRoomId?: string | null; inventoryCategoryId?: string | null
   inventoryRoom?: { name: string } | null; inventoryCategory?: { name: string } | null
+  treatment?: Treatment | null
   sourceInventoryItemId?: string | null
 }
 interface TransitStop { locationId: string; sequence: number; location: { id: string; name: string; type: string } }
@@ -73,7 +75,7 @@ interface FollowUp {
 interface EscalationTarget { id: string; name: string | null }
 export interface ReimburseAccountOption { id: string; accountHolderName: string; bankName: string; accountNumber: string }
 export interface EmployeeOption { id: string; fullName: string; employeeNumber: string; department: string | null; office: string | null; role: string | null }
-interface PurchaseItem { id: string; name: string; sku: string; baseUnit: string; purchaseUnit: string; conversionFactor: number; avgPrice: number; isActive: boolean }
+interface PurchaseItem { id: string; name: string; sku: string; baseUnit: string; purchaseUnit: string; conversionFactor: number; avgPrice: number; isActive: boolean; treatment?: Treatment }
 interface StockLocation { id: string; name: string; type: string; managedBy: string; isActive?: boolean; parentId: string | null; yachtId?: string | null }
 interface OrderDetail extends PurchaseOrder {
   dispatchPhotoKey?: string | null
@@ -318,6 +320,8 @@ export function EmployeeCombobox({ value, employees, onChange }: {
 type OrderLine = {
   itemId: string; itemName: string; baseUnit: string; purchaseUnit: string; itemUnit: string; orderedQty: number; unitCost: number
   search: string; open: boolean; inventoryRoomId: string; inventoryCategoryId: string
+  // Custom lines only — catalog lines follow the item master (see lineTreatment).
+  treatment?: Treatment
   // Set only when this line came from a Purchase Request's "Inventory" picker (see
   // RequestsPage.tsx) — not user-editable here, just carried through unchanged so
   // editing this PO doesn't silently drop the link that tells Goods Receipt to top up
@@ -569,6 +573,10 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
 
   // master data
   const [purchaseItems, setPurchaseItems] = useState<PurchaseItem[]>([])
+  // A line's treatment on the ship: the item master's for catalog lines, the line's own pick
+  // for custom ones. Only ASSET lines need a Room/Category (they become ship Inventory).
+  const lineTreatment = (l: { itemId: string; treatment?: Treatment }): Treatment =>
+    l.itemId ? (purchaseItems.find(p => p.id === l.itemId)?.treatment ?? 'CONSUMABLE') : (l.treatment ?? 'CONSUMABLE')
   const [suppliers, setSuppliers] = useState<SupplierOption[]>([])
   const [locations, setLocations] = useState<StockLocation[]>([])
   const [employees, setEmployees] = useState<EmployeeOption[]>([])
@@ -865,8 +873,8 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
     setSaving(true); setSaveError('')
     if (!supplier.trim()) { setSaveError('Supplier name is required'); setSaving(false); return }
     if (!requestedByEmployeeId) { setSaveError('Requested By is required'); setSaving(false); return }
-    if (isVesselDelivery && lines.some(l => !l.inventoryRoomId || !l.inventoryCategoryId)) {
-      setSaveError('Every item needs a Room and Category for a PO delivered to a ship'); setSaving(false); return
+    if (isVesselDelivery && lines.some(l => lineTreatment(l) === 'ASSET' && (!l.inventoryRoomId || !l.inventoryCategoryId))) {
+      setSaveError('Assets need a Room and Category (where they go in the ship Inventory)'); setSaving(false); return
     }
     const res = await fetch('/api/purchasing/orders', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -877,6 +885,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
           itemId: l.itemId || undefined, itemName: l.itemName, orderedQty: l.orderedQty, unitCost: l.unitCost, unit: l.itemId ? undefined : (l.itemUnit || undefined),
           discountType: l.discountValue ? (l.discountType ?? 'PERCENT') : null, discountValue: l.discountValue || 0,
           inventoryRoomId: l.inventoryRoomId || undefined, inventoryCategoryId: l.inventoryCategoryId || undefined,
+          treatment: l.itemId ? undefined : (l.treatment ?? 'CONSUMABLE'),
         })),
         extraCharges: extraCharges.filter(c => c.label.trim() || c.amount),
         discountType: discountValue > 0 ? discountType : undefined,
@@ -1336,8 +1345,8 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                 <th className="text-left px-3 py-2.5 font-medium w-28">Unit</th>
                 <th className="text-left px-3 py-2.5 font-medium w-36">Unit Price</th>
                 <th className="text-left px-3 py-2.5 font-medium w-44">Discount</th>
-                {isVesselDelivery && <th className="text-left px-3 py-2.5 font-medium w-36">Room</th>}
-                {isVesselDelivery && <th className="text-left px-3 py-2.5 font-medium w-36">Category</th>}
+                {isVesselDelivery && <th className="text-left px-3 py-2.5 font-medium w-36" title="Consumable = trip usage · Asset = ship Inventory (needs Room/Category) · Spare part = maintenance">On the ship</th>}
+                {isVesselDelivery && <th className="text-left px-3 py-2.5 font-medium w-36">Room / Category</th>}
                 <th className="text-right px-4 py-2.5 font-medium w-36">Subtotal</th>
                 <th className="w-10" />
               </tr>
@@ -1416,20 +1425,34 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                     </td>
                     {isVesselDelivery && (
                       <td className="px-2 py-2.5">
-                        <select disabled={locked} className={inp} value={line.inventoryRoomId}
-                          onChange={e => setLines(l => l.map((li, i) => i !== idx ? li : { ...li, inventoryRoomId: e.target.value, inventoryCategoryId: '' }))}>
-                          <option value="">— Select —</option>
-                          {invRooms.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-                        </select>
+                        {line.itemId || !line.itemName ? (
+                          <span className="text-xs text-muted-foreground px-1" title="Set on the item in Items & Pricing">{line.itemId ? TREATMENT_LABEL[lineTreatment(line)] : '—'}</span>
+                        ) : (
+                          <select disabled={locked} className={inp} value={line.treatment ?? 'CONSUMABLE'}
+                            onChange={e => setLines(l => l.map((li, i) => i !== idx ? li : { ...li, treatment: e.target.value as Treatment }))}>
+                            {TREATMENTS.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                          </select>
+                        )}
                       </td>
                     )}
                     {isVesselDelivery && (
                       <td className="px-2 py-2.5">
-                        <select disabled={locked || !line.inventoryRoomId} className={inp} value={line.inventoryCategoryId}
-                          onChange={e => setLines(l => l.map((li, i) => i !== idx ? li : { ...li, inventoryCategoryId: e.target.value }))}>
-                          <option value="">— Select —</option>
-                          {(invCategoriesByRoom[line.inventoryRoomId] ?? []).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                        </select>
+                        {lineTreatment(line) === 'ASSET' ? (
+                          <div className="space-y-1">
+                            <select disabled={locked} className={inp} value={line.inventoryRoomId}
+                              onChange={e => setLines(l => l.map((li, i) => i !== idx ? li : { ...li, inventoryRoomId: e.target.value, inventoryCategoryId: '' }))}>
+                              <option value="">Room…</option>
+                              {invRooms.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                            </select>
+                            <select disabled={locked || !line.inventoryRoomId} className={inp} value={line.inventoryCategoryId}
+                              onChange={e => setLines(l => l.map((li, i) => i !== idx ? li : { ...li, inventoryCategoryId: e.target.value }))}>
+                              <option value="">Category…</option>
+                              {(invCategoriesByRoom[line.inventoryRoomId] ?? []).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                            </select>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-muted-foreground/60 px-1">—</span>
+                        )}
                       </td>
                     )}
                     <td className="px-4 py-2.5 text-right font-semibold whitespace-nowrap">
@@ -1791,6 +1814,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
         discountType: it.discountType === 'FIXED' ? 'FIXED' as const : 'PERCENT' as const, discountValue: it.discountValue || 0,
         search: '', open: false,
         inventoryRoomId: it.inventoryRoomId ?? '', inventoryCategoryId: it.inventoryCategoryId ?? '',
+        treatment: it.treatment ?? undefined,
         sourceInventoryItemId: it.sourceInventoryItemId ?? null,
       }
     }) : [{ itemId: '', itemName: '', baseUnit: '', purchaseUnit: '', itemUnit: '', orderedQty: 1, unitCost: 0, search: '', open: false, inventoryRoomId: '', inventoryCategoryId: '' }])
@@ -1807,8 +1831,8 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
     if (!supplier.trim()) { setEditPOError('Supplier name is required'); setEditPOSaving(false); return }
     if (!requestedByEmployeeId) { setEditPOError('Requested By is required'); setEditPOSaving(false); return }
     const locked = poFinancialsLocked(detail)
-    if (!locked && isVesselDelivery && lines.some(l => !l.inventoryRoomId || !l.inventoryCategoryId)) {
-      setEditPOError('Every item needs a Room and Category for a PO delivered to a ship'); setEditPOSaving(false); return
+    if (!locked && isVesselDelivery && lines.some(l => lineTreatment(l) === 'ASSET' && !l.sourceInventoryItemId && (!l.inventoryRoomId || !l.inventoryCategoryId))) {
+      setEditPOError('Assets need a Room and Category (where they go in the ship Inventory)'); setEditPOSaving(false); return
     }
     const res = await fetch(`/api/purchasing/orders/${detail.id}`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
@@ -1826,6 +1850,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
             itemId: l.itemId || undefined, itemName: l.itemName, orderedQty: l.orderedQty, unitCost: l.unitCost, unit: l.itemId ? undefined : (l.itemUnit || undefined),
           discountType: l.discountValue ? (l.discountType ?? 'PERCENT') : null, discountValue: l.discountValue || 0,
             inventoryRoomId: l.inventoryRoomId || undefined, inventoryCategoryId: l.inventoryCategoryId || undefined,
+            treatment: l.itemId ? undefined : (l.treatment ?? 'CONSUMABLE'),
             sourceInventoryItemId: l.sourceInventoryItemId || undefined,
           })),
           extraCharges: extraCharges.filter(c => c.label.trim() || c.amount),

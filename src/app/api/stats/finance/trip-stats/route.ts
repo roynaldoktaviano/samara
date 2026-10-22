@@ -189,7 +189,8 @@ export async function GET(request: NextRequest) {
     // ── Usage cost per trip ──
     const movements = await withRetry(db, () => db.stockMovement.findMany({
       where: {
-        usageType: { not: null },
+        // Trip cost only — MAINTENANCE (spare parts) is ship upkeep, never a trip's cost.
+        usageType: { in: [...USAGE_TYPES] },
         OR: [
           { openTripId: { in: openTrips.map(t => t.id) } },
           { tripBookingId: { in: charters.map(c => c.id) } },

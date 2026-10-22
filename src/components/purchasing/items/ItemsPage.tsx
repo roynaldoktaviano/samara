@@ -6,6 +6,7 @@ import { sortByMethod, computeStockValue, type ValuationMethod } from '@/lib/val
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { renderLocationOptions } from '@/components/purchasing/LocationOptions'
 import { ItemFormFields, EMPTY_ITEM_FORM, newItemForm, getTypeIcon, type ItemForm, type ItemTypeConfig } from './ItemFormFields'
+import type { Treatment } from '@/lib/purchasing/treatment'
 
 type PurchaseItemType = string
 
@@ -25,6 +26,7 @@ interface PurchaseItem {
   valuationMethod: string
   minStock: number
   minStockUnit?: string
+  treatment?: Treatment
   reorderQty: number
   imageKey: string | null
   isActive: boolean
@@ -274,6 +276,7 @@ export default function ItemsPage() {
       valuationMethod: item.valuationMethod,
       minStock: item.minStock,
       minStockUnit: item.minStockUnit === 'PURCHASE' ? 'PURCHASE' : 'BASE',
+      treatment: item.treatment ?? 'CONSUMABLE',
       reorderQty: item.reorderQty,
       imageKey: item.imageKey,
       isSoldInPos: item.isSoldInPos,

@@ -2082,39 +2082,40 @@ enum StockCountType {
 }
 
 model PurchaseItem {
-  id                String   @id @default(cuid())
-  sku               String   @unique
+  id                String        @id @default(cuid())
+  sku               String        @unique
   name              String
-  type              String   @default("MAINTENANCE")
+  type              String        @default("MAINTENANCE")
   category          String
   baseUnit          String
   purchaseUnit      String
-  conversionFactor  Float    @default(1)
-  standardCost      Float    @default(0)
-  sellingPrice      Float    @default(0)
-  valuationMethod   String   @default("FIFO")
-  minStock          Float    @default(0)
+  conversionFactor  Float         @default(1)
+  standardCost      Float         @default(0)
+  sellingPrice      Float         @default(0)
+  valuationMethod   String        @default("FIFO")
+  treatment         ItemTreatment @default(CONSUMABLE)
+  minStock          Float         @default(0)
   // Unit Min Stock was entered in on the item form — display only. minStock itself is
   // ALWAYS stored in baseUnit (every stock comparison is in base units); "PURCHASE" just
   // means the form shows/accepts it as minStock / conversionFactor (e.g. 2 bottle vs 1500 ml).
-  minStockUnit      String   @default("BASE")
-  reorderQty        Float    @default(0)
+  minStockUnit      String        @default("BASE")
+  reorderQty        Float         @default(0)
   imageKey          String?
-  isActive          Boolean  @default(true)
-  isSoldInPos       Boolean  @default(true)
+  isActive          Boolean       @default(true)
+  isSoldInPos       Boolean       @default(true)
   // false for items that are purchased but never held as inventory (services, one-off
   // buys promoted from a PR/PO "Custom Request" line) — receiveGoods() still logs their
   // receipt for history, but never pools them into a location's stock balance, and they
   // never trigger min-stock/reorder logic. Default true keeps every existing catalog row
   // (all of which are real stock items today) unaffected.
-  isStockTracked    Boolean  @default(true)
+  isStockTracked    Boolean       @default(true)
   // Where a non-stock item currently physically sits — manually set (see "Change
   // Location" in Items & Pricing), since these items are never pooled into StockLot
   // balances and so have no other way to answer "where is it right now". Meaningless
   // for stock-tracked items, which already have a real location breakdown via StockLot.
   currentLocationId String?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
 
   stockLots             StockLot[]
   requestItems          PurchaseRequestItem[]
@@ -2466,8 +2467,19 @@ model StockMovement {
   @@index([tripBookingId])
 }
 
+// How an item is treated once it reaches a ship (set on the item master; per PO line for
+// custom lines). CONSUMABLE = used up → trip usage. ASSET = durable equipment → becomes an
+// InventoryItem in the PO line's Room/Category, never trip cost. SPARE_PART = maintenance
+// cost of the ship (usageType MAINTENANCE), also kept out of trip cost.
+enum ItemTreatment {
+  CONSUMABLE
+  ASSET
+  SPARE_PART
+}
+
 enum StockUsageType {
   SHIP_USAGE // received at an EXPENSE_ON_RECEIVE location (ship/galley/deck/engine)
+  MAINTENANCE // a SPARE_PART item arriving on a ship — ship upkeep, not charged to a trip
   BAR_COGS // sold at the POS bar (recipe cost)
   COMPLIMENTARY // given free at the POS bar
   SHRINKAGE // stock-count variance at a HOLD_AS_STOCK location
@@ -3017,19 +3029,22 @@ model DeliveryFeeReimbursement {
 }
 
 model PurchaseOrderItem {
-  id                    String  @id @default(cuid())
+  id                    String         @id @default(cuid())
   orderId               String
   itemId                String?
   itemName              String
   unit                  String?
   orderedQty            Float
-  receivedQty           Float   @default(0)
-  unitCost              Float   @default(0)
+  receivedQty           Float          @default(0)
+  // Snapshot of how this line is treated on arrival (item master's, or picked by Purchasing
+  // for a custom line). Null on legacy lines = fall back to the item master / CONSUMABLE.
+  treatment             ItemTreatment?
+  unitCost              Float          @default(0)
   // Per-line discount, applied before the PO-level discount/extraCharges (see
   // poLineTotal() in src/lib/po-payment.ts). 'PERCENT' = % of qty × unitCost,
   // 'FIXED' = flat Rupiah off the whole line. Null/0 = no discount.
   discountType          String?
-  discountValue         Float   @default(0)
+  discountValue         Float          @default(0)
   // Which Inventory Room/Category this item is destined for — required (enforced at the
   // API layer) whenever the PO's deliveryLocation is a ship (StockLocation.type ===
   // 'VESSEL'), so goods purchased for a vessel already know where they'll live in the

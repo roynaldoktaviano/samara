@@ -112,6 +112,7 @@ export async function recordBotCall(
   url: URL,
   resource: string,
   rowCount: number,
+  method: 'GET' | 'POST' = 'GET',
 ): Promise<void> {
   const { user } = auth.session
   if (user.role !== 'BOT') return
@@ -128,7 +129,7 @@ export async function recordBotCall(
   const db = await getDb(auth.session).catch(() => undefined)
   await logActivity({
     userId: user.id, userName, userRole: 'BOT', action: 'BOT_API', entity: resource,
-    detail: `GET ${url.pathname}${url.search} · ${rowCount} rows · via ${auth.via}`,
+    detail: `${method} ${url.pathname}${url.search} · ${rowCount} rows · via ${auth.via}`,
   }, db)
 
   if (!bucket.alerted && bucket.count >= BOT_BULK_ALERT_ROWS) {

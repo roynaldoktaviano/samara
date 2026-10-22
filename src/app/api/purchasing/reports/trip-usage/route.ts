@@ -15,7 +15,9 @@ import { buildTripResolver } from '@/lib/purchasing/tripUsage'
 
 const ALLOWED = ['ADMIN', 'SUPER_ADMIN', 'PURCHASING', 'WAREHOUSE', 'FINANCE']
 
-type UsageKey = 'SHIP_USAGE' | 'BAR_COGS' | 'COMPLIMENTARY' | 'SHRINKAGE'
+type UsageKey = 'SHIP_USAGE' | 'BAR_COGS' | 'COMPLIMENTARY' | 'SHRINKAGE' | 'MAINTENANCE'
+// Charged to trips. MAINTENANCE (spare parts) is ship upkeep — listed per ship instead.
+const TRIP_USAGE_TYPES = ['SHIP_USAGE', 'BAR_COGS', 'COMPLIMENTARY', 'SHRINKAGE'] as const
 
 export interface TripUsageLine {
   date: string
@@ -67,9 +69,20 @@ export async function GET(req: NextRequest) {
   ]))
   const { isAbsorbed, resolve } = buildTripResolver(openTrips, charters)
 
+  const movementSelect = {
+    usageType: true, totalCost: true, quantity: true, createdAt: true, openTripId: true, tripBookingId: true,
+    referenceId: true, referenceType: true, itemId: true, itemName: true,
+    item: { select: { name: true, baseUnit: true, type: true, category: true } },
+  } as const
+  // Spare parts that reached this ship this year — its maintenance cost, not any trip's.
+  const maintenanceMovements = await withRetry(db, () => db.stockMovement.findMany({
+    where: { usageType: 'MAINTENANCE', yachtId, createdAt: { gte: start, lt: end }, ...(itemType ? { item: { type: itemType } } : {}) },
+    select: movementSelect,
+    orderBy: { createdAt: 'asc' },
+  }))
   const movements = await withRetry(db, () => db.stockMovement.findMany({
     where: {
-      usageType: { not: null },
+      usageType: { in: [...TRIP_USAGE_TYPES] },
       ...(itemType ? { item: { type: itemType } } : {}),
       OR: [
         { openTripId: { in: openTrips.map(t => t.id) } },
@@ -77,16 +90,12 @@ export async function GET(req: NextRequest) {
         { yachtId, openTripId: null, tripBookingId: null, createdAt: { gte: start, lt: end } },
       ],
     },
-    select: {
-      usageType: true, totalCost: true, quantity: true, createdAt: true, openTripId: true, tripBookingId: true,
-      referenceId: true, referenceType: true, itemId: true, itemName: true,
-      item: { select: { name: true, baseUnit: true, type: true, category: true } },
-    },
+    select: movementSelect,
     orderBy: { createdAt: 'asc' },
   }))
 
   // Document numbers for each movement's source.
-  const idsOf = (t: string) => [...new Set(movements.filter(m => m.referenceType === t && m.referenceId).map(m => m.referenceId!))]
+  const idsOf = (t: string) => [...new Set([...movements, ...maintenanceMovements].filter(m => m.referenceType === t && m.referenceId).map(m => m.referenceId!))]
   const [transfers, receipts, counts] = await withRetry(db, () => Promise.all([
     db.stockTransfer.findMany({ where: { id: { in: idsOf('StockTransfer') } }, select: { id: true, transferNumber: true } }),
     db.goodsReceipt.findMany({ where: { id: { in: idsOf('GoodsReceipt') } }, select: { id: true, grNumber: true, order: { select: { id: true, poNumber: true } } } }),
@@ -113,12 +122,9 @@ export async function GET(req: NextRequest) {
   const linesByTrip = new Map<string, TripUsageLine[]>()
   const unassigned: TripUsageLine[] = []
   const posIndex = new Map<string, TripUsageLine>() // `${tripId}|${type}|${item}|${day}`
-  for (const m of movements) {
+  const toLine = (m: (typeof movements)[number], byDate: boolean): TripUsageLine => {
     const cost = m.totalCost ?? 0
-    const { tripId, byDate } = resolve(m)
-    const ref = refOf(m)
-    const day = m.createdAt.toISOString().slice(0, 10)
-    const line: TripUsageLine = {
+    return {
       date: m.createdAt.toISOString(),
       itemId: m.itemId,
       itemName: m.item?.name ?? m.itemName ?? '—',
@@ -129,9 +135,15 @@ export async function GET(req: NextRequest) {
       qty: cost < 0 ? -m.quantity : m.quantity,
       cost,
       usageType: m.usageType as UsageKey,
-      ref,
+      ref: refOf(m),
       byDate,
     }
+  }
+  for (const m of movements) {
+    const { tripId, byDate } = resolve(m)
+    const line = toLine(m, byDate)
+    const ref = line.ref
+    const day = m.createdAt.toISOString().slice(0, 10)
     if (ref.kind === 'POS') {
       const key = `${tripId ?? '-'}|${line.usageType}|${line.itemId ?? line.itemName}|${day}|${byDate}`
       const prev = posIndex.get(key)
@@ -162,5 +174,6 @@ export async function GET(req: NextRequest) {
       return { ...t, lines, total: lines.reduce((s, l) => s + l.cost, 0) }
     })
 
-  return NextResponse.json({ year, yachtId, yachts, itemTypes, trips, unassigned })
+  const maintenance = maintenanceMovements.map(m => toLine(m, false))
+  return NextResponse.json({ year, yachtId, yachts, itemTypes, trips, unassigned, maintenance })
 }

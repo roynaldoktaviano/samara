@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 
 import { roleMatches } from '@/lib/role-utils'
+import { defaultTreatmentForType } from '@/lib/purchasing/treatment'
 
 const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN']
 // Warehouse needs the item catalog to build a Purchase Request, but item/pricing
@@ -74,7 +75,7 @@ export async function POST(req: NextRequest) {
   if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
   const body = await req.json()
-  const { sku, name, type, category, baseUnit, purchaseUnit, conversionFactor, standardCost, sellingPrice, valuationMethod, minStock, minStockUnit, reorderQty, imageKey, isSoldInPos, isStockTracked } = body
+  const { sku, name, type, category, baseUnit, purchaseUnit, conversionFactor, standardCost, sellingPrice, valuationMethod, minStock, minStockUnit, reorderQty, treatment, imageKey, isSoldInPos, isStockTracked } = body
   if (!sku || !name || !type || !category || !baseUnit || !purchaseUnit) {
     return NextResponse.json({ error: 'sku, name, type, category, baseUnit, purchaseUnit wajib diisi' }, { status: 400 })
   }
@@ -106,6 +107,7 @@ export async function POST(req: NextRequest) {
       valuationMethod: valuationMethod || 'FIFO',
       minStock: Number(minStock) || 0,
       minStockUnit: minStockUnit === 'PURCHASE' ? 'PURCHASE' : 'BASE',
+      treatment: ['CONSUMABLE', 'ASSET', 'SPARE_PART'].includes(treatment) ? treatment : defaultTreatmentForType(type),
       reorderQty: Number(reorderQty) || 0,
       imageKey: imageKey || null,
       isSoldInPos: isSoldInPos !== undefined ? Boolean(isSoldInPos) : true,

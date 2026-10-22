@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 
 import { roleMatches } from '@/lib/role-utils'
+import { defaultTreatmentForType } from '@/lib/purchasing/treatment'
 
 const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN']
 
@@ -159,7 +160,7 @@ export async function POST(req: NextRequest) {
         }
       } else {
         const item = await db.purchaseItem.create({
-          data: { id: crypto.randomUUID(), sku, name, type, category, baseUnit, purchaseUnit, conversionFactor, standardCost, minStock, reorderQty, updatedAt: new Date() },
+          data: { id: crypto.randomUUID(), sku, name, type, category, baseUnit, purchaseUnit, conversionFactor, standardCost, minStock, reorderQty, treatment: defaultTreatmentForType(type), updatedAt: new Date() },
         })
         imported++
 

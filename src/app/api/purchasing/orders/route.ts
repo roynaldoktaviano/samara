@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
+import { resolvePoLineTreatments } from '@/lib/purchasing/poLineTreatment'
 import { tripBookingSelect, openTripSelect, tripOf } from '@/lib/purchasing/tripLink'
 import { computePOGrandTotal, summarizePOPayments, lineDiscountData } from '@/lib/po-payment'
 import { computeCurrentLegLabel } from '@/lib/purchasing/transitChain'
@@ -132,21 +133,22 @@ export async function POST(req: NextRequest) {
   if (!requestedByEmployeeId) return NextResponse.json({ error: 'Requested by wajib diisi' }, { status: 400 })
   if (!items || !Array.isArray(items) || items.length === 0) return NextResponse.json({ error: 'Minimal 1 item dibutuhkan' }, { status: 400 })
 
-  // A PO delivered to a ship must say, per item, which Inventory Room/Category it's
-  // destined for — lets the Inventory module know where a purchase will live without
-  // Purchasing having to re-enter it later. Not required for non-vessel destinations, and
-  // never applies to services (they don't have goods to shelve anywhere).
+  // An ASSET line on a PO to a ship must say which Inventory Room/Category it lands in —
+  // receiveGoods turns it into an InventoryItem there (see src/lib/purchasing/treatment.ts).
+  // Consumables / spare parts don't need one. Never applies to services.
   type OrderItemInput = {
     itemId?: string; itemName: string; orderedQty: number; unitCost?: number; unit?: string
-    inventoryRoomId?: string; inventoryCategoryId?: string
+    inventoryRoomId?: string; inventoryCategoryId?: string; treatment?: string
     discountType?: string | null; discountValue?: number
   }
   const typedItems = items as OrderItemInput[]
+  const treatments = await resolvePoLineTreatments(db, typedItems)
   if (orderType !== 'SERVICE' && deliveryLocationId) {
     const deliveryLocation = await db.stockLocation.findUnique({ where: { id: deliveryLocationId }, select: { type: true } })
     if (deliveryLocation?.type === 'VESSEL') {
-      if (typedItems.some(it => !it.inventoryRoomId || !it.inventoryCategoryId)) {
-        return NextResponse.json({ error: 'Setiap item wajib menentukan Ruangan dan Kategori Barang untuk PO ke kapal' }, { status: 400 })
+      const assetLines = typedItems.filter((_, i) => treatments[i] === 'ASSET')
+      if (assetLines.some(it => !it.inventoryRoomId || !it.inventoryCategoryId)) {
+        return NextResponse.json({ error: 'Item Asset wajib menentukan Ruangan dan Kategori Barang' }, { status: 400 })
       }
       const roomIds = [...new Set(typedItems.map(it => it.inventoryRoomId).filter((x): x is string => !!x))]
       const categoryIds = [...new Set(typedItems.map(it => it.inventoryCategoryId).filter((x): x is string => !!x))]
@@ -230,7 +232,7 @@ export async function POST(req: NextRequest) {
         requestedByRole: requester.role?.title ?? null,
       }),
       items: {
-        create: typedItems.map((it) => ({
+        create: typedItems.map((it, i) => ({
           id: crypto.randomUUID(),
           itemId: it.itemId || null,
           itemName: it.itemName,
@@ -240,6 +242,7 @@ export async function POST(req: NextRequest) {
           ...lineDiscountData(it),
           inventoryRoomId: it.inventoryRoomId || null,
           inventoryCategoryId: it.inventoryCategoryId || null,
+          treatment: treatments[i],
         })),
       },
       ...(cleanTransitStopIds.length > 0 && {
