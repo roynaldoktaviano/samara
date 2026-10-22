@@ -1,4 +1,4 @@
-import { paddingStyle, marginStyle, effectivePadding, effectiveMargin, effectiveAlign, columnWidths, type EmailBlock, backgroundImageStyle } from '@/lib/email-builder'
+import { paddingStyle, marginStyle, effectivePadding, effectiveMargin, effectiveAlign, blockFontWeight, columnWidths, type EmailBlock, backgroundImageStyle } from '@/lib/email-builder'
 import { ImageOff, Play, Code2, Facebook, Instagram, MessageCircle, Link2, LinkedinIcon } from 'lucide-react'
 
 /**
@@ -12,7 +12,7 @@ export default function BlockPreview({ block, mobile = false }: { block: EmailBl
       return (
         <div
           className="email-rich-text"
-          style={{ ...paddingStyle(effectivePadding(block, mobile)), textAlign: effectiveAlign(block, mobile), fontSize: block.fontSize, color: block.color, fontFamily: block.fontFamily, lineHeight: block.lineHeight, letterSpacing: block.letterSpacing, '--link-color': block.linkColor } as React.CSSProperties}
+          style={{ ...paddingStyle(effectivePadding(block, mobile)), textAlign: effectiveAlign(block, mobile), fontSize: block.fontSize, color: block.color, fontFamily: block.fontFamily, fontWeight: blockFontWeight(block), lineHeight: block.lineHeight, letterSpacing: block.letterSpacing, '--link-color': block.linkColor } as React.CSSProperties}
           dangerouslySetInnerHTML={{ __html: block.html }}
         />
       )
@@ -21,7 +21,7 @@ export default function BlockPreview({ block, mobile = false }: { block: EmailBl
       return (
         <div
           className="email-rich-text"
-          style={{ ...paddingStyle(effectivePadding(block, mobile)), textAlign: effectiveAlign(block, mobile), fontSize: block.fontSize, color: block.color, fontFamily: block.fontFamily, fontWeight: 700, lineHeight: block.lineHeight, letterSpacing: block.letterSpacing, '--link-color': block.linkColor } as React.CSSProperties}
+          style={{ ...paddingStyle(effectivePadding(block, mobile)), textAlign: effectiveAlign(block, mobile), fontSize: block.fontSize, color: block.color, fontFamily: block.fontFamily, fontWeight: blockFontWeight(block), lineHeight: block.lineHeight, letterSpacing: block.letterSpacing, '--link-color': block.linkColor } as React.CSSProperties}
           dangerouslySetInnerHTML={{ __html: block.html }}
         />
       )
@@ -83,7 +83,7 @@ export default function BlockPreview({ block, mobile = false }: { block: EmailBl
             style={{
               ...marginStyle(effectiveMargin(block, mobile)),
               display: 'inline-block', background: block.bgColor, color: block.textColor, fontFamily: block.fontFamily,
-              padding: '12px 28px', borderRadius: block.borderRadius, fontSize: block.fontSize, fontWeight: 600, lineHeight: block.lineHeight,
+              padding: '12px 28px', borderRadius: block.borderRadius, fontSize: block.fontSize, fontWeight: blockFontWeight(block), lineHeight: block.lineHeight,
             }}
             dangerouslySetInnerHTML={{ __html: block.label || 'Button' }}
           />

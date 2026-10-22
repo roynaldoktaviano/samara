@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { FONT_OPTIONS, customFontOptions, leadingFontFamily, uniformPadding, columnWidths, type EmailBlock, type BlockAlign, type Padding, type HideOn, type BackgroundImageFields, type ColumnsVerticalAlign, type ColumnsBlock } from '@/lib/email-builder'
+import { FONT_OPTIONS, customFontOptions, leadingFontFamily, uniformPadding, columnWidths, FONT_WEIGHTS, blockFontWeight, type EmailBlock, type BlockAlign, type Padding, type HideOn, type BackgroundImageFields, type ColumnsVerticalAlign, type ColumnsBlock } from '@/lib/email-builder'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -142,6 +142,25 @@ function FontField({ value: stored, onChange }: { value: string; onChange: (v: s
           ))}
         </SelectContent>
       </Select>
+    </div>
+  )
+}
+
+const WEIGHT_NAMES: Record<number, string> = { 100: 'Thin', 200: 'Extra Light', 300: 'Light', 400: 'Regular', 500: 'Medium', 600: 'Semi Bold', 700: 'Bold', 800: 'Extra Bold', 900: 'Black' }
+
+function FontWeightField({ value, onChange }: { value: number; onChange: (v: number) => void }) {
+  return (
+    <div className="space-y-1.5">
+      <Label className="text-xs">Font weight</Label>
+      <Select value={String(value)} onValueChange={v => onChange(Number(v))}>
+        <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+        <SelectContent>
+          {FONT_WEIGHTS.map(w => (
+            <SelectItem key={w} value={String(w)} style={{ fontWeight: w }}>{w} — {WEIGHT_NAMES[w]}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <p className="text-[10px] text-muted-foreground">Text marked Bold (B) stays bold. Standard fonts like Arial only have Regular and Bold, and a custom font needs that weight uploaded in Email Fonts.</p>
     </div>
   )
 }
@@ -585,6 +604,7 @@ export default function BlockInspector({ block, onChange }: { block: EmailBlock;
         <div className="space-y-3">
           <RichTextField html={block.html} onChange={html => onChange({ ...block, html })} linkColor={block.linkColor} />
           <FontField value={block.fontFamily} onChange={fontFamily => onChange({ ...block, fontFamily })} />
+          <FontWeightField value={blockFontWeight(block)} onChange={fontWeight => onChange({ ...block, fontWeight })} />
           <SectionHeader label="Size, align & color" />
           <DeviceToggle device={device} onChange={setDevice} />
           {device === 'desktop' ? (
@@ -727,6 +747,7 @@ export default function BlockInspector({ block, onChange }: { block: EmailBlock;
           <ColorField label="Background" value={block.bgColor} onChange={bgColor => onChange({ ...block, bgColor })} />
           <ColorField label="Text color" value={block.textColor} onChange={textColor => onChange({ ...block, textColor })} />
           <FontField value={block.fontFamily} onChange={fontFamily => onChange({ ...block, fontFamily })} />
+          <FontWeightField value={blockFontWeight(block)} onChange={fontWeight => onChange({ ...block, fontWeight })} />
           <NumberField label="Line height" value={block.lineHeight} onChange={lineHeight => onChange({ ...block, lineHeight })} min={1} max={3} step={0.1} />
           <SectionHeader label="Size, align & mobile color" />
           <DeviceToggle device={device} onChange={setDevice} />

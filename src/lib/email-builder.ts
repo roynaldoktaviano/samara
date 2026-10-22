@@ -44,6 +44,13 @@ export function effectiveAlign(block: EmailBlock, mobile: boolean): BlockAlign {
   return mobile && ma ? ma : a
 }
 
+export const FONT_WEIGHTS = [100, 200, 300, 400, 500, 600, 700, 800, 900] as const
+
+/** Font weight a text/heading/button renders at — blocks saved before the field existed keep their old fixed look. */
+export function blockFontWeight(block: { type: string; fontWeight?: number }): number {
+  return block.fontWeight ?? (block.type === 'heading' ? 700 : block.type === 'button' ? 600 : 400)
+}
+
 /** Which viewport a block is hidden on, via a CSS media-query class injected into the exported HTML's <head>. */
 export type HideOn = 'none' | 'desktop' | 'mobile'
 
@@ -178,6 +185,7 @@ export interface TextBlock {
   align: BlockAlign
   fontSize: number
   fontFamily: string
+  fontWeight?: number // 100-900; undefined = the block type's default (text 400, heading 700) — see defaultFontWeight
   color: string
   linkColor: string
   lineHeight: number
@@ -196,6 +204,7 @@ export interface HeadingBlock {
   align: BlockAlign
   fontSize: number
   fontFamily: string
+  fontWeight?: number // 100-900; undefined = the block type's default (text 400, heading 700) — see defaultFontWeight
   color: string
   linkColor: string
   lineHeight: number
@@ -294,6 +303,7 @@ export interface ButtonBlock {
   textColor: string
   fontSize: number
   fontFamily: string
+  fontWeight?: number // 100-900; undefined = 600 — see defaultFontWeight
   lineHeight: number
   align: BlockAlign
   borderRadius: number
@@ -981,12 +991,12 @@ function renderBlockInner(block: EmailBlock, contentWidth: number): string {
       // the color one level down onto a plain <span> dodges that targeted pass,
       // the same trick that fixed the button's forced link-color override.
       const linkStyle = `line-height:${block.lineHeight};font-size:${block.fontSize}px;font-family:${block.fontFamily};color:${darkModeSafe(block.linkColor)};text-decoration:underline;`
-      return `<tr><td${classAttr(`lc-${block.id}`, pdClass(block), hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};text-align:${block.align};font-size:${block.fontSize}px;line-height:${block.lineHeight};letter-spacing:${block.letterSpacing}px;font-family:${block.fontFamily};"><span style="color:${darkModeSafe(block.color)};">${styleAnchors(block.html, linkStyle)}</span></td></tr>`
+      return `<tr><td${classAttr(`lc-${block.id}`, pdClass(block), hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};text-align:${block.align};font-size:${block.fontSize}px;line-height:${block.lineHeight};letter-spacing:${block.letterSpacing}px;font-family:${block.fontFamily};font-weight:${blockFontWeight(block)};"><span style="color:${darkModeSafe(block.color)};">${styleAnchors(block.html, linkStyle)}</span></td></tr>`
     }
 
     case 'heading': {
       const linkStyle = `line-height:${block.lineHeight};font-size:${block.fontSize}px;font-family:${block.fontFamily};color:${darkModeSafe(block.linkColor)};text-decoration:underline;`
-      return `<tr><td${classAttr(`lc-${block.id}`, pdClass(block), hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};text-align:${block.align};font-size:${block.fontSize}px;line-height:${block.lineHeight};letter-spacing:${block.letterSpacing}px;font-family:${block.fontFamily};font-weight:700;"><span style="color:${darkModeSafe(block.color)};">${styleAnchors(block.html, linkStyle)}</span></td></tr>`
+      return `<tr><td${classAttr(`lc-${block.id}`, pdClass(block), hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};text-align:${block.align};font-size:${block.fontSize}px;line-height:${block.lineHeight};letter-spacing:${block.letterSpacing}px;font-family:${block.fontFamily};font-weight:${blockFontWeight(block)};"><span style="color:${darkModeSafe(block.color)};">${styleAnchors(block.html, linkStyle)}</span></td></tr>`
     }
 
     case 'image':
@@ -1032,7 +1042,7 @@ function renderBlockInner(block: EmailBlock, contentWidth: number): string {
       // mode runs a separate forced-recolor pass specifically for <a> link color
       // that ignores the darkModeSafe nudge, but leaves a child span's color alone.
       return `<tr><td${classAttr(`btn-wrap-${block.id}`, pdClass(block), hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};text-align:${block.align};">
-        <a href="${esc(block.url)}" target="_blank" rel="noopener noreferrer"${classAttr(`btn-${block.id}`)} style="color:${darkModeSafe(block.textColor)};display:inline-block;background:${darkModeSafe(block.bgColor)};text-decoration:none;font-family:${block.fontFamily};font-size:${block.fontSize}px;font-weight:600;line-height:${block.lineHeight};padding:12px 28px;border-radius:${block.borderRadius}px;margin:${marginCss(block.margin)};"><span style="color:${darkModeSafe(block.textColor)};">${block.label}</span></a>
+        <a href="${esc(block.url)}" target="_blank" rel="noopener noreferrer"${classAttr(`btn-${block.id}`)} style="color:${darkModeSafe(block.textColor)};display:inline-block;background:${darkModeSafe(block.bgColor)};text-decoration:none;font-family:${block.fontFamily};font-size:${block.fontSize}px;font-weight:${blockFontWeight(block)};line-height:${block.lineHeight};padding:12px 28px;border-radius:${block.borderRadius}px;margin:${marginCss(block.margin)};"><span style="color:${darkModeSafe(block.textColor)};">${block.label}</span></a>
       </td></tr>`
 
     case 'divider': {
