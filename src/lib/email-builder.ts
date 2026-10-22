@@ -1381,6 +1381,28 @@ function shortenBlockIds(out: string, map: Map<string, string>): string {
   return out.replace(/blk_[a-z0-9]+_\d+/g, id => map.get(id) ?? id)
 }
 
+const MOBILE_MEDIA = '@media only screen and (max-width:600px){'
+const DARK_MEDIA = '@media (prefers-color-scheme: dark){'
+
+// collectExtraStyles emits one @media wrapper per rule, which repeats the same ~45-char
+// query dozens of times in a long email. Pull the bodies out so each query is written once.
+function groupExtraStyles(rules: string[]): { plain: string[]; mobile: string[]; dark: string[]; darkAttr: string[] } {
+  const out = { plain: [] as string[], mobile: [] as string[], dark: [] as string[], darkAttr: [] as string[] }
+  for (const r of rules) {
+    if (r.startsWith(MOBILE_MEDIA)) out.mobile.push(r.slice(MOBILE_MEDIA.length, -1))
+    else if (r.startsWith(DARK_MEDIA)) out.dark.push(r.slice(DARK_MEDIA.length, -1))
+    else if (r.startsWith('[data-ogsc]')) out.darkAttr.push(r)
+    else out.plain.push(r)
+  }
+  return out
+}
+
+// Byte-shaving that can't change meaning: "0px" → "0" (whole token only, so 10px/20px
+// are untouched) and no space before !important. Every byte counts against Gmail's cap.
+function minifyCss(css: string): string {
+  return css.replace(/(^|[^\w.-])0px\b/g, (_, pre: string) => `${pre}0`).replace(/ !important/g, '!important')
+}
+
 export function renderBlocksToHtml(designBlocks: EmailBlock[], settings?: Partial<EmailSettings>, fonts: EmailFontFace[] = []): string {
   const s = { ...DEFAULT_EMAIL_SETTINGS, ...settings }
   const blocks = applyCustomFontFallbacks(designBlocks, fonts)
@@ -1397,38 +1419,42 @@ export function renderBlocksToHtml(designBlocks: EmailBlock[], settings?: Partia
   const contentBg = darkModeSafe(s.contentBackground)
   const shortIds = shortBlockIdMap(blocks)
   const rows = shortenBlockIds(blocks.map(b => renderBlock(b, s.contentWidth)).join('\n'), shortIds)
-  const extraStyles = shortenBlockIds(collectExtraStyles(blocks).join('\n'), shortIds)
-  // Every @media rule (mobile hide/show, columns stacking, dark mode) lives in this
-  // one block, repeated verbatim right after <body> opens. Gmail's iOS/Android apps
+  const extra = groupExtraStyles(collectExtraStyles(blocks))
+  // Every @media rule (mobile hide/show, columns stacking, dark mode) lives in these
+  // blocks, repeated verbatim right after <body> opens. Gmail's iOS/Android apps
   // are the reason: they strip <style> out of <head> entirely (any @media there is
   // silently dropped) but do honor a <style> tag placed in the body — this is the
   // standard, widely-documented workaround, not decoration. Other clients just
   // parse the same rules twice, which is harmless.
-  // Mirrors the `.email-rich-text` reset in globals.css (used by the builder's own
+  // Split in two: layout (rich-text reset, link colors, every mobile rule) first,
+  // dark-mode pinning second. Gmail throws away a whole <style> once it passes ~16KB
+  // (measured AFTER it prefixes every class name, so the real budget is smaller) —
+  // a long campaign used to put everything in one block, blow past that, and lose
+  // column stacking and every mobile override at once. Kept apart, the dark-mode
+  // block (the bulkiest part) can never take the mobile layout down with it.
+  // The reset mirrors the `.email-rich-text` reset in globals.css (used by the builder's own
   // RichTextField) so a <p>/<ul>/<blockquote> from rich-text content looks the same
   // here as it did while editing — the exported HTML has no Tailwind Preflight to
   // undo, so left alone these tags would fall back to the browser's own default
   // margins/bullets (typically top+bottom on every <p>, not just a bottom gap
   // between paragraphs), reading as noticeably more padding than what was set.
-  const styleBlock = `
-      p{margin:0 0 1em;}
-      p:last-child{margin-bottom:0;}
-      ul,ol{margin:0 0 1em;padding-left:1.5em;}
-      ul:last-child,ol:last-child{margin-bottom:0;}
-      ul{list-style:disc;}
-      ol{list-style:decimal;}
-      li{display:list-item;}
-      blockquote{margin:0 0 1em;padding-left:1em;border-left:3px solid currentColor;opacity:.85;}
-      @media only screen and (max-width:600px){.hide-mobile{display:none !important;}}
-      @media only screen and (min-width:601px){.hide-desktop{display:none !important;}}
-      @media (prefers-color-scheme: dark){
-        .email-page,.email-body{background:${pageBg} !important;}
-        .email-content{background:${contentBg} !important;}
-      }
-      ${darkOverride('.email-page', `background:${pageBg} !important;`)}
-      ${darkOverride('.email-body', `background:${pageBg} !important;`)}
-      ${darkOverride('.email-content', `background:${contentBg} !important;`)}
-      ${extraStyles}`
+  const layoutCss = minifyCss(shortenBlockIds([
+    'p{margin:0 0 1em;}p:last-child{margin-bottom:0;}',
+    'ul,ol{margin:0 0 1em;padding-left:1.5em;}ul:last-child,ol:last-child{margin-bottom:0;}',
+    'ul{list-style:disc;}ol{list-style:decimal;}li{display:list-item;}',
+    'blockquote{margin:0 0 1em;padding-left:1em;border-left:3px solid currentColor;opacity:.85;}',
+    '@media only screen and (min-width:601px){.hide-desktop{display:none !important;}}',
+    ...extra.plain,
+    `@media only screen and (max-width:600px){.hide-mobile{display:none !important;}${extra.mobile.join('')}}`,
+  ].join('\n'), shortIds))
+  const darkCss = minifyCss(shortenBlockIds([
+    `@media (prefers-color-scheme: dark){.email-page,.email-body{background:${pageBg} !important;}.email-content{background:${contentBg} !important;}${extra.dark.join('')}}`,
+    darkOverride('.email-page', `background:${pageBg} !important;`),
+    darkOverride('.email-body', `background:${pageBg} !important;`),
+    darkOverride('.email-content', `background:${contentBg} !important;`),
+    ...extra.darkAttr,
+  ].join('\n'), shortIds))
+  const styleBlock = `<style type="text/css">\n${layoutCss}\n    </style>\n    <style type="text/css">\n${darkCss}\n    </style>`
   return `<!doctype html>
 <html>
   <head>
@@ -1437,12 +1463,10 @@ export function renderBlocksToHtml(designBlocks: EmailBlock[], settings?: Partia
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="color-scheme" content="light">
     <meta name="supported-color-schemes" content="light">
-    <style type="text/css">${styleBlock}
-    </style>${fontFaceBlock}
+    ${styleBlock}${fontFaceBlock}
   </head>
   <body class="email-body" style="margin:0;padding:0;background:${pageBg};">
-    <style type="text/css">${styleBlock}
-    </style>
+    ${styleBlock}
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="email-page" bgcolor="${pageBg}" style="background:${pageBg};">
       <tr>
         <td align="center" style="padding:${s.contentPadding}px ${outerSidePadding(s)}px;">
