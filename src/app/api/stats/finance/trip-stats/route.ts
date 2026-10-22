@@ -5,6 +5,7 @@ import { getDb } from '@/lib/get-db'
 import { withRetry } from '@/lib/db'
 import { roleMatches } from '@/lib/role-utils'
 import { getAgentCommissionPct } from '@/lib/agent-commission'
+import { buildTripResolver } from '@/lib/purchasing/tripUsage'
 
 // Per-yacht, per-year trip recap in the same layout Finance keeps in Excel: one row per trip
 // number (Open Trip or Private Charter, see renumberTripYear()), with revenue, agent fee,
@@ -15,10 +16,8 @@ import { getAgentCommissionPct } from '@/lib/agent-commission'
 // an IDR payment's rupiah value is amount × exchangeRate.
 //
 // Trip cost = usage (pemakaian) from the StockMovement usage ledger, in Rupiah (moving-average
-// cost). A movement is charged to the trip it's linked to (openTripId / tripBookingId, set from
-// the Transfer / PO trip picker); an unlinked one falls back by date to the trip on that yacht
-// running when it happened, else the next one to depart (supplies loaded ahead of a trip).
-// Anything left over is reported as unassigned. Payment of the PO is cash flow, never cost here.
+// cost), charged to trips by buildTripResolver() (linked trip, else by date). Anything left over
+// is reported as unassigned. Payment of the PO is cash flow, never cost here.
 
 const USAGE_TYPES = ['SHIP_USAGE', 'BAR_COGS', 'COMPLIMENTARY', 'SHRINKAGE'] as const
 type UsageKey = (typeof USAGE_TYPES)[number]
@@ -76,10 +75,9 @@ export async function GET(request: NextRequest) {
     ]))
 
     // Open Trips absorbed into a Private Charter have no number of their own — the charter's
-    // row stands for them (same rule as renumberTripYear()).
-    const isAbsorbed = (t: { status: string; closedReason: string | null }) =>
-      t.status === 'closed' && !!t.closedReason &&
-      charters.some(c => t.closedReason!.trimEnd().endsWith(` ${c.bookingCode}`))
+    // row stands for them (same rule as renumberTripYear()). resolve() = which trip a usage
+    // movement is charged to (see src/lib/purchasing/tripUsage.ts).
+    const { isAbsorbed, resolve: resolveTrip } = buildTripResolver(openTrips, charters)
 
     type B = (typeof charters)[number] | (typeof openTrips)[number]['bookings'][number]
 
@@ -189,24 +187,6 @@ export async function GET(request: NextRequest) {
     })
 
     // ── Usage cost per trip ──
-    // Absorbed Open Trips' usage belongs to the charter row that stands for them.
-    const absorbedInto = new Map<string, string>()
-    for (const t of openTrips) {
-      if (t.status !== 'closed' || !t.closedReason) continue
-      const c = charters.find(c => t.closedReason!.trimEnd().endsWith(` ${c.bookingCode}`))
-      if (c) absorbedInto.set(t.id, c.id)
-    }
-    const windows = [
-      ...openTrips.filter(t => !isAbsorbed(t)).map(t => ({ id: t.id, startDate: t.startDate, endDate: t.endDate })),
-      ...charters.map(c => ({ id: c.id, startDate: c.startDate, endDate: c.endDate })),
-    ].sort((a, b) => a.startDate.getTime() - b.startDate.getTime())
-    const dayStart = (d: Date) => Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())
-    const tripByDate = (when: Date) => {
-      const day = dayStart(when)
-      return windows.find(w => day >= dayStart(w.startDate) && day <= dayStart(w.endDate))
-        ?? windows.find(w => dayStart(w.startDate) > day)
-    }
-
     const movements = await withRetry(db, () => db.stockMovement.findMany({
       where: {
         usageType: { not: null },
@@ -228,16 +208,15 @@ export async function GET(request: NextRequest) {
     for (const m of movements) {
       const type = m.usageType as UsageKey
       const cost = m.totalCost ?? 0
-      const linked = m.openTripId ? (absorbedInto.get(m.openTripId) ?? m.openTripId) : m.tripBookingId
-      const tripId = linked && windows.some(w => w.id === linked) ? linked : (!linked ? tripByDate(m.createdAt)?.id : undefined)
+      const { tripId, byDate } = resolveTrip(m)
       if (!tripId) { unassigned[type] += cost; unassigned.total += cost; continue }
       const entry = costByTrip.get(tripId) ?? { cost: emptyCost(), items: new Map() }
       costByTrip.set(tripId, entry)
       entry.cost[type] += cost
       entry.cost.total += cost
       const name = m.item?.name ?? m.itemName ?? '—'
-      const key = `${type}|${m.itemId ?? name}|${linked ? 'L' : 'D'}`
-      const it = entry.items.get(key) ?? { name, unit: m.item?.baseUnit ?? '', qty: 0, cost: 0, byDate: !linked, usageType: type }
+      const key = `${type}|${m.itemId ?? name}|${byDate ? 'D' : 'L'}`
+      const it = entry.items.get(key) ?? { name, unit: m.item?.baseUnit ?? '', qty: 0, cost: 0, byDate, usageType: type }
       // Reversals carry a negative totalCost but a positive quantity.
       it.qty += cost < 0 ? -m.quantity : m.quantity
       it.cost += cost

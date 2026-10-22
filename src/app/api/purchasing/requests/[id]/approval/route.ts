@@ -3,10 +3,8 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { emitTenantEvent } from '@/lib/realtime-bus'
-import { notifyByRoleForRequest, notifyPurchasingForRequest, notifyRequester } from '@/lib/notify-purchasing'
-import { allItemsCustom } from '@/lib/purchasing/requestItems'
-
-const WAREHOUSE_ROLES = ['WAREHOUSE', 'ADMIN', 'SUPER_ADMIN']
+import { notifyRequester } from '@/lib/notify-purchasing'
+import { initialPrStatus, notifyPrRouted } from '@/lib/purchasing/requestItems'
 
 // Manager-level approval on a PENDING_APPROVAL PurchaseRequest — distinct from the
 // Purchasing team's DRAFT→ON_PROCESS verification in [id]/route.ts. Authorization here
@@ -27,20 +25,21 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   const request = await db.purchaseRequest.findUnique({
     where: { id },
-    select: { id: true, prNumber: true, status: true, approverEmployeeId: true, division: true, items: { select: { itemId: true } } },
+    select: { id: true, prNumber: true, status: true, approverEmployeeId: true, division: true, items: { select: { viaWarehouse: true } } },
   })
   if (!request) return NextResponse.json({ error: 'Not found' }, { status: 404 })
   if (request.status !== 'PENDING_APPROVAL') return NextResponse.json({ error: 'PR ini tidak sedang menunggu approval' }, { status: 409 })
   if (request.approverEmployeeId !== employee.id) return NextResponse.json({ error: 'PR ini bukan untuk kamu approve' }, { status: 403 })
 
-  // Every item is custom (no catalog itemId) — Warehouse has nothing to stock-check, so
-  // this skips "Cek Gudang" (DRAFT) and goes straight to Purchasing on approval.
-  const allCustom = allItemsCustom(request.items)
+  // Route was snapshotted per line at submit (routePrLines): only an all-Warehouse PR waits
+  // in DRAFT; any direct line goes to Purchasing now, in parallel with Warehouse's check.
+  const via = request.items.map(i => i.viaWarehouse)
+  const nextStatus = initialPrStatus(via)
 
   const updated = await db.purchaseRequest.update({
     where: { id },
     data: action === 'approve'
-      ? { status: allCustom ? 'ON_PROCESS' : 'DRAFT', approvedById: session.user.id, approvedAt: new Date(), updatedAt: new Date() }
+      ? { status: nextStatus, approvedById: session.user.id, approvedAt: new Date(), updatedAt: new Date() }
       : { status: 'REJECTED', rejectedById: session.user.id, rejectedAt: new Date(), updatedAt: new Date() },
   })
 
@@ -52,7 +51,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     ? {
         type: 'PR_APPROVED',
         title: 'Request disetujui atasan',
-        body: `${request.prNumber} sudah disetujui atasan — ${allCustom ? 'diteruskan ke Purchasing' : 'sekarang dicek stoknya oleh Gudang'}.`,
+        body: `${request.prNumber} sudah disetujui atasan — ${!via.some(Boolean) ? 'diteruskan ke Purchasing' : via.every(Boolean) ? 'sekarang dicek stoknya oleh Gudang' : 'diproses Purchasing & dicek Gudang bersamaan'}.`,
         skipUserId: session.user.id,
       }
     : {
@@ -63,22 +62,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       })
 
   if (action === 'approve') {
-    if (allCustom) {
-      await notifyPurchasingForRequest(
-        db, request.division ?? null, 'REQUEST_ORDER_SUBMITTED', 'Request order approved by manager',
-        `${request.prNumber} was approved by the requester's manager — all items are custom, no stock check needed.`,
-        request.id,
-      )
-    } else {
-      // Warehouse hears about this request now, not Purchasing — they check physical
-      // stock first (see the Warehouse stock-check flow); Purchasing only gets notified
-      // later, from warehouse-forward/route.ts, for whatever items aren't in stock.
-      await notifyByRoleForRequest(
-        db, WAREHOUSE_ROLES, 'REQUEST_ORDER_SUBMITTED', 'Request order approved by manager',
-        `${request.prNumber} was approved by the requester's manager and is now waiting for a stock check.`,
-        request.id,
-      )
-    }
+    // Each side hears about its own lines — Warehouse the ones to stock-check, Purchasing
+    // the direct ones (warehouse-forward tells Purchasing later about what Warehouse can't cover).
+    await notifyPrRouted(db, { id: request.id, prNumber: request.prNumber, division: request.division ?? null }, via, { type: 'REQUEST_ORDER_SUBMITTED' })
   }
 
   emitTenantEvent(session.user.tenantId, 'purchasing-requests')

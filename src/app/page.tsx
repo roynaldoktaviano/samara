@@ -59,6 +59,7 @@ import PurchasingExceptionsPage from '@/components/purchasing/exceptions/Excepti
 import PurchasingReportsPage from '@/components/purchasing/reports/ReportsPage'
 import PurchasingWithdrawalsPage from '@/components/purchasing/reports/WithdrawalsPage'
 import PurchasingUsageStatsPage from '@/components/purchasing/reports/UsageStatsPage'
+import PurchasingTripUsagePage from '@/components/purchasing/reports/TripUsagePage'
 import PurchasingStockCountsPage from '@/components/purchasing/stock-counts/StockCountsPage'
 import PurchasingInitialStockOpnamePage from '@/components/purchasing/initial-stock-opname/InitialStockOpnamePage'
 import PurchasingSuppliersPage from '@/components/purchasing/suppliers/SuppliersPage'
@@ -905,6 +906,7 @@ export default function Home() {
       case 'purchasing-exceptions':   return <PurchasingExceptionsPage />
       case 'purchasing-withdrawals':  return <PurchasingWithdrawalsPage />
       case 'purchasing-usage-stats':  return <PurchasingUsageStatsPage />
+      case 'purchasing-trip-usage':   return <PurchasingTripUsagePage />
       case 'purchasing-reports':      return <PurchasingReportsPage />
       case 'inventory-items':         return <InventoryItemsPage />
       case 'inventory-rooms':         return <InventoryRoomsPage />

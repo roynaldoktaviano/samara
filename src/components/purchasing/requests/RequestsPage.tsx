@@ -48,7 +48,7 @@ interface InventoryItemOption {
   id: string; itemNumber: string; name: string; quantity: number; unitPrice: number; photoKeys?: string[]
   category: { id: string; name: string }; room: { id: string; name: string }
 }
-interface RequestLine { id?: string; key?: string; itemId: string; itemName: string; baseUnit: string; purchaseUnit: string; itemUnit: string; unit?: string; quantity: number; estimatedCost: number; supplierId: string; supplierName: string; supplierSearch: string; supplierOpen: boolean; notes: string; search: string; open: boolean; currentStock?: number | null; minStock?: number | null; stockCheck?: { locationId: string; locationName: string; requested: number; availability: number; reserve: number; onOrder: number; ending: number; shortage: number; minStock: number; toBeOrder: number; restockQty: number } | null; conversionFactor?: number | null; imageKeys?: string[]; isCustom?: boolean; isStockItem?: boolean; sourceInventoryItemId?: string | null; sourceInventoryItem?: { id: string; itemNumber: string; name: string; room: { name: string } | null; category: { name: string } | null } | null; warehouseStock?: { locationId: string; locationName: string; qty: number }[]; transferEligible?: boolean; quotations?: Quotation[]; exemptionReason?: string | null; selectionJustification?: string | null; requestedByEmployeeId?: string; quotationApproverId?: string | null; quotationApprover?: { id: string; name: string | null } | null; quotationSubmittedAt?: string | null; quotationApprovedById?: string | null; quotationApprovedBy?: { id: string; name: string | null } | null; quotationApprovedAt?: string | null; quotationRejectedBy?: { id: string; name: string | null } | null; quotationRejectedAt?: string | null; quotationRejectionReason?: string | null; convertedAt?: string | null; convertedPoId?: string | null; verifyRejectedById?: string | null; verifyRejectedBy?: { id: string; name: string | null } | null; verifyRejectedAt?: string | null; verifyRejectionReason?: string | null; warehouseDecision?: 'TRANSFER' | 'PURCHASE' | null; warehouseCheckedAt?: string | null; warehouseCheckNote?: string | null; requestType?: 'NEW' | 'REPLACEMENT'; damageDetail?: string | null; transfer?: { id: string; transferNumber: string; status: string; fromLocationName: string } | null }
+interface RequestLine { id?: string; key?: string; itemId: string; itemName: string; baseUnit: string; purchaseUnit: string; itemUnit: string; unit?: string; quantity: number; estimatedCost: number; supplierId: string; supplierName: string; supplierSearch: string; supplierOpen: boolean; notes: string; search: string; open: boolean; currentStock?: number | null; minStock?: number | null; stockCheck?: { locationId: string; locationName: string; requested: number; availability: number; reserve: number; onOrder: number; ending: number; shortage: number; minStock: number; toBeOrder: number; restockQty: number } | null; conversionFactor?: number | null; imageKeys?: string[]; isCustom?: boolean; isStockItem?: boolean; sourceInventoryItemId?: string | null; sourceInventoryItem?: { id: string; itemNumber: string; name: string; room: { name: string } | null; category: { name: string } | null } | null; warehouseStock?: { locationId: string; locationName: string; qty: number }[]; transferEligible?: boolean; quotations?: Quotation[]; exemptionReason?: string | null; selectionJustification?: string | null; requestedByEmployeeId?: string; quotationApproverId?: string | null; quotationApprover?: { id: string; name: string | null } | null; quotationSubmittedAt?: string | null; quotationApprovedById?: string | null; quotationApprovedBy?: { id: string; name: string | null } | null; quotationApprovedAt?: string | null; quotationRejectedBy?: { id: string; name: string | null } | null; quotationRejectedAt?: string | null; quotationRejectionReason?: string | null; convertedAt?: string | null; convertedPoId?: string | null; verifyRejectedById?: string | null; verifyRejectedBy?: { id: string; name: string | null } | null; verifyRejectedAt?: string | null; verifyRejectionReason?: string | null; warehouseDecision?: 'TRANSFER' | 'PURCHASE' | null; backorderQty?: number; backorderLocationId?: string | null; viaWarehouse?: boolean; warehouseCheckedAt?: string | null; warehouseCheckNote?: string | null; requestType?: 'NEW' | 'REPLACEMENT'; damageDetail?: string | null; transfer?: { id: string; transferNumber: string; status: string; fromLocationName: string } | null }
 interface PurchaseRequest {
   id: string
   prNumber: string
@@ -60,6 +60,10 @@ interface PurchaseRequest {
   deliveryLocation: { id: string; name: string; type: string; managedBy: string } | null
   itemCount: number
   itemNames: string[]
+  warehouseStarted?: boolean
+  // Warehouse still has lines to stock-check (DRAFT, or a parallel ON_PROCESS PR).
+  warehousePending?: boolean
+  warehouseDoneAt?: string | null
   totalBudget: number
   notes: string | null
   createdAt: string
@@ -103,7 +107,7 @@ interface FollowUp {
 interface EscalationTarget { id: string; name: string | null }
 
 const STATUS_LABEL: Record<string, string> = {
-  PENDING_APPROVAL: 'Pending Manager Approval', DRAFT: 'Draft', ON_PROCESS: 'On Process', CONVERTED: 'Converted', REJECTED: 'Rejected', CANCELLED: 'Cancelled',
+  PENDING_APPROVAL: 'Pending Manager Approval', DRAFT: 'Draft', WAREHOUSE: 'Warehouse Check', ON_PROCESS: 'On Process', CONVERTED: 'Converted', REJECTED: 'Rejected', CANCELLED: 'Cancelled',
 }
 const STATUS_COLOR: Record<string, string> = {
   PENDING_APPROVAL: 'bg-purple-100 text-purple-700', DRAFT: 'bg-blue-100 text-blue-700', ON_PROCESS: 'bg-amber-100 text-amber-700', CONVERTED: 'bg-green-100 text-green-700',
@@ -131,6 +135,8 @@ function leastAdvancedPo(orders: PurchaseRequest['orders']): { po: NonNullable<P
 const FILTER_TABS = [
   { key: 'ALL', label: 'All' },
   { key: 'DRAFT', label: 'Draft' },
+  // Not a status: every PR Warehouse still has lines to check — DRAFT plus parallel ON_PROCESS ones.
+  { key: 'WAREHOUSE', label: 'Warehouse Check' },
   { key: 'ON_PROCESS', label: 'On Process' },
   { key: 'CONVERTED', label: 'Converted' },
   { key: 'REJECTED', label: 'Rejected' },
@@ -207,6 +213,45 @@ function TransferBadge({ transfer, onOpen }: { transfer?: RequestLine['transfer'
         From warehouse stock{transfer ? ` · ${TRANSFER_STATUS_LABEL[transfer.status] ?? transfer.status}` : ''}
       </p>
     </div>
+  )
+}
+
+// Next to an ON_PROCESS status: Purchasing is on it, but Warehouse is still checking some lines.
+function WarehouseCheckTag({ r }: { r: { status: string; warehousePending?: boolean } }) {
+  if (r.status !== 'ON_PROCESS' || !r.warehousePending) return null
+  return <span className="ml-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-blue-50 text-blue-700 whitespace-nowrap">+ Warehouse check</span>
+}
+
+// Warehouse still owns part of this PR: DRAFT, or ON_PROCESS while Purchasing works the direct
+// lines in parallel and Warehouse hasn't finished checking its own (warehouseDoneAt unset).
+function isWarehousePending(d: { status: string; warehouseDoneAt?: string | null; items: { viaWarehouse?: boolean }[] }) {
+  return d.status === 'DRAFT' || (d.status === 'ON_PROCESS' && !d.warehouseDoneAt && d.items.some(it => it.viaWarehouse))
+}
+// A Warehouse-routed line Purchasing can't act on yet — Warehouse hasn't processed it (out of stock → PURCHASE)
+// nor finished its check.
+function isAwaitingWarehouse(item: { viaWarehouse?: boolean; warehouseDecision?: string | null; convertedAt?: string | null; verifyRejectedAt?: string | null }, d: { warehouseDoneAt?: string | null }) {
+  return !!item.viaWarehouse && !d.warehouseDoneAt && item.warehouseDecision !== 'PURCHASE' && !item.convertedAt && !item.verifyRejectedAt
+}
+
+// A base-unit stock qty as text in the unit the PR line was requested in — "2 bottle (1500 ml)"
+// for a purchase-unit line, "1500 ml" otherwise. Same rule as the stock-check cells.
+function lineQtyLabel(item: { unit?: string; itemUnit?: string; baseUnit?: string | null; purchaseUnit?: string | null; conversionFactor?: number | null }, n: number) {
+  const r = (x: number) => Math.round(x * 100) / 100
+  const conv = item.conversionFactor || 1
+  const inPurchase = !!item.purchaseUnit && !!item.baseUnit && item.purchaseUnit !== item.baseUnit && conv !== 1
+    && (item.unit ?? item.itemUnit) === item.purchaseUnit
+  return inPurchase ? `${r(n / conv)} ${item.purchaseUnit} (${r(n)} ${item.baseUnit})` : `${r(n)} ${item.baseUnit ?? ''}`.trim()
+}
+
+// Part of an accepted line the warehouse couldn't ship yet — shipped on a follow-up TR once
+// restock lands (see src/lib/purchasing/backorders.ts).
+function BackorderBadge({ item }: { item: Parameters<typeof lineQtyLabel>[0] & { backorderQty?: number } }) {
+  if (!item.backorderQty || item.backorderQty <= 0) return null
+  return (
+    <span className="inline-block text-[10px] font-medium text-red-700 bg-red-50 border border-red-200 rounded-full px-2 py-0.5 whitespace-nowrap"
+      title="Shipped on a follow-up transfer once restock arrives at the warehouse">
+      Backorder {lineQtyLabel(item, item.backorderQty)} · waiting restock
+    </span>
   )
 }
 
@@ -1097,26 +1142,33 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
   // Warehouse's physical stock-check decision on a single item — TRANSFER creates the
   // Transfer immediately server-side, PURCHASE just flags it to move on with everything
   // else once the PR is forwarded. See PATCH .../items/[itemId]/warehouse-check.
-  async function warehouseCheckItem(item: RequestLine, decision: 'TRANSFER' | 'PURCHASE') {
+  // Warehouse's one-click "Process" — the server decides from free stock: nothing free → the
+  // line goes to Purchasing; otherwise a TR for what's free + backorder for the rest. Either way
+  // its To Be Order lands on a Restock PR at once, and the last line finishes the check.
+  // See PATCH .../items/[itemId]/warehouse-check.
+  async function warehouseCheckItem(item: RequestLine) {
     if (!detail || !item.id) return
     // Same fallback the dropdown displays — the preselected most-stock warehouse counts
     // as a choice even if the user never touched the dropdown.
-    const fromLocationId = warehouseFrom[item.id] ?? item.warehouseStock?.slice().sort((a, b) => b.qty - a.qty)[0]?.locationId ?? ''
-    if (decision === 'TRANSFER' && !fromLocationId) { toast.error('Pilih lokasi gudang dulu'); return }
+    const fromLocationId = warehouseFrom[item.id] ?? item.stockCheck?.locationId ?? item.warehouseStock?.slice().sort((a, b) => b.qty - a.qty)[0]?.locationId ?? ''
+    if (!fromLocationId) { toast.error('Pilih lokasi gudang dulu'); return }
     setWarehouseBusyItemId(item.id)
     const res = await fetch(`/api/purchasing/requests/${detail.id}/items/${item.id}/warehouse-check`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        decision,
-        fromLocationId: decision === 'TRANSFER' ? fromLocationId : undefined,
-        note: warehouseNote[item.id]?.trim() || undefined,
-      }),
+      body: JSON.stringify({ fromLocationId, note: warehouseNote[item.id]?.trim() || undefined }),
     })
     const data = await res.json().catch(() => ({}))
     setWarehouseBusyItemId(null)
-    if (!res.ok) { toast.error(data.error ?? 'Gagal menyimpan keputusan'); return }
-    toast.success(decision === 'TRANSFER' ? `Transfer dibuat (${data.transferNumber}) untuk ${item.itemName}` : `${item.itemName} diteruskan ke Purchasing`)
+    if (!res.ok) { toast.error(data.error ?? 'Gagal memproses item'); return }
+    const restock = data.restockRequests?.length ? ` · To Be Order → ${data.restockRequests.join(', ')}` : ''
+    toast.success(data.outcome === 'PURCHASE'
+      ? `${item.itemName} kosong di gudang — diteruskan ke Purchasing${restock}`
+      : data.backorderQty > 0
+        ? `${item.itemName}: kirim ${lineQtyLabel(item, data.sendQty)} (${data.transferNumber}), backorder ${lineQtyLabel(item, data.backorderQty)}${restock}`
+        : `${item.itemName}: kirim ${lineQtyLabel(item, data.sendQty)} (${data.transferNumber})${restock}`)
+    if (data.finished) toast.success('Cek gudang selesai')
     await fetchDetail(detail.id)
+    if (data.finished || data.outcome === 'PURCHASE') load()
   }
 
   // Warehouse's "done checking" action — closes the PR straight to CONVERTED if every
@@ -1171,6 +1223,21 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
     if (res.ok) setPrFollowUps(prev => prev.filter(f => f.id !== followUpId))
   }
 
+  // Warehouse's manual "done checking" button — only a fallback now: processing the last
+  // Warehouse-routed line finishes the check by itself, so this shows only when every such line
+  // is already settled but the check is still open (e.g. the last one was rejected, or the PR
+  // predates one-click Process).
+  function renderWarehouseFinish() {
+    const undecided = (detail?.items ?? []).filter(it => it.viaWarehouse && !it.convertedAt && !it.warehouseDecision && !it.verifyRejectedAt)
+    if (undecided.length > 0) return null
+    return (
+      <button onClick={warehouseForward} disabled={warehouseForwarding}
+        className="px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+        Finish Warehouse Check
+      </button>
+    )
+  }
+
   // ── List view ──
   if (view === 'list') {
     // Division default — narrows to the assigned division (+ uncategorized PRs) unless
@@ -1181,9 +1248,10 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
       : requests
     const myDivisionCount = myDivision ? requests.filter(r => r.division === myDivision || r.division === null).length : 0
     const scopedRequests = scopeFilter === 'MINE' ? divisionScoped.filter(r => r.createdBy?.id === session?.user?.id) : divisionScoped
-    const filtered = filterStatus === 'ALL' ? scopedRequests : scopedRequests.filter(r => r.status === filterStatus)
+    const matchesTab = (r: PurchaseRequest, key: string) => key === 'ALL' || (key === 'WAREHOUSE' ? !!r.warehousePending : r.status === key)
+    const filtered = scopedRequests.filter(r => matchesTab(r, filterStatus))
     const counts = FILTER_TABS.reduce<Record<string, number>>((acc, t) => {
-      acc[t.key] = t.key === 'ALL' ? scopedRequests.length : scopedRequests.filter(r => r.status === t.key).length
+      acc[t.key] = scopedRequests.filter(r => matchesTab(r, t.key)).length
       return acc
     }, {})
     const mineCount = divisionScoped.filter(r => r.createdBy?.id === session?.user?.id).length
@@ -1338,7 +1406,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                 <td className="px-4 py-3">
                   {(() => {
                     const least = r.status === 'CONVERTED' ? leastAdvancedPo(r.orders) : null
-                    if (!least) return <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLOR[r.status] ?? ''}`}>{STATUS_LABEL[r.status] ?? r.status}</span>
+                    if (!least) return <><span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLOR[r.status] ?? ''}`}>{STATUS_LABEL[r.status] ?? r.status}</span><WarehouseCheckTag r={r} /></>
                     const { po, count } = least
                     return (
                       <div className="space-y-0.5">
@@ -1351,7 +1419,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                   })()}
                 </td>
                 <td className="px-4 py-3 text-right" onClick={e => e.stopPropagation()}>
-                  {r.status === 'DRAFT' && isAdmin ? (
+                  {r.status === 'DRAFT' && isAdmin && !r.warehouseStarted ? (
                     <button
                       onClick={() => changeStatus(r.id, 'ON_PROCESS')}
                       title="Skip Warehouse's stock check and send straight to Purchasing"
@@ -1404,7 +1472,10 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                           {least.po.currentLegLabel ?? PO_STATUS_LABEL[least.po.status] ?? least.po.status}{least.count > 1 && ` (+${least.count - 1})`}
                         </span>
                       ) : (
-                        <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${STATUS_COLOR[r.status] ?? ''}`}>{STATUS_LABEL[r.status] ?? r.status}</span>
+                        <>
+                          <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${STATUS_COLOR[r.status] ?? ''}`}>{STATUS_LABEL[r.status] ?? r.status}</span>
+                          <WarehouseCheckTag r={r} />
+                        </>
                       )}
                       <span className="text-xs text-muted-foreground">{fmtDate(r.createdAt)}</span>
                     </div>
@@ -1540,7 +1611,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                 )}
                 {!isWarehouse && (
                   <>
-                    {isAdmin && (
+                    {isAdmin && !detail?.items.some(it => it.warehouseDecision || it.convertedAt) && (
                       <button onClick={() => changeStatus(selected.id, 'ON_PROCESS')}
                         title="Skip Warehouse's stock check and send straight to Purchasing"
                         className="px-4 py-2 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700 font-medium transition-colors">
@@ -1559,20 +1630,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                     </button>
                   </>
                 )}
-                {canWarehouseCheck && (() => {
-                  const catalogItems = detail?.items.filter(it => it.itemId) ?? []
-                  // Items Purchasing already rejected can't be checked (API 409s) and the
-                  // forward endpoint ignores them — don't let them block the button forever.
-                  const undecided = catalogItems.filter(it => !it.convertedAt && !it.warehouseDecision && !it.verifyRejectedAt)
-                  const remaining = (detail?.items ?? []).filter(it => !it.convertedAt && !it.verifyRejectedAt)
-                  return (
-                    <button onClick={warehouseForward} disabled={undecided.length > 0 || warehouseForwarding}
-                      title={undecided.length > 0 ? `Belum dicek: ${undecided.map(it => it.itemName).join(', ')}` : undefined}
-                      className="px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-                      {remaining.length === 0 ? 'Selesai — Semua dari Stok' : 'Teruskan ke Purchasing'}
-                    </button>
-                  )
-                })()}
+                {canWarehouseCheck && renderWarehouseFinish()}
                 {/* Hidden once Warehouse has sent any item via Transfer — deleting the PR
                     would orphan that Transfer (the API refuses it too). Own-only roles can
                     only delete their own PR — Cruise Director/Boat Captain now also see
@@ -1585,10 +1643,12 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                 )}
               </>
             )}
+            {selected.status === 'ON_PROCESS' && canWarehouseCheck && detail && isWarehousePending(detail) && renderWarehouseFinish()}
             {selected.status === 'ON_PROCESS' && !isWarehouse && (
               <>
                 {(() => {
-                  const settleable = detail?.items.filter(item => !item.verifyRejectedAt && !item.convertedAt) ?? []
+                  // Lines still waiting on Warehouse (parallel PR) aren't Purchasing's to convert yet.
+                  const settleable = detail?.items.filter(item => !item.verifyRejectedAt && !item.convertedAt && !isAwaitingWarehouse(item, detail)) ?? []
                   const missingSupplier = settleable.filter(item => !fulfillment[item.id!] && !item.supplierId)
                   const nothingLeft = settleable.length === 0
                   // Only block when NOTHING is ready yet — if at least one item already has
@@ -1610,7 +1670,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                 </button>
               </>
             )}
-            {selected.status === 'ON_PROCESS' && isWarehouse && (
+            {selected.status === 'ON_PROCESS' && isWarehouse && !(detail && isWarehousePending(detail)) && (
               <span className="text-sm text-muted-foreground italic">Being processed by Purchasing</span>
             )}
             {selected.status === 'CONVERTED' && (
@@ -1812,7 +1872,9 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
             }).map(x => x.item)
             // Warehouse reviewing an incoming PR gets the full stock breakdown (against the
             // source warehouse, base units) in place of the single Current Stock figure.
-            const showStockCheck = detail.status === 'DRAFT' && canWarehouseCheck
+            const showStockCheck = canWarehouseCheck && isWarehousePending(detail)
+            // Mark each line's route only when the PR mixes both — otherwise it's noise.
+            const mixedRoute = detail.items.some(it => it.viaWarehouse) && detail.items.some(it => !it.viaWarehouse)
             const fmtQty = (n: number) => Math.round(n * 100) / 100
             const stockLocations = [...new Set(sortedItems.map(it => it.stockCheck?.locationName).filter(Boolean) as string[])]
             return (
@@ -1835,7 +1897,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                     ) : null}
                     {showStockCheck && stockLocations.length > 0 && (
                       <p className="text-xs text-muted-foreground">
-                        Stock at <span className="font-medium text-foreground">{stockLocations.join(', ')}</span> · base units
+                        Stock at <span className="font-medium text-foreground">{stockLocations.join(', ')}</span>
                       </p>
                     )}
                   </div>
@@ -1860,7 +1922,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                     <th className="text-right px-5 py-2.5 font-medium">Current Stock</th>
                   )}
                   {['DRAFT', 'ON_PROCESS'].includes(detail.status) && <th className="text-left px-5 py-2.5 font-medium whitespace-nowrap">Decision</th>}
-                  {detail.status === 'DRAFT' && canWarehouseCheck && <th className="text-left px-5 py-2.5 font-medium whitespace-nowrap">Cek Gudang</th>}
+                  {showStockCheck && <th className="text-left px-5 py-2.5 font-medium whitespace-nowrap">Cek Gudang</th>}
                   {detail.status === 'ON_PROCESS' && !isWarehouse && <th className="text-left px-5 py-2.5 font-medium">Fulfillment</th>}
                   {detail.status === 'ON_PROCESS' && !isWarehouse && detail.deliveryLocation?.type === 'VESSEL' && <th className="text-left px-5 py-2.5 font-medium">Room / Category</th>}
                   <th className="w-10" />
@@ -1881,6 +1943,8 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                   // Already sent out of warehouse stock via a Transfer — nothing left for
                   // Purchasing to pick (supplier, fulfillment, room), so those cells show the transfer.
                   const transferred = !!item.convertedAt && !item.convertedPoId && (item.warehouseDecision === 'TRANSFER' || !!item.transfer)
+                  // Parallel PR: Purchasing sees this line but Warehouse hasn't released it yet.
+                  const awaiting = detail.status === 'ON_PROCESS' && !isWarehouse && isAwaitingWarehouse(item, detail)
                   const isNewPoGroup = i > 0 && item.convertedPoId && sortedItems[i - 1].convertedPoId !== item.convertedPoId
                   return (
                     <tr
@@ -1910,6 +1974,9 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                           <div className="min-w-0">
                             <p className={`font-medium ${isRejected ? 'line-through text-muted-foreground' : ''}`}>{item.itemName}</p>
                             {isCustom && <span className="text-[10px] font-medium text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded-full">Custom request</span>}
+                            {mixedRoute && (item.viaWarehouse
+                              ? <span className="text-[10px] font-medium text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded-full ml-1">Via Warehouse</span>
+                              : <span className="text-[10px] font-medium text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded-full ml-1">Direct</span>)}
                             {item.requestType === 'REPLACEMENT' && <span className="text-[10px] font-medium text-red-700 bg-red-50 px-1.5 py-0.5 rounded-full ml-1">Replacement</span>}
                             {item.requestType === 'REPLACEMENT' && item.damageDetail && (
                               <p className="text-xs text-red-700/80 mt-0.5 whitespace-pre-line"><span className="font-semibold">Damage:</span> {item.damageDetail}</p>
@@ -1919,7 +1986,9 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                         </div>
                       </td>
                       <td className="px-5 py-3 text-muted-foreground" onClick={e => detail.status === 'ON_PROCESS' && !isWarehouse && e.stopPropagation()}>
-                        {transferred && !(detail.status === 'DRAFT' && canWarehouseCheck) ? (
+                        {awaiting ? (
+                          <span className="text-[10px] font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-full px-2 py-0.5 whitespace-nowrap">Waiting for Warehouse</span>
+                        ) : transferred && !showStockCheck ? (
                           <TransferBadge transfer={item.transfer} onOpen={onOpenTransfer} />
                         ) : detail.status !== 'ON_PROCESS' || isWarehouse ? (
                           <>
@@ -1991,18 +2060,32 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                           <td key={k} className={`${cell} text-muted-foreground/50 ${k === 6 ? 'border-r pr-4 bg-blue-50/40' : bg} ${k === 0 ? 'border-l pl-4' : ''}`}>—</td>
                         ))
                         const muted = (n: number) => n === 0 ? 'text-muted-foreground/60' : ''
+                        // Shown in the unit the line was requested in: purchase unit with the base
+                        // equivalent underneath (e.g. 2 bottle / 1500 ml), else base unit only.
+                        // Units stay muted & normal-weight so the numbers still read first.
+                        const conv = item.conversionFactor || 1
+                        const inPurchase = !!item.purchaseUnit && !!item.baseUnit && item.purchaseUnit !== item.baseUnit && conv !== 1
+                          && (item.unit ?? item.itemUnit) === item.purchaseUnit
+                        const qty = (n: number) => inPurchase ? (
+                          <>
+                            {fmtQty(n / conv)}<span className="ml-1 text-xs font-normal text-muted-foreground">{item.purchaseUnit}</span>
+                            {n !== 0 && <span className="block text-[10px] font-normal text-muted-foreground">{fmtQty(n)} {item.baseUnit}</span>}
+                          </>
+                        ) : (
+                          <>{fmtQty(n)}{item.baseUnit && <span className="ml-1 text-xs font-normal text-muted-foreground">{item.baseUnit}</span>}</>
+                        )
                         return (
                           <>
                             <td className={`${cell} ${bg} border-l pl-4`}>
-                              {fmtQty(sc.availability)}
+                              {qty(sc.availability)}
                               {stockLocations.length > 1 && <p className="text-[10px] text-muted-foreground">{sc.locationName}</p>}
                             </td>
-                            <td className={`${cell} ${bg} ${sc.reserve > 0 ? 'text-amber-600 font-medium' : muted(0)}`}>{fmtQty(sc.reserve)}</td>
-                            <td className={`${cell} ${bg} ${sc.onOrder > 0 ? 'text-violet-600 font-medium' : muted(0)}`}>{fmtQty(sc.onOrder)}</td>
-                            <td className={`${cell} ${bg} font-semibold ${sc.ending < 0 ? 'text-red-600' : sc.ending < sc.minStock ? 'text-orange-500' : 'text-green-700'}`}>{fmtQty(sc.ending)}</td>
-                            <td className={`${cell} ${bg} ${sc.shortage > 0 ? 'text-red-600 font-semibold' : muted(0)}`}>{fmtQty(sc.shortage)}</td>
-                            <td className={`${cell} ${bg} ${muted(sc.minStock) || 'text-muted-foreground'}`}>{fmtQty(sc.minStock)}</td>
-                            <td className={`${cell} border-r pr-4 bg-blue-50/40 ${sc.toBeOrder > 0 ? 'text-blue-700 font-semibold' : muted(0)}`}>{fmtQty(sc.toBeOrder)}</td>
+                            <td className={`${cell} ${bg} ${sc.reserve > 0 ? 'text-amber-600 font-medium' : muted(0)}`}>{qty(sc.reserve)}</td>
+                            <td className={`${cell} ${bg} ${sc.onOrder > 0 ? 'text-violet-600 font-medium' : muted(0)}`}>{qty(sc.onOrder)}</td>
+                            <td className={`${cell} ${bg} font-semibold ${sc.ending < 0 ? 'text-red-600' : sc.ending < sc.minStock ? 'text-orange-500' : 'text-green-700'}`}>{qty(sc.ending)}</td>
+                            <td className={`${cell} ${bg} ${sc.shortage > 0 ? 'text-red-600 font-semibold' : muted(0)}`}>{qty(sc.shortage)}</td>
+                            <td className={`${cell} ${bg} ${muted(sc.minStock) || 'text-muted-foreground'}`}>{qty(sc.minStock)}</td>
+                            <td className={`${cell} border-r pr-4 bg-blue-50/40 ${sc.toBeOrder > 0 ? 'text-blue-700 font-semibold' : muted(0)}`}>{qty(sc.toBeOrder)}</td>
                           </>
                         )
                       })() : (
@@ -2041,24 +2124,28 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                           )}
                         </td>
                       )}
-                      {detail.status === 'DRAFT' && canWarehouseCheck && (
+                      {showStockCheck && (
                         <td className="px-5 py-3 min-w-[220px]" onClick={e => e.stopPropagation()}>
                           {isRejected ? (
                             <span className="text-xs text-muted-foreground italic">Ditolak — tidak perlu dicek</span>
-                          ) : isCustom ? (
-                            <span className="text-xs text-muted-foreground italic">Custom — otomatis ke Purchasing</span>
+                          ) : !item.viaWarehouse ? (
+                            <span className="text-xs text-muted-foreground italic">{isCustom ? 'Custom' : 'Non-stock item'} — direct to Purchasing</span>
+                          ) : item.warehouseDecision === 'PURCHASE' ? (
+                            <span className="text-[10px] font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5 whitespace-nowrap inline-block">Out of stock — sent to Purchasing</span>
                           ) : item.convertedAt && item.warehouseDecision === 'TRANSFER' ? (
-                            <TransferBadge transfer={item.transfer} onOpen={onOpenTransfer} />
+                            <div className="space-y-1">
+                              {item.transfer && <TransferBadge transfer={item.transfer} onOpen={onOpenTransfer} />}
+                              <BackorderBadge item={item} />
+                            </div>
                           ) : (() => {
                             const busy = warehouseBusyItemId === item.id
                             const warehouseLocations = locations.filter(l => l.type === 'WAREHOUSE' && l.id !== detail.deliveryLocationId)
-                            const defaultFrom = item.warehouseStock?.slice().sort((a, b) => b.qty - a.qty)[0]?.locationId ?? ''
+                            const defaultFrom = item.stockCheck?.locationId ?? item.warehouseStock?.slice().sort((a, b) => b.qty - a.qty)[0]?.locationId ?? ''
                             const fromValue = warehouseFrom[item.id!] ?? defaultFrom
+                            // Preview of the split Process will make — only known for the warehouse stockCheck ran against.
+                            const sc = item.stockCheck && item.stockCheck.locationId === fromValue && !item.warehouseDecision ? item.stockCheck : null
                             return (
                               <div className="space-y-1.5">
-                                {item.warehouseDecision === 'PURCHASE' && (
-                                  <span className="text-[10px] font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5 whitespace-nowrap inline-block">Ke Purchasing (bisa diubah)</span>
-                                )}
                                 <div className="flex items-center gap-1.5 flex-wrap">
                                   <div className="relative inline-block">
                                     <select
@@ -2074,23 +2161,30 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                                     </select>
                                     <ChevronDown className="h-3 w-3 absolute right-1 top-1/2 -translate-y-1/2 pointer-events-none text-muted-foreground" />
                                   </div>
-                                  <button disabled={busy || !fromValue} onClick={() => warehouseCheckItem(item, 'TRANSFER')}
+                                  <button disabled={busy || !fromValue} onClick={() => warehouseCheckItem(item)}
                                     className="text-xs font-medium px-2 py-1 rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap">
-                                    Ada — Transfer
+                                    Process
                                   </button>
                                 </div>
-                                <div className="flex items-center gap-1.5">
-                                  <input
-                                    type="text" placeholder="Catatan (opsional)"
-                                    className="text-xs border rounded-md px-2 py-1 w-32 focus:outline-none focus:ring-1 focus:ring-amber-500"
-                                    value={warehouseNote[item.id!] ?? ''}
-                                    onChange={e => setWarehouseNote(n => ({ ...n, [item.id!]: e.target.value }))}
-                                  />
-                                  <button disabled={busy} onClick={() => warehouseCheckItem(item, 'PURCHASE')}
-                                    className="text-xs font-medium px-2 py-1 rounded-md border text-muted-foreground hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap">
-                                    Tidak Ada
-                                  </button>
-                                </div>
+                                {sc && (
+                                  <p className="text-[10px] text-muted-foreground whitespace-nowrap">
+                                    {sc.reserve > 0
+                                      ? <>Send <span className="font-semibold text-foreground">{lineQtyLabel(item, sc.reserve)}</span> now{sc.shortage > 0 && <> · backorder <span className="font-semibold text-red-600">{lineQtyLabel(item, sc.shortage)}</span></>}</>
+                                      : <span className="font-medium text-amber-700">Out of stock → to Purchasing</span>}
+                                    {(() => {
+                                      // Out of stock: Requested is bought straight to the ship, so only the
+                                      // Min. Stock top-up goes on the Restock PR.
+                                      const order = sc.reserve > 0 ? sc.restockQty : Math.max(0, sc.toBeOrder - sc.requested)
+                                      return order > 0 && <> · restock <span className="font-semibold text-blue-700">{lineQtyLabel(item, order)}</span></>
+                                    })()}
+                                  </p>
+                                )}
+                                <input
+                                  type="text" placeholder="Note (optional)"
+                                  className="text-xs border rounded-md px-2 py-1 w-40 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                                  value={warehouseNote[item.id!] ?? ''}
+                                  onChange={e => setWarehouseNote(n => ({ ...n, [item.id!]: e.target.value }))}
+                                />
                               </div>
                             )
                           })()}
@@ -2098,8 +2192,13 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                       )}
                       {detail.status === 'ON_PROCESS' && !isWarehouse && (
                         <td className="px-5 py-3" onClick={e => e.stopPropagation()}>
-                          {transferred ? (
-                            <span className="text-xs text-blue-700">Transfer{item.transfer ? ` from ${item.transfer.fromLocationName}` : ''}</span>
+                          {awaiting ? (
+                            <span className="text-xs text-muted-foreground italic">Warehouse is checking stock</span>
+                          ) : transferred ? (
+                            <div className="space-y-1">
+                              {item.transfer && <span className="block text-xs text-blue-700">Transfer from {item.transfer.fromLocationName}</span>}
+                              <BackorderBadge item={item} />
+                            </div>
                           ) : item.warehouseDecision === 'PURCHASE' || !item.transferEligible || !item.warehouseStock?.length ? (
                             <span className="text-xs text-muted-foreground" title={item.warehouseDecision === 'PURCHASE' ? 'Gudang sudah cek fisik — tidak ada stok' : undefined}>Purchase Order</span>
                           ) : (

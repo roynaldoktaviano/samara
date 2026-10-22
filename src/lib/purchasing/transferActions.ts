@@ -4,6 +4,7 @@ import { shipArrivalRouter, shipUsageOnArrival, USAGE_LOCATION_SELECT } from '@/
 import { attemptFinalizePOStatus, getRouteLocationIds, resolveNextHop, spawnNextTransitLeg } from '@/lib/purchasing/transitChain'
 import { nextSeq } from '@/lib/purchasing/docNumber'
 import { notifyPoArrivalToRequester, notifyRequester } from '@/lib/notify-purchasing'
+import { allocateBackorders } from '@/lib/purchasing/backorders'
 
 // receiveTransferLeg always owns its own $transaction (called with a full client, session-
 // or token-resolved — never from inside an existing transaction), unlike transitChain.ts's
@@ -234,6 +235,10 @@ export async function receiveTransferLeg(db: Db, transferId: string, params: {
       skipUserId: params.receivedById ?? undefined,
     }).catch(console.error)
   }
+
+  // Stock arriving at a warehouse (e.g. a restock PO's transit leg) → ship PR lines
+  // backordered there (draft follow-up TRs). No-op for any other destination.
+  await allocateBackorders(db, transfer.toLocationId, params.items.map(i => i.itemId))
 
   return { ok: true }
 }

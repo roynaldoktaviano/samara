@@ -9,6 +9,7 @@ import { emitTenantEvent } from '@/lib/realtime-bus'
 import { notifyByRole, notifyByRoleForRequest } from '@/lib/notify-purchasing'
 import { createOrAppendTransfer, toBaseQty } from '@/lib/purchasing/transferActions'
 import { computeStockChecks } from '@/lib/purchasing/stockCheck'
+import { routePrLines, initialPrStatus, notifyPrRouted } from '@/lib/purchasing/requestItems'
 import { resolveTripLink, tripBookingSelect, openTripSelect, tripOf } from '@/lib/purchasing/tripLink'
 import { nextSeq } from '@/lib/purchasing/docNumber'
 import { resolveAssignedYachtId } from '@/lib/purchasing/yachtScope'
@@ -70,7 +71,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       transfers: {
         select: {
           id: true, transferNumber: true, status: true, createdAt: true, dispatchedAt: true, receivedAt: true, receivedByName: true,
-          fromLocationId: true, fromLocation: { select: { name: true } }, toLocation: { select: { name: true } }, items: { select: { itemId: true } },
+          fromLocationId: true, fromLocation: { select: { name: true } }, toLocation: { select: { name: true } }, items: { select: { itemId: true, requestedQty: true } },
         },
         orderBy: { createdAt: 'asc' },
       },
@@ -258,9 +259,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       }
     }
 
+    // Re-route the new line set — adding a direct line moves the PR to ON_PROCESS so
+    // Purchasing can start on it while Warehouse keeps checking the rest.
+    const via = await routePrLines(db, deliveryLocationId, editItems.map(it => ({ itemId: it.itemId || null })))
+    const nextStatus = initialPrStatus(via)
     const [, updated] = await db.$transaction([db.purchaseRequestItem.deleteMany({ where: { requestId: id } }), db.purchaseRequest.update({
       where: { id },
       data: {
+        status: nextStatus,
         deliveryLocationId,
         requestedByEmployeeId: requestedByEmployeeId || null,
         notes: notes?.trim() || null,
@@ -272,9 +278,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         openTripId: tripLink.openTripId,
         updatedAt: new Date(),
         items: {
-          create: editItems.map(it => ({
+          create: editItems.map((it, idx) => ({
             id: crypto.randomUUID(),
             itemId: it.itemId || null,
+            viaWarehouse: via[idx],
             itemName: it.itemName,
             quantity: it.quantity,
             unit: it.unit,
@@ -290,6 +297,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         },
       },
     })])
+    if (nextStatus === 'ON_PROCESS') {
+      await notifyPrRouted(db, { id, prNumber: updated.prNumber, division: updated.division ?? null }, via, { type: 'REQUEST_ORDER_SUBMITTED', skipWarehouse: true })
+    }
     emitTenantEvent(session.user.tenantId, 'purchasing-requests')
     return NextResponse.json(updated)
   }
@@ -308,13 +318,20 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       if (current?.status !== 'DRAFT') {
         return NextResponse.json({ error: 'Only a Draft request can be Force Verified' }, { status: 409 })
       }
+      // Once Warehouse has started deciding lines, skipping its forward would drop the Restock
+      // PR and backorder follow-up it creates — finish the warehouse check instead.
+      const started = await db.purchaseRequestItem.count({ where: { requestId: id, OR: [{ warehouseDecision: { not: null } }, { convertedAt: { not: null } }] } })
+      if (started > 0) {
+        return NextResponse.json({ error: 'Warehouse has already started checking this request — use Finish Warehouse Check instead' }, { status: 409 })
+      }
     }
     const request = await db.purchaseRequest.update({
       where: { id },
       data: {
         status,
         updatedAt: new Date(),
-        ...(status === 'ON_PROCESS' && { verifiedById: session.user.id, verifiedAt: new Date() }),
+        // Force Verify skips Warehouse entirely — its lines become Purchasing's.
+        ...(status === 'ON_PROCESS' && { verifiedById: session.user.id, verifiedAt: new Date(), warehouseDoneAt: new Date() }),
         ...(status === 'REJECTED' && { rejectedById: session.user.id, rejectedAt: new Date() }),
         ...(status === 'CANCELLED' && { cancelledById: session.user.id, cancelledAt: new Date() }),
       },
@@ -345,8 +362,16 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const settled = current.items.filter(i => i.convertedAt || i.verifyRejectedAt)
   const readyItemIds = new Set<string>()
   const blockedItemNames: string[] = []
+  const waitingWarehouse: string[] = []
   for (const item of current.items) {
     if (item.convertedAt || item.verifyRejectedAt) continue
+    // Parallel PR: a Warehouse-routed line is still Warehouse's until it decides (Buy direct)
+    // or finishes its check — Purchasing only converts the direct lines meanwhile.
+    if (item.viaWarehouse && !current.warehouseDoneAt && item.warehouseDecision !== 'PURCHASE') {
+      blockedItemNames.push(item.itemName)
+      waitingWarehouse.push(item.itemName)
+      continue
+    }
     if (item.itemId && transferItemIds.has(item.id)) {
       readyItemIds.add(item.id)
     } else if (!item.supplierId) {
@@ -361,7 +386,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     return NextResponse.json({
       error: settled.length === current.items.length
         ? 'All items are already converted or were rejected'
-        : `No items are ready to convert yet — supplier selection still needs approval for: ${blockedItemNames.join(', ')}`,
+        : waitingWarehouse.length === blockedItemNames.length
+          ? `Waiting for Warehouse's stock check: ${waitingWarehouse.join(', ')}`
+          : `No items are ready to convert yet — supplier selection still needs approval for: ${blockedItemNames.filter(n => !waitingWarehouse.includes(n)).join(', ')}`,
     }, { status: 409 })
   }
   // A partial-convert pass (some items still blocked) leaves the request ON_PROCESS —

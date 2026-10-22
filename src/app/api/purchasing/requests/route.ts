@@ -4,9 +4,9 @@ import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 
 import { roleMatches } from '@/lib/role-utils'
-import { notifyByRoleForRequest, notifyPurchasingForRequest, PURCHASING_ROLES } from '@/lib/notify-purchasing'
+import { PURCHASING_ROLES } from '@/lib/notify-purchasing'
 import { computeCurrentLegLabel } from '@/lib/purchasing/transitChain'
-import { allItemsCustom } from '@/lib/purchasing/requestItems'
+import { routePrLines, initialPrStatus, notifyPrRouted } from '@/lib/purchasing/requestItems'
 import { emitTenantEvent } from '@/lib/realtime-bus'
 import { sendPushToUser } from '@/lib/push'
 import { resolveTripLink, tripBookingSelect, openTripSelect, tripOf } from '@/lib/purchasing/tripLink'
@@ -53,7 +53,7 @@ export async function GET() {
     },
     orderBy: { createdAt: 'desc' },
     include: {
-      items: { select: { id: true, quantity: true, estimatedCost: true, itemName: true } },
+      items: { select: { id: true, quantity: true, estimatedCost: true, itemName: true, warehouseDecision: true, convertedAt: true, viaWarehouse: true } },
       deliveryLocation: { select: { id: true, name: true, type: true, managedBy: true, yachtId: true } },
       requestedByEmployee: { select: { id: true, fullName: true, employeeNumber: true } },
       verifiedBy: { select: { id: true, name: true } },
@@ -89,6 +89,10 @@ export async function GET() {
       trip: tripOf(r),
       itemCount: r.items.length,
       itemNames: r.items.map(i => i.itemName),
+      // Warehouse already decided at least one line — Force Verify is no longer offered.
+      warehouseStarted: r.items.some(i => !!i.warehouseDecision || !!i.convertedAt),
+      // Warehouse still owns lines here — DRAFT, or a parallel ON_PROCESS PR not yet finished.
+      warehousePending: r.status === 'DRAFT' || (r.status === 'ON_PROCESS' && !r.warehouseDoneAt && r.items.some(i => i.viaWarehouse)),
       totalBudget: r.items.reduce((s, i) => s + i.quantity * i.estimatedCost, 0),
       // createdBy is always the ERP login that submitted the PR (e.g. a warehouse account).
       // requestedByEmployee (already in the include) is who it's actually for — optional,
@@ -181,10 +185,10 @@ export async function POST(req: NextRequest) {
     ? await db.employee.findUnique({ where: { id: requesterEmployee.managerId }, select: { id: true, userId: true } })
     : null
   const approverEmployeeId = manager?.userId ? manager.id : null
-  // Warehouse has nothing to check when every item is a custom/non-catalog request (see
-  // allItemsCustom) — those PRs skip "Cek Gudang" entirely once approved (or immediately,
-  // if there's no manager to approve first).
-  const allCustom = allItemsCustom(items.map(it => ({ itemId: it.itemId || null })))
+  // Per-line route (Warehouse stock check vs straight to Purchasing, see routePrLines). Only
+  // an all-Warehouse PR waits in DRAFT; any direct line puts it ON_PROCESS so Purchasing can
+  // start while Warehouse checks the rest in parallel.
+  const via = await routePrLines(db, deliveryLocationId || null, items.map(it => ({ itemId: it.itemId || null })))
 
   const prNumber = await generatePrNumber(db)
   const request = await db.purchaseRequest.create({
@@ -202,12 +206,13 @@ export async function POST(req: NextRequest) {
       purpose: purpose === 'TRIP' ? 'TRIP' : 'STOCK_INVENTORY',
       tripBookingId: tripLink.tripBookingId,
       openTripId: tripLink.openTripId,
-      status: approverEmployeeId ? 'PENDING_APPROVAL' : (allCustom ? 'ON_PROCESS' : 'DRAFT'),
+      status: approverEmployeeId ? 'PENDING_APPROVAL' : initialPrStatus(via),
       updatedAt: new Date(),
       items: {
-        create: items.map((it) => ({
+        create: items.map((it, idx) => ({
           id: crypto.randomUUID(),
           itemId: it.itemId || null,
+          viaWarehouse: via[idx],
           itemName: it.itemName,
           quantity: Number(it.quantity),
           unit: it.unit,
@@ -251,26 +256,14 @@ export async function POST(req: NextRequest) {
       body: `${requesterEmployee?.fullName ?? 'A request'}${onBehalfNote} — ${prNumber} is waiting for your approval.`,
       url: '/',
     }).catch(() => {})
-  } else if (allCustom) {
-    // No usable manager on file, and every item is custom — nothing for Warehouse to
-    // check, so this went straight to ON_PROCESS above. Notify Purchasing directly
-    // instead, same as warehouse-forward does once a mixed PR clears its stock check.
-    if (!roleMatches(role, PURCHASING_ROLES)) {
-      notifyPurchasingForRequest(
-        db, request.division ?? null, 'REQUEST_ORDER_SUBMITTED', 'New purchase request submitted',
-        `${prNumber} was submitted with ${request.items.length} custom item${request.items.length !== 1 ? 's' : ''} — no stock check needed.`,
-        request.id,
-      ).catch(() => {})
-    }
-  } else if (!roleMatches(role, WAREHOUSE_ROLES)) {
-    // No usable manager on file — notify Warehouse directly so they can check stock,
-    // same as after a manager approves. Skip when Warehouse/Admin themselves created it,
-    // since they don't need to be told about their own action.
-    notifyByRoleForRequest(
-      db, WAREHOUSE_ROLES, 'REQUEST_ORDER_SUBMITTED', 'New purchase request submitted',
-      `${prNumber} was submitted with ${request.items.length} item${request.items.length !== 1 ? 's' : ''} and is waiting for a stock check.`,
-      request.id,
-    ).catch(() => {})
+  } else {
+    // No usable manager on file — the PR is live now: tell Purchasing about its direct lines
+    // and Warehouse about the ones waiting for a stock check (skipping whoever created it).
+    await notifyPrRouted(db, { id: request.id, prNumber, division: request.division ?? null }, via, {
+      type: 'REQUEST_ORDER_SUBMITTED',
+      skipPurchasing: roleMatches(role, PURCHASING_ROLES),
+      skipWarehouse: roleMatches(role, WAREHOUSE_ROLES),
+    })
   }
 
   emitTenantEvent(session.user.tenantId, 'purchasing-requests')

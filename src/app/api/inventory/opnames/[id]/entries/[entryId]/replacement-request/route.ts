@@ -72,7 +72,9 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
         approverEmployeeId,
         deliveryLocationId: entry.opname.locationId,
         purpose: 'REPLACEMENT',
-        status: approverEmployeeId ? 'PENDING_APPROVAL' : 'DRAFT',
+        // Its single line is custom (no catalog item) — nothing for Warehouse to stock-check,
+        // so it goes straight to Purchasing (see routePrLines / initialPrStatus).
+        status: approverEmployeeId ? 'PENDING_APPROVAL' : 'ON_PROCESS',
         updatedAt: new Date(),
         items: {
           create: [{

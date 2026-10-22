@@ -5,6 +5,7 @@ import { shipArrivalRouter, shipUsageOnArrival, USAGE_LOCATION_SELECT } from '@/
 import { attemptFinalizePOStatus, resolveNextHop, spawnNextTransitLeg } from '@/lib/purchasing/transitChain'
 import { nextSeq } from '@/lib/purchasing/docNumber'
 import { poLineNetRatio } from '@/lib/po-payment'
+import { allocateBackorders } from '@/lib/purchasing/backorders'
 
 type Db = Awaited<ReturnType<typeof getDb>>
 
@@ -345,6 +346,9 @@ export async function receiveGoods(db: Db, params: {
     ).catch(console.error)
     notifyPoArrivalToRequester(db, orderId, newStatus, po.poNumber, params.receivedById)
   }
+
+  // Restock landing in a warehouse → ship PR lines backordered there (draft follow-up TRs).
+  await allocateBackorders(db, effectiveLocationId, items.map(i => i.itemId ?? null))
 
   return { ok: true, gr, newStatus }
 }

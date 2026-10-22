@@ -2485,6 +2485,10 @@ model PurchaseRequest {
   // source warehouse would end below Min. Stock (To Be Order > 0). Delivered to that
   // warehouse, goes straight to Purchasing. See src/lib/purchasing/stockCheck.ts.
   restockForRequestId   String?
+  // When Warehouse finished its stock check (Finish Warehouse Check / Force Verify). While
+  // null and any line is viaWarehouse, those lines are still Warehouse's — even if the PR is
+  // already ON_PROCESS for its direct lines — and Purchasing can't convert them yet.
+  warehouseDoneAt       DateTime?
   status                PurchaseRequestStatus    @default(DRAFT)
   // What this request is for — general restocking, or a specific upcoming trip. Trip
   // requests link to the actual Booking so Purchasing knows which charter/departure the
@@ -2661,6 +2665,18 @@ model PurchaseRequestItem {
   warehouseCheckedById String?
   warehouseCheckedAt   DateTime?
   warehouseCheckNote   String?
+  // TRANSFER is partial when the warehouse is short: what's free ships now on a TR, the rest
+  // waits here (BASE units) at backorderLocationId until restock lands there — then
+  // allocateBackorders() (src/lib/purchasing/backorders.ts) reserves it oldest-PR-first and
+  // drafts the follow-up TR. 0 = nothing waiting.
+  backorderQty         Float                                 @default(0)
+  backorderLocationId  String?
+  // Line goes through Warehouse's stock check (catalog + stock-tracked item, PR not headed to
+  // a warehouse) vs straight to Purchasing (custom / non-stock items, warehouse restock PRs).
+  // Snapshotted at create/edit by routePrLines() (src/lib/purchasing/requestItems.ts). A PR
+  // holding both kinds runs in parallel: Purchasing works the direct lines (ON_PROCESS) while
+  // Warehouse is still checking these — see PurchaseRequest.warehouseDoneAt.
+  viaWarehouse         Boolean                               @default(false)
 
   // Set only when this line was created by "Request for Replacement" during an
   // Inventory Stock Opname (the other half of the link is
@@ -2688,6 +2704,7 @@ model PurchaseRequestItem {
   @@index([warehouseCheckedById])
   @@index([convertedPoId])
   @@index([sourceInventoryItemId])
+  @@index([backorderLocationId, itemId])
 }
 
 // Sourcing evidence for KPI 5 — one row per quotation gathered for a PR item, before the
