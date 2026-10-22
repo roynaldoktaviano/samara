@@ -37,6 +37,13 @@ export function effectiveMargin(block: EmailBlock, mobile: boolean): Padding | u
   return mobile && mm ? mm : m
 }
 
+/** The alignment a block shows at the given device — its mobile.align override when editing/previewing at mobile width, else its own. */
+export function effectiveAlign(block: EmailBlock, mobile: boolean): BlockAlign {
+  const a = 'align' in block ? block.align : 'left'
+  const ma = 'mobile' in block && block.mobile && 'align' in block.mobile ? block.mobile.align : undefined
+  return mobile && ma ? ma : a
+}
+
 /** Which viewport a block is hidden on, via a CSS media-query class injected into the exported HTML's <head>. */
 export type HideOn = 'none' | 'desktop' | 'mobile'
 
@@ -205,6 +212,7 @@ export interface HeadingBlock {
 // block's own (desktop) margin. Undefined means "use the desktop margin."
 export interface MarginMobileOverride {
   margin?: Padding
+  align?: BlockAlign // image/logo/video/divider/social only — applied via the .al-<id> class (see collectExtraStyles)
 }
 
 export interface ImageBlock {
@@ -770,6 +778,12 @@ function pdClass(block: EmailBlock): string | undefined {
   return 'mobilePadding' in block && block.mobilePadding ? `pd-${block.id}` : undefined
 }
 
+// An image/logo/video/social block with a mobile alignment override gets a per-instance
+// class on its <td> that collectExtraStyles re-aligns below 600px (the divider reuses div-<id>).
+function alClass(block: EmailBlock): string | undefined {
+  return 'mobile' in block && block.mobile && 'align' in block.mobile && block.mobile.align ? `al-${block.id}` : undefined
+}
+
 function classAttr(...classes: (string | false | undefined)[]): string {
   const cls = classes.filter(Boolean).join(' ')
   return cls ? ` class="${cls}"` : ''
@@ -997,12 +1011,12 @@ function renderBlockInner(block: EmailBlock, contentWidth: number): string {
       const fwmClass = !block.autoWidth && block.fullWidthOnMobile ? `fwm-${block.id}` : undefined
       const img = `<img src="${esc(block.src)}" alt="${esc(block.alt)}"${classAttr(`img-${block.id}`, fwmClass)} ${dims} />`
       const inner = block.link ? `<a href="${esc(block.link)}" target="_blank" rel="noopener noreferrer">${img}</a>` : img
-      return `<tr><td${classAttr(pdClass(block), hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};text-align:${block.align};">${inner}</td></tr>`
+      return `<tr><td${classAttr(alClass(block), pdClass(block), hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};text-align:${block.align};">${inner}</td></tr>`
     }
 
     case 'video': {
       const img = `<img src="${esc(block.thumbnailSrc)}" alt="Video thumbnail" width="${block.width}%" style="max-width:${block.width}%;width:${block.width}%;height:auto;display:inline-block;border:0;" />`
-      return `<tr><td${classAttr(pdClass(block), hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};text-align:${block.align};">
+      return `<tr><td${classAttr(alClass(block), pdClass(block), hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};text-align:${block.align};">
         <a href="${esc(block.videoUrl)}" target="_blank" rel="noopener noreferrer" style="text-decoration:none;display:inline-block;">
           ${img}
           <div style="margin-top:8px;font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#374151;">&#9654; Watch video</div>
@@ -1158,7 +1172,7 @@ function renderBlockInner(block: EmailBlock, contentWidth: number): string {
     }
 
     case 'social':
-      return `<tr><td${classAttr(pdClass(block), hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};text-align:${block.align};">
+      return `<tr><td${classAttr(alClass(block), pdClass(block), hideOnClass(block.hideOn))} style="padding:${paddingCss(block.padding)};text-align:${block.align};">
         ${block.links.map(l => `<a href="${esc(l.url)}" target="_blank" rel="noopener noreferrer" style="display:inline-block;margin:0 8px;font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#374151;text-decoration:underline;">${esc(l.platform)}</a>`).join('')}
       </td></tr>`
 
@@ -1216,6 +1230,9 @@ function collectExtraStyles(blocks: EmailBlock[]): string[] {
     if ((b.type === 'image' || b.type === 'logo') && !b.autoWidth && b.fullWidthOnMobile) {
       rules.push(`@media only screen and (max-width:600px){.fwm-${b.id}{width:100% !important;max-width:100% !important;}}`)
     }
+    if ((b.type === 'image' || b.type === 'logo' || b.type === 'video' || b.type === 'social') && b.mobile?.align) {
+      rules.push(`@media only screen and (max-width:600px){.al-${b.id}{text-align:${b.mobile.align} !important;}}`)
+    }
     if ((b.type === 'image' || b.type === 'logo') && b.mobile?.margin) {
       rules.push(`@media only screen and (max-width:600px){.img-${b.id}{margin:${marginCss(b.mobile.margin)} !important;}}`)
     }
@@ -1261,6 +1278,10 @@ function collectExtraStyles(blocks: EmailBlock[]): string[] {
       const c = darkModeSafe(b.color)
       rules.push(`@media (prefers-color-scheme: dark){.div-${b.id}{border-top-color:${c} !important;}}`)
       rules.push(darkOverride(`.div-${b.id}`, `border-top-color:${c} !important;`))
+      if (b.mobile?.align) {
+        const m = b.mobile.align === 'center' ? '0 auto' : b.mobile.align === 'right' ? '0 0 0 auto' : '0 auto 0 0'
+        rules.push(`@media only screen and (max-width:600px){.div-${b.id}{margin:${m} !important;}}`)
+      }
     }
     if (b.type === 'footer') {
       const bg = darkModeSafe(b.backgroundColor || '#000000')

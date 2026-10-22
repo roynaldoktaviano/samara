@@ -1,4 +1,4 @@
-import { paddingStyle, marginStyle, effectivePadding, effectiveMargin, columnWidths, type EmailBlock, backgroundImageStyle } from '@/lib/email-builder'
+import { paddingStyle, marginStyle, effectivePadding, effectiveMargin, effectiveAlign, columnWidths, type EmailBlock, backgroundImageStyle } from '@/lib/email-builder'
 import { ImageOff, Play, Code2, Facebook, Instagram, MessageCircle, Link2, LinkedinIcon } from 'lucide-react'
 
 /**
@@ -12,7 +12,7 @@ export default function BlockPreview({ block, mobile = false }: { block: EmailBl
       return (
         <div
           className="email-rich-text"
-          style={{ ...paddingStyle(effectivePadding(block, mobile)), textAlign: block.align, fontSize: block.fontSize, color: block.color, fontFamily: block.fontFamily, lineHeight: block.lineHeight, letterSpacing: block.letterSpacing, '--link-color': block.linkColor } as React.CSSProperties}
+          style={{ ...paddingStyle(effectivePadding(block, mobile)), textAlign: effectiveAlign(block, mobile), fontSize: block.fontSize, color: block.color, fontFamily: block.fontFamily, lineHeight: block.lineHeight, letterSpacing: block.letterSpacing, '--link-color': block.linkColor } as React.CSSProperties}
           dangerouslySetInnerHTML={{ __html: block.html }}
         />
       )
@@ -21,7 +21,7 @@ export default function BlockPreview({ block, mobile = false }: { block: EmailBl
       return (
         <div
           className="email-rich-text"
-          style={{ ...paddingStyle(effectivePadding(block, mobile)), textAlign: block.align, fontSize: block.fontSize, color: block.color, fontFamily: block.fontFamily, fontWeight: 700, lineHeight: block.lineHeight, letterSpacing: block.letterSpacing, '--link-color': block.linkColor } as React.CSSProperties}
+          style={{ ...paddingStyle(effectivePadding(block, mobile)), textAlign: effectiveAlign(block, mobile), fontSize: block.fontSize, color: block.color, fontFamily: block.fontFamily, fontWeight: 700, lineHeight: block.lineHeight, letterSpacing: block.letterSpacing, '--link-color': block.linkColor } as React.CSSProperties}
           dangerouslySetInnerHTML={{ __html: block.html }}
         />
       )
@@ -29,7 +29,7 @@ export default function BlockPreview({ block, mobile = false }: { block: EmailBl
     case 'image':
     case 'logo':
       return (
-        <div style={{ ...paddingStyle(effectivePadding(block, mobile)), textAlign: block.align, ...(block.fillHeight ? { height: '100%' } : {}) }} className={block.fillHeight ? 'h-full' : ''}>
+        <div style={{ ...paddingStyle(effectivePadding(block, mobile)), textAlign: effectiveAlign(block, mobile), ...(block.fillHeight ? { height: '100%' } : {}) }} className={block.fillHeight ? 'h-full' : ''}>
           {block.src ? (
             block.fillHeight ? (
               <img src={block.src} alt={block.alt} className="h-full w-full object-cover block" />
@@ -47,7 +47,7 @@ export default function BlockPreview({ block, mobile = false }: { block: EmailBl
 
     case 'video':
       return (
-        <div style={{ ...paddingStyle(effectivePadding(block, mobile)), textAlign: block.align }}>
+        <div style={{ ...paddingStyle(effectivePadding(block, mobile)), textAlign: effectiveAlign(block, mobile) }}>
           {block.thumbnailSrc ? (
             <div className="relative inline-block" style={{ width: `${block.width}%` }}>
               <img src={block.thumbnailSrc} alt="Video thumbnail" style={{ width: '100%', display: 'block' }} />
@@ -78,7 +78,7 @@ export default function BlockPreview({ block, mobile = false }: { block: EmailBl
 
     case 'button':
       return (
-        <div style={{ ...paddingStyle(effectivePadding(block, mobile)), textAlign: block.align }}>
+        <div style={{ ...paddingStyle(effectivePadding(block, mobile)), textAlign: effectiveAlign(block, mobile) }}>
           <span
             style={{
               ...marginStyle(effectiveMargin(block, mobile)),
@@ -96,8 +96,8 @@ export default function BlockPreview({ block, mobile = false }: { block: EmailBl
           <div style={{
             borderTop: `${block.thickness}px solid ${block.color}`,
             width: `${block.width}%`,
-            marginLeft: block.align === 'right' ? 'auto' : block.align === 'center' ? 'auto' : undefined,
-            marginRight: block.align === 'left' ? 'auto' : block.align === 'center' ? 'auto' : undefined,
+            marginLeft: effectiveAlign(block, mobile) === 'right' ? 'auto' : effectiveAlign(block, mobile) === 'center' ? 'auto' : undefined,
+            marginRight: effectiveAlign(block, mobile) === 'left' ? 'auto' : effectiveAlign(block, mobile) === 'center' ? 'auto' : undefined,
           }} />
         </div>
       )
@@ -139,7 +139,7 @@ export default function BlockPreview({ block, mobile = false }: { block: EmailBl
 
     case 'social':
       return (
-        <div style={{ ...paddingStyle(effectivePadding(block, mobile)), textAlign: block.align }} className="text-xs space-x-3">
+        <div style={{ ...paddingStyle(effectivePadding(block, mobile)), textAlign: effectiveAlign(block, mobile) }} className="text-xs space-x-3">
           {block.links.map((l, i) => (
             <span key={i} className="underline text-muted-foreground">{l.platform}</span>
           ))}

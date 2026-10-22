@@ -222,6 +222,28 @@ function ResponsivePaddingField({ block, onChange }: { block: EmailBlock & { pad
   )
 }
 
+type AlignBlock = EmailBlock & { align: BlockAlign; mobile?: { margin?: Padding; align?: BlockAlign } }
+
+/** Alignment with its own Desktop/Mobile switch — Mobile edits `mobile.align`, applied below 600px wide. */
+function ResponsiveAlignField({ block, onChange }: { block: AlignBlock; onChange: (block: EmailBlock) => void }) {
+  const [device, setDevice] = useState<'desktop' | 'mobile'>('desktop')
+  return (
+    <div className="space-y-2">
+      <DeviceToggle device={device} onChange={setDevice} />
+      {device === 'desktop' ? (
+        <AlignField key="desktop" value={block.align} onChange={align => onChange({ ...block, align } as EmailBlock)} />
+      ) : (
+        <>
+          <AlignField key="mobile" value={block.mobile?.align ?? block.align} onChange={align => onChange({ ...block, mobile: { ...block.mobile, align } } as EmailBlock)} />
+          {block.mobile?.align
+            ? <ResetMobileLink onClick={() => onChange({ ...block, mobile: { ...block.mobile, align: undefined } } as EmailBlock)} />
+            : <p className="text-[10px] text-muted-foreground">Same as desktop until you change it.</p>}
+        </>
+      )}
+    </div>
+  )
+}
+
 type MarginBlock = EmailBlock & { margin?: Padding; mobile?: { margin?: Padding } }
 
 /** Margin (outside the block, negative allowed) with its own Desktop/Mobile switch — Mobile edits `mobile.margin`, applied below 600px wide. */
@@ -628,7 +650,7 @@ export default function BlockInspector({ block, onChange }: { block: EmailBlock;
                   <NumberField label="Width (%)" value={block.width} onChange={width => onChange({ ...block, width: Math.min(100, Math.max(10, width)) })} min={10} max={100} />
                 </>
               )}
-              <AlignField value={block.align} onChange={align => onChange({ ...block, align })} />
+              <ResponsiveAlignField block={block} onChange={onChange} />
             </>
           )}
           <SectionHeader label="Action" />
@@ -654,7 +676,7 @@ export default function BlockInspector({ block, onChange }: { block: EmailBlock;
           </div>
           <ImageUploadField label="Thumbnail" src={block.thumbnailSrc} onChange={thumbnailSrc => onChange({ ...block, thumbnailSrc })} />
           <NumberField label="Width (%)" value={block.width} onChange={width => onChange({ ...block, width: Math.min(100, Math.max(10, width)) })} min={10} max={100} />
-          <AlignField value={block.align} onChange={align => onChange({ ...block, align })} />
+          <ResponsiveAlignField block={block} onChange={onChange} />
           <SectionHeader label="Block options" />
           <ResponsivePaddingField block={block} onChange={onChange} />
           <SectionHeader label="Margin" />
@@ -737,7 +759,7 @@ export default function BlockInspector({ block, onChange }: { block: EmailBlock;
           <ColorField label="Color" value={block.color} onChange={color => onChange({ ...block, color })} />
           <NumberField label="Thickness" value={block.thickness} onChange={thickness => onChange({ ...block, thickness })} min={1} max={10} />
           <NumberField label="Width (%)" value={block.width} onChange={width => onChange({ ...block, width: Math.min(100, Math.max(10, width)) })} min={10} max={100} />
-          <AlignField value={block.align} onChange={align => onChange({ ...block, align })} />
+          <ResponsiveAlignField block={block} onChange={onChange} />
           <SectionHeader label="Block options" />
           <ResponsivePaddingField block={block} onChange={onChange} />
           <SectionHeader label="Margin" />
@@ -845,7 +867,7 @@ export default function BlockInspector({ block, onChange }: { block: EmailBlock;
           <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={() => onChange({ ...block, links: [...block.links, { platform: 'Website', url: '' }] })}>
             + Add link
           </Button>
-          <AlignField value={block.align} onChange={align => onChange({ ...block, align })} />
+          <ResponsiveAlignField block={block} onChange={onChange} />
           <SectionHeader label="Block options" />
           <ResponsivePaddingField block={block} onChange={onChange} />
           <SectionHeader label="Margin" />

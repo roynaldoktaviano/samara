@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
       auth: 'Header "Authorization: Bearer sbk_…" (BOT API key), or a logged-in BOT session cookie',
       list: 'GET /api/bot/{resource}?limit=100&cursor={lastId}&from=YYYY-MM-DD&to=YYYY-MM-DD&{field}={value}',
       detail: 'GET /api/bot/{resource}/{id}',
-      createCandidate: 'POST /api/bot/talent-pool — JSON { fullName (required), appliedRole (job title) or appliedRoleId, phone, email, source, expectedSalary, location, readyJoinDate (YYYY-MM-DD), notes, skills[], languages[] }. Create only: bots cannot edit or delete candidates.',
+      createCandidate: 'POST /api/bot/talent-pool — JSON { fullName (required), appliedRole (job title) or appliedRoleId, phone, email, source, expectedSalary, location, readyJoinDate (YYYY-MM-DD), notes, skills[], languages[], cv: [{ contentType, base64 }], documents: [{ name, description, file: { contentType, base64 } }] } — files PDF/JPEG/PNG/WEBP, max 5 MB each, 15 MB total, 10 files. Create only: bots cannot edit or delete candidates.',
       notes: 'limit max 500. Rate limits per bot account: 60 requests/minute and 10,000 rows/hour (HTTP 429 with Retry-After). Every call is logged. from/to filter the resource\'s main date column. Any listed field can be used as an exact-match filter. Use nextCursor from the response to page.',
     },
     resources,
