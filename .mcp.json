@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "samara-erp": {
+      "command": "node",
+      "args": ["mini-services/erp-mcp/server.mjs"]
+    }
+  }
+}
