@@ -313,7 +313,7 @@ function Header() {
   )
 }
 
-function Footer({ n }: { n: number }) {
+function Footer({ n, domain = 'samaraliveaboard.com' }: { n: number; domain?: string }) {
   return (
     <div className="pg-footer">
       <div className="ft-addr">
@@ -326,13 +326,209 @@ function Footer({ n }: { n: number }) {
       </div>
       <div className="ft-num">{n}</div>
       <div className="ft-contact">
-        www.samaraliveaboard.com<br />
-        inquiry@samaraliveaboard.com<br />
+        www.{domain}<br />
+        inquiry@{domain}<br />
         @samara.liveaboard<br />
         @otiumyacht<br />
         @mischief.voyage
       </div>
     </div>
+  )
+}
+
+/* C&P annex per year — content follows "C&P SAMARA YACHTING <year>.pdf" as-is.
+   2027 and 2028 differ only in the Samara Otium charter rate. */
+const CNP_YEARS = [
+  { year: 2027, otiumRate: 'US$ 15.000' },
+  { year: 2028, otiumRate: 'US$ 16.000' },
+]
+
+function CnPAnnex({ year, otiumRate, agent, signDate }: {
+  year: number; otiumRate: string; agent: AgentData; signDate: string
+}) {
+  const DOMAIN = 'samarayachting.com'
+  return (
+    <>
+      {/* ══ C&P {year} PAGE 1 — COVER ══ */}
+      <div className="page">
+        <div className="cover">
+          <div className="cover-top">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="https://samaraliveaboard.com/wp-content/uploads/2020/07/Element-1Samara-logo-72ppi-.png"
+              alt="Samara Yachting"
+              style={{ height: 64, objectFit: 'contain', filter: 'brightness(0) invert(1)', opacity: 0.9 }}
+            />
+          </div>
+          <div className="cover-title">
+            <h1>COMMISSION AND<br />PAYMENT TERMS (C&amp;P)<br />
+              <span style={{fontSize:'22pt',letterSpacing:'0.18em',fontFamily:'Arial, sans-serif'}}>{year}</span>
+            </h1>
+          </div>
+          <div className="cover-url">www.{DOMAIN}</div>
+        </div>
+      </div>
+
+      {/* ══ C&P {year} PAGE 2 — Preamble + §1 + §2 ══ */}
+      <div className="page">
+        <Header />
+        <div className="pg-body">
+          <div className="preamble-lbl">PREAMBLE:</div>
+          <p className="body-p">
+            These Commission and Payment Terms (&ldquo;C&amp;P&rdquo;) are an integral part of the Travel Agency
+            Agreement (the &ldquo;Agreement&rdquo;) entered into between <strong>Samara Yachting</strong> (the &ldquo;Principal&rdquo;) and the{' '}
+            <strong>Agency</strong>. The most recent version of the C&amp;P of the actual Year shall apply at all times. In case of
+            conflict, the provisions of the main Agreement shall take precedence.
+          </p>
+
+          <div className="sec-h">1. Nightly Rates Samara 1 Open Trip</div>
+          <table className="rate-tbl">
+            <thead>
+              <tr>
+                <th>Room</th>
+                <th>3 Days 2 Nights</th>
+                <th>4 Days &amp; 3 Nights</th>
+                <th>5 Days &amp; 4 Nights</th>
+                <th>TAX</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td>Room Kelor (2 pax)</td><td>US$ 1.950</td><td>US$ 2.910</td><td>US$ 3.890</td><td>VAT Included</td></tr>
+              <tr><td>Room Kanawa</td><td>US$ 1.950</td><td>US$ 2.910</td><td>US$ 3.890</td><td>VAT Included</td></tr>
+              <tr><td>Room Padar</td><td>US$ 1.950</td><td>US$ 2.910</td><td>US$ 3.890</td><td>VAT Included</td></tr>
+              <tr><td>Room Rinca</td><td>US$ 1.780</td><td>US$ 2.650</td><td>US$ 3.550</td><td>VAT Included</td></tr>
+              <tr><td>Room Komodo</td><td>US$ 1.780</td><td>US$ 2.650</td><td>US$ 3.550</td><td>VAT Included</td></tr>
+              <tr><td>Extra Bed room<br />Komodo &amp; Rinca</td><td>US$ 810</td><td>US$ 1.210</td><td>US$ 1.610</td><td>VAT Included</td></tr>
+            </tbody>
+          </table>
+
+          <div className="sec-h">2. Nightly Rates Private Charter</div>
+          <table className="rate-tbl">
+            <thead>
+              <tr>
+                <th>Vessel</th>
+                <th>Komodo</th>
+                <th>Komodo - Sumbawa</th>
+                <th>Maumere - Alor</th>
+                <th>Spice Island</th>
+                <th>Raja Ampat</th>
+                <th>PAX</th>
+                <th>TAX</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Samara I</td><td>US$ 4.850</td>
+                <td className="na">N/A</td><td className="na">N/A</td><td className="na">N/A</td><td className="na">N/A</td>
+                <td>10 adults + 2 extra bed available</td>
+                <td>VAT Included</td>
+              </tr>
+              <tr>
+                <td>Samara II</td><td>US$ 4.500</td>
+                <td className="na">N/A</td><td className="na">N/A</td><td className="na">N/A</td><td className="na">N/A</td>
+                <td>8 adults + 2 extra bed available</td>
+                <td>VAT Included</td>
+              </tr>
+              <tr>
+                <td>Mischief</td><td>US$ 8.250</td><td>US$ 8.500</td><td>US$ 9.500</td><td>US$ 9.500</td><td>US$ 9.500</td>
+                <td>6 adults + 1 extra bed available</td>
+                <td>VAT Excluded (Subject to 12%)</td>
+              </tr>
+              <tr>
+                <td>Samara Otium</td><td>{otiumRate}</td><td>{otiumRate}</td><td>{otiumRate}</td><td>{otiumRate}</td><td>{otiumRate}</td>
+                <td>12 adults + 2 extra bed available</td>
+                <td>VAT Excluded (Subject to 12%)</td>
+              </tr>
+            </tbody>
+          </table>
+          <p className="tbl-note">* If the charter starts from a location other than the scheduled base, a relocation fee of 50% of the nightly rate per night will apply. This fee is not commissionable.</p>
+        </div>
+        <Footer n={1} domain={DOMAIN} />
+      </div>
+
+      {/* ══ C&P {year} PAGE 3 — §3 §4 §5 ══ */}
+      <div className="page">
+        <Header />
+        <div className="pg-body">
+          <div className="sec-h">3. Commission Structure</div>
+          <ul className="clauses">
+            <li><span className="cn">3.1.</span><span className="ct"><strong>Open Trip:</strong> The Agency is entitled to a commission of <strong>15%</strong> on the total charter price for each successful <strong>Open Trip</strong> booking.</span></li>
+            <li><span className="cn">3.2.</span><span className="ct"><strong>Private Charter:</strong> The Agency is entitled to a commission of{' '}
+              <span style={{display:'inline-block', minWidth:60, borderBottom:'0.5pt solid #222', textAlign:'center', fontWeight:700}}>{agent.commissionPrivateCharter || ' '}</span>
+              {' '}% on the total charter price for each successful <strong>Private Charter</strong> booking.</span></li>
+            <li><span className="cn">3.3.</span><span className="ct"><strong>Net Basis:</strong> Commission is calculated on the <strong>net booking value</strong>, excluding government taxes, port fees, and any APA (Advance Provisioning Allowance) if applicable.</span></li>
+            <li><span className="cn">3.4.</span><span className="ct"><strong>Performance-Based or Exceptional Adjustments:</strong> Higher commissions may apply based on sales volume, prepayment agreements, or other specific conditions. These must be confirmed <strong>in writing</strong> and approved by the Principal on a <strong>case-by-case basis.</strong></span></li>
+          </ul>
+
+          <div className="sec-h">4. Payment Terms</div>
+          <ul className="clauses">
+            <li>
+              <span className="cn">4.1.</span>
+              <span className="ct">
+                <strong>Payments Collected by the Agent:</strong> Payments are structured as follows:
+                <ul className="sub-list">
+                  <li><strong>30% Down Payment (DP):</strong> Must be transferred in full to the Principal <strong>without deduction</strong> within the stipulated deadline.</li>
+                  <li><strong>70% Balance Payment:</strong> The Agency may deduct the agreed commission from the balance before transferring the remainder to the Principal.</li>
+                </ul>
+              </span>
+            </li>
+            <li><span className="cn">4.2.</span><span className="ct"><strong>Payment Schedule:</strong> Payments must follow the schedule outlined in the Annex Terms and Conditions (T&amp;C) and the Agent Agreement. Agents must ensure timely payments in accordance with the Payment Schedule outlined in the T&amp;C to avoid penalties or cancellations or forfeiture of commissions.</span></li>
+            <li><span className="cn">4.3.</span><span className="ct"><strong>Exceptions:</strong> Any deviation from the above payment handling must be agreed upon in writing on a case-by-case basis.</span></li>
+            <li><span className="cn">4.4.</span><span className="ct"><strong>Payment Method:</strong> Payments must be made via <strong>bank transfer or credit card</strong>, in <strong>USD or IDR</strong>, to the account specified by the Principal.</span></li>
+            <li><span className="cn">4.5.</span><span className="ct">Credit card payments are subject to a <strong>3% processing fee</strong>.</span></li>
+            <li><span className="cn">4.6.</span><span className="ct">All transfer fees are the responsibility of the Agency or the client.</span></li>
+          </ul>
+
+          <div className="sec-h">5. Commission and Payment Terms for Agencies</div>
+          <ul className="clauses">
+            <li><span className="cn">5.1.</span><span className="ct"><strong>Cancellations:</strong> Commissions are not payable for bookings canceled by the client unless explicitly stated in writing otherwise.</span></li>
+            <li><span className="cn">5.2.</span><span className="ct"><strong>Refunds:</strong> If a refund is issued to the client, any paid commission shall be adjusted or reclaimed proportionately. Proportional adjustments will be calculated based on the percentage of the charter value refunded to the client, excluding non-refundable amounts.</span></li>
+            <li><span className="cn">5.3.</span><span className="ct"><strong>Force Majeure:</strong> In cases where a booking is canceled due to force majeure events (e.g., natural disasters, government restrictions, or other unforeseen circumstances), commissions will not be payable unless otherwise specified in writing. For commissions on payments already made by the client, any commission amounts previously paid to the Agency will be subject to adjustment or reclamation proportionately if refunds are issued. The Principal may offer alternative arrangements or rescheduling options at its discretion.</span></li>
+          </ul>
+        </div>
+        <Footer n={2} domain={DOMAIN} />
+      </div>
+
+      {/* ══ C&P {year} PAGE 4 — §6 §7 §8 + closing + date + signature ══ */}
+      <div className="page">
+        <Header />
+        <div className="pg-body">
+          <div className="sec-h">6. Reporting and Records</div>
+          <ul className="clauses">
+            <li><span className="cn">6.1.</span><span className="ct">Agencies must maintain accurate records of bookings and transactions for verification purposes. The Principal reserves the right to request booking records or audit financial details related to commissions.</span></li>
+          </ul>
+
+          <div className="sec-h">7. Non-Circumvention</div>
+          <ul className="clauses">
+            <li><span className="cn">7.1.</span><span className="ct">The Agency agrees not to bypass the Principal by engaging directly with clients for services that compete with the Principal&apos;s offerings without prior written consent.</span></li>
+          </ul>
+
+          <div className="sec-h">8. Miscellaneous</div>
+          <ul className="clauses">
+            <li><span className="cn">8.1.</span><span className="ct">Any disputes regarding commissions must be raised in writing within 30 days of the payment date.</span></li>
+            <li><span className="cn">8.2.</span><span className="ct">Governing Law: This Contract is governed by the laws of the Republic of Indonesia.</span></li>
+            <li><span className="cn">8.3.</span><span className="ct">Dispute Resolution: Any disputes arising from this Contract shall be resolved through mediation or arbitration in Bali, Indonesia.</span></li>
+          </ul>
+
+          <p className="body-p" style={{marginTop:14}}>
+            For updates or clarifications, please refer to the latest Travel Agency Agreement or contact Samara
+            Yachting via info@Samarayachting.com directly.
+          </p>
+
+          <div style={{marginTop:28, marginBottom:24, fontSize:'10pt'}}>
+            Bali, Date&nbsp;:&nbsp;<span style={{borderBottom:'0.5pt solid #222', display:'inline-block', minWidth:130, marginLeft:3}}>&nbsp;{signDate}&nbsp;</span>
+          </div>
+
+          <div style={{textAlign:'center', maxWidth:180}}>
+            <div style={{fontWeight:700, fontSize:'10pt', marginBottom:10}}>Principal:</div>
+            <div style={{fontSize:'9.5pt', lineHeight:1.6}}>Samara Yachting<br />and its appointed<br />Subsidiaries</div>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/signature-marc.png" alt="Signature" style={{ height: 60, objectFit: 'contain', marginTop: 8, marginBottom: 4 }} />
+            <div style={{borderBottom:'0.5pt solid #222', height:1}} />
+          </div>
+        </div>
+        <Footer n={3} domain={DOMAIN} />
+      </div>
+    </>
   )
 }
 
@@ -553,185 +749,10 @@ export default function AgentAgreementPrint() {
           <Footer n={3} />
         </div>
 
-        {/* ══════════════════════════════════════════
-             C & P  DOCUMENT
-            ══════════════════════════════════════════ */}
-
-        {/* ══ C&P PAGE 1 — COVER ══ */}
-        <div className="page">
-          <div className="cover">
-            <div className="cover-top">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="https://samaraliveaboard.com/wp-content/uploads/2020/07/Element-1Samara-logo-72ppi-.png"
-                alt="Samara Yachting"
-                style={{ height: 64, objectFit: 'contain', filter: 'brightness(0) invert(1)', opacity: 0.9 }}
-              />
-            </div>
-            <div className="cover-title">
-              <h1>COMMISSION AND<br />PAYMENT TERMS (C&amp;P)<br />
-                <span style={{fontSize:'22pt',letterSpacing:'0.18em',fontFamily:'Arial, sans-serif'}}>2026 - v1.0</span>
-              </h1>
-            </div>
-            <div className="cover-url">www.samaraliveaboard.com</div>
-          </div>
-        </div>
-
-        {/* ══ C&P PAGE 2 — Preamble + §1 + §2 ══ */}
-        <div className="page">
-          <Header />
-          <div className="pg-body">
-            <div className="preamble-lbl">PREAMBLE:</div>
-            <p className="body-p">
-              These Commission and Payment Terms ("C&amp;P") are an integral part of the Travel Agency
-              Agreement (the "Agreement") entered into between <strong>Samara Yachting</strong> (the "Principal") and the{' '}
-              <strong>Agency</strong>. The most recent version of the C&amp;P of the actual Year shall apply at all times. In case of
-              conflict, the provisions of the main Agreement shall take precedence.
-            </p>
-
-            <div className="sec-h">1. Nightly Rates Samara 1 Open Trip</div>
-            <table className="rate-tbl">
-              <thead>
-                <tr>
-                  <th>Room</th>
-                  <th>3 Days 2 Nights</th>
-                  <th>4 Days 3 Nights</th>
-                  <th>5 Days 4 Nights</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr><td>Room Kelor (2 pax)</td><td>US$ 1&apos;855</td><td>US$ 2&apos;780</td><td>US$ 3&apos;710</td></tr>
-                <tr><td>Room Kanawa (2 pax)</td><td>US$ 1&apos;855</td><td>US$ 2&apos;780</td><td>US$ 3&apos;710</td></tr>
-                <tr><td>Room Padar (2 pax)</td><td>US$ 1&apos;855</td><td>US$ 2&apos;780</td><td>US$ 3&apos;710</td></tr>
-                <tr><td>Room Rica (2 pax)</td><td>US$ 1&apos;690</td><td>US$ 2&apos;540</td><td>US$ 3&apos;385</td></tr>
-                <tr><td>Room Komodo (2 pax)</td><td>US$ 1&apos;690</td><td>US$ 2&apos;540</td><td>US$ 3&apos;385</td></tr>
-                <tr><td>Extra Bed room Komodo and Rinca</td><td>US$ 770</td><td>US$ 1&apos;155</td><td>US$ 1&apos;540</td></tr>
-              </tbody>
-            </table>
-
-            <div className="sec-h">2. Nightly Rates Private Charter</div>
-            <table className="rate-tbl">
-              <thead>
-                <tr>
-                  <th>Boat</th>
-                  <th>Komodo</th>
-                  <th>Komodo – Sumbawa</th>
-                  <th>Maumere – Alor</th>
-                  <th>Spice Island</th>
-                  <th>Raja Ampat</th>
-                  <th>PAX</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>Samara I</td><td>US$ 4&apos;600</td>
-                  <td className="na">N/A</td><td className="na">N/A</td><td className="na">N/A</td><td className="na">N/A</td>
-                  <td>10 adults + 2 extra bed available</td>
-                </tr>
-                <tr>
-                  <td>Samara II</td><td>US$ 4&apos;500</td>
-                  <td className="na">N/A</td><td className="na">N/A</td><td className="na">N/A</td><td className="na">N/A</td>
-                  <td>8 adults + 2 extra bed available</td>
-                </tr>
-                <tr>
-                  <td>Mischief</td><td>US$ 8&apos;000</td><td>US$ 8&apos;500</td><td>US$ 9&apos;500</td><td>US$ 9&apos;500</td><td>US$ 9&apos;500</td>
-                  <td>6 adults + 1 extra bed available</td>
-                </tr>
-                <tr>
-                  <td>Samara Otium</td><td>US$ 14&apos;000</td><td>US$ 14&apos;000</td><td>US$ 14&apos;000</td><td>US$ 14&apos;000</td><td>US$ 14&apos;000</td>
-                  <td>12 adults + 2 extra bed available</td>
-                </tr>
-              </tbody>
-            </table>
-            <p className="tbl-note">* If the charter starts from a location other than the scheduled base, a relocation fee of 50% of the nightly rate per night will apply. This fee is not commissionable</p>
-            <p className="tbl-note">** Rates are Subject to 12% VAT</p>
-          </div>
-          <Footer n={1} />
-        </div>
-
-        {/* ══ C&P PAGE 3 — §3 §4 §5 ══ */}
-        <div className="page">
-          <Header />
-          <div className="pg-body">
-            <div className="sec-h">3. Commission Structure</div>
-            <ul className="clauses">
-              <li><span className="cn">3.1.</span><span className="ct"><strong>Open Trip:</strong> The Agency is entitled to a commission of <strong>{agent.commissionOpenTrip}%</strong> on the total charter price for each successful <strong>Open Trip</strong> booking.</span></li>
-              <li><span className="cn">3.2.</span><span className="ct"><strong>Private Charter:</strong> The Agency is entitled to a commission of <strong>{agent.commissionPrivateCharter}%</strong> on the total charter price for each successful <strong>Private Charter</strong> booking.</span></li>
-              {agent.commissionB2B > 0 && (
-                <li><span className="cn">3.3.</span><span className="ct"><strong>B2B:</strong> The Agency is entitled to a commission of <strong>{agent.commissionB2B}%</strong> on the total charter price for each successful booking made under the <strong>B2B</strong> rate.</span></li>
-              )}
-              <li><span className="cn">{agent.commissionB2B > 0 ? '3.4.' : '3.3.'}</span><span className="ct"><strong>Net Basis:</strong> Commission is calculated on the <strong>net booking value</strong>, excluding government taxes, port fees, and any APA (Advance Provisioning Allowance) if applicable.</span></li>
-              <li><span className="cn">{agent.commissionB2B > 0 ? '3.5.' : '3.4.'}</span><span className="ct"><strong>Performance-Based or Exceptional Adjustments:</strong> Higher commissions may apply based on sales volume, prepayment agreements, or other specific conditions. These must be confirmed <strong>in writing</strong> and approved by the Principal on a <strong>case-by-case basis.</strong></span></li>
-            </ul>
-
-            <div className="sec-h">4. Payment Terms</div>
-            <ul className="clauses">
-              <li>
-                <span className="cn">4.1.</span>
-                <span className="ct">
-                  <strong>Payments Collected by the Agent:</strong> Payments are structured as follows:
-                  <ul className="sub-list">
-                    <li><strong>30% Down Payment (DP):</strong> Must be transferred in full to the Principal <strong>without deduction</strong> within the stipulated deadline.</li>
-                    <li><strong>70% Balance Payment:</strong> The Agency may deduct the agreed commission from the balance before transferring the remainder to the Principal.</li>
-                  </ul>
-                </span>
-              </li>
-              <li><span className="cn">4.2.</span><span className="ct"><strong>Payment Schedule:</strong> Payments must follow the schedule outlined in the Annex Terms and Conditions (T&amp;C) and the Agent Agreement. Agents must ensure timely payments in accordance with the Payment Schedule outlined in the T&amp;C to avoid penalties or cancellations or forfeiture of commissions.</span></li>
-              <li><span className="cn">4.3.</span><span className="ct"><strong>Exceptions:</strong> Any deviation from the above payment handling must be agreed upon in writing on a case-by-case basis.</span></li>
-              <li><span className="cn">4.4.</span><span className="ct"><strong>Payment Method:</strong> Payments must be made via <strong>bank transfer or credit card</strong>, in <strong>USD or IDR</strong>, to the account specified by the Principal.</span></li>
-              <li><span className="cn">4.5.</span><span className="ct">Credit card payments are subject to a <strong>3% processing fee</strong>.</span></li>
-              <li><span className="cn">4.6.</span><span className="ct">All transfer fees are the responsibility of the Agency or the client.</span></li>
-            </ul>
-
-            <div className="sec-h">5. Commission and Payment Terms for Agencies</div>
-            <ul className="clauses">
-              <li><span className="cn">5.1.</span><span className="ct"><strong>Cancellations:</strong> Commissions are not payable for bookings canceled by the client unless explicitly stated in writing otherwise.</span></li>
-              <li><span className="cn">5.2.</span><span className="ct"><strong>Refunds:</strong> If a refund is issued to the client, any paid commission shall be adjusted or reclaimed proportionately. Proportional adjustments will be calculated based on the percentage of the charter value refunded to the client, excluding non-refundable amounts.</span></li>
-              <li><span className="cn">5.3.</span><span className="ct"><strong>Force Majeure:</strong> In cases where a booking is canceled due to force majeure events (e.g., natural disasters, government restrictions, or other unforeseen circumstances), commissions will not be payable unless otherwise specified in writing. For commissions on payments already made by the client, any commission amounts previously paid to the Agency will be subject to adjustment or reclamation proportionately if refunds are issued. The Principal may offer alternative arrangements or rescheduling options at its discretion.</span></li>
-            </ul>
-          </div>
-          <Footer n={2} />
-        </div>
-
-        {/* ══ C&P PAGE 4 — §6 §7 §8 + closing + date + signature ══ */}
-        <div className="page">
-          <Header />
-          <div className="pg-body">
-            <div className="sec-h">6. Reporting and Records</div>
-            <ul className="clauses">
-              <li><span className="cn">6.1.</span><span className="ct">Agencies must maintain accurate records of bookings and transactions for verification purposes. The Principal reserves the right to request booking records or audit financial details related to commissions.</span></li>
-            </ul>
-
-            <div className="sec-h">7. Non-Circumvention</div>
-            <ul className="clauses">
-              <li><span className="cn">7.1.</span><span className="ct">The Agency agrees not to bypass the Principal by engaging directly with clients for services that compete with the Principal's offerings without prior written consent.</span></li>
-            </ul>
-
-            <div className="sec-h">8. Miscellaneous</div>
-            <ul className="clauses">
-              <li><span className="cn">8.1.</span><span className="ct">Any disputes regarding commissions must be raised in writing within 30 days of the payment date.</span></li>
-              <li><span className="cn">8.2.</span><span className="ct"><strong>Governing Law:</strong> This Contract is governed by the laws of the Republic of Indonesia.</span></li>
-              <li><span className="cn">8.3.</span><span className="ct"><strong>Dispute Resolution:</strong> Any disputes arising from this Contract shall be resolved through mediation or arbitration in Bali, Indonesia.</span></li>
-            </ul>
-
-            <p className="body-p" style={{marginTop:14}}>
-              For updates or clarifications, please refer to the latest Travel Agency Agreement or contact Samara
-              Yachting via info@Samarayachting.com directly.
-            </p>
-
-            <div style={{marginTop:28, marginBottom:24, fontSize:'10pt'}}>
-              Bali, Date&nbsp;:&nbsp;<span style={{borderBottom:'0.5pt solid #222', display:'inline-block', minWidth:130, marginLeft:3}}>&nbsp;{signDate}&nbsp;</span>
-            </div>
-
-            <div style={{textAlign:'center', maxWidth:180}}>
-              <div style={{fontWeight:700, fontSize:'10pt', marginBottom:10}}>Principal:</div>
-              <div style={{fontSize:'9.5pt', lineHeight:1.6}}>Samara Yachting<br />and its appointed Subsidiaries</div>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/signature-marc.png" alt="Signature" style={{ height: 60, objectFit: 'contain', marginTop: 8, marginBottom: 4 }} />
-              <div style={{borderBottom:'0.5pt solid #222', height:1}} />
-            </div>
-          </div>
-          <Footer n={3} />
-        </div>
+        {/* ══ C&P 2027 & 2028 ══ */}
+        {CNP_YEARS.map(c => (
+          <CnPAnnex key={c.year} year={c.year} otiumRate={c.otiumRate} agent={agent} signDate={signDate} />
+        ))}
 
       </div>
 
