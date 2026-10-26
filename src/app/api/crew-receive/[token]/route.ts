@@ -52,11 +52,20 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ toke
   if (!full?.dispatchedById) return NextResponse.json({ error: 'This transfer has no valid dispatch record' }, { status: 400 })
 
   const body = await req.json()
-  const { receivePhotoKey, receivedByName } = body as { receivePhotoKey?: string; receivedByName?: string }
+  const { receivePhotoKey, receivedByName, items } = body as {
+    receivePhotoKey?: string; receivedByName?: string
+    // Optional per-line count — crew report what actually arrived; omitted = all as dispatched.
+    items?: { itemId: string | null; itemName: string; receivedQty: number }[]
+  }
   if (!receivedByName?.trim()) return NextResponse.json({ error: 'Receiver name is required' }, { status: 400 })
+  const counted = new Map((Array.isArray(items) ? items : []).map(i => [i.itemId ?? `name:${i.itemName}`, Number(i.receivedQty)]))
+  for (const [key, qty] of counted) {
+    if (!transfer.items.some(i => (i.itemId ?? `name:${i.itemName}`) === key)) return NextResponse.json({ error: 'Unknown item in the receipt' }, { status: 400 })
+    if (!Number.isFinite(qty) || qty < 0) return NextResponse.json({ error: 'Received quantity must be 0 or more' }, { status: 400 })
+  }
 
   const result = await receiveTransferLeg(db, transfer.id, {
-    items: transfer.items.map(i => ({ itemId: i.itemId, itemName: i.itemName, receivedQty: i.dispatchedQty })),
+    items: transfer.items.map(i => ({ itemId: i.itemId, itemName: i.itemName, receivedQty: counted.get(i.itemId ?? `name:${i.itemName}`) ?? i.dispatchedQty })),
     receivePhotoKey: receivePhotoKey ?? '',
     receivedByName: receivedByName.trim(),
     receivedById: null,

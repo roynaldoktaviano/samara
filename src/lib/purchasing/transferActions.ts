@@ -13,6 +13,8 @@ import { effectiveTreatment, usageTypeForTreatment } from '@/lib/purchasing/trea
 // stockTransfer, so it also accepts a caller's tx (PR convert runs it inside one).
 type Db = Awaited<ReturnType<typeof getDb>>
 
+class AlreadyReceivedError extends Error {}
+
 /**
  * Converts a PurchaseRequestItem's requested quantity into base units for comparison
  * against StockLot quantities (always denominated in base units) — same conversion used
@@ -46,7 +48,18 @@ export async function createOrAppendTransfer(db: Pick<Db, 'stockTransfer'>, para
   fromLocationId: string
   items: { itemId: string | null; itemName: string; baseQty: number }[]
 }): Promise<string> {
-  const { requestId, prNumber, deliveryLocationId, fromLocationId, items } = params
+  const { requestId, prNumber, deliveryLocationId, fromLocationId } = params
+  // One line per item on a transfer: dispatch/receive match lines by item, so a second line for
+  // the same item (two PR lines of it, or a backorder landing while the first TR is still
+  // PENDING) used to get both lines' quantities overwritten with one value.
+  const lineKey = (it: { itemId: string | null; itemName: string }) => it.itemId ?? `name:${it.itemName}`
+  const merged = new Map<string, { itemId: string | null; itemName: string; baseQty: number }>()
+  for (const it of params.items) {
+    const m = merged.get(lineKey(it))
+    if (m) m.baseQty += it.baseQty
+    else merged.set(lineKey(it), { ...it })
+  }
+  const items = [...merged.values()]
   const itemsCreate = items.map(it => ({
     id: crypto.randomUUID(),
     itemId: it.itemId,
@@ -54,9 +67,37 @@ export async function createOrAppendTransfer(db: Pick<Db, 'stockTransfer'>, para
     requestedQty: it.baseQty,
   }))
 
-  const existingTransfer = await db.stockTransfer.findFirst({ where: { purchaseRequestId: requestId, fromLocationId, status: 'PENDING' } })
+  const candidate = await db.stockTransfer.findFirst({
+    where: { purchaseRequestId: requestId, fromLocationId, status: 'PENDING' },
+    select: { id: true },
+  })
+  // Lock it and re-check it's still PENDING (every caller runs inside a transaction): a dispatch
+  // that got there first means appending would put lines on a TR that has already left — start
+  // a new one instead. Lines are read only after the lock, so they're current.
+  const locked = candidate
+    ? (await db.stockTransfer.updateMany({ where: { id: candidate.id, status: 'PENDING' }, data: { updatedAt: new Date() } })).count > 0
+    : false
+  const existingTransfer = locked
+    ? await db.stockTransfer.findUnique({
+        where: { id: candidate!.id },
+        include: { items: { select: { id: true, itemId: true, itemName: true } } },
+      })
+    : null
   if (existingTransfer) {
-    await db.stockTransfer.update({ where: { id: existingTransfer.id }, data: { items: { create: itemsCreate } } })
+    const existingLine = (it: { itemId: string | null; itemName: string }) =>
+      existingTransfer.items.find(l => lineKey(l) === lineKey(it))
+    await db.stockTransfer.update({
+      where: { id: existingTransfer.id },
+      data: {
+        items: {
+          create: itemsCreate.filter(it => !existingLine(it)),
+          update: items.filter(it => existingLine(it)).map(it => ({
+            where: { id: existingLine(it)!.id },
+            data: { requestedQty: { increment: it.baseQty } },
+          })),
+        },
+      },
+    })
     return existingTransfer.transferNumber
   }
 
@@ -96,6 +137,7 @@ export async function receiveTransferLeg(db: Db, transferId: string, params: {
 }): Promise<{ ok: true } | { ok: false; error: string; status: number }> {
   const transfer = await db.stockTransfer.findUnique({ where: { id: transferId }, include: { items: true } })
   if (!transfer) return { ok: false, error: 'Not found', status: 404 }
+  if (transfer.status === 'RECEIVED') return { ok: false, error: 'This transfer has already been received', status: 409 }
   if (transfer.status !== 'DISPATCHED') return { ok: false, error: 'Transfer has not been dispatched yet', status: 409 }
   if (!params.receivePhotoKey) return { ok: false, error: 'Receipt photo is required', status: 400 }
 
@@ -117,113 +159,134 @@ export async function receiveTransferLeg(db: Db, transferId: string, params: {
   const isFinalStop = !routeLocationIds || !resolveNextHop(routeLocationIds, transfer.toLocationId)
   const route = isFinalStop ? await shipArrivalRouter(db, transfer.toLocationId) : null
 
-  const finalizedPoStatus = await db.$transaction(async (tx) => {
-    for (const it of params.items) {
-      if (!it.receivedQty) continue
-      const qty = Number(it.receivedQty)
-      if (qty <= 0) continue
-
-      // Find dispatched qty for discrepancy check
-      const transferItem = transfer.items.find(ti => it.itemId ? ti.itemId === it.itemId : ti.itemName === it.itemName)
-      const dispatchedQty = transferItem?.dispatchedQty ?? 0
-
-      const dest = route?.(it.itemId ? typeMap.get(it.itemId) : null) ?? (toLoc ? { id: transfer.toLocationId, ...toLoc } : null)
-      const destId = dest?.id ?? transfer.toLocationId
-      // Stock → ship/galley is usage (pemakaian); ship → stock is a reversal. See usage.ts.
-      const usage = dest ? shipUsageOnArrival(fromLoc, dest) : null
-
-      const lotWhere = it.itemId
-        ? { itemId: it.itemId, locationId: destId }
-        : { itemId: null, itemName: it.itemName, locationId: destId }
-      // The cost carried from the source location is blended into the destination's
-      // moving average (see movingAverageCost in src/lib/valuation.ts).
-      const incomingCost = transferItem?.unitCost || (it.itemId ? stdCostMap.get(it.itemId) ?? 0 : 0)
-      const lot = await tx.stockLot.findFirst({ where: lotWhere })
-      if (lot) {
-        await tx.stockLot.update({
-          where: { id: lot.id },
-          data: { quantity: { increment: qty }, costPerUnit: movingAverageCost(lot.quantity, lot.costPerUnit, qty, incomingCost), updatedAt: new Date() },
-        })
-      } else {
-        await tx.stockLot.create({
-          data: {
-            id: crypto.randomUUID(), locationId: destId, quantity: qty, costPerUnit: incomingCost, updatedAt: new Date(),
-            ...(it.itemId ? { itemId: it.itemId } : { itemName: it.itemName }),
-          },
-        })
-      }
-      await tx.stockMovement.create({
+  let finalizedPoStatus: 'RECEIVED' | 'PARTIALLY_RECEIVED' | null
+  try {
+    finalizedPoStatus = await db.$transaction(async (tx) => {
+      // Claim the transfer first — a double tap (or the crew link and a staff user at once) waits
+      // here and then finds it already RECEIVED, instead of adding the stock a second time.
+      const claimed = await tx.stockTransfer.updateMany({
+        where: { id: transferId, status: 'DISPATCHED' },
         data: {
-          id: crypto.randomUUID(), fromLocationId: transfer.fromLocationId, toLocationId: destId, quantity: qty, type: 'TRANSFER_IN', referenceId: transferId, referenceType: 'StockTransfer', createdById: params.movementCreatedById,
-          ...(it.itemId ? { itemId: it.itemId } : { itemName: it.itemName }),
-          unitCost: incomingCost,
-          totalCost: qty * incomingCost * (usage?.sign ?? 1),
-          // CONSUMABLE → trip usage, SPARE_PART → ship maintenance, ASSET → none (equipment).
-          ...(usage && usageTypeForTreatment(effectiveTreatment(null, it.itemId ? treatmentMap.get(it.itemId) : null)) && {
-            usageType: usageTypeForTreatment(effectiveTreatment(null, it.itemId ? treatmentMap.get(it.itemId) : null))!,
-            yachtId: usage.yachtId,
-            openTripId: transfer.openTripId,
-            tripBookingId: transfer.tripBookingId,
-          }),
+          status: 'RECEIVED',
+          receivedById: params.receivedById,
+          receivedByName: params.receivedByName ?? null,
+          receivePhotoKey: params.receivePhotoKey,
+          receivedAt: new Date(),
+          updatedAt: new Date(),
         },
       })
-      await tx.stockTransferItem.updateMany({ where: { transferId, itemId: it.itemId || null, itemName: it.itemName }, data: { receivedQty: qty } })
+      if (!claimed.count) throw new AlreadyReceivedError()
 
-      // Auto-create Transfer Discrepancy exception if qty doesn't match
-      if (dispatchedQty > 0 && qty !== dispatchedQty) {
-        await tx.inventoryException.create({
+      for (const it of params.items) {
+        const qty = Number(it.receivedQty) || 0
+        // Find dispatched qty for discrepancy check
+        const transferItem = transfer.items.find(ti => it.itemId ? ti.itemId === it.itemId : ti.itemName === it.itemName)
+        const dispatchedQty = transferItem?.dispatchedQty ?? 0
+        if (qty <= 0) {
+          // Sent but nothing arrived — still a discrepancy to chase, not a silent skip.
+          if (dispatchedQty > 0) {
+            await tx.inventoryException.create({
+              data: {
+                id: crypto.randomUUID(), type: 'TRANSFER_DISCREPANCY', itemId: it.itemId || null, itemName: it.itemName,
+                locationId: transfer.toLocationId, locationName: toLoc?.name ?? '—', qty: dispatchedQty,
+                reason: `Dikirim ${dispatchedQty}, diterima 0`, referenceId: transferId, referenceType: 'StockTransfer',
+                status: 'OPEN', updatedAt: new Date(),
+              },
+            })
+          }
+          continue
+        }
+
+        const dest = route?.(it.itemId ? typeMap.get(it.itemId) : null) ?? (toLoc ? { id: transfer.toLocationId, ...toLoc } : null)
+        const destId = dest?.id ?? transfer.toLocationId
+        // Stock → ship/galley is usage (pemakaian); ship → stock is a reversal. See usage.ts.
+        const usage = dest ? shipUsageOnArrival(fromLoc, dest) : null
+
+        const lotWhere = it.itemId
+          ? { itemId: it.itemId, locationId: destId }
+          : { itemId: null, itemName: it.itemName, locationId: destId }
+        // The cost carried from the source location is blended into the destination's
+        // moving average (see movingAverageCost in src/lib/valuation.ts).
+        const incomingCost = transferItem?.unitCost || (it.itemId ? stdCostMap.get(it.itemId) ?? 0 : 0)
+        const lot = await tx.stockLot.findFirst({ where: lotWhere })
+        if (lot) {
+          await tx.stockLot.update({
+            where: { id: lot.id },
+            data: { quantity: { increment: qty }, costPerUnit: movingAverageCost(lot.quantity, lot.costPerUnit, qty, incomingCost), updatedAt: new Date() },
+          })
+        } else {
+          await tx.stockLot.create({
+            data: {
+              id: crypto.randomUUID(), locationId: destId, quantity: qty, costPerUnit: incomingCost, updatedAt: new Date(),
+              ...(it.itemId ? { itemId: it.itemId } : { itemName: it.itemName }),
+            },
+          })
+        }
+        await tx.stockMovement.create({
           data: {
-            id: crypto.randomUUID(),
-            type: 'TRANSFER_DISCREPANCY',
-            itemId: it.itemId || null,
-            itemName: it.itemName,
-            locationId: transfer.toLocationId,
-            locationName: toLoc?.name ?? '—',
-            qty: Math.abs(qty - dispatchedQty),
-            reason: `Dikirim ${dispatchedQty}, diterima ${qty}`,
-            referenceId: transferId,
-            referenceType: 'StockTransfer',
-            status: 'OPEN',
-            updatedAt: new Date(),
+            id: crypto.randomUUID(), fromLocationId: transfer.fromLocationId, toLocationId: destId, quantity: qty, type: 'TRANSFER_IN', referenceId: transferId, referenceType: 'StockTransfer', createdById: params.movementCreatedById,
+            ...(it.itemId ? { itemId: it.itemId } : { itemName: it.itemName }),
+            unitCost: incomingCost,
+            totalCost: qty * incomingCost * (usage?.sign ?? 1),
+            // CONSUMABLE → trip usage, SPARE_PART → ship maintenance, ASSET → none (equipment).
+            ...(usage && usageTypeForTreatment(effectiveTreatment(null, it.itemId ? treatmentMap.get(it.itemId) : null)) && {
+              usageType: usageTypeForTreatment(effectiveTreatment(null, it.itemId ? treatmentMap.get(it.itemId) : null))!,
+              yachtId: usage.yachtId,
+              openTripId: transfer.openTripId,
+              tripBookingId: transfer.tripBookingId,
+            }),
           },
         })
-      }
-    }
-    await tx.stockTransfer.update({
-      where: { id: transferId },
-      data: {
-        status: 'RECEIVED',
-        receivedById: params.receivedById,
-        receivedByName: params.receivedByName ?? null,
-        receivePhotoKey: params.receivePhotoKey,
-        receivedAt: new Date(),
-        updatedAt: new Date(),
-      },
-    })
+        await tx.stockTransferItem.updateMany({ where: { transferId, itemId: it.itemId || null, itemName: it.itemName }, data: { receivedQty: qty } })
 
-    // If this transfer was one leg of a PO's transit route, chain the next leg (or, if
-    // this was the final stop, let the PO finalize to RECEIVED/PARTIALLY_RECEIVED).
-    if (transfer.purchaseOrderId && transfer.originGoodsReceiptId) {
-      const routeLocationIds = await getRouteLocationIds(tx, transfer.purchaseOrderId)
-      const nextHop = routeLocationIds ? resolveNextHop(routeLocationIds, transfer.toLocationId) : null
-      if (nextHop) {
-        await spawnNextTransitLeg(tx, {
-          purchaseOrderId: transfer.purchaseOrderId,
-          originGoodsReceiptId: transfer.originGoodsReceiptId,
-          legSequence: (transfer.legSequence ?? 1) + 1,
-          fromLocationId: transfer.toLocationId,
-          toLocationId: nextHop,
-          items: params.items.map(it => {
-            const ti = transfer.items.find(t => it.itemId ? t.itemId === it.itemId : t.itemName === it.itemName)
-            return { itemId: it.itemId, itemName: it.itemName, requestedQty: Number(it.receivedQty) || 0, unitCost: ti?.unitCost ?? 0 }
-          }),
-        })
-      } else {
-        return attemptFinalizePOStatus(tx, transfer.purchaseOrderId)
+        // Auto-create Transfer Discrepancy exception if qty doesn't match
+        if (dispatchedQty > 0 && qty !== dispatchedQty) {
+          await tx.inventoryException.create({
+            data: {
+              id: crypto.randomUUID(),
+              type: 'TRANSFER_DISCREPANCY',
+              itemId: it.itemId || null,
+              itemName: it.itemName,
+              locationId: transfer.toLocationId,
+              locationName: toLoc?.name ?? '—',
+              qty: Math.abs(qty - dispatchedQty),
+              reason: `Dikirim ${dispatchedQty}, diterima ${qty}`,
+              referenceId: transferId,
+              referenceType: 'StockTransfer',
+              status: 'OPEN',
+              updatedAt: new Date(),
+            },
+          })
+        }
       }
-    }
-    return null
-  })
+
+      // If this transfer was one leg of a PO's transit route, chain the next leg (or, if
+      // this was the final stop, let the PO finalize to RECEIVED/PARTIALLY_RECEIVED).
+      if (transfer.purchaseOrderId && transfer.originGoodsReceiptId) {
+        const routeLocationIds = await getRouteLocationIds(tx, transfer.purchaseOrderId)
+        const nextHop = routeLocationIds ? resolveNextHop(routeLocationIds, transfer.toLocationId) : null
+        if (nextHop) {
+          await spawnNextTransitLeg(tx, {
+            purchaseOrderId: transfer.purchaseOrderId,
+            originGoodsReceiptId: transfer.originGoodsReceiptId,
+            legSequence: (transfer.legSequence ?? 1) + 1,
+            fromLocationId: transfer.toLocationId,
+            toLocationId: nextHop,
+            items: params.items.map(it => {
+              const ti = transfer.items.find(t => it.itemId ? t.itemId === it.itemId : t.itemName === it.itemName)
+              return { itemId: it.itemId, itemName: it.itemName, requestedQty: Number(it.receivedQty) || 0, unitCost: ti?.unitCost ?? 0 }
+            }),
+          })
+        } else {
+          return attemptFinalizePOStatus(tx, transfer.purchaseOrderId)
+        }
+      }
+      return null
+    })
+  } catch (e) {
+    if (e instanceof AlreadyReceivedError) return { ok: false, error: 'This transfer has already been received', status: 409 }
+    throw e
+  }
 
   // Requester progress: a routed PO's last leg finalizing is the moment its goods reach
   // the final destination; a Gudang stock transfer for a PR (no PO) is done on arrival.

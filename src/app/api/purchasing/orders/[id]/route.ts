@@ -13,6 +13,7 @@ import { resolveWarehouseLocationId, warehouseCanViewOrder } from '@/lib/purchas
 import { resolveAssignedYachtId, yachtCanViewOrder } from '@/lib/purchasing/yachtScope'
 import { roleMatches } from '@/lib/role-utils'
 import { emitTenantEvent } from '@/lib/realtime-bus'
+import { reopenForCancelledPo } from '@/lib/purchasing/prLineReopen'
 
 const ALLOWED       = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE']
 const TRANSIT_ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN']
@@ -177,6 +178,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
   }
 
+  // Warehouse may look at and receive POs, never change them — content, pricing and status moves
+  // are Purchasing's. Receiving itself goes through a Goods Receipt, not this endpoint.
+  const editFieldsGiven = [supplierName, supplierId, deliveryLocationId, requestedByEmployeeId, expectedAt, notes, items, extraCharges, discountType, discountValue, bookingId, openTripId, transitStops, status].some(v => v !== undefined)
+  if (editFieldsGiven && !roleMatches(role, TRANSIT_ALLOWED)) {
+    return NextResponse.json({ error: 'Only the purchasing team can change a PO' }, { status: 403 })
+  }
+
   // Requested By is mandatory (same as Supplier) — unlike deliveryLocationId, an
   // empty string here isn't a valid "clear" signal, just a rejected edit.
   if (requestedByEmployeeId !== undefined && !requestedByEmployeeId) {
@@ -255,6 +263,25 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (status !== undefined) {
     const valid = ['DRAFT', 'ORDERED', 'IN_TRANSIT', 'PARTIALLY_RECEIVED', 'RECEIVED', 'COMPLETED', 'CANCELLED']
     if (!valid.includes(status)) return NextResponse.json({ error: 'Invalid status' }, { status: 400 })
+    // Received / Partially Received only ever come from a Goods Receipt (stock moves with it) —
+    // setting them here used to mark a PO received with nothing added to stock.
+    if (status === 'RECEIVED' || status === 'PARTIALLY_RECEIVED') {
+      return NextResponse.json({ error: 'Record a goods receipt to receive items — the status follows from it' }, { status: 400 })
+    }
+    // Allowed moves (same-status re-save is fine): no jumping back to Draft, no reviving a
+    // cancelled PO, no In Transit before it's ordered.
+    const FROM: Record<string, string[]> = {
+      DRAFT: ['DRAFT'],
+      ORDERED: ['DRAFT', 'ORDERED', 'REJECTED'],
+      IN_TRANSIT: ['ORDERED', 'IN_TRANSIT'],
+      COMPLETED: ['ORDERED'],
+      CANCELLED: ['DRAFT', 'ORDERED', 'REJECTED'],
+    }
+    const cur = (await db.purchaseOrder.findUnique({ where: { id }, select: { status: true } }))?.status
+    if (!cur) return NextResponse.json({ error: 'PO not found' }, { status: 404 })
+    if (!FROM[status]?.includes(cur)) {
+      return NextResponse.json({ error: `A ${cur.replace('_', ' ').toLowerCase()} PO can't be moved to ${status.replace('_', ' ').toLowerCase()}` }, { status: 409 })
+    }
 
     if (status === 'ORDERED' && !supplierName?.trim())
       return NextResponse.json({ error: 'Supplier name is required to confirm PO' }, { status: 400 })
@@ -295,20 +322,6 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       if (existing && ['IN_TRANSIT', 'PARTIALLY_RECEIVED', 'RECEIVED', 'COMPLETED'].includes(existing.status))
         return NextResponse.json({ error: 'Cannot cancel a PO that is already in transit, received, or completed' }, { status: 400 })
     }
-  }
-
-  // Receive permission: based on delivery location's managedBy field
-  if (status === 'RECEIVED' || status === 'PARTIALLY_RECEIVED') {
-    const existing = await db.purchaseOrder.findUnique({
-      where: { id },
-      select: { deliveryLocation: { select: { managedBy: true } } },
-    })
-    const managedBy = existing?.deliveryLocation?.managedBy ?? 'WAREHOUSE'
-    const receiveAllowed = managedBy === 'PURCHASING'
-      ? ['PURCHASING', 'ADMIN', 'SUPER_ADMIN']
-      : ['WAREHOUSE', 'ADMIN', 'SUPER_ADMIN']
-    if (!roleMatches(role, receiveAllowed))
-      return NextResponse.json({ error: `Only ${managedBy.toLowerCase()} team can receive items for this delivery location` }, { status: 403 })
   }
 
   const actingUser = (status === 'IN_TRANSIT' || status === 'CANCELLED' || status === 'ORDERED' || status === 'COMPLETED')
@@ -478,18 +491,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       body: `${poNum} has been ordered from ${supplier} — you'll be notified again once the items ship.`,
       skipUserId: session.user.id,
     }).catch(console.error)
-  } else if (status === 'RECEIVED') {
-    notifyByRole(db, ['PURCHASING', 'ADMIN'], 'PO_RECEIVED',
-      `Items Received`,
-      `${poNum} from ${supplier} has been fully received`,
-      id,
-    ).catch(console.error)
-  } else if (status === 'PARTIALLY_RECEIVED') {
-    notifyByRole(db, ['PURCHASING', 'ADMIN'], 'PO_PARTIALLY_RECEIVED',
-      `Items Partially Received`,
-      `${poNum} from ${supplier} was partially received — check the receipt details`,
-      id,
-    ).catch(console.error)
+  } else if (status === 'CANCELLED' && prevStatus !== 'CANCELLED') {
+    // Lines this PO was buying for a PR go back on the PR — otherwise they'd look ordered forever.
+    await reopenForCancelledPo(db, id, session.user.id)
+    emitTenantEvent(session.user.tenantId, 'purchasing-requests')
   }
 
   // Any status change out of (or into) DRAFT moves the "still draft" count, so refresh

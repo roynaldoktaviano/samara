@@ -84,7 +84,7 @@ export async function computeStockChecks(db: Db, request: StockCheckRequest) {
     }),
     // Other PRs already waiting on that incoming stock — it isn't free for this one.
     db.purchaseRequestItem.findMany({
-      where: { itemId: { in: itemIds }, backorderQty: { gt: 0 }, backorderLocationId: { not: null }, requestId: { not: request.id } },
+      where: { itemId: { in: itemIds }, backorderQty: { gt: 0 }, backorderLocationId: { not: null }, requestId: { not: request.id }, request: { status: { notIn: ['CANCELLED', 'REJECTED'] } } },
       select: { itemId: true, backorderQty: true, backorderLocationId: true },
     }),
   ])
@@ -115,16 +115,20 @@ export async function computeStockChecks(db: Db, request: StockCheckRequest) {
   for (const b of otherBackorders) if (b.itemId) add(onOrderMap, `${b.itemId}:${b.backorderLocationId}`, -b.backorderQty)
 
   const candidates = warehouses.map(w => w.id).filter(id => id !== request.deliveryLocationId)
+  // Free stock = on hand minus what other requests already reserved there — the default source
+  // is where the most of it is FREE, not merely on the shelf (that can all be promised already).
+  const freeAt = (itemId: string, locationId: string) =>
+    (stockMap.get(`${itemId}:${locationId}`) ?? 0) - (othersReserved.get(`${itemId}:${locationId}`) ?? 0)
   for (const item of request.items) {
     // Direct-to-Purchasing lines never touch warehouse stock — nothing to break down.
     if (!item.itemId || item.verifyRejectedAt || !item.viaWarehouse) continue
     const master = masterMap.get(item.itemId)
     if (!master || !master.isStockTracked) continue
 
-    const ownTransfers = request.transfers.filter(t => t.items.some(ti => ti.itemId === item.itemId))
+    const ownTransfers = request.transfers.filter(t => t.status !== 'CANCELLED' && t.items.some(ti => ti.itemId === item.itemId))
     const sourceId = item.backorderLocationId
       ?? ownTransfers[0]?.fromLocationId
-      ?? [...candidates].sort((a, b) => (stockMap.get(`${item.itemId}:${b}`) ?? 0) - (stockMap.get(`${item.itemId}:${a}`) ?? 0))[0]
+      ?? [...candidates].sort((a, b) => freeAt(item.itemId!, b) - freeAt(item.itemId!, a))[0]
     if (!sourceId) continue
 
     const key = `${item.itemId}:${sourceId}`

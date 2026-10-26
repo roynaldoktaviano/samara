@@ -11,6 +11,9 @@ import { getOrCreateTransferReceiveToken, resolveBaseUrl } from '@/lib/purchasin
 import { tripFromBooking, tripFromOpenTrip, tripBookingSelect, openTripSelect } from '@/lib/purchasing/tripLink'
 import { resolveAssignedYachtId } from '@/lib/purchasing/yachtScope'
 import { canDispatchFrom, DISPATCH_OWNER_LABEL } from '@/lib/purchasing/dispatchPermission'
+import { backorderShortDispatch, reopenForCancelledTransfer } from '@/lib/purchasing/prLineReopen'
+
+class AlreadyDispatchedError extends Error {}
 
 const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE']
 // Cruise Director / Boat Captain: only transfers to or from their own yacht — receive what
@@ -213,9 +216,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   if (action === 'cancel') {
     if (transfer.status !== 'PENDING') return NextResponse.json({ error: 'Only a PENDING transfer can be cancelled' }, { status: 409 })
-    await db.stockTransfer.update({ where: { id }, data: { status: 'CANCELLED', updatedAt: new Date() } })
+    const cancelled = await db.stockTransfer.updateMany({ where: { id, status: 'PENDING' }, data: { status: 'CANCELLED', updatedAt: new Date() } })
+    if (!cancelled.count) return NextResponse.json({ error: 'Only a PENDING transfer can be cancelled' }, { status: 409 })
+    // A PR's warehouse transfer: its lines must not stay "fulfilled" — put them back to be processed.
+    const reopened = await reopenForCancelledTransfer(db, id, session.user.id)
     emitTenantEvent(session.user.tenantId, 'purchasing-transfers')
-    return NextResponse.json({ ok: true })
+    if (reopened.length) emitTenantEvent(session.user.tenantId, 'purchasing-requests')
+    return NextResponse.json({ ok: true, reopenedItems: reopened })
   }
 
   if (action === 'dispatch') {
@@ -225,77 +232,118 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (!dispatch.allowed) {
       return NextResponse.json({ error: `Only ${DISPATCH_OWNER_LABEL[dispatch.owner]} responsible for this location can dispatch it` }, { status: 403 })
     }
-    const dispatchItems = items as { itemId: string | null; itemName: string; dispatchedQty: number }[]
+    const dispatchItems = (Array.isArray(items) ? items : []) as { itemId: string | null; itemName: string; dispatchedQty: number }[]
+
+    // Quantities are booked against this transfer's own lines (one per item), matched the same
+    // way everywhere — itemId for catalog items, itemName for non-stock ones.
+    const lineKey = (it: { itemId: string | null; itemName: string }) => it.itemId ?? `name:${it.itemName}`
+    const wanted = new Map<string, number>()
+    for (const it of dispatchItems) {
+      const qty = Number(it.dispatchedQty) || 0
+      if (qty > 0) wanted.set(lineKey(it), (wanted.get(lineKey(it)) ?? 0) + qty)
+    }
+    const unknown = dispatchItems.filter(it => Number(it.dispatchedQty) > 0 && !transfer.items.some(l => lineKey(l) === lineKey(it)))
+    if (unknown.length) return NextResponse.json({ error: `Not on this transfer: ${unknown.map(it => it.itemName).join(', ')}` }, { status: 400 })
+    if (wanted.size === 0) return NextResponse.json({ error: 'Nothing to dispatch — enter a quantity, or cancel the transfer instead' }, { status: 400 })
 
     // Stock is re-checked here (not trusted from the client) — it can have moved since
     // the transfer was requested (another transfer, a sale, a stock count). Dispatching
     // more than what's physically on the shelf is rejected outright rather than allowed
     // to go negative with just a logged exception.
-    const toCheck = dispatchItems.filter(it => Number(it.dispatchedQty) > 0)
     const lots = await db.stockLot.findMany({ where: { locationId: transfer.fromLocationId } })
     const stockMap = new Map<string, number>()
     for (const lot of lots) {
       const key = lot.itemId ?? `name:${lot.itemName}`
       stockMap.set(key, (stockMap.get(key) ?? 0) + lot.quantity)
     }
-    const insufficient = toCheck
-      .map(it => ({ ...it, available: stockMap.get(it.itemId ?? `name:${it.itemName}`) ?? 0 }))
-      .filter(it => Number(it.dispatchedQty) > it.available)
+    const nameOf = (key: string) => transfer.items.find(l => lineKey(l) === key)?.itemName ?? key
+    const insufficient = [...wanted].filter(([key, qty]) => qty > (stockMap.get(key) ?? 0) + 1e-9)
     if (insufficient.length > 0) {
-      const detail = insufficient.map(it => `${it.itemName} (available: ${it.available}, requested: ${it.dispatchedQty})`).join(', ')
+      const detail = insufficient.map(([key, qty]) => `${nameOf(key)} (available: ${stockMap.get(key) ?? 0}, requested: ${qty})`).join(', ')
       return NextResponse.json({ error: `Not enough stock for: ${detail}` }, { status: 409 })
     }
 
     // Cost snapshot per line: a pre-set cost (PO transit legs carry the GR price forward)
     // wins, else the source location's moving-average cost, else the item's last purchase cost.
-    const dispatchCatalogIds = dispatchItems.map(it => it.itemId).filter(Boolean) as string[]
+    const dispatchCatalogIds = transfer.items.map(it => it.itemId).filter(Boolean) as string[]
     const stdCostMap = new Map((await db.purchaseItem.findMany({ where: { id: { in: dispatchCatalogIds } }, select: { id: true, standardCost: true } })).map(i => [i.id, i.standardCost]))
-    const presetCost = new Map(transfer.items.map(ti => [ti.itemId ?? `name:${ti.itemName}`, ti.unitCost]))
+    const presetCost = new Map(transfer.items.map(ti => [lineKey(ti), ti.unitCost]))
 
-    await db.$transaction(async (tx) => {
-      for (const it of dispatchItems) {
-        if (!it.dispatchedQty) continue
-        const qty = Number(it.dispatchedQty)
-        if (qty <= 0) continue
-        const lotWhere = it.itemId
-          ? { itemId: it.itemId, locationId: transfer.fromLocationId }
-          : { itemId: null, itemName: it.itemName, locationId: transfer.fromLocationId }
-        const lot = await tx.stockLot.findFirst({ where: lotWhere })
-        const unitCost = presetCost.get(it.itemId ?? `name:${it.itemName}`)
-          || lot?.costPerUnit
-          || (it.itemId ? stdCostMap.get(it.itemId) ?? 0 : 0)
-
-        if (lot) {
-          await tx.stockLot.update({ where: { id: lot.id }, data: { quantity: { decrement: qty }, updatedAt: new Date() } })
-        } else {
-          await tx.stockLot.create({
-            data: {
-              id: crypto.randomUUID(), locationId: transfer.fromLocationId, quantity: -qty, costPerUnit: unitCost, updatedAt: new Date(),
-              ...(it.itemId ? { itemId: it.itemId } : { itemName: it.itemName }),
-            },
-          })
-        }
-        await tx.stockMovement.create({
+    // Lines as of the moment of dispatch (re-read under the claim — a backorder could have been
+    // appended to this TR after the page loaded); used below for the short-shipment check.
+    let dispatchedLines: typeof transfer.items
+    try {
+      dispatchedLines = await db.$transaction(async (tx) => {
+        // Claim first: a double tap waits here, then finds it no longer PENDING and stops
+        // before taking the stock out a second time.
+        const claimed = await tx.stockTransfer.updateMany({
+          where: { id, status: 'PENDING' },
           data: {
-            id: crypto.randomUUID(), fromLocationId: transfer.fromLocationId, quantity: qty, type: 'TRANSFER_OUT', referenceId: id, referenceType: 'StockTransfer', createdById: session.user.id,
-            ...(it.itemId ? { itemId: it.itemId } : { itemName: it.itemName }),
-            unitCost, totalCost: qty * unitCost,
+            status: 'DISPATCHED',
+            dispatchedById: session.user.id,
+            expectedReceiverName: expectedReceiverName ?? null,
+            dispatchPhotoKey,
+            dispatchedAt: new Date(),
+            updatedAt: new Date(),
           },
         })
-        await tx.stockTransferItem.updateMany({ where: { transferId: id, itemId: it.itemId || null, itemName: it.itemName }, data: { dispatchedQty: qty, unitCost } })
-      }
-      await tx.stockTransfer.update({
-        where: { id },
-        data: {
-          status: 'DISPATCHED',
-          dispatchedById: session.user.id,
-          expectedReceiverName: expectedReceiverName ?? null,
-          dispatchPhotoKey,
-          dispatchedAt: new Date(),
-          updatedAt: new Date(),
-        },
+        if (!claimed.count) throw new AlreadyDispatchedError()
+        const currentLines = await tx.stockTransferItem.findMany({ where: { transferId: id }, orderBy: { id: 'asc' } })
+
+        for (const [key, qty] of wanted) {
+          const sample = currentLines.find(l => lineKey(l) === key)!
+          const lotWhere = sample.itemId
+            ? { itemId: sample.itemId, locationId: transfer.fromLocationId }
+            : { itemId: null, itemName: sample.itemName, locationId: transfer.fromLocationId }
+          const lot = await tx.stockLot.findFirst({ where: lotWhere })
+          const unitCost = presetCost.get(key)
+            || lot?.costPerUnit
+            || (sample.itemId ? stdCostMap.get(sample.itemId) ?? 0 : 0)
+
+          if (lot) {
+            await tx.stockLot.update({ where: { id: lot.id }, data: { quantity: { decrement: qty }, updatedAt: new Date() } })
+          } else {
+            await tx.stockLot.create({
+              data: {
+                id: crypto.randomUUID(), locationId: transfer.fromLocationId, quantity: -qty, costPerUnit: unitCost, updatedAt: new Date(),
+                ...(sample.itemId ? { itemId: sample.itemId } : { itemName: sample.itemName }),
+              },
+            })
+          }
+          await tx.stockMovement.create({
+            data: {
+              id: crypto.randomUUID(), fromLocationId: transfer.fromLocationId, quantity: qty, type: 'TRANSFER_OUT', referenceId: id, referenceType: 'StockTransfer', createdById: session.user.id,
+              ...(sample.itemId ? { itemId: sample.itemId } : { itemName: sample.itemName }),
+              unitCost, totalCost: qty * unitCost,
+            },
+          })
+          // Older transfers can still hold the same item on two lines — fill them in order.
+          const lines = currentLines.filter(l => lineKey(l) === key)
+          let left = qty
+          for (const [i, line] of lines.entries()) {
+            const lineQty = i === lines.length - 1 ? left : Math.min(left, line.requestedQty)
+            left -= lineQty
+            await tx.stockTransferItem.update({ where: { id: line.id }, data: { dispatchedQty: lineQty, unitCost } })
+          }
+        }
+        return currentLines
       })
-    })
+    } catch (e) {
+      if (e instanceof AlreadyDispatchedError) return NextResponse.json({ error: 'Transfer has already been processed' }, { status: 409 })
+      throw e
+    }
+
+    // Shipped less than a PR asked for: the rest goes back on that PR line's backorder
+    // instead of quietly disappearing.
+    if (transfer.purchaseRequestId && !transfer.purchaseOrderId) {
+      const requestedByKey = new Map<string, number>()
+      for (const l of dispatchedLines) if (l.itemId) requestedByKey.set(l.itemId, (requestedByKey.get(l.itemId) ?? 0) + l.requestedQty)
+      const short = [...requestedByKey]
+        .map(([itemId, req]) => ({ itemId, itemName: dispatchedLines.find(l => l.itemId === itemId)?.itemName ?? itemId, qty: req - (wanted.get(itemId) ?? 0) }))
+        .filter(s => s.qty > 1e-9)
+      await backorderShortDispatch(db, { transferNumber: transfer.transferNumber, fromLocationId: transfer.fromLocationId, purchaseRequestId: transfer.purchaseRequestId }, short, session.user.id)
+      if (short.length) emitTenantEvent(session.user.tenantId, 'purchasing-requests')
+    }
     emitTenantEvent(session.user.tenantId, 'purchasing-transfers')
 
     // Gudang stock sent out for a PR (no PO involved) — tell the requester it's moving.

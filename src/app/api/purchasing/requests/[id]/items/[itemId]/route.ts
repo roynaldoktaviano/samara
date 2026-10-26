@@ -5,6 +5,8 @@ import { getDb } from '@/lib/get-db'
 
 import { roleMatches } from '@/lib/role-utils'
 import { CLEARED_QUOTATION_APPROVAL_FIELDS } from '@/lib/purchasing/quotationApproval'
+import { finishWarehouseCheck, loadWarehouseRequest, undecidedLines } from '@/lib/purchasing/warehouseProcess'
+import { emitTenantEvent } from '@/lib/realtime-bus'
 
 const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN']
 
@@ -123,5 +125,39 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       }),
     },
   })
+  if (verifyRejected !== undefined) await settleAfterLineDecision(db, id, item, !!verifyRejected, session.user.id)
+  emitTenantEvent(session.user.tenantId, 'purchasing-requests')
   return NextResponse.json({ ...item, promotedNew, promotedSku })
+}
+
+// Rejecting/un-rejecting a line can be the last thing a PR was waiting on (or put a line back
+// in front of Warehouse) — move the PR on so it never sits stuck with nothing left to do.
+async function settleAfterLineDecision(
+  db: Awaited<ReturnType<typeof getDb>>, id: string,
+  line: { viaWarehouse: boolean; warehouseDecision: string | null; convertedAt: Date | null },
+  rejected: boolean, userId: string,
+) {
+  const request = await loadWarehouseRequest(db, id)
+  if (!request) return
+  const warehouseOpen = request.status === 'DRAFT' || (request.status === 'ON_PROCESS' && !request.warehouseDoneAt)
+
+  if (!rejected) {
+    // Un-rejected Warehouse line nobody has checked: Warehouse's check is open again for it.
+    if (line.viaWarehouse && !line.warehouseDecision && !line.convertedAt && request.status === 'ON_PROCESS' && request.warehouseDoneAt) {
+      await db.purchaseRequest.update({ where: { id }, data: { warehouseDoneAt: null, updatedAt: new Date() } })
+    }
+    return
+  }
+  // Every line rejected → nothing to finish; Purchasing rejects the PR itself.
+  if (request.items.every(i => i.verifyRejectedAt)) return
+  if (warehouseOpen) {
+    // That was the last line Warehouse still had to Process → finish its check now.
+    if (undecidedLines(request).length === 0) await finishWarehouseCheck(db, id, userId)
+    return
+  }
+  // Warehouse done, and every remaining line is now converted or rejected → the PR is done.
+  if (request.status === 'ON_PROCESS' && request.items.every(i => i.convertedAt || i.verifyRejectedAt)) {
+    const now = new Date()
+    await db.purchaseRequest.update({ where: { id }, data: { status: 'CONVERTED', convertedById: userId, convertedAt: now, updatedAt: now } })
+  }
 }

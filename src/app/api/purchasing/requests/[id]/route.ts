@@ -14,6 +14,7 @@ import { routePrLines, initialPrStatus, notifyPrRouted } from '@/lib/purchasing/
 import { resolveTripLink, tripBookingSelect, openTripSelect, tripOf } from '@/lib/purchasing/tripLink'
 import { nextSeq } from '@/lib/purchasing/docNumber'
 import { resolveAssignedYachtId } from '@/lib/purchasing/yachtScope'
+import { stopPrFulfilment } from '@/lib/purchasing/prLineReopen'
 
 const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN']
 
@@ -159,7 +160,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 
     // A converted item with no PO went out via Transfer — find the PR transfer carrying it.
     const tr = item.convertedAt && !item.convertedPoId && item.itemId
-      ? request.transfers.find(t => t.items.some(ti => ti.itemId === item.itemId))
+      ? request.transfers.find(t => t.status !== 'CANCELLED' && t.items.some(ti => ti.itemId === item.itemId))
       : null
 
     return {
@@ -320,15 +321,66 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (!status || !valid.includes(status)) return NextResponse.json({ error: 'Invalid status' }, { status: 400 })
 
   if (status !== 'CONVERTED') {
+    const current = await db.purchaseRequest.findUnique({
+      where: { id },
+      select: { status: true, approverEmployeeId: true, approvedAt: true, items: { select: { viaWarehouse: true, verifyRejectedAt: true } } },
+    })
+    if (!current) return NextResponse.json({ error: 'Request not found' }, { status: 404 })
+    // Allowed moves only — e.g. a Converted PR can't be cancelled from here, and Draft is only
+    // reachable by reopening a rejected/cancelled one.
+    const FROM: Record<string, string[]> = {
+      ON_PROCESS: ['DRAFT'],
+      REJECTED: ['DRAFT', 'PENDING_APPROVAL', 'ON_PROCESS'],
+      CANCELLED: ['DRAFT', 'PENDING_APPROVAL', 'ON_PROCESS'],
+      DRAFT: ['REJECTED', 'CANCELLED'],
+    }
+    if (!FROM[status]?.includes(current.status)) {
+      return NextResponse.json({ error: `A ${current.status.replace('_', ' ').toLowerCase()} request can't be moved to ${status.replace('_', ' ').toLowerCase()}` }, { status: 409 })
+    }
+
+    // Reject/cancel calls off everything still pending (TRs, draft POs, backorders) — refused
+    // once a PO is ordered or a TR shipped; those PRs reject their remaining lines one by one.
+    if (status === 'REJECTED' || status === 'CANCELLED') {
+      const actor = await db.user.findUnique({ where: { id: session.user.id }, select: { name: true } })
+      const err = await stopPrFulfilment(db, id, status === 'REJECTED' ? 'rejected' : 'cancelled', actor?.name ?? null)
+      if (err) return NextResponse.json({ error: err }, { status: 409 })
+    }
+
+    // Reopen: back to the manager if it was their rejection, else to Warehouse/Purchasing per
+    // line route — same start as a fresh submission.
+    if (status === 'DRAFT') {
+      const managerRejected = !!current.approverEmployeeId && !current.approvedAt
+      const via = current.items.filter(i => !i.verifyRejectedAt).map(i => i.viaWarehouse)
+      const reopened = await db.purchaseRequest.update({
+        where: { id },
+        data: {
+          status: managerRejected ? 'PENDING_APPROVAL' : initialPrStatus(via),
+          rejectedById: null, rejectedAt: null, cancelledById: null, cancelledAt: null,
+          convertedById: null, convertedAt: null,
+          warehouseDoneAt: via.some(Boolean) ? null : new Date(),
+          updatedAt: new Date(),
+        },
+        include: { items: true },
+      })
+      if (managerRejected) {
+        const manager = await db.employee.findUnique({ where: { id: current.approverEmployeeId! }, select: { userId: true } })
+        if (manager?.userId) {
+          await db.notification.create({
+            data: { id: crypto.randomUUID(), userId: manager.userId, type: 'PR_APPROVAL_NEEDED', title: 'Request needs your approval', body: `${reopened.prNumber} was reopened and is waiting for your approval again.`, requestId: id },
+          }).catch(() => {})
+        }
+      } else {
+        await notifyPrRouted(db, { id, prNumber: reopened.prNumber, division: reopened.division ?? null }, via, { type: 'REQUEST_ORDER_SUBMITTED' })
+      }
+      emitTenantEvent(session.user.tenantId, 'purchasing-requests')
+      return NextResponse.json({ ...reopened, createdPoNumbers: [], createdPoIds: [], createdTransferNumbers: [], remainingItems: [] })
+    }
+
     // Force Verify (DRAFT → ON_PROCESS, skipping Warehouse's stock check) is Admin-only —
     // Purchasing must wait for Warehouse to forward the PR.
     if (status === 'ON_PROCESS') {
       if (!roleMatches(role, ['ADMIN', 'SUPER_ADMIN'])) {
         return NextResponse.json({ error: 'Only Admin can Force Verify a request' }, { status: 403 })
-      }
-      const current = await db.purchaseRequest.findUnique({ where: { id }, select: { status: true } })
-      if (current?.status !== 'DRAFT') {
-        return NextResponse.json({ error: 'Only a Draft request can be Force Verified' }, { status: 409 })
       }
       // Once Warehouse has started deciding lines, skipping its forward would drop the Restock
       // PR and backorder follow-up it creates — finish the warehouse check instead.
@@ -432,8 +484,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       }
       const master = masterMap.get(item.itemId)
       const baseQty = toBaseQty(item.quantity, item.unit, master)
-      const lots = await db.stockLot.findMany({ where: { itemId: item.itemId, locationId: tf.fromLocationId }, select: { quantity: true } })
-      const available = lots.reduce((s, l) => s + l.quantity, 0)
+      // Free stock only: what PENDING transfers out of there already reserved isn't available.
+      const [lots, reserved] = await Promise.all([
+        db.stockLot.aggregate({ where: { itemId: item.itemId, locationId: tf.fromLocationId }, _sum: { quantity: true } }),
+        db.stockTransferItem.aggregate({ where: { itemId: item.itemId, transfer: { status: 'PENDING', fromLocationId: tf.fromLocationId } }, _sum: { requestedQty: true } }),
+      ])
+      const available = Math.max(0, (lots._sum.quantity ?? 0) - (reserved._sum.requestedQty ?? 0))
       if (available < baseQty) {
         return NextResponse.json({ error: `Not enough stock for "${item.itemName}" (available: ${available})` }, { status: 409 })
       }
@@ -461,10 +517,22 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   // Treatment per PO line: the item master's for catalog lines, Purchasing's pick for custom
   // ones (default CONSUMABLE). Only ASSET lines become Inventory on a ship, so only they
   // need a Room/Category (see receiveGoods).
-  const poMasterTreatment = new Map((await db.purchaseItem.findMany({
+  const poMasters = new Map((await db.purchaseItem.findMany({
     where: { id: { in: poItems.map(it => it.itemId).filter(Boolean) as string[] } },
-    select: { id: true, treatment: true },
-  })).map(m => [m.id, m.treatment]))
+    select: { id: true, treatment: true, baseUnit: true, purchaseUnit: true, conversionFactor: true },
+  })).map(m => [m.id, m]))
+  const poMasterTreatment = new Map([...poMasters].map(([id, m]) => [id, m.treatment]))
+  // Catalog PO lines are always in the item's PURCHASE unit (receiveGoods multiplies by
+  // conversionFactor). A PR line asked in the base unit (500 ml) is converted — rounded up to
+  // whole purchase units (1 bottle), its per-base-unit price scaled to per purchase unit.
+  const poQtyAndCost = (it: { itemId: string | null; quantity: number; unit: string; estimatedCost: number }) => {
+    const m = it.itemId ? poMasters.get(it.itemId) : null
+    const conv = m?.conversionFactor || 1
+    if (m && it.unit !== m.purchaseUnit && it.unit === m.baseUnit && m.purchaseUnit !== m.baseUnit && conv > 1) {
+      return { orderedQty: Math.ceil(it.quantity / conv - 1e-9), unitCost: it.estimatedCost * conv }
+    }
+    return { orderedQty: it.quantity, unitCost: it.estimatedCost }
+  }
   const lineTreatment = (it: { id: string; itemId: string | null }): Treatment =>
     it.itemId ? effectiveTreatment(null, poMasterTreatment.get(it.itemId)) : effectiveTreatment(roomAssignmentByItemId.get(it.id)?.treatment, null)
 
@@ -547,8 +615,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
             itemId: it.itemId ?? null,
             itemName: it.itemName,
             unit: it.itemId ? null : it.unit,
-            orderedQty: it.quantity,
-            unitCost: it.estimatedCost,
+            ...poQtyAndCost(it),
             inventoryRoomId: sourceInv ? sourceInv.roomId : (roomAssignmentByItemId.get(it.id)?.roomId || null),
             inventoryCategoryId: sourceInv ? sourceInv.categoryId : (roomAssignmentByItemId.get(it.id)?.categoryId || null),
             treatment: lineTreatment(it),
@@ -665,7 +732,10 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   if (roleMatches(role, OWN_ONLY_ROLES) && existing.requestedById !== session.user.id) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
   }
-  if (existing.status !== 'DRAFT') return NextResponse.json({ error: 'Only a Draft PR can be deleted' }, { status: 409 })
+  // A PR still waiting for its manager can be withdrawn by whoever submitted it (or Admin).
+  const withdrawable = existing.status === 'PENDING_APPROVAL'
+    && (existing.requestedById === session.user.id || roleMatches(role, ['ADMIN', 'SUPER_ADMIN']))
+  if (existing.status !== 'DRAFT' && !withdrawable) return NextResponse.json({ error: 'Only a Draft PR (or your own PR still awaiting approval) can be deleted' }, { status: 409 })
   const transferred = await db.purchaseRequestItem.count({ where: { requestId: id, convertedAt: { not: null } } })
   if (transferred > 0) return NextResponse.json({ error: 'Some items have already been transferred by Warehouse — this PR cannot be deleted' }, { status: 409 })
   await db.purchaseRequestItem.deleteMany({ where: { requestId: id } })

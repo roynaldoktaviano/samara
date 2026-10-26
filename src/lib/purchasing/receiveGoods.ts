@@ -11,7 +11,15 @@ import { nextVal } from '@/lib/counter'
 
 type Db = Awaited<ReturnType<typeof getDb>>
 
-export async function generateGrNumber(db: Db) {
+class DuplicateReceiptError extends Error {}
+
+// Outcomes where the goods are NOT taken in: they don't become stock, don't count as received on
+// the PO line (the supplier still owes them), and don't travel on to the next transit stop. They
+// stay on the GR as a record, and Damaged/Wrong/Rejected raise an exception to follow up.
+const NOT_TAKEN_IN = ['DAMAGED', 'WRONG_ITEM', 'REJECTED', 'BACKORDERED']
+const takenIn = (outcome?: string | null) => !NOT_TAKEN_IN.includes(outcome || 'ACCEPTED')
+
+export async function generateGrNumber(db: Pick<Db, 'goodsReceipt'>) {
   const prefix = `GR-${new Date().getFullYear()}${String(new Date().getMonth() + 1).padStart(2, '0')}-`
   const seq = nextSeq((await db.goodsReceipt.findMany({ where: { grNumber: { startsWith: prefix } }, select: { grNumber: true } })).map(r => r.grNumber))
   return `${prefix}${String(seq).padStart(3, '0')}`
@@ -80,8 +88,6 @@ export async function receiveGoods(db: Db, params: {
   const receivingLocationName = hasRoute ? firstStop.location.name : null
   const locationNameForExceptions = receivingLocationName ?? po.deliveryLocation?.name ?? effectiveLocationId
 
-  const grNumber = await generateGrNumber(db)
-
   // A PO delivered straight to a ship/galley (no warehouse in between) is usage on arrival —
   // except beverages, which land in the yacht's bar as stock (see shipArrivalRouter). A routed
   // PO's first stop is only a waypoint, so it keeps everything where it is.
@@ -97,281 +103,307 @@ export async function receiveGoods(db: Db, params: {
   const itemDataMap = new Map(purchaseItemsData.map(i => [i.id, i]))
   const stockTrackedMap = new Map(purchaseItemsData.map(i => [i.id, i.isStockTracked]))
 
-  const { gr, newStatus } = await db.$transaction(async (tx) => {
-    // Resolved once up front (rather than per-item inside the loop below) so the same
-    // lookup can also seed GoodsReceiptItem.sourceInventoryItemId at create time.
-    const poItemsByLineIndex = await Promise.all(items.map(it =>
-      it.poItemId
-        ? tx.purchaseOrderItem.findUnique({ where: { id: it.poItemId } })
-        : tx.purchaseOrderItem.findFirst({ where: { orderId, itemId: it.itemId || null, itemName: it.itemName } }),
-    ))
+  let txResult
+  try {
+    txResult = await db.$transaction(async (tx) => {
+      // Serialize receipts per PO and re-check under the lock: a double tap on "Receive" used to
+      // book the same delivery twice (stock and receivedQty doubled).
+      const [locked] = await tx.$queryRaw<{ status: string }[]>`SELECT status::text AS status FROM "PurchaseOrder" WHERE id = ${orderId} FOR UPDATE`
+      if (!locked || !['IN_TRANSIT', 'PARTIALLY_RECEIVED'].includes(locked.status)) throw new DuplicateReceiptError()
+      const recent = await tx.goodsReceipt.findFirst({
+        where: { orderId, createdAt: { gte: new Date(Date.now() - 60_000) } },
+        orderBy: { createdAt: 'desc' },
+        select: { items: { select: { itemName: true, receivedQty: true } } },
+      })
+      const sig = (rows: { itemName: string; receivedQty: number }[]) =>
+        rows.filter(r => Number(r.receivedQty) > 0).map(r => `${r.itemName}|${Number(r.receivedQty)}`).sort().join(';')
+      if (recent && sig(recent.items) === sig(items.map(it => ({ itemName: it.itemName, receivedQty: Number(it.receivedQty) || 0 })))) {
+        throw new DuplicateReceiptError()
+      }
+      const grNumber = await generateGrNumber(tx)
 
-    // Received value uses the PO line's price AFTER its per-line discount, so stock lots /
-    // moving-average cost reflect what was actually paid.
-    const netUnitCost = (i: number) => {
-      const raw = Number(items[i].unitCost) || 0
-      const po = poItemsByLineIndex[i]
-      return po ? raw * poLineNetRatio(po) : raw
-    }
+      // Resolved once up front (rather than per-item inside the loop below) so the same
+      // lookup can also seed GoodsReceiptItem.sourceInventoryItemId at create time.
+      const poItemsByLineIndex = await Promise.all(items.map(it =>
+        it.poItemId
+          ? tx.purchaseOrderItem.findUnique({ where: { id: it.poItemId } })
+          : tx.purchaseOrderItem.findFirst({ where: { orderId, itemId: it.itemId || null, itemName: it.itemName } }),
+      ))
 
-    const gr = await tx.goodsReceipt.create({
-      data: {
-        id: crypto.randomUUID(),
-        grNumber,
-        orderId,
-        receivedById: params.receivedById,
-        receivedByEmployeeId: params.receivedByEmployeeId,
-        receiverName: params.receiverName?.trim() || null,
-        locationId: effectiveLocationId,
-        notes: params.notes?.trim() || null,
-        receivePhotoKey: params.receivePhotoKey || null,
-        receivedAt: new Date(),
-        items: {
-          create: items.map((it, i) => ({
-            id: crypto.randomUUID(),
-            itemId: it.itemId || null,
-            itemName: it.itemName,
-            receivedQty: Number(it.receivedQty),
-            unitCost: netUnitCost(i),
-            outcome: it.outcome || 'ACCEPTED',
-            condition: it.outcome || 'good',
-            batch: it.batch?.trim() || null,
-            expiryDate: it.expiryDate ? new Date(it.expiryDate) : null,
-            notes: it.notes?.trim() || null,
-            sourceInventoryItemId: poItemsByLineIndex[i]?.sourceInventoryItemId ?? null,
-          })),
-        },
-      },
-      include: { items: true },
-    })
-
-    for (let i = 0; i < items.length; i++) {
-      const it = items[i]
-      if (!it.receivedQty) continue
-      const purchaseQty = Number(it.receivedQty)
-      if (purchaseQty <= 0) continue
-
-      // Advance the PO line's receivedQty regardless of whether it's linked to a master item —
-      // custom/non-stock lines (e.g. one-off purchases) still need to reach RECEIVED status.
-      const poItem = poItemsByLineIndex[i]
-      if (poItem) {
-        await tx.purchaseOrderItem.update({ where: { id: poItem.id }, data: { receivedQty: { increment: purchaseQty } } })
+      // Received value uses the PO line's price AFTER its per-line discount, so stock lots /
+      // moving-average cost reflect what was actually paid.
+      const netUnitCost = (i: number) => {
+        const raw = Number(items[i].unitCost) || 0
+        const po = poItemsByLineIndex[i]
+        return po ? raw * poLineNetRatio(po) : raw
       }
 
-      // Lines requested against a specific existing InventoryItem (see "Convert to Stock"'s
-      // sibling picker in Purchase Request creation) never touch StockLot/StockMovement at
-      // all — they have no PurchaseItem catalog link, and their stock ledger IS the
-      // InventoryItem row itself, incremented directly by the physical quantity received.
-      if (poItem?.sourceInventoryItemId) {
-        await tx.inventoryItem.update({
-          where: { id: poItem.sourceInventoryItemId },
-          data: { quantity: { increment: Math.round(purchaseQty) } },
-        })
-        continue
-      }
-
-      // How this line is treated on a ship (src/lib/purchasing/treatment.ts). An ASSET reaching
-      // its final ship destination with a Room/Category on its PO line becomes an InventoryItem
-      // there — equipment, not usage, so no stock lot / usage movement and never a trip cost.
-      const treatment = effectiveTreatment(poItem?.treatment, it.itemId ? itemDataMap.get(it.itemId)?.treatment : null)
-      const arrivalLoc = route?.(it.itemId ? itemDataMap.get(it.itemId)?.type : null) ?? null
-      if (treatment === 'ASSET' && arrivalLoc?.yachtId && poItem?.inventoryCategoryId) {
-        const category = await tx.inventoryCategory.findUnique({
-          where: { id: poItem.inventoryCategoryId },
-          select: { id: true, roomId: true, room: { select: { locationId: true } } },
-        })
-        if (category) {
-          await tx.inventoryItem.create({
-            data: {
+      const gr = await tx.goodsReceipt.create({
+        data: {
+          id: crypto.randomUUID(),
+          grNumber,
+          orderId,
+          receivedById: params.receivedById,
+          receivedByEmployeeId: params.receivedByEmployeeId,
+          receiverName: params.receiverName?.trim() || null,
+          locationId: effectiveLocationId,
+          notes: params.notes?.trim() || null,
+          receivePhotoKey: params.receivePhotoKey || null,
+          receivedAt: new Date(),
+          items: {
+            create: items.map((it, i) => ({
               id: crypto.randomUUID(),
-              itemNumber: 'INV-' + String(await nextVal('inventory-item', db)).padStart(4, '0'),
-              name: it.itemId ? (itemDataMap.get(it.itemId)?.name ?? it.itemName) : it.itemName,
-              categoryId: category.id,
-              roomId: category.roomId,
-              locationId: category.room.locationId,
-              quantity: Math.max(1, Math.round(purchaseQty)),
-              unitPrice: netUnitCost(i),
-              vendorName: po.supplierName ?? null,
-              purchaseDate: new Date(),
-              sourcePoId: orderId,
-              notes: `Received on ${grNumber} (${po.poNumber ?? 'PO'})`,
-              createdById: params.movementCreatedById,
-            },
+              itemId: it.itemId || null,
+              itemName: it.itemName,
+              receivedQty: Number(it.receivedQty),
+              unitCost: netUnitCost(i),
+              outcome: it.outcome || 'ACCEPTED',
+              condition: it.outcome || 'good',
+              batch: it.batch?.trim() || null,
+              expiryDate: it.expiryDate ? new Date(it.expiryDate) : null,
+              notes: it.notes?.trim() || null,
+              sourceInventoryItemId: poItemsByLineIndex[i]?.sourceInventoryItemId ?? null,
+            })),
+          },
+        },
+        include: { items: true },
+      })
+
+      for (let i = 0; i < items.length; i++) {
+        const it = items[i]
+        if (!it.receivedQty) continue
+        const purchaseQty = Number(it.receivedQty)
+        if (purchaseQty <= 0) continue
+        const outcome = it.outcome || 'ACCEPTED'
+
+        // Not taken in (damaged / wrong / rejected / still backordered): GR record + exception only.
+        if (!takenIn(outcome)) {
+          if (outcome !== 'BACKORDERED') {
+            const outcomeLabel: Record<string, string> = {
+              DAMAGED: 'Damaged goods received',
+              WRONG_ITEM: 'Wrong item received',
+              REJECTED: 'Goods rejected on receipt',
+            }
+            const itemInfo = it.itemId ? itemDataMap.get(it.itemId) : null
+            await tx.inventoryException.create({
+              data: {
+                id: crypto.randomUUID(),
+                type: 'RECEIVING_DISCREPANCY',
+                itemId: it.itemId || null,
+                itemName: it.itemName,
+                locationId: effectiveLocationId,
+                locationName: locationNameForExceptions,
+                qty: purchaseQty,
+                value: purchaseQty * (netUnitCost(i) || itemInfo?.standardCost || 0),
+                reason: `${outcomeLabel[outcome] ?? outcome}: ${purchaseQty} ${itemInfo?.baseUnit ?? it.unit ?? ''} on ${po.poNumber ?? orderId} from ${po.supplierName ?? 'supplier'} — not added to stock, still open on the PO`,
+                referenceId: gr.id,
+                referenceType: 'GoodsReceipt',
+                status: 'OPEN',
+                updatedAt: new Date(),
+              },
+            })
+          }
+          continue
+        }
+
+        // Advance the PO line's receivedQty regardless of whether it's linked to a master item —
+        // custom/non-stock lines (e.g. one-off purchases) still need to reach RECEIVED status.
+        const poItem = poItemsByLineIndex[i]
+        if (poItem) {
+          await tx.purchaseOrderItem.update({ where: { id: poItem.id }, data: { receivedQty: { increment: purchaseQty } } })
+        }
+
+        // Lines requested against a specific existing InventoryItem (see "Convert to Stock"'s
+        // sibling picker in Purchase Request creation) never touch StockLot/StockMovement at
+        // all — they have no PurchaseItem catalog link, and their stock ledger IS the
+        // InventoryItem row itself, incremented directly by the physical quantity received.
+        if (poItem?.sourceInventoryItemId) {
+          await tx.inventoryItem.update({
+            where: { id: poItem.sourceInventoryItemId },
+            data: { quantity: { increment: Math.round(purchaseQty) } },
           })
           continue
         }
-      }
 
-      // Stock lot / movement: applies to catalog items and to custom/non-catalog
-      // PO lines alike (e.g. one-off purchases like "Grab" or event flowers) —
-      // custom lines are keyed by (itemName, locationId) instead of itemId.
-      const factor = it.itemId ? (conversionMap.get(it.itemId) ?? 1) : 1
-      const baseQty = purchaseQty * factor                                // e.g. 1 carton × 24 = 24 cans
-      const purchaseUnitCost = netUnitCost(i)                            // actual invoice price
-      const baseCostPerUnit = factor > 1 && purchaseUnitCost > 0         // e.g. 48000 / 24 = 2000/can
-        ? purchaseUnitCost / factor
-        : purchaseUnitCost
-
-      // Catalog items merge into one running-balance lot per item+location (stock
-      // is fungible). Non-catalog items, and catalog items explicitly marked
-      // isStockTracked: false (a promoted "non-stock" master item — see
-      // /api/purchasing/requests/[id]/items/[itemId]), don't merge — each receipt
-      // gets its own lot tagged with sourcePoId, so it stays traceable to exactly
-      // the PO/date/cost that brought it in, without ever pooling into a location's
-      // stock balance or feeding min-stock/reorder logic.
-      const isStockTracked = it.itemId ? (stockTrackedMap.get(it.itemId) ?? true) : false
-      const dest = route?.(it.itemId ? itemDataMap.get(it.itemId)?.type : null) ?? receivingLoc
-      const destId = dest?.id ?? effectiveLocationId
-      const usage = dest ? shipUsageOnArrival(null, dest) : null
-      // CONSUMABLE → trip usage, SPARE_PART → ship maintenance, ASSET (no Room/Category to land
-      // in) → no usage at all — it's still equipment, just held as stock until registered.
-      const usageType = usageTypeForTreatment(treatment)
-      const incomingCost = baseCostPerUnit || (it.itemId ? itemDataMap.get(it.itemId)?.standardCost ?? 0 : 0)
-      if (it.itemId && isStockTracked) {
-        // Moving average: the location's running cost is re-blended with this receipt's
-        // invoice price, so later transfers/usage are valued at the true average cost.
-        const lot = await tx.stockLot.findFirst({ where: { itemId: it.itemId, locationId: destId } })
-        if (lot) {
-          await tx.stockLot.update({
-            where: { id: lot.id },
-            data: {
-              quantity: { increment: baseQty },
-              costPerUnit: movingAverageCost(lot.quantity, lot.costPerUnit, baseQty, incomingCost),
-              updatedAt: new Date(),
-            },
+        // How this line is treated on a ship (src/lib/purchasing/treatment.ts). An ASSET reaching
+        // its final ship destination with a Room/Category on its PO line becomes an InventoryItem
+        // there — equipment, not usage, so no stock lot / usage movement and never a trip cost.
+        const treatment = effectiveTreatment(poItem?.treatment, it.itemId ? itemDataMap.get(it.itemId)?.treatment : null)
+        const arrivalLoc = route?.(it.itemId ? itemDataMap.get(it.itemId)?.type : null) ?? null
+        if (treatment === 'ASSET' && arrivalLoc?.yachtId && poItem?.inventoryCategoryId) {
+          const category = await tx.inventoryCategory.findUnique({
+            where: { id: poItem.inventoryCategoryId },
+            select: { id: true, roomId: true, room: { select: { locationId: true } } },
           })
+          if (category) {
+            await tx.inventoryItem.create({
+              data: {
+                id: crypto.randomUUID(),
+                itemNumber: 'INV-' + String(await nextVal('inventory-item', db)).padStart(4, '0'),
+                name: it.itemId ? (itemDataMap.get(it.itemId)?.name ?? it.itemName) : it.itemName,
+                categoryId: category.id,
+                roomId: category.roomId,
+                locationId: category.room.locationId,
+                quantity: Math.max(1, Math.round(purchaseQty)),
+                unitPrice: netUnitCost(i),
+                vendorName: po.supplierName ?? null,
+                purchaseDate: new Date(),
+                sourcePoId: orderId,
+                notes: `Received on ${grNumber} (${po.poNumber ?? 'PO'})`,
+                createdById: params.movementCreatedById,
+              },
+            })
+            continue
+          }
+        }
+
+        // Stock lot / movement: applies to catalog items and to custom/non-catalog
+        // PO lines alike (e.g. one-off purchases like "Grab" or event flowers) —
+        // custom lines are keyed by (itemName, locationId) instead of itemId.
+        const factor = it.itemId ? (conversionMap.get(it.itemId) ?? 1) : 1
+        const baseQty = purchaseQty * factor                                // e.g. 1 carton × 24 = 24 cans
+        const purchaseUnitCost = netUnitCost(i)                            // actual invoice price
+        const baseCostPerUnit = factor > 1 && purchaseUnitCost > 0         // e.g. 48000 / 24 = 2000/can
+          ? purchaseUnitCost / factor
+          : purchaseUnitCost
+
+        // Catalog items merge into one running-balance lot per item+location (stock
+        // is fungible). Non-catalog items, and catalog items explicitly marked
+        // isStockTracked: false (a promoted "non-stock" master item — see
+        // /api/purchasing/requests/[id]/items/[itemId]), don't merge — each receipt
+        // gets its own lot tagged with sourcePoId, so it stays traceable to exactly
+        // the PO/date/cost that brought it in, without ever pooling into a location's
+        // stock balance or feeding min-stock/reorder logic.
+        const isStockTracked = it.itemId ? (stockTrackedMap.get(it.itemId) ?? true) : false
+        const dest = route?.(it.itemId ? itemDataMap.get(it.itemId)?.type : null) ?? receivingLoc
+        const destId = dest?.id ?? effectiveLocationId
+        const usage = dest ? shipUsageOnArrival(null, dest) : null
+        // CONSUMABLE → trip usage, SPARE_PART → ship maintenance, ASSET (no Room/Category to land
+        // in) → no usage at all — it's still equipment, just held as stock until registered.
+        const usageType = usageTypeForTreatment(treatment)
+        const incomingCost = baseCostPerUnit || (it.itemId ? itemDataMap.get(it.itemId)?.standardCost ?? 0 : 0)
+        if (it.itemId && isStockTracked) {
+          // Moving average: the location's running cost is re-blended with this receipt's
+          // invoice price, so later transfers/usage are valued at the true average cost.
+          const lot = await tx.stockLot.findFirst({ where: { itemId: it.itemId, locationId: destId } })
+          if (lot) {
+            await tx.stockLot.update({
+              where: { id: lot.id },
+              data: {
+                quantity: { increment: baseQty },
+                costPerUnit: movingAverageCost(lot.quantity, lot.costPerUnit, baseQty, incomingCost),
+                updatedAt: new Date(),
+              },
+            })
+          } else {
+            await tx.stockLot.create({
+              data: { id: crypto.randomUUID(), locationId: destId, quantity: baseQty, costPerUnit: incomingCost, updatedAt: new Date(), itemId: it.itemId },
+            })
+          }
         } else {
           await tx.stockLot.create({
-            data: { id: crypto.randomUUID(), locationId: destId, quantity: baseQty, costPerUnit: incomingCost, updatedAt: new Date(), itemId: it.itemId },
-          })
-        }
-      } else {
-        await tx.stockLot.create({
-          data: {
-            id: crypto.randomUUID(), locationId: destId, quantity: baseQty, costPerUnit: baseCostPerUnit, updatedAt: new Date(),
-            itemName: it.itemName, unit: it.unit?.trim() || null, sourcePoId: orderId,
-          },
-        })
-      }
-      await tx.stockMovement.create({
-        data: {
-          id: crypto.randomUUID(), toLocationId: destId, quantity: baseQty, type: 'RECEIPT', referenceId: gr.id, referenceType: 'GoodsReceipt', createdById: params.movementCreatedById,
-          ...(it.itemId ? { itemId: it.itemId } : { itemName: it.itemName }),
-          unitCost: incomingCost,
-          totalCost: baseQty * incomingCost,
-          ...(usage && usageType && {
-            usageType,
-            yachtId: usage.yachtId,
-            openTripId: po.openTripId,
-            tripBookingId: po.bookingId,
-          }),
-        },
-      })
-
-      // Everything below (discrepancy checks, standard cost) only applies to
-      // stock-tracked items linked to the master catalog — non-stock items don't
-      // carry a standardCost/min-stock concept to keep in sync.
-      if (!it.itemId || !isStockTracked) continue
-
-      if (poItem) {
-        // Auto-create Receiving Discrepancy exception if qty received ≠ qty remaining
-        const remaining = poItem.orderedQty - poItem.receivedQty
-        const discrepancy = purchaseQty - remaining
-        if (Math.abs(discrepancy) > 0.0001) {
-          const itemInfo = itemDataMap.get(it.itemId)
-          const unitCostForValue = netUnitCost(i) || itemInfo?.standardCost || 0
-          await tx.inventoryException.create({
             data: {
-              id: crypto.randomUUID(),
-              type: 'RECEIVING_DISCREPANCY',
-              itemId: it.itemId,
-              itemName: it.itemName,
-              locationId: effectiveLocationId,
-              locationName: locationNameForExceptions,
-              qty: Math.abs(discrepancy),
-              value: Math.abs(discrepancy) * unitCostForValue,
-              reason: `${discrepancy < 0 ? 'Short' : 'Over'} delivery on ${po.poNumber ?? orderId} from ${po.supplierName ?? 'supplier'}. Expected ${remaining} ${itemInfo?.baseUnit ?? ''}, received ${purchaseQty} ${itemInfo?.baseUnit ?? ''}.`,
-              referenceId: gr.id,
-              referenceType: 'GoodsReceipt',
-              status: 'OPEN',
-              updatedAt: new Date(),
+              id: crypto.randomUUID(), locationId: destId, quantity: baseQty, costPerUnit: baseCostPerUnit, updatedAt: new Date(),
+              itemName: it.itemName, unit: it.unit?.trim() || null, sourcePoId: orderId,
             },
           })
         }
-      }
-
-      // Auto-create exception if outcome ≠ ACCEPTED
-      const outcome = it.outcome || 'ACCEPTED'
-      if (['DAMAGED', 'WRONG_ITEM', 'REJECTED'].includes(outcome)) {
-        const itemInfo = itemDataMap.get(it.itemId)
-        const outcomeLabel: Record<string, string> = {
-          DAMAGED: 'Damaged goods received',
-          WRONG_ITEM: 'Wrong item received',
-          REJECTED: 'Goods rejected on receipt',
-        }
-        await tx.inventoryException.create({
+        await tx.stockMovement.create({
           data: {
-            id: crypto.randomUUID(),
-            type: 'RECEIVING_DISCREPANCY',
-            itemId: it.itemId,
-            itemName: it.itemName,
-            locationId: effectiveLocationId,
-            locationName: locationNameForExceptions,
-            qty: purchaseQty,
-            value: purchaseQty * (netUnitCost(i) || itemDataMap.get(it.itemId)?.standardCost || 0),
-            reason: `${outcomeLabel[outcome]}: ${purchaseQty} ${itemDataMap.get(it.itemId)?.baseUnit ?? ''} on ${po.poNumber ?? orderId} from ${po.supplierName ?? 'supplier'}`,
-            referenceId: gr.id,
-            referenceType: 'GoodsReceipt',
-            status: 'OPEN',
-            updatedAt: new Date(),
+            id: crypto.randomUUID(), toLocationId: destId, quantity: baseQty, type: 'RECEIPT', referenceId: gr.id, referenceType: 'GoodsReceipt', createdById: params.movementCreatedById,
+            ...(it.itemId ? { itemId: it.itemId } : { itemName: it.itemName }),
+            unitCost: incomingCost,
+            totalCost: baseQty * incomingCost,
+            ...(usage && usageType && {
+              usageType,
+              yachtId: usage.yachtId,
+              openTripId: po.openTripId,
+              tripBookingId: po.bookingId,
+            }),
           },
         })
+
+        // Everything below (discrepancy checks, standard cost) only applies to
+        // stock-tracked items linked to the master catalog — non-stock items don't
+        // carry a standardCost/min-stock concept to keep in sync.
+        if (!it.itemId || !isStockTracked) continue
+
+        if (poItem) {
+          // Auto-create Receiving Discrepancy exception if qty received ≠ qty remaining
+          const remaining = poItem.orderedQty - poItem.receivedQty
+          const discrepancy = purchaseQty - remaining
+          if (Math.abs(discrepancy) > 0.0001) {
+            const itemInfo = itemDataMap.get(it.itemId)
+            const unitCostForValue = netUnitCost(i) || itemInfo?.standardCost || 0
+            await tx.inventoryException.create({
+              data: {
+                id: crypto.randomUUID(),
+                type: 'RECEIVING_DISCREPANCY',
+                itemId: it.itemId,
+                itemName: it.itemName,
+                locationId: effectiveLocationId,
+                locationName: locationNameForExceptions,
+                qty: Math.abs(discrepancy),
+                value: Math.abs(discrepancy) * unitCostForValue,
+                reason: `${discrepancy < 0 ? 'Short' : 'Over'} delivery on ${po.poNumber ?? orderId} from ${po.supplierName ?? 'supplier'}. Expected ${remaining} ${itemInfo?.baseUnit ?? ''}, received ${purchaseQty} ${itemInfo?.baseUnit ?? ''}.`,
+                referenceId: gr.id,
+                referenceType: 'GoodsReceipt',
+                status: 'OPEN',
+                updatedAt: new Date(),
+              },
+            })
+          }
+        }
+
+        // Auto-update standard cost per BASE unit
+        if (baseCostPerUnit > 0) {
+          await tx.purchaseItem.update({ where: { id: it.itemId }, data: { standardCost: baseCostPerUnit } })
+        }
       }
 
-      // Auto-update standard cost per BASE unit
-      if (baseCostPerUnit > 0) {
-        await tx.purchaseItem.update({ where: { id: it.itemId }, data: { standardCost: baseCostPerUnit } })
+      // If this PO has a transit route, spawn the next leg (first stop -> next stop/final
+      // destination) as a normal StockTransfer — still needs its own dispatch+receive.
+      // Inventory-linked lines are excluded: they already incremented their InventoryItem
+      // above (StockTransfer legs move StockLot balances, which these lines never touch),
+      // so forwarding them further isn't meaningful — a routed PO carrying such a line only
+      // makes sense if it's the sole/final stop, matching effectiveLocationId already.
+      if (hasRoute) {
+        const routeLocationIds = [...po.transitStops.map(s => s.locationId), po.deliveryLocationId!]
+        const nextHop = resolveNextHop(routeLocationIds, effectiveLocationId)
+        const transferableItems = gr.items.filter(i => !i.sourceInventoryItemId && takenIn(i.outcome))
+        if (nextHop && transferableItems.length > 0) {
+          await spawnNextTransitLeg(tx, {
+            purchaseOrderId: orderId,
+            originGoodsReceiptId: gr.id,
+            legSequence: 1,
+            fromLocationId: effectiveLocationId,
+            toLocationId: nextHop,
+            // GR lines are in purchase units, but stock lots/transfers are in base units.
+            items: transferableItems.map(i => {
+              const factor = i.itemId ? (conversionMap.get(i.itemId) ?? 1) : 1
+              return {
+                itemId: i.itemId,
+                itemName: i.itemName,
+                requestedQty: i.receivedQty * factor,
+                unitCost: i.unitCost > 0 ? i.unitCost / factor : (i.itemId ? itemDataMap.get(i.itemId)?.standardCost ?? 0 : 0),
+              }
+            }),
+          })
+        }
       }
-    }
 
-    // If this PO has a transit route, spawn the next leg (first stop -> next stop/final
-    // destination) as a normal StockTransfer — still needs its own dispatch+receive.
-    // Inventory-linked lines are excluded: they already incremented their InventoryItem
-    // above (StockTransfer legs move StockLot balances, which these lines never touch),
-    // so forwarding them further isn't meaningful — a routed PO carrying such a line only
-    // makes sense if it's the sole/final stop, matching effectiveLocationId already.
-    if (hasRoute) {
-      const routeLocationIds = [...po.transitStops.map(s => s.locationId), po.deliveryLocationId!]
-      const nextHop = resolveNextHop(routeLocationIds, effectiveLocationId)
-      const transferableItems = gr.items.filter(i => !i.sourceInventoryItemId)
-      if (nextHop && transferableItems.length > 0) {
-        await spawnNextTransitLeg(tx, {
-          purchaseOrderId: orderId,
-          originGoodsReceiptId: gr.id,
-          legSequence: 1,
-          fromLocationId: effectiveLocationId,
-          toLocationId: nextHop,
-          // GR lines are in purchase units, but stock lots/transfers are in base units.
-          items: transferableItems.map(i => {
-            const factor = i.itemId ? (conversionMap.get(i.itemId) ?? 1) : 1
-            return {
-              itemId: i.itemId,
-              itemName: i.itemName,
-              requestedQty: i.receivedQty * factor,
-              unitCost: i.unitCost > 0 ? i.unitCost / factor : (i.itemId ? itemDataMap.get(i.itemId)?.standardCost ?? 0 : 0),
-            }
-          }),
-        })
-      }
-    }
+      // Update PO status — no-ops while any transit leg for this PO is still open, including
+      // the one just spawned above, so a routed PO only finalizes once goods physically reach
+      // the final destination.
+      const newStatus = await attemptFinalizePOStatus(tx, orderId)
 
-    // Update PO status — no-ops while any transit leg for this PO is still open, including
-    // the one just spawned above, so a routed PO only finalizes once goods physically reach
-    // the final destination.
-    const newStatus = await attemptFinalizePOStatus(tx, orderId)
-
-    return { gr, newStatus }
-  })
+      return { gr, newStatus }
+    })
+  } catch (e) {
+    if (e instanceof DuplicateReceiptError) return { ok: false, error: 'This delivery was just recorded — refresh the page to see it', status: 409 }
+    throw e
+  }
+  const { gr, newStatus } = txResult
 
   if (newStatus) {
     const label = newStatus === 'RECEIVED' ? 'Items Received' : 'Items Partially Received'

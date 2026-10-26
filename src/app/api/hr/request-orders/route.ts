@@ -6,6 +6,7 @@ import { sendPushToUser } from '@/lib/push'
 import { notifyByRoleForRequest, notifyPurchasingForRequest } from '@/lib/notify-purchasing'
 import { routePrLines, initialPrStatus } from '@/lib/purchasing/requestItems'
 import { resolveTripLink } from '@/lib/purchasing/tripLink'
+import { generatePrNumber } from '@/lib/purchasing/docNumber'
 
 const WAREHOUSE_ROLES = ['WAREHOUSE', 'ADMIN', 'SUPER_ADMIN']
 
@@ -26,19 +27,6 @@ async function getSystemRequesterId(db: PrismaClient): Promise<string> {
     select: { id: true },
   })
   return created.id
-}
-
-async function generatePrNumber(db: PrismaClient) {
-  const year = new Date().getFullYear()
-  const month = String(new Date().getMonth() + 1).padStart(2, '0')
-  const prefix = `PR-${year}${month}-`
-  const last = await db.purchaseRequest.findFirst({
-    where: { prNumber: { startsWith: prefix } },
-    orderBy: { prNumber: 'desc' },
-    select: { prNumber: true },
-  })
-  const seq = last ? (parseInt(last.prNumber.split('-').pop() ?? '0') || 0) + 1 : 1
-  return `${prefix}${String(seq).padStart(3, '0')}`
 }
 
 interface RequestItemInput {

@@ -80,6 +80,9 @@ export default function CrewReceivePage() {
   const [transfer, setTransfer] = useState<TransferData | null>(null)
 
   const [receiverName, setReceiverName] = useState('')
+  // What actually arrived per line (defaults to what was sent) — a short count is reported to
+  // the warehouse as a discrepancy instead of being confirmed as complete.
+  const [counts, setCounts] = useState<Record<number, string>>({})
   const [photo, setPhoto] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const { isDragging, dropProps } = useFileDrop(files => { if (files[0]) handlePhotoFile(files[0]) })
@@ -115,10 +118,14 @@ export default function CrewReceivePage() {
   async function submit() {
     if (!receiverName.trim()) { setSubmitError('Please select your name'); return }
     if (!photo) { setSubmitError('Photo is required'); return }
+    if (Object.values(counts).some(v => v !== '' && (!Number.isFinite(Number(v)) || Number(v) < 0))) { setSubmitError('Received quantity must be 0 or more'); return }
     setSubmitting(true); setSubmitError('')
     const res = await fetch(`/api/crew-receive/${token}`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ receivedByName: receiverName.trim(), receivePhotoKey: photo }),
+      body: JSON.stringify({
+        receivedByName: receiverName.trim(), receivePhotoKey: photo,
+        items: transfer?.items.map((it, i) => ({ itemId: it.itemId, itemName: it.itemName, receivedQty: counts[i] !== undefined && counts[i] !== '' ? Number(counts[i]) : it.dispatchedQty })),
+      }),
     })
     const data = await res.json()
     if (!res.ok) { setSubmitError(data.error ?? 'Failed to save'); setSubmitting(false); return }
@@ -184,13 +191,22 @@ export default function CrewReceivePage() {
             <span className="text-gray-400">→</span>
             <span className="font-medium text-gray-900">{transfer.toLocation.name}</span>
           </div>
+          <div className="flex items-center justify-between text-[11px] font-semibold uppercase tracking-wide text-gray-400 pb-1">
+            <span>Item · sent</span><span>Received</span>
+          </div>
           <div className="divide-y">
-            {transfer.items.map((it, i) => (
-              <div key={i} className="flex items-center justify-between py-2 text-sm">
-                <span className="text-gray-700">{it.itemName}</span>
-                <span className="text-gray-500">{it.dispatchedQty}</span>
-              </div>
-            ))}
+            {transfer.items.map((it, i) => {
+              const short = counts[i] !== undefined && counts[i] !== '' && Number(counts[i]) !== it.dispatchedQty
+              return (
+                <div key={i} className="flex items-center justify-between gap-3 py-2 text-sm">
+                  <span className="text-gray-700 min-w-0">{it.itemName} <span className="text-gray-400">· {it.dispatchedQty}</span></span>
+                  <input type="number" inputMode="decimal" min={0} aria-label={`Received quantity of ${it.itemName}`}
+                    className={`w-20 shrink-0 border rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-2 focus:ring-success ${short ? 'border-warning bg-warning/10' : ''}`}
+                    value={counts[i] ?? String(it.dispatchedQty)}
+                    onChange={e => setCounts(c => ({ ...c, [i]: e.target.value }))} />
+                </div>
+              )
+            })}
           </div>
         </div>
 

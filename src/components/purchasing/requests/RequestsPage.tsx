@@ -1105,8 +1105,10 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status }),
     })
-    if (!res.ok) { const d = await res.json(); alert(d.error ?? 'Failed to update status'); return }
-    setSelected(s => s?.id === id ? { ...s, status } : s)
+    const d = await res.json()
+    if (!res.ok) { alert(d.error ?? 'Failed to update status'); return }
+    // Reopen can land on Pending Approval / On Process rather than Draft — trust the server.
+    setSelected(s => s?.id === id ? { ...s, status: d.status ?? status } : s)
     // The item list / timeline / Decision column all key off `detail`, not `selected` —
     // without this they'd stay stuck showing the pre-verify layout until the user left
     // and reopened the request.
@@ -1643,6 +1645,13 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                   </button>
                 )}
               </>
+            )}
+            {selected.status === 'PENDING_APPROVAL' && (selected.createdBy?.id === session?.user?.id || isAdmin) && (
+              <button onClick={() => deleteReq(selected)}
+                title="Withdraw this request while it is still waiting for manager approval"
+                className="px-4 py-2 text-sm border rounded-lg text-muted-foreground hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30 transition-colors">
+                Withdraw
+              </button>
             )}
             {selected.status === 'ON_PROCESS' && canWarehouseCheck && detail && isWarehousePending(detail) && renderWarehouseFinish()}
             {selected.status === 'ON_PROCESS' && !isWarehouse && (
