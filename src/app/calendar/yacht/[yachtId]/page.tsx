@@ -35,10 +35,11 @@ function dateStr(year: number, month: number, day: number) {
   return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
 }
 
+// Only booked days get a pill: grey once the date has passed, red otherwise. Past days
+// with no booking stay plain so the history still shows which dates were actually used.
 function dayStatus(ds: string, bookedDates: Set<string>, todayStr: string): DayStatus {
-  if (bookedDates.has(ds)) return 'booked'
-  if (ds < todayStr) return 'past'
-  return null
+  if (!bookedDates.has(ds)) return null
+  return ds < todayStr ? 'past' : 'booked'
 }
 
 /* ── Week rows with same-status days merged into one continuous pill (booking ranges
@@ -116,7 +117,7 @@ function Legend() {
       </div>
       <div className="flex items-center gap-1.5">
         <span className="w-3 h-3 rounded-full shrink-0 bg-slate-300" />
-        <span className="text-xs text-slate-500">Past</span>
+        <span className="text-xs text-slate-500">Past booking</span>
       </div>
     </div>
   )
