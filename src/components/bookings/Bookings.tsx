@@ -11,6 +11,8 @@ import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { getEffectiveBookingStatus } from '@/lib/booking-status'
+import { formatDate, formatMoney, formatNumber } from '@/lib/format'
+import { StatusBadge, BookingStatusBadge, type StatusTone } from '@/components/ui/status-badge'
 import { roleMatches } from '@/lib/role-utils'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
@@ -30,6 +32,7 @@ import { toast } from 'sonner'
 import { FilePreview } from '@/components/ui/file-preview'
 import { ProofFilesInput } from '@/components/bookings/ProofFilesInput'
 import { getAgentCommissionPct } from '@/lib/agent-commission'
+import { useConfirm } from '@/components/ui/confirm-dialog'
 
 /* ─── Types ──────────────────────────────────────────────────────────────── */
 interface BookingRecord {
@@ -145,35 +148,15 @@ const netBook = (b: BookingRecord) => {
 }
 
 /* ─── Constants ─────────────────────────────────────────────────────────── */
-const STATUS_STYLES: Record<string, string> = {
-  on_hold:        'bg-green-100   text-green-700   border-green-200',
-  pending:        'bg-yellow-100  text-yellow-700  border-yellow-200',
-  partially_paid: 'bg-blue-100    text-blue-700    border-blue-200',
-  fully_paid:     'bg-red-100     text-red-700     border-red-200',
-  on_trip:        'bg-slate-100   text-slate-600   border-slate-200',
-  completed:      'bg-slate-100   text-slate-600   border-slate-200',
-  cancelled:      'bg-slate-100   text-slate-500   border-slate-200',
-  confirmed:      'bg-red-100     text-red-700     border-red-200',
-}
-const STATUS_LABELS: Record<string, string> = {
-  on_hold:        'On Hold',
-  pending:        'Pending',
-  partially_paid: 'Partially Paid',
-  fully_paid:     'Fully Paid',
-  on_trip:        'On Trip',
-  completed:      'Completed',
-  cancelled:      'Cancelled',
-  confirmed:      'Confirmed',
-}
-const PAYMENT_STATUS: Record<string, { label: string; color: string }> = {
-  requested:            { label: 'Awaiting Finance',      color: 'bg-blue-50 text-blue-600 border-blue-200' },
-  invoice_ready:        { label: 'Invoice Ready',         color: 'bg-violet-100 text-violet-700 border-violet-200' },
-  pending_confirmation: { label: 'Awaiting Confirmation', color: 'bg-amber-100 text-amber-700 border-amber-200' },
-  confirmed:            { label: 'Confirmed',             color: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
-  rejected:             { label: 'Rejected',              color: 'bg-red-100 text-red-700 border-red-200' },
+const PAYMENT_STATUS: Record<string, { label: string; tone: StatusTone }> = {
+  requested:            { label: 'Awaiting Finance',      tone: 'info' },
+  invoice_ready:        { label: 'Invoice Ready',         tone: 'info' },
+  pending_confirmation: { label: 'Awaiting Confirmation', tone: 'warning' },
+  confirmed:            { label: 'Confirmed',             tone: 'success' },
+  rejected:             { label: 'Rejected',              tone: 'destructive' },
 }
 
-const ACCENT = '#bdac7e'
+const ACCENT = 'var(--primary)'
 
 /* ─── Currency (mirrors BookingWizard) ───────────────────────────────────── */
 type CurrencyCode = 'USD' | 'EUR' | 'IDR'
@@ -183,14 +166,10 @@ const CURRENCIES: Record<CurrencyCode, { symbol: string; label: string; rateToUS
   IDR: { symbol: 'Rp', label: 'IDR — Indonesian Rupiah',   rateToUSD: 0.000063, step: 100000, decimals: 0 },
 }
 
-const fmtDate = (d: string) =>
-  new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' })
 const fmtDateInput = (d?: string | null) =>
   d ? new Date(d).toISOString().split('T')[0] : ''
 const getDays = (s: string, e: string) =>
   Math.max(1, Math.ceil((new Date(e).getTime() - new Date(s).getTime()) / 86400000))
-const fmtAmt = (n: number) =>
-  `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
 type VatType = 'FIXED' | 'PERCENT'
 // Total = (base + services - discount) + VAT, where VAT is either a flat $ amount or a
@@ -243,6 +222,7 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
   const userRole          = (session?.user as { role?: string })?.role ?? ''
   const canManageBookings = roleMatches(userRole, ['ADMIN', 'SALES'])
   const isAdmin           = roleMatches(userRole, ['ADMIN', 'SUPER_ADMIN'])
+  const confirm           = useConfirm()
 
   /* booking state */
   const [bookings,     setBookings]    = useState<BookingRecord[]>([])
@@ -654,7 +634,7 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
 
   /* ── delete booking ── */
   const deleteBooking = async (b: BookingRecord) => {
-    if (!confirm(`Delete booking ${b.bookingCode}? This cannot be undone.`)) return
+    if (!(await confirm({ title: `Delete booking ${b.bookingCode}?`, description: 'This cannot be undone.', destructive: true }))) return
     try {
       await fetch(`/api/bookings/${b.id}`, { method: 'DELETE' })
       await fetchBookings()
@@ -997,7 +977,7 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
     setProofPreview([])
   }
   const handleDeleteGuest = async (bookingId: string, bookingGuestId: string) => {
-    if (!confirm('Remove this guest from the booking?')) return
+    if (!(await confirm({ title: 'Remove this guest from the booking?', confirmLabel: 'Remove', destructive: true }))) return
     setDeletingGuestId(bookingGuestId)
     const res = await fetch(`/api/bookings/${bookingId}/guests`, {
       method: 'DELETE',
@@ -1127,32 +1107,32 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
     <div className="space-y-6">
 
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
             <h3 className="text-2xl font-bold tracking-tight">Bookings</h3>
-            <button onClick={() => fetchBookings()} title="Refresh" className="text-muted-foreground hover:text-foreground transition-colors mt-0.5">
+            <Button variant="ghost" size="icon" onClick={() => fetchBookings()} title="Refresh" aria-label="Refresh" className="size-8 mt-0.5 text-muted-foreground">
               <RotateCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-            </button>
+            </Button>
           </div>
           <p className="text-muted-foreground text-sm">Manage all yacht reservations</p>
         </div>
         {canManageBookings && (
-          <Button onClick={() => setWizardOpen(true)} style={{ backgroundColor: ACCENT, color: 'white' }} className="hover:opacity-90">
-            <Plus className="mr-2 h-4 w-4" /> New Booking
+          <Button onClick={() => setWizardOpen(true)}>
+            <Plus className="h-4 w-4" /> New Booking
           </Button>
         )}
       </div>
 
       {/* ── Pending Refund Confirmations (Sales) ── */}
       {canManageBookings && (refundPendingLoading || refundPending.length > 0) && (
-        <Card className="border-violet-200 bg-violet-50/30">
+        <Card className="border-violet-200 dark:border-violet-500/30 bg-violet-50/30 dark:bg-violet-500/5">
           <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-violet-700">
+            <CardTitle className="flex items-center gap-2 text-violet-700 dark:text-violet-300">
               <AlertCircle className="h-4 w-4" />
               Refund Confirmation Needed
               {refundPending.length > 0 && (
-                <span className="ml-1 text-xs font-bold bg-violet-100 text-violet-700 border border-violet-200 rounded-full px-2 py-0.5">{refundPending.length}</span>
+                <span className="ml-1 text-xs font-bold bg-violet-100 dark:bg-violet-500/15 text-violet-700 dark:text-violet-300 border border-violet-200 dark:border-violet-500/30 rounded-full px-2 py-0.5">{refundPending.length}</span>
               )}
             </CardTitle>
             <CardDescription>Finance has uploaded refund proof — please confirm with the guest and mark as received</CardDescription>
@@ -1163,20 +1143,20 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
             ) : (
               <div className="space-y-2">
                 {refundPending.map(b => (
-                  <div key={b.id} className="flex items-center justify-between gap-3 rounded-lg border bg-background px-4 py-3">
+                  <div key={b.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-background px-4 py-3">
                     <div className="min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-mono text-xs font-semibold bg-muted px-1.5 py-0.5 rounded">{b.bookingCode}</span>
-                        <span className="text-[11px] font-medium px-2 py-0.5 rounded-full border bg-violet-50 text-violet-700 border-violet-200">
+                        <StatusBadge tone="warning" size="sm">
                           Refund Proof Uploaded
-                        </span>
+                        </StatusBadge>
                       </div>
                       {b.refundReason && <p className="text-xs text-muted-foreground mt-0.5">Refund reason: {b.refundReason}</p>}
                       <p className="text-xs text-muted-foreground">
-                        Total refund: ${b.payments.reduce((s, p) => s + p.amount, 0).toLocaleString()}
+                        Total refund: {formatMoney(b.payments.reduce((s, p) => s + p.amount, 0), { currency: 'USD' })}
                       </p>
                     </div>
-                    <Button size="sm" variant="outline" className="shrink-0 border-violet-200 text-violet-700 hover:bg-violet-50" onClick={() => setRefundConfirmItem(b)}>
+                    <Button size="sm" variant="outline" className="shrink-0 border-violet-200 dark:border-violet-500/30 text-violet-700 dark:text-violet-300 hover:bg-violet-50 dark:hover:bg-violet-500/10" onClick={() => setRefundConfirmItem(b)}>
                       View & Confirm
                     </Button>
                   </div>
@@ -1204,7 +1184,7 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                   <SlidersHorizontal className="h-3.5 w-3.5" />
                   Filters
                   {activeFilterCount > 0 && (
-                    <span className="inline-flex items-center justify-center h-4 min-w-4 px-1 rounded-full text-[10px] font-semibold text-white" style={{ backgroundColor: ACCENT }}>
+                    <span className="inline-flex items-center justify-center h-4 min-w-4 px-1 rounded-full text-[10px] font-semibold text-primary-foreground" style={{ backgroundColor: ACCENT }}>
                       {activeFilterCount}
                     </span>
                   )}
@@ -1215,8 +1195,9 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                   <span className="text-sm font-semibold">Filters</span>
                   {hasActiveFilter && (
                     <button
+                      type="button"
                       onClick={clearFilters}
-                      className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100 transition-colors text-[11px] font-semibold"
+                      className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-destructive/10 text-destructive border border-destructive/30 hover:bg-destructive/15 transition-colors text-[11px] font-semibold"
                     >
                       <X className="h-3 w-3" /> Clear all
                     </button>
@@ -1227,13 +1208,14 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                 <div className="relative">
                   <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
                   <Input
-                    placeholder="Search by code, customer, yacht, agent..."
+                    aria-label="Search bookings"
+                    placeholder="Search by code, customer, yacht, agent…"
                     value={searchTerm}
                     onChange={e => withPageReset(setSearchTerm)(e.target.value)}
                     className="pl-9 h-9 text-sm"
                   />
                   {searchTerm && (
-                    <button className="absolute right-2.5 top-2.5" onClick={() => setSearchTerm('')}>
+                    <button type="button" aria-label="Clear search" className="absolute right-2.5 top-2.5" onClick={() => setSearchTerm('')}>
                       <X className="h-4 w-4 text-muted-foreground hover:text-foreground" />
                     </button>
                   )}
@@ -1242,14 +1224,14 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                 {/* Dropdown filters */}
                 <div className="grid grid-cols-2 gap-2">
                   <FilterDropdown value={typeFilter} onValueChange={withPageReset(setTypeFilter)}
-                    placeholder="Trip Type" active={typeFilter !== 'all'} activeClass="border-violet-400 bg-violet-50 text-violet-700 font-semibold">
+                    placeholder="Trip Type" active={typeFilter !== 'all'} activeClass="border-violet-400 bg-violet-50 dark:bg-violet-500/10 text-violet-700 dark:text-violet-300 font-semibold">
                     <SelectItem value="all">All Types</SelectItem>
                     <SelectItem value="PRIVATE_CHARTER">Private Charter</SelectItem>
                     <SelectItem value="OPEN_TRIP">Open Trip</SelectItem>
                   </FilterDropdown>
 
                   <FilterDropdown value={statusFilter} onValueChange={withPageReset(setStatusFilter)}
-                    placeholder="Status" active={statusFilter !== 'all'} activeClass="border-amber-400 bg-amber-50 text-amber-700 font-semibold">
+                    placeholder="Status" active={statusFilter !== 'all'} activeClass="border-warning bg-warning/10 text-warning font-semibold">
                     <SelectItem value="all">All Statuses</SelectItem>
                     <SelectItem value="pending">Pending</SelectItem>
                     <SelectItem value="partially_paid">Partially Paid</SelectItem>
@@ -1259,33 +1241,33 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                   </FilterDropdown>
 
                   <FilterDropdown value={sourceFilter} onValueChange={withPageReset(setSourceFilter)}
-                    placeholder="Source" active={sourceFilter !== 'all'} activeClass="border-sky-400 bg-sky-50 text-sky-700 font-semibold">
+                    placeholder="Source" active={sourceFilter !== 'all'} activeClass="border-info bg-info/10 text-info font-semibold">
                     <SelectItem value="all">All Sources</SelectItem>
                     <SelectItem value="DIRECT">Direct</SelectItem>
                     <SelectItem value="AGENT">Agent</SelectItem>
                   </FilterDropdown>
 
                   <FilterDropdown value={yachtFilter} onValueChange={withPageReset(setYachtFilter)}
-                    placeholder="Yacht" active={yachtFilter !== 'all'} activeClass="border-cyan-400 bg-cyan-50 text-cyan-700 font-semibold">
+                    placeholder="Yacht" active={yachtFilter !== 'all'} activeClass="border-cyan-400 bg-cyan-50 dark:bg-cyan-500/10 text-cyan-700 dark:text-cyan-300 font-semibold">
                     <SelectItem value="all">All Yachts</SelectItem>
                     {yachtOptions.map(y => <SelectItem key={y.id} value={y.id}>{y.name}</SelectItem>)}
                   </FilterDropdown>
 
                   <FilterDropdown value={yearFilter} onValueChange={withPageReset(setYearFilter)}
-                    placeholder="Year" active={yearFilter !== 'all'} activeClass="border-emerald-400 bg-emerald-50 text-emerald-700 font-semibold">
+                    placeholder="Year" active={yearFilter !== 'all'} activeClass="border-success bg-success/10 text-success font-semibold">
                     <SelectItem value="all">All Years</SelectItem>
                     {yearOptions.map(y => <SelectItem key={y} value={y}>{y}</SelectItem>)}
                   </FilterDropdown>
 
                   <FilterDropdown value={monthFilter} onValueChange={withPageReset(setMonthFilter)}
-                    placeholder="Month" active={monthFilter !== 'all'} activeClass="border-emerald-400 bg-emerald-50 text-emerald-700 font-semibold">
+                    placeholder="Month" active={monthFilter !== 'all'} activeClass="border-success bg-success/10 text-success font-semibold">
                     <SelectItem value="all">All Months</SelectItem>
                     {MONTH_LABELS.map((m, i) => <SelectItem key={m} value={(i + 1).toString()}>{m}</SelectItem>)}
                   </FilterDropdown>
 
                   {userRole === 'ADMIN' && (
                     <FilterDropdown value={salesFilter} onValueChange={withPageReset(setSalesFilter)}
-                      placeholder="Salesperson" active={salesFilter !== 'all'} activeClass="border-fuchsia-400 bg-fuchsia-50 text-fuchsia-700 font-semibold">
+                      placeholder="Salesperson" active={salesFilter !== 'all'} activeClass="border-fuchsia-400 bg-fuchsia-50 dark:bg-fuchsia-500/10 text-fuchsia-700 dark:text-fuchsia-300 font-semibold">
                       <SelectItem value="all">All Salespeople</SelectItem>
                       {salesOptions.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
                     </FilterDropdown>
@@ -1294,14 +1276,15 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
 
                 {/* Trip date range */}
                 <div className="space-y-1">
-                  <span className="text-xs text-muted-foreground">Trip date</span>
-                  <div className="flex items-center gap-1.5">
+                  <span id="bk-filter-trip-date" className="text-xs text-muted-foreground">Trip date</span>
+                  <div role="group" aria-labelledby="bk-filter-trip-date" className="flex items-center gap-1.5">
                     <Input
                       type="date"
                       value={dateFrom}
                       onChange={e => withPageReset(setDateFrom)(e.target.value)}
-                      className={`h-8 text-xs flex-1 ${dateFrom ? 'border-emerald-400 bg-emerald-50 text-emerald-700 font-semibold' : ''}`}
+                      className={`h-8 text-xs flex-1 ${dateFrom ? 'border-success bg-success/10 text-success font-semibold' : ''}`}
                       title="From date"
+                      aria-label="From date"
                     />
                     <span className="text-xs text-muted-foreground">—</span>
                     <Input
@@ -1309,8 +1292,9 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                       value={dateTo}
                       min={dateFrom}
                       onChange={e => withPageReset(setDateTo)(e.target.value)}
-                      className={`h-8 text-xs flex-1 ${dateTo ? 'border-emerald-400 bg-emerald-50 text-emerald-700 font-semibold' : ''}`}
+                      className={`h-8 text-xs flex-1 ${dateTo ? 'border-success bg-success/10 text-success font-semibold' : ''}`}
                       title="To date"
+                      aria-label="To date"
                     />
                   </div>
                 </div>
@@ -1362,7 +1346,7 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                       </div>
                       {b.createdAt && (
                         <div className="text-[10px] text-muted-foreground mt-0.5">
-                          {new Date(b.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                          {formatDate(b.createdAt)}
                         </div>
                       )}
                     </TableCell>
@@ -1382,9 +1366,9 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                         {b.tripType === 'OPEN_TRIP' ? b.openTrip?.title : `Private Charter${b.yacht?.name ? ` - ${b.yacht.name}` : ''}`}
                       </div>
                       <div className="text-xs text-muted-foreground mt-0.5">
-                        <span>{fmtDate(b.startDate)}</span>
+                        <span>{formatDate(b.startDate)}</span>
                         <span className="mx-1">–</span>
-                        <span>{fmtDate(b.endDate)}</span>
+                        <span>{formatDate(b.endDate)}</span>
                         <span className="ml-1">· {getDays(b.startDate, b.endDate)}d</span>
                       </div>
                     </TableCell>
@@ -1400,13 +1384,13 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                     <TableCell className="hidden lg:table-cell">
                       <div className="text-xs space-y-0.5 min-w-20">
                         {b.depositDueDate ? (
-                          <div className={`flex items-center gap-1 ${isDepositOverdue(b) ? 'text-red-600 font-medium' : 'text-muted-foreground'}`}>
+                          <div className={`flex items-center gap-1 ${isDepositOverdue(b) ? 'text-destructive font-medium' : 'text-muted-foreground'}`}>
                             {isDepositOverdue(b) && <AlertCircle className="w-3 h-3 shrink-0" />}
-                            DP: {fmtDate(b.depositDueDate)}
+                            DP: {formatDate(b.depositDueDate)}
                           </div>
                         ) : <span className="text-muted-foreground/50">—</span>}
                         {b.finalDueDate && (
-                          <div className="text-muted-foreground">Bal: {fmtDate(b.finalDueDate)}</div>
+                          <div className="text-muted-foreground">Bal: {formatDate(b.finalDueDate)}</div>
                         )}
                       </div>
                     </TableCell>
@@ -1414,9 +1398,7 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                       {(() => {
                         const effStatus = getEffectiveBookingStatus(b.status, b.startDate, b.endDate)
                         return (
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${STATUS_STYLES[effStatus] ?? 'bg-muted text-muted-foreground'}`}>
-                            {STATUS_LABELS[effStatus] ?? effStatus}
-                          </span>
+                          <BookingStatusBadge status={effStatus} />
                         )
                       })()}
                       {b.status === 'on_hold' && b.holdUntil && (() => {
@@ -1424,15 +1406,15 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                         const expired = exp < new Date()
                         const urgent  = !expired && (exp.getTime() - Date.now()) < 2 * 60 * 60 * 1000
                         return (
-                          <div className={`text-[10px] font-medium mt-0.5 ${expired ? 'text-red-500' : urgent ? 'text-orange-500' : 'text-muted-foreground'}`}>
-                            {expired ? '⚠ Expired' : `until ${exp.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })} ${exp.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`}
+                          <div className={`text-[10px] font-medium mt-0.5 ${expired ? 'text-destructive' : urgent ? 'text-warning' : 'text-muted-foreground'}`}>
+                            {expired ? '⚠ Expired' : `until ${formatDate(exp, 'short')} ${formatDate(exp, 'time')}`}
                           </div>
                         )
                       })()}
                       {payments.some(p => p.bookingId === b.id && p.status === 'invoice_ready') && (
-                        <div className="mt-1 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-violet-100 text-violet-700 border border-violet-200">
+                        <StatusBadge tone="info" size="sm" className="mt-1 font-semibold [&>svg]:size-2.5">
                           <CreditCard className="w-2.5 h-2.5" /> Invoice Ready
-                        </div>
+                        </StatusBadge>
                       )}
                     </TableCell>
                   </TableRow>
@@ -1452,6 +1434,7 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                   variant="outline" size="sm" className="h-7 px-2"
                   disabled={safePage <= 1}
                   onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  aria-label="Previous page"
                 >
                   <ChevronLeft className="h-3.5 w-3.5" />
                 </Button>
@@ -1460,6 +1443,7 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                   variant="outline" size="sm" className="h-7 px-2"
                   disabled={safePage >= totalPages}
                   onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  aria-label="Next page"
                 >
                   <ChevronRight className="h-3.5 w-3.5" />
                 </Button>
@@ -1471,7 +1455,7 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
 
       {/* ════ Request Invoice Dialog ════ */}
       <Dialog open={!!paymentBooking} onOpenChange={v => !v && setPaymentBooking(null)}>
-        <DialogContent className="sm:max-w-xl w-[calc(100vw-1rem)] max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-xl w-[calc(100vw-1rem)] max-h-[90vh] overflow-y-auto" aria-describedby={undefined} onInteractOutside={e => e.preventDefault()}>
           {paymentBooking && (() => {
             const rate      = paymentBooking.exchangeRate ?? 1
             const hasIDR    = paymentBooking.currency === 'IDR' && rate > 1
@@ -1486,8 +1470,6 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
               ? (payExchangeRate > 0 ? rawInput / payExchangeRate : 0)
               : rawInput
             const previewAmt = payAmtMode === 'percent' ? amtFromPct : amtDirect
-            const fmtD  = (n: number) => `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-            const fmtIDR = (n: number) => `Rp ${Math.round(n * rate).toLocaleString('id-ID')}`
             const payCurr = CURRENCIES[payCurrency]
             return (
               <>
@@ -1501,12 +1483,13 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                 {/* New invoice vs. additional DP on an existing invoice */}
                 {eligibleParentInvoices(paymentBooking.id).length > 0 && (
                   <div className="space-y-2">
-                    <Label>Invoice</Label>
-                    <div className="flex rounded-lg border overflow-hidden text-xs">
+                    <Label id="pay-mode-label">Invoice</Label>
+                    <div role="group" aria-labelledby="pay-mode-label" className="flex rounded-lg border overflow-hidden text-xs">
                       {([{ v: 'new', l: 'New Invoice' }, { v: 'existing', l: 'Add to Existing Invoice' }] as const).map(opt => (
                         <button
                           key={opt.v}
                           type="button"
+                          aria-pressed={payMode === opt.v}
                           onClick={() => {
                             setPayMode(opt.v)
                             setPayLinkedId('')
@@ -1515,7 +1498,7 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                             setPayCurrency(bCur)
                             setPayExchangeRate(bRate)
                           }}
-                          className={`flex-1 py-2 px-3 font-medium transition-colors ${payMode === opt.v ? 'text-white' : 'text-muted-foreground hover:bg-muted'}`}
+                          className={`flex-1 py-2 px-3 font-medium transition-colors ${payMode === opt.v ? 'text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}
                           style={payMode === opt.v ? { backgroundColor: ACCENT } : {}}
                         >
                           {opt.l}
@@ -1544,12 +1527,12 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                             setPayAmtValue('')
                           }}
                         >
-                          <SelectTrigger className="text-sm">
-                            <SelectValue placeholder="Select invoice to add this DP to..." />
+                          <SelectTrigger className="text-sm" aria-label="Existing invoice">
+                            <SelectValue placeholder="Select invoice to add this DP to…" />
                           </SelectTrigger>
                           <SelectContent>
                             {eligibleParentInvoices(paymentBooking.id).map(p => (
-                              <SelectItem key={p.id} value={p.id}>{p.invoiceNumber} — {p.paymentType} (${p.amount.toLocaleString('en-US', { minimumFractionDigits: 2 })})</SelectItem>
+                              <SelectItem key={p.id} value={p.id}>{p.invoiceNumber} — {p.paymentType === 'PELUNASAN' ? 'Full Payment' : p.paymentType} ({formatMoney(p.amount, { currency: 'USD' })})</SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
@@ -1571,34 +1554,34 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Total</span>
                     <div className="text-right">
-                      <div className="font-medium">{fmtD(paymentBooking.totalPrice)}</div>
-                      {hasIDR && <div className="text-muted-foreground">{fmtIDR(paymentBooking.totalPrice)}</div>}
+                      <div className="font-medium">{formatMoney(paymentBooking.totalPrice, { currency: 'USD' })}</div>
+                      {hasIDR && <div className="text-muted-foreground">{formatMoney(paymentBooking.totalPrice * rate)}</div>}
                     </div>
                   </div>
                   {(paymentBooking.discount ?? 0) > 0 && (
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Discount</span>
-                      <span className="text-emerald-600 font-medium">−{fmtD(paymentBooking.discount)}</span>
+                      <span className="text-success font-medium">−{formatMoney(paymentBooking.discount, { currency: 'USD' })}</span>
                     </div>
                   )}
                   {(paymentBooking.discount ?? 0) > 0 && (
                     <div className="flex justify-between border-t pt-1">
                       <span className="text-muted-foreground">Net Total</span>
-                      <span className="font-semibold">{fmtD(net)}</span>
+                      <span className="font-semibold">{formatMoney(net, { currency: 'USD' })}</span>
                     </div>
                   )}
                   {paymentBooking.depositPaid > 0 && (
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Already Paid</span>
-                      <span className="text-emerald-600 font-medium">{fmtD(paymentBooking.depositPaid)}</span>
+                      <span className="text-success font-medium">{formatMoney(paymentBooking.depositPaid, { currency: 'USD' })}</span>
                     </div>
                   )}
                   <Separator className="my-1" />
                   <div className="flex justify-between font-semibold">
                     <span>Remaining</span>
                     <div className="text-right">
-                      <div className="text-amber-600">{fmtD(remaining)}</div>
-                      {hasIDR && <div className="text-amber-500 font-normal">{fmtIDR(remaining)}</div>}
+                      <div className="text-warning">{formatMoney(remaining, { currency: 'USD' })}</div>
+                      {hasIDR && <div className="text-warning font-normal">{formatMoney(remaining * rate)}</div>}
                     </div>
                   </div>
                 </div>
@@ -1606,14 +1589,15 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                 {/* Amount input with mode toggle */}
                 <div className="space-y-2">
                   <div className="flex items-center justify-between gap-2 flex-wrap">
-                    <Label>Invoice Amount <span className="text-red-500">*</span></Label>
-                    <div className="flex rounded-lg border overflow-hidden text-xs shrink-0">
+                    <Label htmlFor="pay-amount">Invoice Amount <span className="text-destructive">*</span></Label>
+                    <div role="group" aria-label="Amount mode" className="flex rounded-lg border overflow-hidden text-xs shrink-0">
                       {(['amount', 'percent'] as const).map(m => (
                         <button
                           key={m}
                           type="button"
+                          aria-pressed={payAmtMode === m}
                           onClick={() => { setPayAmtMode(m); setPayAmtValue(''); setPayPctValue('') }}
-                          className={`px-3 py-1 font-medium transition-colors ${payAmtMode === m ? 'text-white' : 'text-muted-foreground hover:bg-muted'}`}
+                          className={`px-3 py-1 font-medium transition-colors ${payAmtMode === m ? 'text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}
                           style={payAmtMode === m ? { backgroundColor: ACCENT } : {}}
                         >
                           {m === 'amount' ? 'Amount' : 'Percent (%)'}
@@ -1634,13 +1618,14 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                             <button
                               key={c}
                               type="button"
+                              aria-pressed={payCurrency === c}
                               onClick={() => {
                                 const newRate = c === 'USD' ? 1 : parseFloat((1 / CURRENCIES[c].rateToUSD).toFixed(c === 'IDR' ? 0 : 4))
                                 setPayExchangeRate(newRate)
                                 setPayCurrency(c)
                                 setPayAmtValue('')
                               }}
-                              className={`px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-colors ${payCurrency === c ? 'text-white' : 'border-border text-muted-foreground hover:bg-muted'}`}
+                              className={`px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-colors ${payCurrency === c ? 'text-primary-foreground' : 'border-border text-muted-foreground hover:bg-muted'}`}
                               style={payCurrency === c ? { backgroundColor: ACCENT, borderColor: ACCENT } : {}}
                             >
                               {CURRENCIES[c].symbol} {c}
@@ -1649,7 +1634,7 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                           {payCurrency !== 'USD' && (
                             <div className="flex items-center gap-1 ml-1">
                               <span className="text-[11px] text-muted-foreground">1 USD =</span>
-                              <input
+                              <Input
                                 type="number"
                                 min="0.000001"
                                 step={payCurrency === 'IDR' ? 100 : 0.0001}
@@ -1658,8 +1643,8 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                                   const r = parseFloat(e.target.value)
                                   if (r > 0) setPayExchangeRate(r)
                                 }}
-                                className="w-24 text-[11px] border rounded px-1.5 py-0.5 text-center font-mono bg-background focus:outline-none focus:ring-1"
-                                style={{ borderColor: `${ACCENT}60` }}
+                                aria-label={`Exchange rate (${payCurrency} per USD)`}
+                                className="h-7 w-24 px-1.5 py-0.5 text-center font-mono text-[11px] md:text-[11px]"
                               />
                               <span className="text-[11px] text-muted-foreground font-medium">{payCurrency}</span>
                             </div>
@@ -1671,12 +1656,13 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                             <button
                               key={c}
                               type="button"
+                              aria-pressed={payCurrency === c}
                               onClick={() => {
                                 setPayCurrency(c)
                                 setPayExchangeRate(c === payLinkedCurrency ? payLinkedExchangeRate : 1)
                                 setPayAmtValue('')
                               }}
-                              className={`px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-colors ${payCurrency === c ? 'text-white' : 'border-border text-muted-foreground hover:bg-muted'}`}
+                              className={`px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-colors ${payCurrency === c ? 'text-primary-foreground' : 'border-border text-muted-foreground hover:bg-muted'}`}
                               style={payCurrency === c ? { backgroundColor: ACCENT, borderColor: ACCENT } : {}}
                             >
                               {CURRENCIES[c].symbol} {c}
@@ -1684,7 +1670,7 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                           ))}
                           <span className="text-[11px] text-muted-foreground">
                             {payCurrency !== 'USD'
-                              ? `1 USD = ${payExchangeRate.toLocaleString('en-US')} ${payCurrency} — from the selected invoice`
+                              ? `1 USD = ${formatNumber(payExchangeRate, { decimals: 4 })} ${payCurrency} — from the selected invoice`
                               : 'typed directly in USD'}
                           </span>
                         </div>
@@ -1693,6 +1679,7 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                       <div className="relative">
                         <span className="absolute left-3 top-2.5 text-sm text-muted-foreground">{payCurr.symbol}</span>
                         <Input
+                          id="pay-amount"
                           type="text"
                           inputMode="decimal"
                           placeholder="0.00"
@@ -1707,15 +1694,15 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                         />
                       </div>
                       {payCurrency !== 'USD' && rawInput > 0 && (
-                        <div className="rounded-md bg-amber-50 border border-amber-100 px-3 py-1.5 text-xs flex items-center justify-between">
+                        <div className="rounded-md bg-warning/10 border border-warning/30 px-3 py-1.5 text-xs flex items-center justify-between">
                           <span className="text-muted-foreground">≈ USD equivalent</span>
-                          <span className="font-semibold text-amber-700">{fmtD(amtDirect)}</span>
+                          <span className="font-semibold text-warning">{formatMoney(amtDirect, { currency: 'USD' })}</span>
                         </div>
                       )}
                       {payCurrency === 'USD' && hasIDR && rawInput > 0 && (
-                        <div className="rounded-md bg-amber-50 border border-amber-100 px-3 py-1.5 text-xs flex items-center justify-between">
+                        <div className="rounded-md bg-warning/10 border border-warning/30 px-3 py-1.5 text-xs flex items-center justify-between">
                           <span className="text-muted-foreground">Equivalent (IDR)</span>
-                          <span className="font-semibold text-amber-700">{fmtIDR(rawInput)}</span>
+                          <span className="font-semibold text-warning">{formatMoney(rawInput * rate)}</span>
                         </div>
                       )}
                     </div>
@@ -1723,6 +1710,7 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                     <div className="space-y-2">
                       <div className="relative">
                         <Input
+                          id="pay-amount"
                           type="number"
                           min="1"
                           max="100"
@@ -1742,8 +1730,9 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                           <button
                             key={p}
                             type="button"
+                            aria-pressed={payPctValue === String(p)}
                             onClick={() => setPayPctValue(String(p))}
-                            className={`px-2.5 py-1 rounded-full text-xs border font-medium transition-colors ${payPctValue === String(p) ? 'text-white border-transparent' : 'text-muted-foreground border-border hover:bg-muted'}`}
+                            className={`px-2.5 py-1 rounded-full text-xs border font-medium transition-colors ${payPctValue === String(p) ? 'text-primary-foreground border-transparent' : 'text-muted-foreground border-border hover:bg-muted'}`}
                             style={payPctValue === String(p) ? { backgroundColor: ACCENT } : {}}
                           >
                             {p}%
@@ -1756,16 +1745,16 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                   {previewAmt > 0 && (
                     <div className="space-y-1">
                       {payAmtMode === 'percent' && pct > 0 && hasIDR && (
-                        <div className="rounded-md bg-amber-50 border border-amber-100 px-3 py-1.5 text-xs flex items-center justify-between">
-                          <span className="text-muted-foreground">= {fmtD(previewAmt)} equivalent IDR</span>
-                          <span className="font-semibold text-amber-700">{fmtIDR(previewAmt)}</span>
+                        <div className="rounded-md bg-warning/10 border border-warning/30 px-3 py-1.5 text-xs flex items-center justify-between">
+                          <span className="text-muted-foreground">= {formatMoney(previewAmt, { currency: 'USD' })} equivalent IDR</span>
+                          <span className="font-semibold text-warning">{formatMoney(previewAmt * rate)}</span>
                         </div>
                       )}
                       <p className="text-xs text-muted-foreground">
                         {payAmtMode === 'percent' && pct > 0 && !hasIDR && (
-                          <span>= {fmtD(previewAmt)} · </span>
+                          <span>= {formatMoney(previewAmt, { currency: 'USD' })} · </span>
                         )}
-                        Remaining after this: <span className={remaining - previewAmt <= 0 ? 'text-emerald-600 font-medium' : 'text-amber-600 font-medium'}>{fmtD(Math.max(0, remaining - previewAmt))}{hasIDR ? ` (${fmtIDR(Math.max(0, remaining - previewAmt))})` : ''}</span>
+                        Remaining after this: <span className={remaining - previewAmt <= 0 ? 'text-success font-medium' : 'text-warning font-medium'}>{formatMoney(Math.max(0, remaining - previewAmt), { currency: 'USD' })}{hasIDR ? ` (${formatMoney((Math.max(0, remaining - previewAmt)) * rate)})` : ''}</span>
                       </p>
                     </div>
                   )}
@@ -1773,16 +1762,17 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
 
                 {/* Bill To + Agent Commission — AGENT bookings only, only relevant when an actual invoice doc is produced */}
                 {payMode === 'new' && paymentBooking.source === 'AGENT' && paymentBooking.agent && (
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label>Bill To</Label>
-                    <div className="flex rounded-lg border overflow-hidden text-xs">
+                    <Label id="pay-bill-to-label">Bill To</Label>
+                    <div role="group" aria-labelledby="pay-bill-to-label" className="flex rounded-lg border overflow-hidden text-xs">
                       {(['AGENT', 'CUSTOMER'] as const).map(opt => (
                         <button
                           key={opt}
                           type="button"
+                          aria-pressed={payBillTo === opt}
                           onClick={() => setPayBillTo(opt)}
-                          className={`flex-1 py-2 px-3 font-medium transition-colors flex items-center justify-center gap-1.5 ${payBillTo === opt ? 'text-white' : 'text-muted-foreground hover:bg-muted'}`}
+                          className={`flex-1 py-2 px-3 font-medium transition-colors flex items-center justify-center gap-1.5 ${payBillTo === opt ? 'text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}
                           style={payBillTo === opt ? { backgroundColor: ACCENT } : {}}
                         >
                           {opt === 'AGENT' ? (
@@ -1799,14 +1789,15 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                   </div>
 
                   <div className="space-y-2">
-                    <Label>Agent Commission on Invoice</Label>
-                    <div className="flex rounded-lg border overflow-hidden text-xs">
+                    <Label id="pay-commission-label">Agent Commission on Invoice</Label>
+                    <div role="group" aria-labelledby="pay-commission-label" className="flex rounded-lg border overflow-hidden text-xs">
                       {([{ v: false, l: 'Published' }, { v: true, l: 'Net (after commission)' }] as const).map(opt => (
                         <button
                           key={String(opt.v)}
                           type="button"
+                          aria-pressed={payShowNet === opt.v}
                           onClick={() => setPayShowNet(opt.v)}
-                          className={`flex-1 py-2 px-3 font-medium transition-colors ${payShowNet === opt.v ? 'text-white' : 'text-muted-foreground hover:bg-muted'}`}
+                          className={`flex-1 py-2 px-3 font-medium transition-colors ${payShowNet === opt.v ? 'text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}
                           style={payShowNet === opt.v ? { backgroundColor: ACCENT } : {}}
                         >
                           {opt.l}
@@ -1820,17 +1811,20 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                     {payShowNet && (
                       <div className="flex items-center justify-between rounded-lg border px-3 py-2.5 mt-2">
                         <div>
-                          <p className="text-xs font-medium">Show Commission on Invoice</p>
+                          <p id="pay-show-note-label" className="text-xs font-medium">Show Commission on Invoice</p>
                           <p className="text-[11px] text-muted-foreground mt-0.5">
                             {payShowNote ? 'Invoice shows published price + a "less commission" line.' : 'Invoice shows only the final net amount, no breakdown.'}
                           </p>
                         </div>
                         <button
                           type="button"
+                          role="switch"
+                          aria-checked={payShowNote}
+                          aria-labelledby="pay-show-note-label"
                           onClick={() => setPayShowNote(v => !v)}
-                          className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${payShowNote ? 'bg-amber-500' : 'bg-muted-foreground/30'}`}
+                          className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${payShowNote ? 'bg-warning' : 'bg-muted-foreground/30'}`}
                         >
-                          <span className={`pointer-events-none block h-4 w-4 rounded-full bg-white shadow-lg transition-transform ${payShowNote ? 'translate-x-4' : 'translate-x-0'}`} />
+                          <span className={`pointer-events-none block h-4 w-4 rounded-full bg-background shadow-lg transition-transform ${payShowNote ? 'translate-x-4' : 'translate-x-0'}`} />
                         </button>
                       </div>
                     )}
@@ -1839,10 +1833,11 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                 )}
 
                 {/* Payment Date + Payment Method side by side — both compact single-line fields */}
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-1.5">
-                    <Label>Payment Date <span className="text-red-500">*</span></Label>
+                    <Label htmlFor="pay-date">Payment Date <span className="text-destructive">*</span></Label>
                     <Input
+                      id="pay-date"
                       type="date"
                       value={payDate}
                       onChange={e => setPayDate(e.target.value)}
@@ -1850,17 +1845,17 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <Label>Payment Method</Label>
+                    <Label htmlFor="pay-method">Payment Method</Label>
                     <Select value={payMethod} onValueChange={setPayMethod}>
-                      <SelectTrigger className="text-sm">
-                        <SelectValue placeholder="Select method..." />
+                      <SelectTrigger id="pay-method" className="text-sm w-full">
+                        <SelectValue placeholder="Select method…" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="Transfer Bank">Transfer Bank</SelectItem>
-                        <SelectItem value="Transfer Bank (BCA)">Transfer Bank (BCA)</SelectItem>
-                        <SelectItem value="Transfer Bank (Mandiri)">Transfer Bank (Mandiri)</SelectItem>
-                        <SelectItem value="Transfer Bank (BRI)">Transfer Bank (BRI)</SelectItem>
-                        <SelectItem value="Transfer Bank (BNI)">Transfer Bank (BNI)</SelectItem>
+                        <SelectItem value="Transfer Bank">Bank Transfer</SelectItem>
+                        <SelectItem value="Transfer Bank (BCA)">Bank Transfer (BCA)</SelectItem>
+                        <SelectItem value="Transfer Bank (Mandiri)">Bank Transfer (Mandiri)</SelectItem>
+                        <SelectItem value="Transfer Bank (BRI)">Bank Transfer (BRI)</SelectItem>
+                        <SelectItem value="Transfer Bank (BNI)">Bank Transfer (BNI)</SelectItem>
                         <SelectItem value="Wire Transfer">Wire Transfer (International)</SelectItem>
                         <SelectItem value="Cash">Cash</SelectItem>
                         <SelectItem value="Credit Card">Credit Card</SelectItem>
@@ -1872,15 +1867,16 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
 
                 {payMode === 'existing' && (
                   <div className="space-y-1.5">
-                    <Label>Transfer Proof <span className="text-red-500">*</span></Label>
+                    <Label>Transfer Proof <span className="text-destructive">*</span></Label>
                     <ProofFilesInput value={payProof} onChange={setPayProof} />
                   </div>
                 )}
 
                 <div className="space-y-1.5">
-                  <Label>Notes <span className="text-muted-foreground font-normal text-xs">(optional)</span></Label>
+                  <Label htmlFor="pay-notes">Notes <span className="text-muted-foreground font-normal text-xs">(optional)</span></Label>
                   <Textarea
-                    placeholder="e.g. 30% deposit, please issue invoice promptly..."
+                    id="pay-notes"
+                    placeholder="e.g. 30% deposit, please issue invoice promptly…"
                     value={paymentNotes}
                     onChange={e => setPaymentNotes(e.target.value)}
                     rows={2}
@@ -1891,10 +1887,9 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                 <DialogFooter>
                   <Button variant="outline" onClick={() => setPaymentBooking(null)}>Cancel</Button>
                   <Button
-                    disabled={paymentSaving || previewAmt <= 0 || !payDate || (payMode === 'existing' && (!payLinkedId || payProof.length === 0))}
+                    disabled={previewAmt <= 0 || !payDate || (payMode === 'existing' && (!payLinkedId || payProof.length === 0))}
+                    loading={paymentSaving}
                     onClick={submitPayment}
-                    style={{ backgroundColor: ACCENT, color: 'white' }}
-                    className="hover:opacity-90"
                   >
                     {paymentSaving ? 'Submitting…' : payMode === 'existing' ? 'Submit Payment' : 'Request Invoice'}
                   </Button>
@@ -1907,7 +1902,7 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
 
       {/* ════ Submit Pembayaran Dialog ════ */}
       <Dialog open={!!proofPayment} onOpenChange={v => { if (!v) { setProofPayment(null); setProofPreview([]) } }}>
-        <DialogContent className="sm:max-w-md w-[calc(100vw-1rem)]">
+        <DialogContent className="sm:max-w-md w-[calc(100vw-1rem)] max-h-[90vh] overflow-y-auto" aria-describedby={undefined} onInteractOutside={e => e.preventDefault()}>
           {proofPayment && (
             <>
               <DialogHeader>
@@ -1930,9 +1925,9 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                     <div className="flex justify-between items-end">
                       <span className="text-muted-foreground">Amount</span>
                       <div className="text-right">
-                        <div className="font-semibold">{fmtAmt(proofPayment.amount)}</div>
+                        <div className="font-semibold">{formatMoney(proofPayment.amount, { currency: 'USD' })}</div>
                         {pHasIDR && (
-                          <div className="text-amber-600 font-medium">Rp {pIDR.toLocaleString('id-ID')}</div>
+                          <div className="text-warning font-medium">{formatMoney(pIDR)}</div>
                         )}
                       </div>
                     </div>
@@ -1945,17 +1940,16 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
               })()}
 
               <div className="space-y-1.5">
-                <Label>Transfer Proof <span className="text-red-500">*</span></Label>
+                <Label>Transfer Proof <span className="text-destructive">*</span></Label>
                 <ProofFilesInput value={proofPreview} onChange={setProofPreview} />
               </div>
 
               <DialogFooter>
                 <Button variant="outline" onClick={() => { setProofPayment(null); setProofPreview([]) }}>Cancel</Button>
                 <Button
-                  disabled={proofPreview.length === 0 || proofUploading}
+                  disabled={proofPreview.length === 0}
+                  loading={proofUploading}
                   onClick={saveProof}
-                  style={{ backgroundColor: ACCENT, color: 'white' }}
-                  className="hover:opacity-90"
                 >
                   {proofUploading ? 'Submitting…' : 'Submit Payment'}
                 </Button>
@@ -1967,7 +1961,7 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
 
       {/* ════ Edit Booking Dialog ════ */}
       <Dialog open={!!editBooking} onOpenChange={v => { if (!v) setEditBooking(null) }}>
-        <DialogContent className="w-[calc(100vw-1rem)] sm:max-w-3xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="w-[calc(100vw-1rem)] sm:max-w-3xl max-h-[90vh] overflow-y-auto" aria-describedby={undefined} onInteractOutside={e => e.preventDefault()}>
           {editBooking && (
             <>
               <DialogHeader>
@@ -1982,21 +1976,21 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                 const isOT = editBooking.tripType === 'OPEN_TRIP'
 
                 return canEditTrip ? (
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {/* Date range */}
                     <div className="space-y-1.5">
-                      <Label className="text-xs">Start Date</Label>
-                      <Input type="date" value={editStartDate} onChange={e => setEditStartDate(e.target.value)} />
+                      <Label htmlFor="edit-start-date" className="text-xs">Start Date</Label>
+                      <Input id="edit-start-date" type="date" value={editStartDate} onChange={e => setEditStartDate(e.target.value)} />
                     </div>
                     <div className="space-y-1.5">
-                      <Label className="text-xs">End Date</Label>
-                      <Input type="date" value={editEndDate} min={editStartDate} onChange={e => setEditEndDate(e.target.value)} />
+                      <Label htmlFor="edit-end-date" className="text-xs">End Date</Label>
+                      <Input id="edit-end-date" type="date" value={editEndDate} min={editStartDate} onChange={e => setEditEndDate(e.target.value)} />
                     </div>
 
                     {/* Yacht selector (private charter only) */}
                     {!isOT && (
-                      <div className="col-span-2 space-y-1.5">
-                        <Label className="text-xs">Yacht</Label>
+                      <div className="sm:col-span-2 space-y-1.5">
+                        <Label htmlFor="edit-yacht" className="text-xs">Yacht</Label>
                         <Select value={editYachtId} onValueChange={yId => {
                           setEditYachtId(yId)
                           const yacht = editYachts.find(y => y.id === yId)
@@ -2007,10 +2001,10 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                             setEditBasePrice(yacht.dailyRate * nights)
                           }
                         }}>
-                          <SelectTrigger><SelectValue placeholder="Select yacht…" /></SelectTrigger>
+                          <SelectTrigger id="edit-yacht" className="w-full"><SelectValue placeholder="Select yacht…" /></SelectTrigger>
                           <SelectContent>
                             {editYachts.map(y => (
-                              <SelectItem key={y.id} value={y.id}>{y.name} <span className="text-muted-foreground text-xs">(${y.dailyRate.toLocaleString()}/night)</span></SelectItem>
+                              <SelectItem key={y.id} value={y.id}>{y.name} <span className="text-muted-foreground text-xs">({formatMoney(y.dailyRate, { currency: 'USD', decimals: 0 })}/night)</span></SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
@@ -2018,20 +2012,20 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                     )}
 
                     {/* Guests & Cabin (open trip: editable cabin) */}
-                    <div className={`${!isOT ? 'col-span-2' : 'col-span-2'} rounded-lg bg-muted/40 p-3`}>
+                    <div className="sm:col-span-2 rounded-lg bg-muted/40 p-3">
                       <p className="text-xs text-muted-foreground mb-2">Guests{isOT ? ' & Cabin' : ''}</p>
                       <div className="space-y-1.5">
                         {editBooking.guests.map(g => (
                           <div key={g.id} className="flex items-center gap-2">
                             {g.isLead
-                              ? <span className="text-[9px] font-bold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded shrink-0">LEAD</span>
+                              ? <span className="text-[9px] font-bold bg-warning/15 text-warning px-1.5 py-0.5 rounded shrink-0">LEAD</span>
                               : <span className="text-[9px] font-medium bg-muted text-muted-foreground px-1.5 py-0.5 rounded shrink-0">GUEST</span>
                             }
                             <button type="button" onClick={() => setEditGuestId(g.customerId)}
                               className="font-medium text-xs truncate hover:opacity-70">{g.customer?.name ?? '—'}</button>
                             {isOT && (
                               <Select value={editCabinId} onValueChange={setEditCabinId}>
-                                <SelectTrigger className="h-7 text-xs ml-auto w-36">
+                                <SelectTrigger className="h-7 text-xs ml-auto w-36 shrink-0" aria-label={`Cabin for ${g.customer?.name ?? 'guest'}`}>
                                   <SelectValue placeholder="Cabin…" />
                                 </SelectTrigger>
                                 <SelectContent>
@@ -2047,11 +2041,11 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                     </div>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-2 gap-3 text-xs">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                     <div className="rounded-lg bg-muted/40 p-3">
                       <p className="text-muted-foreground mb-0.5">{isOT ? 'Trip' : 'Yacht'}</p>
                       <p className="font-semibold">{isOT ? editBooking.openTrip?.title : editBooking.yacht?.name}</p>
-                      <p className="text-muted-foreground">{fmtDate(editBooking.startDate)} → {fmtDate(editBooking.endDate)}</p>
+                      <p className="text-muted-foreground">{formatDate(editBooking.startDate)} → {formatDate(editBooking.endDate)}</p>
                     </div>
                     <div className="rounded-lg bg-muted/40 p-3">
                       <p className="text-muted-foreground mb-1">Guests & Cabins</p>
@@ -2060,7 +2054,7 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                           <button key={g.id} type="button" onClick={() => setEditGuestId(g.customerId)}
                             className="flex items-center gap-1.5 w-full text-left hover:opacity-70 transition-opacity">
                             {g.isLead
-                              ? <span className="text-[9px] font-bold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded shrink-0">LEAD</span>
+                              ? <span className="text-[9px] font-bold bg-warning/15 text-warning px-1.5 py-0.5 rounded shrink-0">LEAD</span>
                               : <span className="text-[9px] font-medium bg-muted text-muted-foreground px-1.5 py-0.5 rounded shrink-0">GUEST</span>
                             }
                             <span className="font-medium truncate">{g.customer?.name ?? '—'}</span>
@@ -2076,24 +2070,25 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
 
               {/* ── Cancel section ── */}
               {editCancelMode && (
-                <div className="rounded-xl border border-red-200 bg-red-50/40 p-4 space-y-3">
+                <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 space-y-3">
                   <div className="flex items-center justify-between">
-                    <h4 className="text-sm font-semibold text-red-600 flex items-center gap-1.5">
+                    <h4 className="text-sm font-semibold text-destructive flex items-center gap-1.5">
                       <X className="h-4 w-4" /> Cancel Booking
                     </h4>
-                    <button type="button" onClick={() => setEditCancelMode(false)} className="text-muted-foreground hover:text-foreground">
+                    <Button type="button" variant="ghost" size="icon" onClick={() => setEditCancelMode(false)} className="size-7 text-muted-foreground" aria-label="Close cancel form">
                       <X className="h-4 w-4" />
-                    </button>
+                    </Button>
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="text-xs">Cancellation Reason <span className="text-red-500">*</span></Label>
-                    <Textarea rows={2} placeholder="e.g. Guest cancelled, no payment received…"
+                    <Label htmlFor="edit-cancel-reason" className="text-xs">Cancellation Reason <span className="text-destructive">*</span></Label>
+                    <Textarea id="edit-cancel-reason" rows={2} placeholder="e.g. Guest cancelled, no payment received…"
                       value={editCancelReason} onChange={e => setEditCancelReason(e.target.value)} />
                   </div>
                   <div className="flex justify-end gap-2">
                     <Button variant="outline" size="sm" onClick={() => setEditCancelMode(false)}>Back</Button>
                     <Button size="sm" variant="destructive"
-                      disabled={!editCancelReason.trim() || editCancelSaving}
+                      disabled={!editCancelReason.trim()}
+                      loading={editCancelSaving}
                       onClick={confirmEditCancel}>
                       {editCancelSaving ? 'Cancelling…' : 'Confirm Cancel'}
                     </Button>
@@ -2107,7 +2102,7 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                 const svcTotal = editServices.reduce((s, x) => s + (parseFloat(x.price) || 0) * x.quantity, 0)
                 const autoTotal = calcAutoTotal(editBasePrice, svcTotal, parseFloat(editDiscount) || 0, editVatType, parseFloat(editVatValue) || 0)
                 const vatLabel = parseFloat(editVatValue) > 0
-                  ? (editVatType === 'PERCENT' ? `${editVatValue}%` : `$ ${parseFloat(editVatValue).toLocaleString('en-US', { minimumFractionDigits: 2 })}`)
+                  ? (editVatType === 'PERCENT' ? `${editVatValue}%` : formatMoney(parseFloat(editVatValue), { currency: 'USD' }))
                   : '—'
 
                 /* ── Read-only value display helper ── */
@@ -2126,9 +2121,9 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                       <div className="rounded-lg bg-muted/30 border p-4 space-y-3">
                         <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Payment Summary</p>
                         <div className="grid grid-cols-2 gap-3 text-xs">
-                          <RoField label="Total Price" value={`$ ${autoTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}`} />
-                          <RoField label="Amount Paid" value={`$ ${parseFloat(editDeposit).toLocaleString('en-US', { minimumFractionDigits: 2 })}`} />
-                          <RoField label="Discount" value={editDiscount ? `$ ${parseFloat(editDiscount).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '—'} />
+                          <RoField label="Total Price" value={formatMoney(autoTotal, { currency: 'USD' })} />
+                          <RoField label="Amount Paid" value={formatMoney(parseFloat(editDeposit), { currency: 'USD' })} />
+                          <RoField label="Discount" value={editDiscount ? formatMoney(parseFloat(editDiscount), { currency: 'USD' }) : '—'} />
                           <RoField label="VAT" value={vatLabel} />
                           <RoField label="Payment Due" value={editDepDue || '—'} />
                           <RoField label="Final Balance Due" value={editFinalDue || '—'} />
@@ -2140,17 +2135,17 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                             {editServices.map((s, i) => (
                               <div key={i} className="flex justify-between text-xs">
                                 <span>{s.name}{s.quantity > 1 ? ` ×${s.quantity}` : ''}</span>
-                                <span className="font-medium">$ {((parseFloat(s.price) || 0) * s.quantity).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                <span className="font-medium">{formatMoney((parseFloat(s.price) || 0) * s.quantity, { currency: 'USD' })}</span>
                               </div>
                             ))}
                           </div>
                         )}
                       </div>
-                      <DialogFooter className="flex-row items-center justify-between gap-2">
+                      <DialogFooter className="flex-row flex-wrap items-center justify-between gap-2">
                         {!editCancelMode && !rescheduleMode && (
                           <Button variant="outline"
                             onClick={() => { setEditCancelMode(true); setRescheduleMode(false) }}
-                            className="text-red-600 border-red-200 hover:bg-red-50 hover:border-red-300">
+                            className="text-destructive border-destructive/30 hover:bg-destructive/10 hover:border-destructive/50">
                             <X className="h-3.5 w-3.5 mr-1.5" /> Cancel Booking
                           </Button>
                         )}
@@ -2180,56 +2175,56 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                           <div className="space-y-2">
                             {editServices.map((svc, i) => (
                               <div key={i} className="flex gap-2 items-center">
-                                <Input className="flex-1 h-8 text-xs" placeholder="Service name"
+                                <Input className="flex-1 h-8 text-xs" placeholder="Service name" aria-label="Service name"
                                   value={svc.name} onChange={e => setEditServices(prev => prev.map((s, j) => j === i ? { ...s, name: e.target.value } : s))} />
-                                <div className="relative w-24">
+                                <div className="relative w-24 shrink-0">
                                   <span className="absolute left-2 top-1.5 text-xs text-muted-foreground">$</span>
-                                  <Input className="h-8 text-xs pl-5" type="number" min="0" placeholder="0"
+                                  <Input className="h-8 text-xs pl-5" type="number" min="0" placeholder="0" aria-label="Service price"
                                     value={svc.price} onChange={e => setEditServices(prev => prev.map((s, j) => j === i ? { ...s, price: e.target.value } : s))} />
                                 </div>
-                                <Input className="w-14 h-8 text-xs text-center" type="number" min="1" placeholder="Qty"
+                                <Input className="w-14 shrink-0 h-8 text-xs text-center" type="number" min="1" placeholder="Qty" aria-label="Quantity"
                                   value={svc.quantity} onChange={e => setEditServices(prev => prev.map((s, j) => j === i ? { ...s, quantity: parseInt(e.target.value) || 1 } : s))} />
-                                <button type="button" className="text-muted-foreground hover:text-destructive shrink-0"
+                                <Button type="button" variant="ghost" size="icon" className="size-7 shrink-0 text-muted-foreground hover:text-destructive"
+                                  aria-label="Remove service"
                                   onClick={() => setEditServices(prev => prev.filter((_, j) => j !== i))}>
                                   <X className="h-4 w-4" />
-                                </button>
+                                </Button>
                               </div>
                             ))}
                           </div>
                         )}
                       </div>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-1"><p className="text-[10px] text-muted-foreground uppercase tracking-wide">Discount</p><p className="text-sm font-medium">$ {editDiscount ? parseFloat(editDiscount).toLocaleString('en-US', { minimumFractionDigits: 2 }) : '0.00'}</p></div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div className="space-y-1"><p className="text-[10px] text-muted-foreground uppercase tracking-wide">Discount</p><p className="text-sm font-medium">{formatMoney(editDiscount ? parseFloat(editDiscount) : 0, { currency: 'USD' })}</p></div>
                         <div className="space-y-1"><p className="text-[10px] text-muted-foreground uppercase tracking-wide">VAT</p><p className="text-sm font-medium">{vatLabel}</p></div>
                         <div className="space-y-1.5">
                           <Label className="text-xs">Total Price (auto)</Label>
                           <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm font-semibold">
-                            $ {autoTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                            {formatMoney(autoTotal, { currency: 'USD' })}
                             {editServices.length > 0 && (
-                              <span className="text-xs text-muted-foreground font-normal ml-1">(base ${editBasePrice.toLocaleString()} + services)</span>
+                              <span className="text-xs text-muted-foreground font-normal ml-1">(base {formatMoney(editBasePrice, { currency: 'USD' })} + services)</span>
                             )}
                           </div>
                         </div>
-                        <div className="space-y-1"><p className="text-[10px] text-muted-foreground uppercase tracking-wide">Amount Paid</p><p className="text-sm font-medium">$ {parseFloat(editDeposit).toLocaleString('en-US', { minimumFractionDigits: 2 })}</p></div>
+                        <div className="space-y-1"><p className="text-[10px] text-muted-foreground uppercase tracking-wide">Amount Paid</p><p className="text-sm font-medium">{formatMoney(parseFloat(editDeposit), { currency: 'USD' })}</p></div>
                         <div className="space-y-1"><p className="text-[10px] text-muted-foreground uppercase tracking-wide">Payment Due Date</p><p className="text-sm font-medium">{editDepDue || '—'}</p></div>
                         <div className="space-y-1.5">
-                          <Label className="text-xs">Final Balance Due Date</Label>
-                          <Input type="date" value={editFinalDue} min={new Date().toISOString().split('T')[0]} onChange={e => setEditFinalDue(e.target.value)} />
+                          <Label htmlFor="edit-final-due-pp" className="text-xs">Final Balance Due Date</Label>
+                          <Input id="edit-final-due-pp" type="date" value={editFinalDue} min={new Date().toISOString().split('T')[0]} onChange={e => setEditFinalDue(e.target.value)} />
                         </div>
                         <div className="space-y-1"><p className="text-[10px] text-muted-foreground uppercase tracking-wide">Notes</p><p className="text-sm font-medium">{editNotes || '—'}</p></div>
                       </div>
-                      <DialogFooter className="flex-row items-center justify-between gap-2">
+                      <DialogFooter className="flex-row flex-wrap items-center justify-between gap-2">
                         {!editCancelMode && !rescheduleMode && (
                           <Button variant="outline"
                             onClick={() => { setEditCancelMode(true); setRescheduleMode(false) }}
-                            className="text-red-600 border-red-200 hover:bg-red-50 hover:border-red-300">
+                            className="text-destructive border-destructive/30 hover:bg-destructive/10 hover:border-destructive/50">
                             <X className="h-3.5 w-3.5 mr-1.5" /> Cancel Booking
                           </Button>
                         )}
                         <div className="flex gap-2 ml-auto">
                           <Button variant="outline" onClick={() => setEditBooking(null)}>Close</Button>
-                          <Button disabled={editSaving || editCancelMode} onClick={saveEdit}
-                            style={{ backgroundColor: ACCENT, color: 'white' }} className="hover:opacity-90">
+                          <Button disabled={editCancelMode} loading={editSaving} onClick={saveEdit}>
                             {editSaving ? 'Saving…' : 'Save Changes'}
                           </Button>
                         </div>
@@ -2244,23 +2239,24 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                     <Separator />
 
                     {/* ── Invoice Currency ── */}
-                    <div className="rounded-xl border px-4 py-3 space-y-2" style={{ borderColor: `${ACCENT}40`, backgroundColor: `${ACCENT}06` }}>
+                    <div className="rounded-xl border px-4 py-3 space-y-2" style={{ borderColor: 'color-mix(in srgb, var(--primary) 25%, transparent)', backgroundColor: 'color-mix(in srgb, var(--primary) 2%, transparent)' }}>
                       <div className="flex flex-wrap items-center gap-3">
                         <div className="shrink-0 mr-1">
-                          <span className="text-sm font-medium text-muted-foreground">Invoice Currency</span>
+                          <span id="edit-currency-label" className="text-sm font-medium text-muted-foreground">Invoice Currency</span>
                           <p className="text-[10px] text-muted-foreground">All prices stored in USD</p>
                         </div>
-                        <div className="flex flex-wrap gap-2">
+                        <div role="group" aria-labelledby="edit-currency-label" className="flex flex-wrap gap-2">
                           {(Object.keys(CURRENCIES) as CurrencyCode[]).map(c => (
                             <button
                               key={c}
                               type="button"
+                              aria-pressed={editCurrency === c}
                               onClick={() => {
                                 const newRateFromUSD = c === 'USD' ? 1 : parseFloat((1 / CURRENCIES[c].rateToUSD).toFixed(c === 'IDR' ? 0 : 4))
                                 setEditExchangeRate(newRateFromUSD)
                                 setEditCurrency(c)
                               }}
-                              className={`px-3 py-1 rounded-full text-xs font-semibold border transition-colors ${editCurrency === c ? 'text-white' : 'border-border text-muted-foreground hover:bg-muted'}`}
+                              className={`px-3 py-1 rounded-full text-xs font-semibold border transition-colors ${editCurrency === c ? 'text-primary-foreground' : 'border-border text-muted-foreground hover:bg-muted'}`}
                               style={editCurrency === c ? { backgroundColor: ACCENT, borderColor: ACCENT } : {}}
                             >
                               {CURRENCIES[c].symbol} {c}
@@ -2271,7 +2267,7 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                       {editCurrency !== 'USD' && (
                         <div className="flex items-center gap-1.5">
                           <span className="text-xs text-muted-foreground">1 USD =</span>
-                          <input
+                          <Input
                             type="number"
                             min="0.000001"
                             step={editCurrency === 'IDR' ? 100 : 0.0001}
@@ -2280,8 +2276,8 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                               const r = parseFloat(e.target.value)
                               if (r > 0) setEditExchangeRate(r)
                             }}
-                            className="w-28 text-xs border rounded px-2 py-0.5 text-center font-mono bg-background focus:outline-none focus:ring-1"
-                            style={{ borderColor: `${ACCENT}60` }}
+                            aria-label={`Exchange rate (${editCurrency} per USD)`}
+                            className="h-7 w-28 px-2 py-0.5 text-center font-mono text-xs md:text-xs"
                           />
                           <span className="text-xs text-muted-foreground font-medium">{editCurrency}</span>
                         </div>
@@ -2290,14 +2286,15 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
 
                     {/* ── Agent Commission Type — only when this agent has a B2B rate configured ── */}
                     {editBooking.source === 'AGENT' && (editBooking.agent?.commissionB2B ?? 0) > 0 && (
-                      <div className="rounded-xl border px-4 py-3 space-y-2" style={{ borderColor: `${ACCENT}40`, backgroundColor: `${ACCENT}06` }}>
-                        <span className="text-sm font-medium text-muted-foreground">Agent Commission</span>
-                        <div className="grid grid-cols-2 gap-2">
+                      <div className="rounded-xl border px-4 py-3 space-y-2" style={{ borderColor: 'color-mix(in srgb, var(--primary) 25%, transparent)', backgroundColor: 'color-mix(in srgb, var(--primary) 2%, transparent)' }}>
+                        <span id="edit-commission-label" className="text-sm font-medium text-muted-foreground">Agent Commission</span>
+                        <div role="group" aria-labelledby="edit-commission-label" className="grid grid-cols-2 gap-2">
                           <button
                             type="button"
+                            aria-pressed={!editUseB2BCommission}
                             onClick={() => setEditUseB2BCommission(false)}
                             className="flex flex-col items-start px-3 py-2 rounded-md border text-sm transition-colors bg-background"
-                            style={!editUseB2BCommission ? { borderColor: ACCENT, backgroundColor: `${ACCENT}18` } : {}}
+                            style={!editUseB2BCommission ? { borderColor: ACCENT, backgroundColor: 'color-mix(in srgb, var(--primary) 9%, transparent)' } : {}}
                           >
                             <span className="font-medium">{editBooking.tripType === 'OPEN_TRIP' ? 'Open Trip' : 'Private Charter'} Rate</span>
                             <span className="text-xs text-muted-foreground">
@@ -2306,9 +2303,10 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                           </button>
                           <button
                             type="button"
+                            aria-pressed={editUseB2BCommission}
                             onClick={() => setEditUseB2BCommission(true)}
                             className="flex flex-col items-start px-3 py-2 rounded-md border text-sm transition-colors bg-background"
-                            style={editUseB2BCommission ? { borderColor: ACCENT, backgroundColor: `${ACCENT}18` } : {}}
+                            style={editUseB2BCommission ? { borderColor: ACCENT, backgroundColor: 'color-mix(in srgb, var(--primary) 9%, transparent)' } : {}}
                           >
                             <span className="font-medium">B2B Rate</span>
                             <span className="text-xs text-muted-foreground">{editBooking.agent?.commissionB2B}%</span>
@@ -2330,31 +2328,32 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                         <div className="space-y-2">
                           {editServices.map((svc, i) => (
                             <div key={i} className="flex gap-2 items-center">
-                              <Input className="flex-1 h-8 text-xs" placeholder="Service name"
+                              <Input className="flex-1 h-8 text-xs" placeholder="Service name" aria-label="Service name"
                                 value={svc.name} onChange={e => setEditServices(prev => prev.map((s, j) => j === i ? { ...s, name: e.target.value } : s))} />
-                              <div className="relative w-24">
+                              <div className="relative w-24 shrink-0">
                                 <span className="absolute left-2 top-1.5 text-xs text-muted-foreground">$</span>
-                                <Input className="h-8 text-xs pl-5" type="number" min="0" placeholder="0"
+                                <Input className="h-8 text-xs pl-5" type="number" min="0" placeholder="0" aria-label="Service price"
                                   value={svc.price} onChange={e => setEditServices(prev => prev.map((s, j) => j === i ? { ...s, price: e.target.value } : s))} />
                               </div>
-                              <Input className="w-14 h-8 text-xs text-center" type="number" min="1" placeholder="Qty"
+                              <Input className="w-14 shrink-0 h-8 text-xs text-center" type="number" min="1" placeholder="Qty" aria-label="Quantity"
                                 value={svc.quantity} onChange={e => setEditServices(prev => prev.map((s, j) => j === i ? { ...s, quantity: parseInt(e.target.value) || 1 } : s))} />
-                              <button type="button" className="text-muted-foreground hover:text-destructive shrink-0"
+                              <Button type="button" variant="ghost" size="icon" className="size-7 shrink-0 text-muted-foreground hover:text-destructive"
+                                aria-label="Remove service"
                                 onClick={() => setEditServices(prev => prev.filter((_, j) => j !== i))}>
                                 <X className="h-4 w-4" />
-                              </button>
+                              </Button>
                             </div>
                           ))}
                         </div>
                       )}
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div className="space-y-1.5">
-                        <Label>Base Price ($)</Label>
+                        <Label htmlFor="edit-base-price">Base Price ($)</Label>
                         <div className="relative">
                           <span className="absolute left-3 top-2.5 text-sm text-muted-foreground">$</span>
-                          <Input type="number" min="0" value={editBasePrice}
+                          <Input id="edit-base-price" type="number" min="0" value={editBasePrice}
                             onChange={e => setEditBasePrice(parseFloat(e.target.value) || 0)} className="pl-7" />
                         </div>
                         {editBooking.tripType === 'PRIVATE_CHARTER' && (
@@ -2362,103 +2361,102 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                         )}
                       </div>
                       <div className="space-y-1.5">
-                        <Label>Discount ($)</Label>
+                        <Label htmlFor="edit-discount">Discount ($)</Label>
                         <div className="relative">
                           <span className="absolute left-3 top-2.5 text-sm text-muted-foreground">$</span>
-                          <Input type="number" min="0" value={editDiscount} onChange={e => setEditDiscount(e.target.value)} className="pl-7" />
+                          <Input id="edit-discount" type="number" min="0" value={editDiscount} onChange={e => setEditDiscount(e.target.value)} className="pl-7" />
                         </div>
                       </div>
                       <div className="space-y-1.5">
-                        <Label>VAT</Label>
+                        <Label htmlFor="edit-vat-value">VAT</Label>
                         <div className="flex gap-2">
-                          <div className="flex rounded-md border overflow-hidden shrink-0">
-                            <button type="button" onClick={() => setEditVatType('FIXED')}
-                              className={`px-2.5 text-sm font-medium transition-colors ${editVatType === 'FIXED' ? 'text-white' : 'text-muted-foreground hover:bg-muted'}`}
+                          <div role="group" aria-label="VAT type" className="flex rounded-md border overflow-hidden shrink-0">
+                            <button type="button" onClick={() => setEditVatType('FIXED')} aria-pressed={editVatType === 'FIXED'} aria-label="Fixed amount ($)"
+                              className={`px-2.5 text-sm font-medium transition-colors ${editVatType === 'FIXED' ? 'text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}
                               style={editVatType === 'FIXED' ? { backgroundColor: ACCENT } : {}}>
                               $
                             </button>
-                            <button type="button" onClick={() => setEditVatType('PERCENT')}
-                              className={`px-2.5 text-sm font-medium border-l transition-colors ${editVatType === 'PERCENT' ? 'text-white' : 'text-muted-foreground hover:bg-muted'}`}
+                            <button type="button" onClick={() => setEditVatType('PERCENT')} aria-pressed={editVatType === 'PERCENT'} aria-label="Percentage (%)"
+                              className={`px-2.5 text-sm font-medium border-l transition-colors ${editVatType === 'PERCENT' ? 'text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}
                               style={editVatType === 'PERCENT' ? { backgroundColor: ACCENT } : {}}>
                               %
                             </button>
                           </div>
                           <div className="relative flex-1">
                             <span className="absolute left-3 top-2.5 text-sm text-muted-foreground">{editVatType === 'PERCENT' ? '%' : '$'}</span>
-                            <Input type="number" min="0" value={editVatValue} onChange={e => setEditVatValue(e.target.value)} className="pl-7" />
+                            <Input id="edit-vat-value" type="number" min="0" value={editVatValue} onChange={e => setEditVatValue(e.target.value)} className="pl-7" />
                           </div>
                         </div>
                       </div>
                       <div className="space-y-1.5">
                         <div className="flex items-center justify-between">
-                          <Label className="text-xs">Total Price {editTotalOverrideOn ? '(manual override)' : '(auto)'}</Label>
+                          <Label htmlFor={editTotalOverrideOn ? 'edit-total-override' : undefined} className="text-xs">Total Price {editTotalOverrideOn ? '(manual override)' : '(auto)'}</Label>
                           {isAdmin && (
-                            <button type="button"
+                            <Button type="button" variant="link"
                               onClick={() => {
                                 if (editTotalOverrideOn) { setEditTotalOverrideOn(false); setEditTotalOverride('') }
                                 else { setEditTotalOverrideOn(true); setEditTotalOverride(autoTotal.toFixed(2)) }
                               }}
-                              className="text-[11px] hover:underline" style={{ color: ACCENT }}>
+                              className="h-auto p-0 text-[11px] font-normal">
                               {editTotalOverrideOn ? 'Use auto-calculated' : 'Override manually'}
-                            </button>
+                            </Button>
                           )}
                         </div>
                         {editTotalOverrideOn ? (
                           <div className="relative">
                             <span className="absolute left-3 top-2.5 text-sm text-muted-foreground">$</span>
-                            <Input type="number" min="0" className="pl-7 text-sm font-semibold"
+                            <Input id="edit-total-override" type="number" min="0" className="pl-7 text-sm font-semibold"
                               value={editTotalOverride} onChange={e => setEditTotalOverride(e.target.value)} />
                           </div>
                         ) : (
                           <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm font-semibold">
-                            $ {autoTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                            {formatMoney(autoTotal, { currency: 'USD' })}
                           </div>
                         )}
                         {editServices.length > 0 && !editTotalOverrideOn && (
                           <p className="text-xs text-muted-foreground">
-                            (base ${editBasePrice.toLocaleString()} + services{parseFloat(editDiscount) > 0 ? ' - discount' : ''}{parseFloat(editVatValue) > 0 ? ' + VAT' : ''})
+                            (base {formatMoney(editBasePrice, { currency: 'USD' })} + services{parseFloat(editDiscount) > 0 ? ' - discount' : ''}{parseFloat(editVatValue) > 0 ? ' + VAT' : ''})
                           </p>
                         )}
                         {editCurrency !== 'USD' && (
                           <p className="text-xs text-muted-foreground">
-                            ≈ {CURRENCIES[editCurrency].symbol}{((editTotalOverrideOn ? parseFloat(editTotalOverride) || 0 : autoTotal) * editExchangeRate).toLocaleString('en-US', { maximumFractionDigits: CURRENCIES[editCurrency].decimals })} {editCurrency}
+                            ≈ {formatMoney((editTotalOverrideOn ? parseFloat(editTotalOverride) || 0 : autoTotal) * editExchangeRate, { currency: editCurrency })} {editCurrency}
                           </p>
                         )}
                       </div>
                       <div className="space-y-1.5">
-                        <Label>Amount Paid (USD)</Label>
-                        <Input type="number" min="0" value={editDeposit} onChange={e => setEditDeposit(e.target.value)} />
+                        <Label htmlFor="edit-deposit">Amount Paid (USD)</Label>
+                        <Input id="edit-deposit" type="number" min="0" value={editDeposit} onChange={e => setEditDeposit(e.target.value)} />
                         {editCurrency !== 'USD' && (
                           <p className="text-xs text-muted-foreground">
-                            ≈ {CURRENCIES[editCurrency].symbol}{((parseFloat(editDeposit) || 0) * editExchangeRate).toLocaleString('en-US', { maximumFractionDigits: CURRENCIES[editCurrency].decimals })} {editCurrency}
+                            ≈ {formatMoney((parseFloat(editDeposit) || 0) * editExchangeRate, { currency: editCurrency })} {editCurrency}
                           </p>
                         )}
                       </div>
                       <div className="space-y-1.5">
-                        <Label>Payment Due Date</Label>
-                        <Input type="date" value={editDepDue} min={new Date().toISOString().split('T')[0]} onChange={e => setEditDepDue(e.target.value)} />
+                        <Label htmlFor="edit-dep-due">Payment Due Date</Label>
+                        <Input id="edit-dep-due" type="date" value={editDepDue} min={new Date().toISOString().split('T')[0]} onChange={e => setEditDepDue(e.target.value)} />
                       </div>
                       <div className="space-y-1.5">
-                        <Label>Final Balance Due Date</Label>
-                        <Input type="date" value={editFinalDue} min={editDepDue || new Date().toISOString().split('T')[0]} onChange={e => setEditFinalDue(e.target.value)} />
+                        <Label htmlFor="edit-final-due">Final Balance Due Date</Label>
+                        <Input id="edit-final-due" type="date" value={editFinalDue} min={editDepDue || new Date().toISOString().split('T')[0]} onChange={e => setEditFinalDue(e.target.value)} />
                       </div>
-                      <div className="col-span-2 space-y-1.5">
-                        <Label>Notes</Label>
-                        <Input placeholder="Internal notes…" value={editNotes} onChange={e => setEditNotes(e.target.value)} />
+                      <div className="sm:col-span-2 space-y-1.5">
+                        <Label htmlFor="edit-notes">Notes</Label>
+                        <Input id="edit-notes" placeholder="Internal notes…" value={editNotes} onChange={e => setEditNotes(e.target.value)} />
                       </div>
                     </div>
-                    <DialogFooter className="flex-row items-center justify-between gap-2">
+                    <DialogFooter className="flex-row flex-wrap items-center justify-between gap-2">
                       {!editCancelMode && !rescheduleMode && (
                         <Button variant="outline"
                           onClick={() => { setEditCancelMode(true); setRescheduleMode(false) }}
-                          className="text-red-600 border-red-200 hover:bg-red-50 hover:border-red-300">
+                          className="text-destructive border-destructive/30 hover:bg-destructive/10 hover:border-destructive/50">
                           <X className="h-3.5 w-3.5 mr-1.5" /> Cancel Booking
                         </Button>
                       )}
                       <div className="flex gap-2 ml-auto">
                         <Button variant="outline" onClick={() => setEditBooking(null)}>Close</Button>
-                        <Button disabled={editSaving || rescheduleMode || editCancelMode} onClick={saveEdit}
-                          style={{ backgroundColor: ACCENT, color: 'white' }} className="hover:opacity-90">
+                        <Button disabled={rescheduleMode || editCancelMode} loading={editSaving} onClick={saveEdit}>
                           {editSaving ? 'Saving…' : 'Save Changes'}
                         </Button>
                       </div>
@@ -2473,12 +2471,12 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
 
       {/* ════ Guest Travel Details Dialog ════ */}
       <Dialog open={!!travelBooking} onOpenChange={v => !v && setTravelBooking(null)}>
-        <DialogContent className="w-[calc(100vw-1rem)] sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="w-[calc(100vw-1rem)] sm:max-w-2xl max-h-[90vh] overflow-y-auto" aria-describedby={undefined} onInteractOutside={e => e.preventDefault()}>
           {travelBooking && (
             <>
               <DialogHeader>
                 <DialogTitle className="flex items-center gap-2">
-                  <PlaneTakeoff className="h-4 w-4 text-sky-500" />
+                  <PlaneTakeoff className="h-4 w-4 text-info" />
                   Guest Travel Details
                   <span className="font-mono text-sm font-normal text-muted-foreground">— {travelBooking.bookingCode}</span>
                 </DialogTitle>
@@ -2518,13 +2516,13 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                 const canDownloadGuest = (gid: string) => travelOk && !guestMissing[gid]
 
                 const reqStyle = (filled: boolean) =>
-                  `h-8 text-xs bg-white${filled ? '' : ' border-red-300 focus-visible:ring-red-400'}`
+                  `h-8 text-xs bg-card${filled ? '' : ' border-destructive/30 focus-visible:ring-destructive'}`
 
                 return (
                   <div className="space-y-4">
-                    <div className="rounded-xl border bg-sky-50/40 p-4">
-                      <div className="flex items-center justify-between mb-3">
-                        <p className="text-xs font-semibold text-sky-600 flex items-center gap-1.5">
+                    <div className="rounded-xl border bg-info/5 p-4">
+                      <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                        <p className="text-xs font-semibold text-info flex flex-wrap items-center gap-1.5">
                           <PlaneTakeoff className="h-3.5 w-3.5" />
                           Group Travel Details
                           <span className="text-muted-foreground font-normal">— applies to all guests</span>
@@ -2533,7 +2531,7 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                           <Button
                             variant="outline" size="sm"
                             disabled={!canDownloadAll}
-                            className="h-7 px-3 text-xs gap-1.5 border-sky-300 text-sky-700 hover:bg-sky-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="h-7 px-3 text-xs gap-1.5 border-info/30 text-info hover:bg-info/10 disabled:opacity-50 disabled:cursor-not-allowed"
                             onClick={() => window.open(`/print/crew-sheet/booking/${travelBooking.id}`, '_blank')}
                           >
                             <FileText className="h-3.5 w-3.5" />
@@ -2541,41 +2539,41 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                           </Button>
                         </div>
                       </div>
-                      <div className="grid grid-cols-2 gap-x-6 gap-y-2.5">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2.5">
                         <div className="space-y-2">
-                          <p className="text-[10px] font-bold uppercase tracking-widest text-sky-600">Arrival</p>
+                          <p className="text-[10px] font-bold uppercase tracking-widest text-info">Arrival</p>
                           <div className="space-y-1.5">
-                            <Label className="text-[11px] text-muted-foreground">Pick-up Date & Time <span className="text-red-500">*</span></Label>
-                            <Input type="datetime-local" value={t.arrivalPickupTime} onChange={setT('arrivalPickupTime')} className={reqStyle(!!t.arrivalPickupTime)} />
+                            <Label htmlFor="travel-arr-time" className="text-[11px] text-muted-foreground">Pick-up Date & Time <span className="text-destructive">*</span></Label>
+                            <Input id="travel-arr-time" type="datetime-local" value={t.arrivalPickupTime} onChange={setT('arrivalPickupTime')} className={reqStyle(!!t.arrivalPickupTime)} />
                           </div>
                           <div className="space-y-1.5">
-                            <Label className="text-[11px] text-muted-foreground">Hotel / Airport <span className="text-red-500">*</span></Label>
-                            <Input value={t.arrivalHotel} onChange={setT('arrivalHotel')} placeholder="Hotel or airport name" className={reqStyle(!!t.arrivalHotel)} />
+                            <Label htmlFor="travel-arr-hotel" className="text-[11px] text-muted-foreground">Hotel / Airport <span className="text-destructive">*</span></Label>
+                            <Input id="travel-arr-hotel" value={t.arrivalHotel} onChange={setT('arrivalHotel')} placeholder="Hotel or airport name" className={reqStyle(!!t.arrivalHotel)} />
                           </div>
                           <div className="space-y-1.5">
-                            <Label className="text-[11px] text-muted-foreground">Flight Number</Label>
-                            <Input value={t.arrivalFlight} onChange={setT('arrivalFlight')} placeholder="GA123" className="h-8 text-xs bg-white" />
+                            <Label htmlFor="travel-arr-flight" className="text-[11px] text-muted-foreground">Flight Number</Label>
+                            <Input id="travel-arr-flight" value={t.arrivalFlight} onChange={setT('arrivalFlight')} placeholder="GA123" className="h-8 text-xs bg-card" />
                           </div>
                         </div>
                         <div className="space-y-2">
-                          <p className="text-[10px] font-bold uppercase tracking-widest text-sky-600">Departure</p>
+                          <p className="text-[10px] font-bold uppercase tracking-widest text-info">Departure</p>
                           <div className="space-y-1.5">
-                            <Label className="text-[11px] text-muted-foreground">Pick-up Date & Time <span className="text-red-500">*</span></Label>
-                            <Input type="datetime-local" value={t.departurePickupTime} onChange={setT('departurePickupTime')} className={reqStyle(!!t.departurePickupTime)} />
+                            <Label htmlFor="travel-dep-time" className="text-[11px] text-muted-foreground">Pick-up Date & Time <span className="text-destructive">*</span></Label>
+                            <Input id="travel-dep-time" type="datetime-local" value={t.departurePickupTime} onChange={setT('departurePickupTime')} className={reqStyle(!!t.departurePickupTime)} />
                           </div>
                           <div className="space-y-1.5">
-                            <Label className="text-[11px] text-muted-foreground">Hotel / Airport <span className="text-red-500">*</span></Label>
-                            <Input value={t.departureHotel} onChange={setT('departureHotel')} placeholder="Hotel or airport name" className={reqStyle(!!t.departureHotel)} />
+                            <Label htmlFor="travel-dep-hotel" className="text-[11px] text-muted-foreground">Hotel / Airport <span className="text-destructive">*</span></Label>
+                            <Input id="travel-dep-hotel" value={t.departureHotel} onChange={setT('departureHotel')} placeholder="Hotel or airport name" className={reqStyle(!!t.departureHotel)} />
                           </div>
                           <div className="space-y-1.5">
-                            <Label className="text-[11px] text-muted-foreground">Flight Number</Label>
-                            <Input value={t.departureFlight} onChange={setT('departureFlight')} placeholder="GA456" className="h-8 text-xs bg-white" />
+                            <Label htmlFor="travel-dep-flight" className="text-[11px] text-muted-foreground">Flight Number</Label>
+                            <Input id="travel-dep-flight" value={t.departureFlight} onChange={setT('departureFlight')} placeholder="GA456" className="h-8 text-xs bg-card" />
                           </div>
                         </div>
                       </div>
                       {/* Travel field warnings */}
                       {travelMissing.length > 0 && (
-                        <p className="mt-2 text-[11px] text-red-500 flex items-start gap-1">
+                        <p className="mt-2 text-[11px] text-destructive flex items-start gap-1">
                           <span className="shrink-0 mt-px">⚠</span>
                           Required: {travelMissing.join(', ')}
                         </p>
@@ -2593,15 +2591,15 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                           const missing = guestMissing[g.id] ?? []
                           return (
                             <div key={g.id} className="border-b last:border-0">
-                              <div className="flex items-center justify-between py-2">
-                                <div className="flex items-center gap-2">
-                                  <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${gOk ? 'bg-muted' : 'bg-red-50'}`}>
-                                    <User className={`w-3.5 h-3.5 ${gOk ? 'text-muted-foreground' : 'text-red-400'}`} />
+                              <div className="flex flex-wrap items-center justify-between gap-x-2 py-2">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${gOk ? 'bg-muted' : 'bg-destructive/10'}`}>
+                                    <User className={`w-3.5 h-3.5 ${gOk ? 'text-muted-foreground' : 'text-destructive/80'}`} />
                                   </div>
                                   <div>
                                     <p className="text-sm font-medium leading-tight">{g.customer?.name ?? '—'}</p>
                                     <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
-                                      {g.isLead && <span className="text-amber-600 font-semibold">Group Leader</span>}
+                                      {g.isLead && <span className="text-warning font-semibold">Group Leader</span>}
                                       {g.cabin && <span className="flex items-center gap-0.5"><BedDouble className="w-3 h-3" /> {g.cabin.name}</span>}
                                     </div>
                                   </div>
@@ -2616,19 +2614,20 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                                       <Pencil className="h-3 w-3" /> Edits
                                     </Button>
                                   )}
-                                  <Button
-                                    variant="ghost" size="sm"
-                                    disabled={!g.customerId || !gOk || !allLoaded}
-                                    className="h-7 px-2 text-xs disabled:opacity-40 disabled:cursor-not-allowed"
-                                    onClick={() => window.open(`/print/guest-sheet/${g.id}`, '_blank')}
-                                    title={!g.customerId ? 'Guest details not filled in yet' : !gOk ? 'Complete guest data first' : undefined}
-                                  >
-                                    <FileText className="h-3 w-3 mr-1" /> Guest Sheet
-                                  </Button>
+                                  <span title={!g.customerId ? 'Guest details not filled in yet' : !gOk ? 'Complete guest data first' : undefined}>
+                                    <Button
+                                      variant="ghost" size="sm"
+                                      disabled={!g.customerId || !gOk || !allLoaded}
+                                      className="h-7 px-2 text-xs disabled:opacity-40"
+                                      onClick={() => window.open(`/print/guest-sheet/${g.id}`, '_blank')}
+                                    >
+                                      <FileText className="h-3 w-3" /> Guest Sheet
+                                    </Button>
+                                  </span>
                                 </div>
                               </div>
                               {missing.length > 0 && (
-                                <p className="pb-1.5 ml-9 text-[10px] text-red-500">Missing: {missing.join(', ')}</p>
+                                <p className="pb-1.5 ml-9 text-[10px] text-destructive">Missing: {missing.join(', ')}</p>
                               )}
                               {!allLoaded && g.customerId && !travelCustomers[g.customerId] && (
                                 <p className="pb-1.5 ml-9 text-[10px] text-muted-foreground animate-pulse">Loading…</p>
@@ -2644,7 +2643,7 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
 
               <DialogFooter>
                 <Button variant="outline" onClick={() => setTravelBooking(null)}>Cancel</Button>
-                <Button disabled={travelSaving} onClick={saveTravel} className="bg-sky-600 hover:bg-sky-700 text-white">
+                <Button loading={travelSaving} onClick={saveTravel} className="bg-info hover:bg-info/90 text-info-foreground">
                   {travelSaving ? 'Saving…' : 'Save Travel Details'}
                 </Button>
               </DialogFooter>
@@ -2655,7 +2654,7 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
 
       {/* ════ Booking Detail Modal ════ */}
       <Dialog open={!!detailBooking} onOpenChange={v => !v && setDetailBooking(null)}>
-        <DialogContent showCloseButton={false} className="p-0 gap-0 max-w-lg w-full overflow-hidden flex flex-col max-h-[90vh]">
+        <DialogContent showCloseButton={false} aria-describedby={undefined} className="p-0 gap-0 overflow-hidden flex flex-col max-h-[90vh]">
           <DialogTitle className="sr-only">Booking Detail</DialogTitle>
           {detailBooking && (() => {
             const db_ = detailBooking
@@ -2677,8 +2676,8 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
             const hasDetailIDR = bdrRate > 0
             const showIDR    = hasDetailIDR && detailShowIDR
             const fmtAmt = (v: number) => showIDR
-              ? `Rp ${Math.round(v * bdrRate).toLocaleString('id-ID')}`
-              : `$${v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+              ? formatMoney(v * bdrRate)
+              : formatMoney(v, { currency: 'USD' })
             const detailPmts      = payments.filter(p => p.bookingId === db_.id)
             const detailActivePmt = detailPmts.find(p => ['requested', 'invoice_ready', 'pending_confirmation', 'rejected'].includes(p.status))
             const detailConfirmed = detailPmts.filter(p => p.status === 'confirmed')
@@ -2691,12 +2690,12 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
             return (
               <>
                 {/* Header */}
-                <div style={{ backgroundColor: 'var(--brand-primary)' }} className="px-5 pt-5 pb-4 text-white shrink-0 rounded-t-lg">
+                <div className="bg-brand px-5 pt-5 pb-4 text-brand-foreground shrink-0 rounded-t-lg">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="text-[10px] font-mono tracking-widest text-white/50 mb-0.5">{db_.bookingCode}</p>
+                      <p className="text-[10px] font-mono tracking-widest text-brand-foreground/50 mb-0.5">{db_.bookingCode}</p>
                       <p className="text-lg font-bold leading-tight truncate">{db_.customer.name}</p>
-                      <p className="text-sm text-white/70 mt-0.5 truncate">
+                      <p className="text-sm text-brand-foreground/70 mt-0.5 truncate">
                         {db_.tripType === 'OPEN_TRIP' ? db_.openTrip?.title : db_.yacht?.name}
                       </p>
                     </div>
@@ -2704,16 +2703,18 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                       {(() => {
                         const effStatus = getEffectiveBookingStatus(db_.status, db_.startDate, db_.endDate)
                         return (
-                          <span className={`text-[11px] font-semibold rounded-full px-3 py-1 ${STATUS_STYLES[effStatus] ?? 'bg-muted text-muted-foreground'}`}>
-                            {STATUS_LABELS[effStatus] ?? effStatus}
+                          <span className="rounded-full bg-card">
+                            <BookingStatusBadge status={effStatus} className="flex text-[11px] font-semibold px-3 py-1" />
                           </span>
                         )
                       })()}
                       <button
+                        type="button"
                         onClick={() => setDetailBooking(null)}
-                        className="w-7 h-7 flex items-center justify-center rounded-full bg-white/20 hover:bg-white/30 transition-colors"
+                        aria-label="Close"
+                        className="w-7 h-7 flex items-center justify-center rounded-full bg-brand-foreground/20 hover:bg-brand-foreground/30 transition-colors"
                       >
-                        <X className="w-4 h-4 text-white" />
+                        <X className="w-4 h-4 text-brand-foreground" />
                       </button>
                     </div>
                   </div>
@@ -2721,14 +2722,14 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
 
                 {/* Cancelled / pending_refund banner */}
                 {(db_.status === 'cancelled' || db_.status === 'pending_refund') && (
-                  <div className="px-5 py-3 bg-slate-50 border-b space-y-2">
+                  <div className="px-5 py-3 bg-muted/50 border-b space-y-2">
                     <div className="flex items-start gap-2.5">
-                      <X className="w-4 h-4 text-slate-400 mt-0.5 shrink-0" />
+                      <X className="w-4 h-4 text-muted-foreground/70 mt-0.5 shrink-0" />
                       <div className="min-w-0">
-                        <p className="text-xs font-semibold text-slate-600 mb-0.5">
+                        <p className="text-xs font-semibold text-muted-foreground mb-0.5">
                           {db_.status === 'pending_refund' ? 'Booking Pending Refund' : 'Booking Cancelled'}
                         </p>
-                        <p className="text-xs text-slate-500">
+                        <p className="text-xs text-muted-foreground">
                           {db_.cancelReason ?? 'No cancellation reason provided.'}
                         </p>
                       </div>
@@ -2737,40 +2738,35 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                     {/* Refund decision detail */}
                     {db_.refundDecision && (() => {
                       const isRefund = db_.refundDecision === 'refund'
-                      const statusLabel: Record<string, string> = {
-                        no_refund:        'No Refund',
-                        refund_pending:   'Awaiting Proof',
-                        refund_uploaded:  'Proof Uploaded — Awaiting Confirmation',
-                        refund_confirmed: 'Refund Confirmed',
-                      }
-                      const statusColor: Record<string, string> = {
-                        no_refund:        'bg-red-50 text-red-700 border-red-200',
-                        refund_pending:   'bg-blue-50 text-blue-700 border-blue-200',
-                        refund_uploaded:  'bg-violet-50 text-violet-700 border-violet-200',
-                        refund_confirmed: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+                      const refundStatus: Record<string, { label: string; tone: StatusTone }> = {
+                        no_refund:        { label: 'No Refund',                              tone: 'destructive' },
+                        refund_pending:   { label: 'Awaiting Proof',                         tone: 'info' },
+                        refund_uploaded:  { label: 'Proof Uploaded — Awaiting Confirmation', tone: 'warning' },
+                        refund_confirmed: { label: 'Refund Confirmed',                       tone: 'success' },
                       }
                       return (
-                        <div className="ml-6.5 pl-2 border-l-2 border-slate-200 space-y-1.5">
+                        <div className="ml-6.5 pl-2 border-l-2 border-border space-y-1.5">
                           <div className="flex items-center gap-2">
-                            <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${isRefund ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
+                            <StatusBadge tone={isRefund ? 'success' : 'destructive'} size="sm" className="font-semibold">
                               {isRefund ? 'Refund' : 'No Refund'}
-                            </span>
+                            </StatusBadge>
                             {db_.refundStatus && (
-                              <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full border ${statusColor[db_.refundStatus] ?? 'bg-gray-50 text-gray-500 border-gray-200'}`}>
-                                {statusLabel[db_.refundStatus] ?? db_.refundStatus}
-                              </span>
+                              <StatusBadge tone={refundStatus[db_.refundStatus]?.tone ?? 'neutral'} size="sm">
+                                {refundStatus[db_.refundStatus]?.label ?? db_.refundStatus}
+                              </StatusBadge>
                             )}
                           </div>
                           {db_.refundReason && (
-                            <p className="text-xs text-slate-500">Reason: {db_.refundReason}</p>
+                            <p className="text-xs text-muted-foreground">Reason: {db_.refundReason}</p>
                           )}
                           {db_.refundConfirmedBy && (
-                            <p className="text-xs text-slate-400">Confirmed by {db_.refundConfirmedBy}{db_.refundConfirmedAt ? ` · ${new Date(db_.refundConfirmedAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}` : ''}</p>
+                            <p className="text-xs text-muted-foreground/70">Confirmed by {db_.refundConfirmedBy}{db_.refundConfirmedAt ? ` · ${formatDate(db_.refundConfirmedAt)}` : ''}</p>
                           )}
                           {db_.refundProof && (
                             <button
+                              type="button"
                               onClick={() => window.open(db_.refundProof!, '_blank')}
-                              className="inline-flex items-center gap-1.5 text-xs font-medium text-[#1a5f6e] hover:underline"
+                              className="inline-flex items-center gap-1.5 text-xs font-medium text-brand hover:underline"
                             >
                               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
                               View Refund Proof
@@ -2791,8 +2787,8 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                     {/* Trip dates */}
                     <div className="grid grid-cols-2 gap-2 text-xs">
                       {[
-                        { label: 'Check-in',  val: fmtDate(db_.startDate) },
-                        { label: 'Check-out', val: fmtDate(db_.endDate) },
+                        { label: 'Check-in',  val: formatDate(db_.startDate) },
+                        { label: 'Check-out', val: formatDate(db_.endDate) },
                       ].map(r => (
                         <div key={r.label} className="rounded-lg border p-2.5">
                           <p className="text-muted-foreground mb-0.5">{r.label}</p>
@@ -2812,12 +2808,12 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                       <div className="px-3 py-2 flex items-center justify-between bg-muted/40 border-b">
                         <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Price Breakdown</p>
                         {hasDetailIDR && (
-                          <div className="flex rounded-md border overflow-hidden text-[10px]">
+                          <div role="group" aria-label="Display currency" className="flex rounded-md border overflow-hidden text-[10px]">
                             {(['USD', 'IDR'] as const).map(c => (
-                              <button key={c} type="button"
+                              <button key={c} type="button" aria-pressed={(c === 'IDR') === detailShowIDR}
                                 onClick={() => setDetailShowIDR(c === 'IDR')}
-                                className={`px-2 py-0.5 font-semibold transition-colors ${(c === 'IDR') === detailShowIDR ? 'text-white' : 'text-muted-foreground hover:bg-muted'}`}
-                                style={(c === 'IDR') === detailShowIDR ? { backgroundColor: '#bdac7e' } : {}}
+                                className={`px-2 py-0.5 font-semibold transition-colors ${(c === 'IDR') === detailShowIDR ? 'text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}
+                                style={(c === 'IDR') === detailShowIDR ? { backgroundColor: 'var(--primary)' } : {}}
                               >{c}</button>
                             ))}
                           </div>
@@ -2837,7 +2833,7 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                           </div>
                         ))}
                         {db_.discount > 0 && (
-                          <div className="flex justify-between text-emerald-600">
+                          <div className="flex justify-between text-success">
                             <span>Discount</span>
                             <span>−{fmtAmt(db_.discount)}</span>
                           </div>
@@ -2863,7 +2859,7 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                       </div>
                       <div className="flex justify-between px-3 py-2 border-t bg-muted/20 font-bold text-sm">
                         <span>Total</span>
-                        <span style={{ color: '#bdac7e' }}>{fmtAmt(net)}</span>
+                        <span style={{ color: 'var(--primary)' }}>{fmtAmt(net)}</span>
                       </div>
                     </div>
 
@@ -2871,11 +2867,11 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                     <div className="grid grid-cols-2 gap-2 text-xs">
                       <div className="rounded-lg border p-2.5">
                         <p className="text-muted-foreground mb-0.5">Paid</p>
-                        <p className="font-semibold text-sm text-emerald-600">{fmtAmt(db_.depositPaid)}</p>
+                        <p className="font-semibold text-sm text-success">{fmtAmt(db_.depositPaid)}</p>
                       </div>
-                      <div className={`rounded-lg border p-2.5 ${remaining > 0 ? 'border-amber-200 bg-amber-50' : ''}`}>
+                      <div className={`rounded-lg border p-2.5 ${remaining > 0 ? 'border-warning/30 bg-warning/10' : ''}`}>
                         <p className="text-muted-foreground mb-0.5">Remaining</p>
-                        <p className={`font-semibold text-sm ${remaining > 0 ? 'text-amber-700' : 'text-emerald-600'}`}>
+                        <p className={`font-semibold text-sm ${remaining > 0 ? 'text-warning' : 'text-success'}`}>
                           {fmtAmt(remaining)}
                         </p>
                       </div>
@@ -2888,16 +2884,18 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                               <p className="text-muted-foreground">Deposit Due</p>
                               {canManageBookings && (
                                 <button
+                                  type="button"
                                   onClick={() => openExtendDate(db_, 'deposit')}
+                                  aria-label="Extend deposit due date"
                                   className="text-[10px] text-muted-foreground hover:text-foreground underline underline-offset-2"
                                 >
                                   Extend
                                 </button>
                               )}
                             </div>
-                            <p className="font-semibold">{fmtDate(db_.depositDueDate)}</p>
+                            <p className="font-semibold">{formatDate(db_.depositDueDate)}</p>
                             {db_.depositDueDateInvoiceOverride && (
-                              <p className="text-[10px] text-amber-600 mt-0.5">Invoice shows {fmtDate(db_.depositDueDateInvoiceOverride)}</p>
+                              <p className="text-[10px] text-warning mt-0.5">Invoice shows {formatDate(db_.depositDueDateInvoiceOverride)}</p>
                             )}
                           </div>
                         )}
@@ -2907,16 +2905,18 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                               <p className="text-muted-foreground">Final Due</p>
                               {canManageBookings && (
                                 <button
+                                  type="button"
                                   onClick={() => openExtendDate(db_, 'final')}
+                                  aria-label="Extend final due date"
                                   className="text-[10px] text-muted-foreground hover:text-foreground underline underline-offset-2"
                                 >
                                   Extend
                                 </button>
                               )}
                             </div>
-                            <p className="font-semibold">{fmtDate(db_.finalDueDate)}</p>
+                            <p className="font-semibold">{formatDate(db_.finalDueDate)}</p>
                             {db_.finalDueDateInvoiceOverride && (
-                              <p className="text-[10px] text-amber-600 mt-0.5">Invoice shows {fmtDate(db_.finalDueDateInvoiceOverride)}</p>
+                              <p className="text-[10px] text-warning mt-0.5">Invoice shows {formatDate(db_.finalDueDateInvoiceOverride)}</p>
                             )}
                           </div>
                         )}
@@ -2924,7 +2924,7 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                     )}
 
                     {detailActivePmt?.status === 'rejected' && (
-                      <div className="rounded-lg border border-red-200 bg-red-50 p-2.5 text-xs text-red-700 flex items-center gap-2">
+                      <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-2.5 text-xs text-destructive flex items-center gap-2">
                         <AlertCircle className="h-3.5 w-3.5 shrink-0" />
                         Payment proof was rejected by Finance — upload a new one to resubmit.
                       </div>
@@ -2979,13 +2979,14 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                     {db_.yacht?.canDiving && (
                       <div className="flex items-center justify-between rounded-lg border px-3 py-2.5">
                         <div className="flex items-center gap-2">
-                          <Waves className="w-4 h-4 text-sky-500" />
+                          <Waves className="w-4 h-4 text-info" />
                           <div>
                             <p className="text-sm font-medium leading-tight">Diving Trip</p>
                             <p className="text-[11px] text-muted-foreground">Guests will be diving</p>
                           </div>
                         </div>
                         <Switch
+                          aria-label="Diving Trip"
                           checked={db_.hasDiving ?? false}
                           onCheckedChange={(val) => {
                             if (val) {
@@ -2998,7 +2999,7 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                                 if (updated) setDetailBooking({ ...updated, hasDiving: true })
                               })
                             } else {
-                              if (userRole !== 'ADMIN') { alert('Only Admin can deactivate a Diving Trip.'); return }
+                              if (userRole !== 'ADMIN') { toast.error('Only Admin can deactivate a Diving Trip.'); return }
                               setDivingOffReason('')
                               setDivingOffDialog(true)
                             }
@@ -3013,13 +3014,14 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                     {db_.yacht?.canSurfing && (
                       <div className="flex items-center justify-between rounded-lg border px-3 py-2.5">
                         <div className="flex items-center gap-2">
-                          <svg className="w-4 h-4 text-amber-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12c2-4 6-6 10-4s8 0 10-4"/><path d="M2 18c2-4 6-6 10-4s8 0 10-4"/></svg>
+                          <svg className="w-4 h-4 text-warning" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12c2-4 6-6 10-4s8 0 10-4"/><path d="M2 18c2-4 6-6 10-4s8 0 10-4"/></svg>
                           <div>
                             <p className="text-sm font-medium leading-tight">Surfing Trip</p>
                             <p className="text-[11px] text-muted-foreground">Guests will be surfing</p>
                           </div>
                         </div>
                         <Switch
+                          aria-label="Surfing Trip"
                           checked={db_.hasSurfing ?? false}
                           onCheckedChange={(val) => {
                             if (val) {
@@ -3032,7 +3034,7 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                                 if (updated) setDetailBooking({ ...updated, hasSurfing: true })
                               })
                             } else {
-                              if (userRole !== 'ADMIN') { alert('Only Admin can deactivate a Surfing Trip.'); return }
+                              if (userRole !== 'ADMIN') { toast.error('Only Admin can deactivate a Surfing Trip.'); return }
                               setSurfingOffReason('')
                               setSurfingOffDialog(true)
                             }
@@ -3046,19 +3048,19 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
 
                   {/* Guests */}
                   <div className="px-5 py-4 space-y-3">
-                    <div className="flex items-center justify-between gap-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="flex items-center gap-2">
                         <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
                           Guests ({db_.guests.length} pax)
                         </p>
                         {/* capacity badge */}
                         {db_.tripType === 'PRIVATE_CHARTER' && db_.yacht?.capacity && (
-                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${db_.guests.length >= db_.yacht.capacity ? 'bg-red-100 text-red-600' : 'bg-muted text-muted-foreground'}`}>
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${db_.guests.length >= db_.yacht.capacity ? 'bg-destructive/15 text-destructive' : 'bg-muted text-muted-foreground'}`}>
                             {db_.guests.length}/{db_.yacht.capacity}
                           </span>
                         )}
                       </div>
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex flex-wrap items-center gap-1.5">
                         {canManageBookings && db_.status !== 'cancelled' && (() => {
                           const atCapacity = db_.tripType === 'PRIVATE_CHARTER' && db_.yacht?.capacity != null && db_.guests.length >= db_.yacht.capacity
                           return !atCapacity ? (
@@ -3080,30 +3082,30 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                         <div className="flex items-center gap-1.5">
                           {masterLinks[db_.id] ? (
                             <>
-                              <div className="flex items-center gap-1.5 bg-violet-50 border border-violet-200 rounded-lg px-2 py-1 max-w-[160px]">
-                                <Users className="h-3 w-3 text-violet-600 shrink-0" />
-                                <span className="text-[10px] text-violet-700 truncate font-mono">{masterLinks[db_.id]}</span>
+                              <div className="flex items-center gap-1.5 bg-violet-50 dark:bg-violet-500/10 border border-violet-200 dark:border-violet-500/30 rounded-lg px-2 py-1 max-w-[160px]">
+                                <Users className="h-3 w-3 text-violet-600 dark:text-violet-300 shrink-0" />
+                                <span className="text-[10px] text-violet-700 dark:text-violet-300 truncate font-mono">{masterLinks[db_.id]}</span>
                               </div>
-                              <button onClick={() => copyMasterLink(db_.id)} className="p-1 rounded text-violet-700 hover:bg-violet-50 border border-violet-200" title="Copy master link">
+                              <button type="button" onClick={() => copyMasterLink(db_.id)} className="p-1 rounded text-violet-700 dark:text-violet-300 hover:bg-violet-50 dark:hover:bg-violet-500/10 border border-violet-200 dark:border-violet-500/30" title="Copy master link" aria-label="Copy master link">
                                 {copiedMaster === db_.id ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
                               </button>
-                              <a href={masterLinks[db_.id]} target="_blank" rel="noopener noreferrer" className="p-1 rounded text-violet-700 hover:bg-violet-50 border border-violet-200" title="Open master form">
+                              <a href={masterLinks[db_.id]} target="_blank" rel="noopener noreferrer" className="p-1 rounded text-violet-700 dark:text-violet-300 hover:bg-violet-50 dark:hover:bg-violet-500/10 border border-violet-200 dark:border-violet-500/30" title="Open master form" aria-label="Open master form">
                                 <ExternalLink className="h-3 w-3" />
                               </a>
-                              <button onClick={() => handleDisableMasterLink(db_.id)} disabled={disablingMaster === db_.id} className="p-1 rounded text-red-400 hover:bg-red-50 border border-red-200" title="Disable master form">
+                              <button type="button" onClick={() => handleDisableMasterLink(db_.id)} disabled={disablingMaster === db_.id} className="p-1 rounded text-destructive/80 hover:bg-destructive/10 border border-destructive/30" title="Disable master form" aria-label="Disable master form">
                                 {disablingMaster === db_.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <X className="h-3 w-3" />}
                               </button>
                             </>
                           ) : masterDisabledIds.has(db_.id) ? (
                             <>
-                              <span className="text-[10px] text-gray-400 italic">Form disabled</span>
-                              <Button variant="outline" size="sm" onClick={() => { setMasterDisabledIds(prev => { const n = new Set(prev); n.delete(db_.id); return n }); handleGenerateMasterLink(db_.id) }} disabled={generatingMaster === db_.id} className="h-6 text-[10px] gap-1 px-2 border-violet-300 text-violet-700 hover:bg-violet-50">
+                              <span className="text-[10px] text-muted-foreground/70 italic">Form disabled</span>
+                              <Button variant="outline" size="sm" onClick={() => { setMasterDisabledIds(prev => { const n = new Set(prev); n.delete(db_.id); return n }); handleGenerateMasterLink(db_.id) }} disabled={generatingMaster === db_.id} className="h-6 text-[10px] gap-1 px-2 border-violet-300 dark:border-violet-500/30 text-violet-700 dark:text-violet-300 hover:bg-violet-50 dark:hover:bg-violet-500/10">
                                 {generatingMaster === db_.id ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <Users className="h-2.5 w-2.5" />}
                                 Re-enable
                               </Button>
                             </>
                           ) : (
-                            <Button variant="outline" size="sm" onClick={() => handleGenerateMasterLink(db_.id)} disabled={generatingMaster === db_.id} className="h-6 text-[10px] gap-1 border-dashed px-2 border-violet-300 text-violet-700 hover:bg-violet-50">
+                            <Button variant="outline" size="sm" onClick={() => handleGenerateMasterLink(db_.id)} disabled={generatingMaster === db_.id} className="h-6 text-[10px] gap-1 border-dashed px-2 border-violet-300 dark:border-violet-500/30 text-violet-700 dark:text-violet-300 hover:bg-violet-50 dark:hover:bg-violet-500/10">
                               {generatingMaster === db_.id ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <Users className="h-2.5 w-2.5" />}
                               Master Link
                             </Button>
@@ -3117,16 +3119,17 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                       <p className="text-sm text-muted-foreground">No registered guests.</p>
                     )}
 
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {db_.guests.map(g => {
                       const isOwnCabin = (c: any) => c.guests?.some((cg: any) => cg.id === g.customerId)
                       const currentCabinId = g.cabin?.id ?? ''
 
                       return (
-                        <div key={g.id} className={`rounded-xl border p-3 space-y-2.5 ${g.isLead ? 'border-amber-200 bg-amber-50/30' : !g.customerId ? 'border-dashed border-orange-200 bg-orange-50/20' : ''}`}>
+                        <div key={g.id} className={`rounded-xl border p-3 space-y-2.5 ${g.isLead ? 'border-warning/30 bg-warning/5' : !g.customerId ? 'border-dashed border-warning/30 bg-warning/5' : ''}`}>
                           {/* Guest header */}
                           <div className="flex items-center justify-between gap-2">
                             <button
+                              type="button"
                               className="group flex items-center gap-2 hover:bg-muted/50 rounded-lg px-1.5 py-1 -mx-1.5 -my-1 transition-colors text-left flex-1 min-w-0"
                               onClick={() => {
                                 if (!g.customerId) { openFillGuestModal(g.id); return }
@@ -3134,27 +3137,29 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                                 setEditGuestHasDiving(db_.hasDiving ?? false); setEditGuestHasSurfing(db_.hasSurfing ?? false)
                               }}
                             >
-                              <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${g.customerId ? 'bg-muted' : 'bg-orange-100'}`}>
-                                <User className={`w-3.5 h-3.5 ${g.customerId ? 'text-muted-foreground' : 'text-orange-500'}`} />
+                              <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${g.customerId ? 'bg-muted' : 'bg-warning/15'}`}>
+                                <User className={`w-3.5 h-3.5 ${g.customerId ? 'text-muted-foreground' : 'text-warning'}`} />
                               </div>
                               <div className="min-w-0 flex-1">
-                                <p className={`text-sm font-semibold leading-tight truncate ${g.customerId ? '' : 'text-orange-700'}`}>
+                                <p className={`text-sm font-semibold leading-tight truncate ${g.customerId ? '' : 'text-warning'}`}>
                                   {g.customerId ? (g.customer?.name ?? '—') : 'Pending guest'}
                                 </p>
-                                {g.isLead && <p className="text-[10px] text-amber-600 font-medium">Group Leader</p>}
-                                {!g.customerId && <p className="text-[10px] text-orange-500 font-medium">Cabin reserved — click to add guest</p>}
+                                {g.isLead && <p className="text-[10px] text-warning font-medium">Group Leader</p>}
+                                {!g.customerId && <p className="text-[10px] text-warning font-medium">Cabin reserved — click to add guest</p>}
                               </div>
                               {g.customerId
                                 ? <Pencil className="w-3.5 h-3.5 text-muted-foreground opacity-0 group-hover:opacity-60 shrink-0 transition-opacity mr-1" />
-                                : <UserPlus className="w-3.5 h-3.5 text-orange-400 shrink-0 mr-1" />}
+                                : <UserPlus className="w-3.5 h-3.5 text-warning/80 shrink-0 mr-1" />}
                             </button>
                             <div className="flex items-center gap-0.5 shrink-0">
                               {canManageBookings && !g.isLead && g.customerId && db_.status !== 'cancelled' && db_.guests.length > 1 && (
                                 <button
+                                  type="button"
                                   onClick={() => handleSetLead(db_.id, g.id)}
                                   disabled={settingLeadId === g.id}
-                                  className="p-1 rounded text-amber-400 hover:bg-amber-50 hover:text-amber-600 transition-colors disabled:opacity-40"
+                                  className="p-1 rounded text-warning/80 hover:bg-warning/10 hover:text-warning transition-colors disabled:opacity-40"
                                   title="Make Group Leader"
+                                  aria-label="Make Group Leader"
                                 >
                                   {settingLeadId === g.id
                                     ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -3163,10 +3168,12 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                               )}
                               {canManageBookings && !g.isLead && db_.status !== 'cancelled' && db_.guests.length > 1 && (
                                 <button
+                                  type="button"
                                   onClick={() => handleDeleteGuest(db_.id, g.id)}
                                   disabled={deletingGuestId === g.id}
-                                  className="p-1 rounded text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors disabled:opacity-40"
+                                  className="p-1 rounded text-destructive/80 hover:bg-destructive/10 hover:text-destructive transition-colors disabled:opacity-40"
                                   title="Remove guest"
+                                  aria-label="Remove guest"
                                 >
                                   {deletingGuestId === g.id
                                     ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -3196,7 +3203,7 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                                   onValueChange={v => saveCabin(g.id, v)}
                                   disabled={cabinSaving === g.id}
                                 >
-                                  <SelectTrigger className="h-7 text-xs w-36">
+                                  <SelectTrigger className="h-7 text-xs w-36" aria-label={`Cabin for ${g.customer?.name ?? 'pending guest'}`}>
                                     <BedDouble className="w-3 h-3 mr-1 shrink-0" />
                                     <SelectValue placeholder="Select cabin…" />
                                   </SelectTrigger>
@@ -3210,7 +3217,7 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                                             {c.name}{c.deck ? ` · ${c.deck}` : ''}
                                           </span>
                                           {isTaken && (
-                                            <span className="ml-1.5 text-[10px] text-red-400 font-medium">• Full</span>
+                                            <span className="ml-1.5 text-[10px] text-destructive/80 font-medium">• Full</span>
                                           )}
                                         </SelectItem>
                                       )
@@ -3249,20 +3256,20 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                           {canManageBookings && db_.status !== 'cancelled' && (
                             <div className="border-t pt-2">
                               {!g.customerId ? (
-                                <Button variant="outline" size="sm" onClick={() => openFillGuestModal(g.id)} className="h-7 text-xs gap-1.5 border-dashed border-orange-300 text-orange-600 hover:bg-orange-50 w-full">
+                                <Button variant="outline" size="sm" onClick={() => openFillGuestModal(g.id)} className="h-7 text-xs gap-1.5 border-dashed border-warning/30 text-warning hover:bg-warning/10 w-full">
                                   <UserPlus className="h-3 w-3" />
                                   Fill Guest Details
                                 </Button>
                               ) : guestLinks[g.id] ? (
                                 <div className="flex items-center gap-1.5">
-                                  <div className="flex-1 flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-lg px-2.5 py-1.5 min-w-0">
-                                    <Link2 className="h-3 w-3 text-emerald-600 shrink-0" />
-                                    <span className="flex-1 text-[11px] text-emerald-700 truncate font-mono">{guestLinks[g.id]}</span>
+                                  <div className="flex-1 flex items-center gap-2 bg-success/10 border border-success/30 rounded-lg px-2.5 py-1.5 min-w-0">
+                                    <Link2 className="h-3 w-3 text-success shrink-0" />
+                                    <span className="flex-1 text-[11px] text-success truncate font-mono">{guestLinks[g.id]}</span>
                                   </div>
-                                  <button onClick={() => copyGuestLink(g.id)} className="shrink-0 p-1 rounded text-emerald-700 hover:bg-emerald-50 border border-emerald-200" title="Copy link">
+                                  <button type="button" onClick={() => copyGuestLink(g.id)} className="shrink-0 p-1 rounded text-success hover:bg-success/10 border border-success/30" title="Copy link" aria-label="Copy guest form link">
                                     {copiedGuestLink === g.id ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
                                   </button>
-                                  <a href={guestLinks[g.id]} target="_blank" rel="noopener noreferrer" className="shrink-0 p-1 rounded text-emerald-700 hover:bg-emerald-50 border border-emerald-200" title="Open in new tab">
+                                  <a href={guestLinks[g.id]} target="_blank" rel="noopener noreferrer" className="shrink-0 p-1 rounded text-success hover:bg-success/10 border border-success/30" title="Open in new tab" aria-label="Open guest form in new tab">
                                     <ExternalLink className="h-3 w-3" />
                                   </a>
                                 </div>
@@ -3286,29 +3293,29 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                   <div className="shrink-0 border-t px-5 py-3 space-y-2">
                     {/* Payment status banners */}
                     {detailActivePmt?.status === 'requested' && (
-                      <p className="text-[11px] text-blue-600 flex items-center gap-1.5"><Loader2 className="h-3 w-3 animate-spin shrink-0" /> Invoice sent — awaiting Finance team</p>
+                      <p className="text-[11px] text-info flex items-center gap-1.5"><Loader2 className="h-3 w-3 animate-spin shrink-0" /> Invoice sent — awaiting Finance team</p>
                     )}
                     {detailActivePmt?.status === 'pending_confirmation' && (
-                      <p className="text-[11px] text-amber-600 flex items-center gap-1.5"><Loader2 className="h-3 w-3 animate-spin shrink-0" /> Proof submitted — awaiting confirmation</p>
+                      <p className="text-[11px] text-warning flex items-center gap-1.5"><Loader2 className="h-3 w-3 animate-spin shrink-0" /> Proof submitted — awaiting confirmation</p>
                     )}
                     {/* Finance edited the invoice and left a note (± proof) explaining what changed */}
                     {(detailActivePmt?.changeProofNote || detailActivePmt?.hasChangeProof) && (
-                      <div className="rounded-md bg-orange-50 border border-orange-200 px-3 py-2 space-y-1">
-                        <p className="text-[11px] font-medium text-orange-700 flex items-center gap-1.5">
+                      <div className="rounded-md bg-warning/10 border border-warning/30 px-3 py-2 space-y-1">
+                        <p className="text-[11px] font-medium text-warning flex items-center gap-1.5">
                           <AlertCircle className="h-3 w-3 shrink-0" /> Finance note — invoice was updated
                         </p>
-                        {detailActivePmt.changeProofNote && <p className="text-[11px] text-orange-700">{detailActivePmt.changeProofNote}</p>}
+                        {detailActivePmt.changeProofNote && <p className="text-[11px] text-warning">{detailActivePmt.changeProofNote}</p>}
                         {detailActivePmt.hasChangeProof && (
                           changeProofView ? (
-                            <FilePreview src={changeProofView} alt="Proof of change" className="max-h-48 w-full object-contain rounded border bg-white mt-1" />
+                            <FilePreview src={changeProofView} alt="Proof of change" className="max-h-48 w-full object-contain rounded border bg-card mt-1" />
                           ) : (
                             <button
                               type="button"
                               onClick={() => viewChangeProof(detailActivePmt.id)}
                               disabled={changeProofLoading}
-                              className="text-[11px] font-medium text-orange-700 underline underline-offset-2 hover:text-orange-800 disabled:opacity-50"
+                              className="text-[11px] font-medium text-warning underline underline-offset-2 hover:text-warning/80 disabled:opacity-50"
                             >
-                              {changeProofLoading ? 'Loading proof...' : 'View proof'}
+                              {changeProofLoading ? 'Loading proof…' : 'View proof'}
                             </button>
                           )
                         )}
@@ -3322,15 +3329,15 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                           const label = p.paymentType === 'PELUNASAN' ? 'Full Payment ✓' : 'Deposit ✓'
                           return hasIDR ? (
                             <React.Fragment key={p.id}>
-                              <button onClick={() => window.open(`/print/invoice/${p.id}?currency=USD`, '_blank')} className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2.5 py-1 hover:bg-emerald-100 transition-colors">
+                              <button onClick={() => window.open(`/print/invoice/${p.id}?currency=USD`, '_blank')} className="inline-flex items-center gap-1 text-[11px] font-medium text-success bg-success/10 border border-success/30 rounded-full px-2.5 py-1 hover:bg-success/15 transition-colors">
                                 <Receipt className="h-3 w-3" /> {label} (USD)
                               </button>
-                              <button onClick={() => window.open(`/print/invoice/${p.id}?currency=IDR`, '_blank')} className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2.5 py-1 hover:bg-amber-100 transition-colors">
+                              <button onClick={() => window.open(`/print/invoice/${p.id}?currency=IDR`, '_blank')} className="inline-flex items-center gap-1 text-[11px] font-medium text-warning bg-warning/10 border border-warning/30 rounded-full px-2.5 py-1 hover:bg-warning/15 transition-colors">
                                 <Receipt className="h-3 w-3" /> {label} (IDR)
                               </button>
                             </React.Fragment>
                           ) : (
-                            <button key={p.id} onClick={() => window.open(`/print/invoice/${p.id}`, '_blank')} className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2.5 py-1 hover:bg-emerald-100 transition-colors">
+                            <button key={p.id} onClick={() => window.open(`/print/invoice/${p.id}`, '_blank')} className="inline-flex items-center gap-1 text-[11px] font-medium text-success bg-success/10 border border-success/30 rounded-full px-2.5 py-1 hover:bg-success/15 transition-colors">
                               <Receipt className="h-3 w-3" /> {label}
                             </button>
                           )
@@ -3341,7 +3348,7 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                     <div className="flex flex-wrap gap-1.5">
                       {db_.status === 'on_hold' && (
                         <button
-                          className="inline-flex items-center gap-1.5 text-xs font-semibold text-orange-600 bg-orange-50 border border-orange-200 rounded-full px-3 py-1.5 hover:bg-orange-100 transition-colors"
+                          className="inline-flex items-center gap-1.5 text-xs font-semibold text-warning bg-warning/10 border border-warning/30 rounded-full px-3 py-1.5 hover:bg-warning/15 transition-colors"
                           onClick={() => { setDetailBooking(null); setCompleteBookingId(db_.id); setWizardOpen(true) }}
                         >
                           <ChevronRight className="h-3.5 w-3.5" /> Complete Booking
@@ -3349,9 +3356,9 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                       )}
                       {db_.status === 'on_hold' && (
                         <button
-                          className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-600 bg-blue-50 border border-blue-200 rounded-full px-3 py-1.5 hover:bg-blue-100 transition-colors"
+                          className="inline-flex items-center gap-1.5 text-xs font-semibold text-info bg-info/10 border border-info/30 rounded-full px-3 py-1.5 hover:bg-info/15 transition-colors"
                           onClick={() => { setDetailBooking(null); openExtendHold(db_) }}
-                          title={detailHoldExp && !detailExpired ? `Expires ${detailHoldExp.toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}` : undefined}
+                          title={detailHoldExp && !detailExpired ? `Expires ${formatDate(detailHoldExp, 'datetimeShort')}` : undefined}
                         >
                           <Clock className="h-3.5 w-3.5" /> Extend Hold
                         </button>
@@ -3359,7 +3366,7 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                       {detailCanReq && (
                         <button
                           disabled={detailBlocked}
-                          className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-3 py-1.5 hover:bg-emerald-100 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                          className="inline-flex items-center gap-1.5 text-xs font-semibold text-success bg-success/10 border border-success/30 rounded-full px-3 py-1.5 hover:bg-success/15 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                           onClick={() => { if (!detailBlocked) { setDetailBooking(null); openPayment(db_) } }}
                           title={detailBlocked ? 'Confirm deposit first' : undefined}
                         >
@@ -3370,39 +3377,39 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                         const hasIDR = db_.currency === 'IDR' && !!db_.exchangeRate
                         return hasIDR ? (
                           <>
-                            <button className="inline-flex items-center gap-1.5 text-xs font-semibold text-violet-600 bg-violet-50 border border-violet-200 rounded-full px-3 py-1.5 hover:bg-violet-100 transition-colors"
+                            <button className="inline-flex items-center gap-1.5 text-xs font-semibold text-violet-600 dark:text-violet-300 bg-violet-50 dark:bg-violet-500/10 border border-violet-200 dark:border-violet-500/30 rounded-full px-3 py-1.5 hover:bg-violet-100 dark:hover:bg-violet-500/20 transition-colors"
                               onClick={() => window.open(`/print/invoice/${detailActivePmt.id}?currency=USD`, '_blank')}>
                               <Receipt className="h-3.5 w-3.5" /> Invoice (USD)
                             </button>
-                            <button className="inline-flex items-center gap-1.5 text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-3 py-1.5 hover:bg-amber-100 transition-colors"
+                            <button className="inline-flex items-center gap-1.5 text-xs font-semibold text-warning bg-warning/10 border border-warning/30 rounded-full px-3 py-1.5 hover:bg-warning/15 transition-colors"
                               onClick={() => window.open(`/print/invoice/${detailActivePmt.id}?currency=IDR`, '_blank')}>
                               <Receipt className="h-3.5 w-3.5" /> Invoice (IDR)
                             </button>
                           </>
                         ) : (
-                          <button className="inline-flex items-center gap-1.5 text-xs font-semibold text-violet-600 bg-violet-50 border border-violet-200 rounded-full px-3 py-1.5 hover:bg-violet-100 transition-colors"
+                          <button className="inline-flex items-center gap-1.5 text-xs font-semibold text-violet-600 dark:text-violet-300 bg-violet-50 dark:bg-violet-500/10 border border-violet-200 dark:border-violet-500/30 rounded-full px-3 py-1.5 hover:bg-violet-100 dark:hover:bg-violet-500/20 transition-colors"
                             onClick={() => window.open(`/print/invoice/${detailActivePmt.id}`, '_blank')}>
                             <Receipt className="h-3.5 w-3.5" /> Download Invoice
                           </button>
                         )
                       })()}
                       {(detailActivePmt?.status === 'invoice_ready' || detailActivePmt?.status === 'rejected') && (
-                        <button className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-3 py-1.5 hover:bg-emerald-100 transition-colors" onClick={() => { setDetailBooking(null); openProofUpload(detailActivePmt) }}>
+                        <button className="inline-flex items-center gap-1.5 text-xs font-semibold text-success bg-success/10 border border-success/30 rounded-full px-3 py-1.5 hover:bg-success/15 transition-colors" onClick={() => { setDetailBooking(null); openProofUpload(detailActivePmt) }}>
                           <Upload className="h-3.5 w-3.5" /> {detailActivePmt?.status === 'rejected' ? 'Resubmit Proof' : 'Submit Proof'}
                         </button>
                       )}
                       {db_.guests.length > 0 && (
-                        <button className="inline-flex items-center gap-1.5 text-xs font-semibold text-sky-600 bg-sky-50 border border-sky-200 rounded-full px-3 py-1.5 hover:bg-sky-100 transition-colors" onClick={() => { setDetailBooking(null); openTravel(db_) }}>
+                        <button className="inline-flex items-center gap-1.5 text-xs font-semibold text-info bg-info/10 border border-info/30 rounded-full px-3 py-1.5 hover:bg-info/15 transition-colors" onClick={() => { setDetailBooking(null); openTravel(db_) }}>
                           <PlaneTakeoff className="h-3.5 w-3.5" /> Travel Details
                         </button>
                       )}
                       {db_.status !== 'cancelled' && (
-                        <button className="inline-flex items-center gap-1.5 text-xs font-semibold text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-full px-3 py-1.5 hover:bg-indigo-100 transition-colors" onClick={() => window.open(`/print/booking-confirmation/${db_.id}`, '_blank')}>
+                        <button className="inline-flex items-center gap-1.5 text-xs font-semibold text-indigo-600 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-200 dark:border-indigo-500/30 rounded-full px-3 py-1.5 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 transition-colors" onClick={() => window.open(`/print/booking-confirmation/${db_.id}`, '_blank')}>
                           <FileCheck className="h-3.5 w-3.5" /> Confirmation Letter
                         </button>
                       )}
                       {(db_.status === 'on_hold' || db_.status === 'pending' || db_.status === 'partially_paid' || db_.status === 'fully_paid') && (
-                        <button className="inline-flex items-center gap-1.5 text-xs font-semibold text-amber-600 bg-amber-50 border border-amber-200 rounded-full px-3 py-1.5 hover:bg-amber-100 transition-colors" onClick={() => { setDetailBooking(null); setWaitingListBooking(db_) }}>
+                        <button className="inline-flex items-center gap-1.5 text-xs font-semibold text-warning bg-warning/10 border border-warning/30 rounded-full px-3 py-1.5 hover:bg-warning/15 transition-colors" onClick={() => { setDetailBooking(null); setWaitingListBooking(db_) }}>
                           <Users className="h-3.5 w-3.5" /> Waiting List
                         </button>
                       )}
@@ -3414,15 +3421,15 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                 )}
 
                 {/* Footer */}
-                <div className="shrink-0 border-t px-5 py-3 flex justify-between items-center gap-2">
+                <div className="shrink-0 border-t px-5 py-3 flex flex-wrap justify-between items-center gap-2">
                   {db_.status !== 'cancelled' ? (
-                    <button className="text-xs text-red-500 hover:text-red-600 font-medium transition-colors" onClick={() => openCancelDialog(db_)}>
+                    <Button type="button" variant="ghost" size="sm" className="-ml-3 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={() => openCancelDialog(db_)}>
                       Cancel Booking
-                    </button>
+                    </Button>
                   ) : <div />}
                   <div className="flex items-center gap-2">
                     {userRole === 'ADMIN' && db_.status === 'cancelled' && (
-                      <Button variant="outline" size="sm" className="border-red-300 text-red-500 hover:bg-red-50 gap-1.5" onClick={() => { setDetailBooking(null); deleteBooking(db_) }}>
+                      <Button variant="outline" size="sm" className="border-destructive/30 text-destructive hover:bg-destructive/10 gap-1.5" onClick={() => { setDetailBooking(null); deleteBooking(db_) }}>
                         <Trash2 className="h-3.5 w-3.5" /> Delete
                       </Button>
                     )}
@@ -3437,9 +3444,9 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
 
       {/* ════ Cancel Booking Confirm Dialog ════ */}
       <Dialog open={!!cancelDialogBooking} onOpenChange={v => !v && setCancelDialogBooking(null)}>
-        <DialogContent className="sm:max-w-sm">
+        <DialogContent className="sm:max-w-sm" aria-describedby={undefined} onInteractOutside={e => e.preventDefault()}>
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-red-600">
+            <DialogTitle className="flex items-center gap-2 text-destructive">
               <X className="w-4 h-4" /> Cancel Booking
             </DialogTitle>
           </DialogHeader>
@@ -3449,10 +3456,10 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                 Are you sure you want to cancel booking <span className="font-semibold text-foreground">{cancelDialogBooking.bookingCode}</span> for <span className="font-semibold text-foreground">{cancelDialogBooking.customer.name}</span>?
               </p>
               <div className="space-y-1.5">
-                <Label htmlFor="cancel-reason">Cancellation reason <span className="text-red-500">*</span></Label>
+                <Label htmlFor="cancel-reason">Cancellation reason <span className="text-destructive">*</span></Label>
                 <Textarea
                   id="cancel-reason"
-                  placeholder="Enter cancellation reason..."
+                  placeholder="Enter cancellation reason…"
                   value={cancelReasonText}
                   onChange={e => setCancelReasonText(e.target.value)}
                   rows={3}
@@ -3466,11 +3473,11 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
               Cancel
             </Button>
             <Button
-              disabled={cancelSaving || !cancelReasonText.trim()}
+              variant="destructive"
+              disabled={!cancelReasonText.trim()}
+              loading={cancelSaving}
               onClick={confirmCancelBooking}
-              className="bg-red-600 hover:bg-red-700 text-white"
             >
-              {cancelSaving ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : null}
               Yes, Cancel Booking
             </Button>
           </DialogFooter>
@@ -3516,10 +3523,10 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
 
       {/* ════ Extend Hold Dialog ════ */}
       <Dialog open={!!extendHoldBooking} onOpenChange={v => !v && setExtendHoldBooking(null)}>
-        <DialogContent className="sm:max-w-sm">
+        <DialogContent className="sm:max-w-sm" aria-describedby={undefined} onInteractOutside={e => e.preventDefault()}>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Clock className="h-5 w-5 text-blue-500" /> Extend Hold
+              <Clock className="h-5 w-5 text-info" /> Extend Hold
             </DialogTitle>
           </DialogHeader>
           {extendHoldBooking && (
@@ -3528,8 +3535,9 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                 Booking <span className="font-mono font-semibold text-foreground">{extendHoldBooking.bookingCode}</span> — {extendHoldBooking.customer.name}
               </p>
               <div className="space-y-1.5">
-                <Label>Tanggal Hold Baru</Label>
+                <Label htmlFor="extend-hold-date">New Hold Date</Label>
                 <Input
+                  id="extend-hold-date"
                   type="date"
                   value={extendHoldDate}
                   onChange={e => setExtendHoldDate(e.target.value)}
@@ -3538,8 +3546,9 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                 />
               </div>
               <div className="space-y-1.5">
-                <Label>Waktu</Label>
+                <Label htmlFor="extend-hold-time">Time</Label>
                 <Input
+                  id="extend-hold-time"
                   type="time"
                   value={extendHoldTime}
                   onChange={e => setExtendHoldTime(e.target.value)}
@@ -3552,8 +3561,7 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
             <Button variant="outline" onClick={() => setExtendHoldBooking(null)} disabled={extendHoldSaving}>
               Cancel
             </Button>
-            <Button onClick={saveExtendHold} disabled={extendHoldSaving || !extendHoldDate}>
-              {extendHoldSaving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+            <Button onClick={saveExtendHold} disabled={!extendHoldDate} loading={extendHoldSaving}>
               Save
             </Button>
           </DialogFooter>
@@ -3562,10 +3570,10 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
 
       {/* ════ Extend Deposit/Final Due Date Dialog ════ */}
       <Dialog open={!!extendDateTarget} onOpenChange={v => !v && setExtendDateTarget(null)}>
-        <DialogContent className="sm:max-w-sm">
+        <DialogContent className="sm:max-w-sm" aria-describedby={undefined} onInteractOutside={e => e.preventDefault()}>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Clock className="h-5 w-5 text-blue-500" />
+              <Clock className="h-5 w-5 text-info" />
               Extend {extendDateTarget?.field === 'deposit' ? 'Deposit' : 'Final'} Due Date
             </DialogTitle>
           </DialogHeader>
@@ -3575,8 +3583,9 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                 Booking <span className="font-mono font-semibold text-foreground">{extendDateTarget.booking.bookingCode}</span> — {extendDateTarget.booking.customer.name}
               </p>
               <div className="space-y-1.5">
-                <Label>New Due Date</Label>
+                <Label htmlFor="extend-due-date">New Due Date</Label>
                 <Input
+                  id="extend-due-date"
                   type="date"
                   value={extendNewDate}
                   min={new Date().toISOString().split('T')[0]}
@@ -3589,14 +3598,14 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
               </div>
               <div className="flex items-center justify-between rounded-lg border p-3">
                 <div className="pr-3">
-                  <p className="text-sm font-medium">Change in Invoice</p>
+                  <p id="extend-sync-invoice-label" className="text-sm font-medium">Change in Invoice</p>
                   <p className="text-xs text-muted-foreground mt-0.5">
                     {extendSyncInvoice
                       ? 'The invoice will show this new date.'
                       : 'Internal record only — the invoice keeps showing the original date, even if this is extended again later.'}
                   </p>
                 </div>
-                <Switch checked={extendSyncInvoice} onCheckedChange={setExtendSyncInvoice} disabled={extendSaving} />
+                <Switch aria-labelledby="extend-sync-invoice-label" checked={extendSyncInvoice} onCheckedChange={setExtendSyncInvoice} disabled={extendSaving} />
               </div>
             </div>
           )}
@@ -3604,8 +3613,7 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
             <Button variant="outline" onClick={() => setExtendDateTarget(null)} disabled={extendSaving}>
               Cancel
             </Button>
-            <Button onClick={saveExtendDate} disabled={extendSaving || !extendNewDate || extendNewDate < new Date().toISOString().split('T')[0]}>
-              {extendSaving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+            <Button onClick={saveExtendDate} disabled={!extendNewDate || extendNewDate < new Date().toISOString().split('T')[0]} loading={extendSaving}>
               Save
             </Button>
           </DialogFooter>
@@ -3616,7 +3624,7 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
       <Dialog open={addGuestOpen} onOpenChange={v => {
         if (!v) { setAddGuestOpen(false); setAddGuestNewMode(false); setAddGuestNewName(''); setAddGuestNewPhone(''); setAddGuestNewEmail(''); setFillGuestId(null); setAddPendingMode(false); setAddPendingCount(1) }
       }}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto" aria-describedby={undefined} onInteractOutside={e => e.preventDefault()}>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               {fillGuestId ? <UserPlus className="h-4 w-4" /> : <Users className="h-4 w-4" />}
@@ -3626,13 +3634,13 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
           <div className="space-y-3">
             {/* Named vs. pending toggle */}
             {!fillGuestId && (
-              <div className="flex gap-2">
-                <button type="button" onClick={() => setAddPendingMode(false)}
-                  className={`flex-1 px-3 py-2 rounded-lg border text-xs font-medium transition-colors ${!addPendingMode ? 'border-[#bdac7e] bg-[#bdac7e]/10 text-foreground' : 'text-muted-foreground hover:bg-muted/40'}`}>
+              <div role="group" aria-label="Guest type" className="flex gap-2">
+                <button type="button" aria-pressed={!addPendingMode} onClick={() => setAddPendingMode(false)}
+                  className={`flex-1 px-3 py-2 rounded-lg border text-xs font-medium transition-colors ${!addPendingMode ? 'border-primary bg-primary/10 text-foreground' : 'text-muted-foreground hover:bg-muted/40'}`}>
                   Named Guest
                 </button>
-                <button type="button" onClick={() => { setAddPendingMode(true); setAddGuestSelected(new Set()) }}
-                  className={`flex-1 px-3 py-2 rounded-lg border text-xs font-medium transition-colors ${addPendingMode ? 'border-orange-300 bg-orange-50 text-orange-700' : 'text-muted-foreground hover:bg-muted/40'}`}>
+                <button type="button" aria-pressed={addPendingMode} onClick={() => { setAddPendingMode(true); setAddGuestSelected(new Set()) }}
+                  className={`flex-1 px-3 py-2 rounded-lg border text-xs font-medium transition-colors ${addPendingMode ? 'border-warning/30 bg-warning/10 text-warning' : 'text-muted-foreground hover:bg-muted/40'}`}>
                   Pending Guest <span className="opacity-70">(name unknown)</span>
                 </button>
               </div>
@@ -3642,7 +3650,7 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
             {!addPendingMode && (
               <div className="relative">
                 <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input className="pl-9" placeholder="Search by name / phone / email…"
+                <Input className="pl-9" aria-label="Search guests" placeholder="Search by name / phone / email…"
                   value={addGuestSearch} onChange={e => setAddGuestSearch(e.target.value)} />
               </div>
             )}
@@ -3665,7 +3673,7 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                 return filtered.map(c => {
                   const checked = addGuestSelected.has(c.id)
                   return (
-                    <button key={c.id} type="button"
+                    <button key={c.id} type="button" aria-pressed={checked}
                       className={`w-full text-left px-3 py-2.5 flex items-center gap-3 hover:bg-muted/40 transition-colors border-b last:border-b-0 ${checked ? 'bg-muted/60' : ''}`}
                       onClick={() => setAddGuestSelected(prev => {
                         // Fill mode attaches exactly one customer to the placeholder slot.
@@ -3674,8 +3682,8 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                         next.has(c.id) ? next.delete(c.id) : next.add(c.id)
                         return next
                       })}>
-                      <div className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition-colors ${checked ? 'border-amber-600 bg-amber-600' : 'border-muted-foreground'}`}>
-                        {checked && <Check className="h-2.5 w-2.5 text-white" />}
+                      <div className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition-colors ${checked ? 'border-warning bg-warning' : 'border-muted-foreground'}`}>
+                        {checked && <Check className="h-2.5 w-2.5 text-warning-foreground" />}
                       </div>
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-medium truncate">{c.name}</p>
@@ -3705,27 +3713,28 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
               <div className="border border-dashed rounded-lg p-3 space-y-2.5 bg-muted/20">
                 <div className="flex items-center justify-between">
                   <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">New guest</p>
-                  <button type="button" onClick={() => { setAddGuestNewMode(false); setAddGuestNewName(''); setAddGuestNewPhone(''); setAddGuestNewEmail('') }} className="text-muted-foreground hover:text-foreground">
+                  <Button type="button" variant="ghost" size="icon" onClick={() => { setAddGuestNewMode(false); setAddGuestNewName(''); setAddGuestNewPhone(''); setAddGuestNewEmail('') }} className="size-7 text-muted-foreground" aria-label="Close new guest form">
                     <X className="h-3.5 w-3.5" />
-                  </button>
+                  </Button>
                 </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="col-span-2 space-y-1">
-                    <Label className="text-xs">Name <span className="text-red-500">*</span></Label>
-                    <Input placeholder="Full name" value={addGuestNewName} onChange={e => setAddGuestNewName(e.target.value)} className="h-8 text-sm" />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div className="sm:col-span-2 space-y-1">
+                    <Label htmlFor="add-guest-new-name" className="text-xs">Name <span className="text-destructive">*</span></Label>
+                    <Input id="add-guest-new-name" placeholder="Full name" value={addGuestNewName} onChange={e => setAddGuestNewName(e.target.value)} className="h-8 text-sm" />
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-xs">Phone / WhatsApp</Label>
-                    <Input placeholder="+62…" value={addGuestNewPhone} onChange={e => setAddGuestNewPhone(e.target.value)} className="h-8 text-sm" />
+                    <Label htmlFor="add-guest-new-phone" className="text-xs">Phone / WhatsApp</Label>
+                    <Input id="add-guest-new-phone" placeholder="+62…" value={addGuestNewPhone} onChange={e => setAddGuestNewPhone(e.target.value)} className="h-8 text-sm" />
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-xs">Email</Label>
-                    <Input placeholder="email@example.com" value={addGuestNewEmail} onChange={e => setAddGuestNewEmail(e.target.value)} className="h-8 text-sm" />
+                    <Label htmlFor="add-guest-new-email" className="text-xs">Email</Label>
+                    <Input id="add-guest-new-email" placeholder="email@example.com" value={addGuestNewEmail} onChange={e => setAddGuestNewEmail(e.target.value)} className="h-8 text-sm" />
                   </div>
                 </div>
                 <Button
                   size="sm"
-                  disabled={addGuestCreating || !addGuestNewName.trim()}
+                  disabled={!addGuestNewName.trim()}
+                  loading={addGuestCreating}
                   onClick={async () => {
                     setAddGuestCreating(true)
                     const createRes = await fetch('/api/customers', {
@@ -3747,9 +3756,8 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                     setAddGuestCreating(false)
                   }}
                   className="h-7 text-xs gap-1.5 w-full"
-                  style={{ backgroundColor: ACCENT, color: 'white' }}
                 >
-                  {addGuestCreating ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
+                  {!addGuestCreating && <Plus className="h-3 w-3" />}
                   {addGuestCreating ? 'Creating…' : 'Add to list'}
                 </Button>
               </div>
@@ -3770,16 +3778,16 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
               }
               return (
                 <div className="space-y-1.5">
-                  <Label className="text-xs">Cabin <span className="text-red-500">*</span></Label>
+                  <Label htmlFor="add-guest-cabin" className="text-xs">Cabin <span className="text-destructive">*</span></Label>
                   <Select value={addGuestCabinId} onValueChange={setAddGuestCabinId}>
-                    <SelectTrigger className="h-8 text-xs">
+                    <SelectTrigger id="add-guest-cabin" className="h-8 text-xs w-full">
                       <SelectValue placeholder="Select cabin…" />
                     </SelectTrigger>
                     <SelectContent>
                       {detailCabins.map((c: any) => (
                         <SelectItem key={c.id} value={c.id} disabled={c.isFull}>
                           {c.name}{c.deck ? ` · ${c.deck}` : ''}
-                          {c.isFull && <span className="ml-1.5 text-[10px] text-red-400">• Full</span>}
+                          {c.isFull && <span className="ml-1.5 text-[10px] text-destructive/80">• Full</span>}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -3791,12 +3799,12 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
             {/* Pax count — pending mode only, no cabin required for Private Charter */}
             {addPendingMode && (
               <div className="space-y-1.5">
-                <Label className="text-xs">Number of pax <span className="text-red-500">*</span></Label>
-                <div className="flex items-center gap-2">
-                  <button type="button" onClick={() => setAddPendingCount(n => Math.max(1, n - 1))}
+                <Label id="add-pending-count-label" className="text-xs">Number of pax <span className="text-destructive">*</span></Label>
+                <div role="group" aria-labelledby="add-pending-count-label" className="flex items-center gap-2">
+                  <button type="button" aria-label="Decrease pax" onClick={() => setAddPendingCount(n => Math.max(1, n - 1))}
                     className="w-7 h-7 rounded border flex items-center justify-center text-muted-foreground hover:bg-muted transition-colors">−</button>
-                  <span className="w-8 text-center text-sm font-semibold">{addPendingCount}</span>
-                  <button type="button" onClick={() => setAddPendingCount(n => n + 1)}
+                  <span className="w-8 text-center text-sm font-semibold" aria-live="polite">{addPendingCount}</span>
+                  <button type="button" aria-label="Increase pax" onClick={() => setAddPendingCount(n => n + 1)}
                     className="w-7 h-7 rounded border flex items-center justify-center text-muted-foreground hover:bg-muted transition-colors">+</button>
                 </div>
                 <p className="text-[11px] text-muted-foreground">Reserves the cabin without a name — fill in guest details later.</p>
@@ -3860,7 +3868,7 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                       errors.push(d.error ?? 'failed')
                     }
                   }
-                  if (errors.length) alert('Some pending guests could not be added:\n' + errors.join('\n'))
+                  if (errors.length) toast.error('Some pending guests could not be added:', { description: <span className="whitespace-pre-line">{errors.join('\n')}</span> })
                 } else {
                   const ids = Array.from(addGuestSelected)
                   const errors: string[] = []
@@ -3876,7 +3884,7 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                       errors.push(`${name}: ${d.error ?? 'failed'}`)
                     }
                   }
-                  if (errors.length) alert('Some guests could not be added:\n' + errors.join('\n'))
+                  if (errors.length) toast.error('Some guests could not be added:', { description: <span className="whitespace-pre-line">{errors.join('\n')}</span> })
                 }
 
                 setAddGuestOpen(false)
@@ -3893,15 +3901,15 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                 fetchBookings()
                 setAddGuestSaving(false)
               }}
-              style={{ backgroundColor: ACCENT, color: 'white' }} className="hover:opacity-90">
+              loading={fillGuestId ? fillGuestSaving : addGuestSaving}>
               {fillGuestId
-                ? (fillGuestSaving ? <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />Saving…</> : 'Save Guest Details')
+                ? (fillGuestSaving ? 'Saving…' : 'Save Guest Details')
                 : addPendingMode
                 ? (addGuestSaving
-                  ? <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />Adding…</>
+                  ? 'Adding…'
                   : `Add ${addPendingCount} Pending Guest${addPendingCount !== 1 ? 's' : ''}`)
                 : (addGuestSaving
-                  ? <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />Adding…</>
+                  ? 'Adding…'
                   : `Add ${addGuestSelected.size > 0 ? addGuestSelected.size + ' ' : ''}Guest${addGuestSelected.size !== 1 ? 's' : ''}`)}
             </Button>
           </DialogFooter>
@@ -3910,9 +3918,9 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
 
       {/* ════ Diving Off Confirmation Dialog (Admin only) ════ */}
       <Dialog open={divingOffDialog} onOpenChange={v => { if (!v) setDivingOffDialog(false) }}>
-        <DialogContent className="sm:max-w-sm">
+        <DialogContent className="sm:max-w-sm" aria-describedby={undefined} onInteractOutside={e => e.preventDefault()}>
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-amber-600">
+            <DialogTitle className="flex items-center gap-2 text-warning">
               <Waves className="h-5 w-5" /> Disable Diving Trip?
             </DialogTitle>
           </DialogHeader>
@@ -3921,8 +3929,9 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
               Guests are already registered for a diving trip. Please provide a reason for disabling diving to keep on record.
             </p>
             <div className="space-y-1.5">
-              <Label className="text-xs">Reason <span className="text-red-500">*</span></Label>
+              <Label htmlFor="diving-off-reason" className="text-xs">Reason <span className="text-destructive">*</span></Label>
               <Textarea
+                id="diving-off-reason"
                 rows={3}
                 placeholder="e.g. Guest cancelled diving activity…"
                 value={divingOffReason}
@@ -3937,7 +3946,8 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
             </Button>
             <Button
               variant="destructive"
-              disabled={!divingOffReason.trim() || divingOffSaving}
+              disabled={!divingOffReason.trim()}
+              loading={divingOffSaving}
               onClick={async () => {
                 if (!detailBooking) return
                 setDivingOffSaving(true)
@@ -3953,8 +3963,7 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                 setDivingOffDialog(false)
               }}
             >
-              {divingOffSaving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              Ya, Nonaktifkan
+              Yes, Disable
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -3962,9 +3971,9 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
 
       {/* ════ Surfing Off Confirmation Dialog (Admin only) ════ */}
       <Dialog open={surfingOffDialog} onOpenChange={v => { if (!v) setSurfingOffDialog(false) }}>
-        <DialogContent className="sm:max-w-sm">
+        <DialogContent className="sm:max-w-sm" aria-describedby={undefined} onInteractOutside={e => e.preventDefault()}>
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-amber-600">
+            <DialogTitle className="flex items-center gap-2 text-warning">
               Disable Surfing Trip?
             </DialogTitle>
           </DialogHeader>
@@ -3973,8 +3982,9 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
               Guests are registered for a surfing trip. Please provide a reason for disabling surfing.
             </p>
             <div className="space-y-1.5">
-              <Label className="text-xs">Reason <span className="text-red-500">*</span></Label>
+              <Label htmlFor="surfing-off-reason" className="text-xs">Reason <span className="text-destructive">*</span></Label>
               <Textarea
+                id="surfing-off-reason"
                 rows={3}
                 placeholder="e.g. Guest cancelled surfing activity…"
                 value={surfingOffReason}
@@ -3987,7 +3997,8 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
             <Button variant="outline" onClick={() => setSurfingOffDialog(false)} disabled={surfingOffSaving}>Cancel</Button>
             <Button
               variant="destructive"
-              disabled={!surfingOffReason.trim() || surfingOffSaving}
+              disabled={!surfingOffReason.trim()}
+              loading={surfingOffSaving}
               onClick={async () => {
                 if (!detailBooking) return
                 setSurfingOffSaving(true)
@@ -4003,8 +4014,7 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                 setSurfingOffDialog(false)
               }}
             >
-              {surfingOffSaving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              Ya, Nonaktifkan
+              Yes, Disable
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -4013,7 +4023,7 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
       {/* ── Refund Confirm Dialog (Sales) ── */}
       {refundConfirmItem && (
         <Dialog open onOpenChange={v => { if (!v) setRefundConfirmItem(null) }}>
-          <DialogContent className="sm:max-w-md">
+          <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto" aria-describedby={undefined}>
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 Confirm Refund — {refundConfirmItem.bookingCode}
@@ -4024,17 +4034,17 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Refund Amount</p>
                 {refundConfirmItem.payments.map(p => (
                   <div key={p.id} className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">{p.invoiceNumber} ({p.paymentType})</span>
-                    <span className="font-semibold">${p.amount.toLocaleString()}</span>
+                    <span className="text-muted-foreground">{p.invoiceNumber} ({p.paymentType === 'PELUNASAN' ? 'Full Payment' : p.paymentType})</span>
+                    <span className="font-semibold">{formatMoney(p.amount, { currency: 'USD' })}</span>
                   </div>
                 ))}
                 <div className="flex justify-between text-sm font-bold border-t pt-1 mt-1">
                   <span>Total</span>
-                  <span>${refundConfirmItem.payments.reduce((s, p) => s + p.amount, 0).toLocaleString()}</span>
+                  <span>{formatMoney(refundConfirmItem.payments.reduce((s, p) => s + p.amount, 0), { currency: 'USD' })}</span>
                 </div>
               </div>
               {refundConfirmItem.refundReason && (
-                <div className="rounded-md border bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+                <div className="rounded-md border bg-success/10 px-3 py-2 text-sm text-success">
                   <strong>Refund reason:</strong> {refundConfirmItem.refundReason}
                 </div>
               )}
@@ -4051,11 +4061,11 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
             <DialogFooter>
               <Button variant="outline" onClick={() => setRefundConfirmItem(null)}>Close</Button>
               <Button
-                disabled={refundConfirmSaving}
+                variant="success"
+                loading={refundConfirmSaving}
                 onClick={() => handleConfirmRefund(refundConfirmItem!.id)}
-                className="bg-emerald-600 hover:bg-emerald-700 text-white"
               >
-                {refundConfirmSaving ? <><span className="mr-1">⏳</span>Confirming…</> : '✓ Confirm Received'}
+                {refundConfirmSaving ? 'Confirming…' : '✓ Confirm Received'}
               </Button>
             </DialogFooter>
           </DialogContent>

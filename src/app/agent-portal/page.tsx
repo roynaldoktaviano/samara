@@ -9,9 +9,12 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { getEffectiveBookingStatus } from '@/lib/booking-status'
+import { formatDateRange } from '@/lib/format'
+import { StatusBadge } from '@/components/ui/status-badge'
 
-const GOLD = '#bdac7e'
-const GOLD_DARK = '#a8956a'
+const GOLD = 'var(--primary)'
+const GOLD_DARK = 'var(--primary-strong)'
+const GOLD_HOVER = 'var(--primary-hover)'
 
 const SAMARA_LOGO = '/agent-portal/logoo.png'
 
@@ -114,20 +117,14 @@ function monthsAhead(count: number) {
   })
 }
 
-function formatDateRange(start: string, end: string) {
-  const opts: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric' }
-  const s = new Date(start), e = new Date(end)
-  return `${s.toLocaleDateString('en-US', opts)}–${e.toLocaleDateString('en-US', { ...opts, year: 'numeric' })}`
-}
-
 type DayStatus = 'available' | 'onhold' | 'pending' | 'booked' | 'shared'
 
 const DAY_STATUS_STYLE: Record<DayStatus, string> = {
   available: 'bg-white border border-neutral-200 text-neutral-500',
-  onhold: 'bg-emerald-500 text-white',
-  pending: 'bg-amber-400 text-white',
-  booked: 'bg-red-500 text-white',
-  shared: 'bg-blue-500 text-white',
+  onhold: 'bg-success text-success-foreground',
+  pending: 'bg-warning text-warning-foreground',
+  booked: 'bg-destructive text-destructive-foreground',
+  shared: 'bg-info text-info-foreground',
 }
 
 interface CalendarBooking { id: string; startDate: string; endDate: string; status: string; tripType: string }
@@ -184,7 +181,8 @@ function PromoPopup({ promo, onClose }: { promo: PromoRecord; onClose: () => voi
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-2xl overflow-hidden max-w-md w-full shadow-2xl animate-in fade-in zoom-in-95 slide-in-from-bottom-4 duration-500 delay-150 fill-mode-both ease-out"
+        role="dialog" aria-modal="true" aria-label={promo.title}
+        className="bg-white rounded-2xl overflow-y-auto max-h-[90vh] max-w-md w-full shadow-2xl animate-in fade-in zoom-in-95 slide-in-from-bottom-4 duration-500 delay-150 fill-mode-both ease-out"
         onClick={e => e.stopPropagation()}
       >
         {promo.imageUrl && (
@@ -204,9 +202,9 @@ function PromoPopup({ promo, onClose }: { promo: PromoRecord; onClose: () => voi
             {promo.ctaLabel && promo.ctaUrl && (
               <a
                 href={promo.ctaUrl} target="_blank" rel="noopener noreferrer"
-                className="inline-flex items-center justify-center text-sm font-semibold text-white px-5 py-2.5 rounded-full transition-colors"
+                className="inline-flex items-center justify-center text-sm font-semibold text-primary-foreground px-5 py-2.5 rounded-full transition-colors"
                 style={{ background: GOLD }}
-                onMouseEnter={e => (e.currentTarget.style.background = GOLD_DARK)}
+                onMouseEnter={e => (e.currentTarget.style.background = GOLD_HOVER)}
                 onMouseLeave={e => (e.currentTarget.style.background = GOLD)}
                 onClick={onClose}
               >
@@ -410,7 +408,7 @@ function AgentPortalContentScreen({ step, setStep, logout, agentName, yachts, se
   yachts: YachtOption[]; selectedYacht: YachtOption | null; onSelectYacht: (id: string) => void
 }) {
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-white overflow-x-clip">
       {/* Header — stacks into two rows on mobile (nothing else fits three columns of text on a
           narrow screen without wrapping/overlapping); collapses back into the original single-row
           3-column layout from sm: up. */}
@@ -501,6 +499,8 @@ function YachtSwitcher({ yachts, selectedYacht, onSelect }: {
     <div className="relative" ref={ref}>
       <button
         onClick={() => setOpen(o => !o)}
+        aria-haspopup="true"
+        aria-expanded={open}
         className="flex items-center gap-1.5 text-xs font-medium text-neutral-700 hover:text-black transition-colors py-1"
       >
         <span className="text-neutral-400 font-normal">Yacht:</span>
@@ -543,7 +543,7 @@ function LoginScreen({ email, setEmail, password, setPassword, error, onSubmit }
             keeps it visible without needing a separate logo asset. */}
         <img src={SAMARA_LOGO} alt="Samara" className="h-8 w-auto object-contain mx-auto mb-8 brightness-0" />
 
-        <div className="mx-auto w-11 h-11 rounded-full flex items-center justify-center" style={{ background: `${GOLD}22` }}>
+        <div className="mx-auto w-11 h-11 rounded-full flex items-center justify-center" style={{ background: 'color-mix(in srgb, var(--primary) 13%, transparent)' }}>
           <Lock className="h-5 w-5" style={{ color: GOLD_DARK }} />
         </div>
         <h1 className="text-xl font-bold mt-4 text-center">Agent Access</h1>
@@ -551,11 +551,12 @@ function LoginScreen({ email, setEmail, password, setPassword, error, onSubmit }
 
         <div className="mt-8 space-y-4">
           <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Email</label>
+            <label htmlFor="agent-login-email" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Email</label>
             <input
+              id="agent-login-email"
               type="email"
               autoFocus
-              className="w-full h-12 px-3.5 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#bdac7e]/40 focus:border-[#bdac7e] transition-shadow"
+              className="w-full h-12 px-3.5 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-ring/40 focus:border-ring transition-shadow"
               placeholder="you@agency.com"
               value={email}
               onChange={e => setEmail(e.target.value)}
@@ -563,24 +564,25 @@ function LoginScreen({ email, setEmail, password, setPassword, error, onSubmit }
             />
           </div>
           <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Password</label>
+            <label htmlFor="agent-login-password" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Password</label>
             <input
+              id="agent-login-password"
               type="password"
-              className="w-full h-12 px-3.5 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#bdac7e]/40 focus:border-[#bdac7e] transition-shadow"
+              className="w-full h-12 px-3.5 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-ring/40 focus:border-ring transition-shadow"
               placeholder="••••••••"
               value={password}
               onChange={e => setPassword(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && onSubmit()}
             />
           </div>
-          {error && <p className="text-xs text-red-600">{error}</p>}
+          {error && <p className="text-xs text-destructive">{error}</p>}
         </div>
 
         <button
           onClick={onSubmit}
-          className="mt-6 w-full py-3 rounded-lg text-white text-sm font-semibold transition-colors"
+          className="mt-6 w-full py-3 rounded-lg text-primary-foreground text-sm font-semibold transition-colors"
           style={{ background: GOLD }}
-          onMouseEnter={e => (e.currentTarget.style.background = GOLD_DARK)}
+          onMouseEnter={e => (e.currentTarget.style.background = GOLD_HOVER)}
           onMouseLeave={e => (e.currentTarget.style.background = GOLD)}
         >
           Continue
@@ -705,7 +707,7 @@ function YachtScreen({ yachts, loading, agentName, onSelect, onLogout }: {
                 const isActive = y.id === activeId
                 return (
                   <div key={y.id} className="border-b border-white/10">
-                    <button onClick={() => setActiveId(y.id)} className="w-full flex items-center justify-between py-4 text-left">
+                    <button onClick={() => setActiveId(y.id)} aria-pressed={isActive} className="w-full flex items-center justify-between py-4 text-left">
                       <span className={cn('text-sm font-semibold uppercase tracking-widest transition-colors', isActive ? 'text-white' : 'text-white/45')}>
                         {y.name}
                       </span>
@@ -807,6 +809,7 @@ function YachtScreen({ yachts, loading, agentName, onSelect, onLogout }: {
               <button
                 key={y.id}
                 onClick={() => setActiveId(y.id)}
+                aria-pressed={y.id === activeId}
                 className={cn(
                   'group relative shrink-0 w-28 h-40 sm:w-36 sm:h-56 rounded-xl overflow-hidden border transition-[transform,opacity,border-color,box-shadow] duration-500 ease-out',
                   y.id === activeId ? 'border-white/70 shadow-2xl -translate-y-2' : 'border-white/10 opacity-70 hover:opacity-100 hover:-translate-y-1'
@@ -890,7 +893,7 @@ function PdfThumbnail({ url }: { url: string }) {
     return () => { cancelled = true }
   }, [url])
 
-  if (status === 'error') return <FileTypeBadge label="PDF" color="#DC2626" />
+  if (status === 'error') return <FileTypeBadge label="PDF" color="var(--destructive)" />
   return (
     <>
       <canvas ref={canvasRef} className={cn('w-full h-full object-cover object-top', status !== 'ready' && 'hidden')} />
@@ -1068,11 +1071,11 @@ function PdfFlipbook({ url }: { url: string }) {
       <div className="flex items-center justify-center gap-4 shrink-0 py-3 bg-neutral-100 border-t">
         {pages.length > 1 && (
           <>
-            <button onClick={() => flipRef.current?.pageFlip().flipPrev()} className="p-1.5 rounded-full bg-white shadow text-neutral-600 hover:text-black transition-colors">
+            <button onClick={() => flipRef.current?.pageFlip().flipPrev()} aria-label="Previous page" className="p-1.5 rounded-full bg-white shadow text-neutral-600 hover:text-black transition-colors">
               <ChevronLeft className="h-4 w-4" />
             </button>
             <span className="text-xs text-muted-foreground w-12 text-center">{pageIndex + 1} / {pages.length}</span>
-            <button onClick={() => flipRef.current?.pageFlip().flipNext()} className="p-1.5 rounded-full bg-white shadow text-neutral-600 hover:text-black transition-colors">
+            <button onClick={() => flipRef.current?.pageFlip().flipNext()} aria-label="Next page" className="p-1.5 rounded-full bg-white shadow text-neutral-600 hover:text-black transition-colors">
               <ChevronRight className="h-4 w-4" />
             </button>
             <span className="w-px h-4 bg-neutral-300 mx-1" />
@@ -1081,6 +1084,7 @@ function PdfFlipbook({ url }: { url: string }) {
         <button
           onClick={() => setZoom(z => clampZoom(z - 0.25))}
           disabled={zoom <= MIN_ZOOM}
+          aria-label="Zoom out"
           className="p-1.5 rounded-full bg-white shadow text-neutral-600 hover:text-black transition-colors disabled:opacity-40 disabled:hover:text-neutral-600"
         >
           <ZoomOut className="h-4 w-4" />
@@ -1089,6 +1093,7 @@ function PdfFlipbook({ url }: { url: string }) {
         <button
           onClick={() => setZoom(z => clampZoom(z + 0.25))}
           disabled={zoom >= MAX_ZOOM}
+          aria-label="Zoom in"
           className="p-1.5 rounded-full bg-white shadow text-neutral-600 hover:text-black transition-colors disabled:opacity-40 disabled:hover:text-neutral-600"
         >
           <ZoomIn className="h-4 w-4" />
@@ -1260,7 +1265,7 @@ function MediaKitScreen({ yacht }: { yacht: YachtOption }) {
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-8">
               {currentFolders.map(folder => (
                 <button key={folder.id} onClick={() => setActiveFolderId(folder.id)} className="group text-left">
-                  <div className="aspect-[4/3] rounded-lg flex items-center justify-center transition-colors" style={{ backgroundColor: `${GOLD}14` }}>
+                  <div className="aspect-[4/3] rounded-lg flex items-center justify-center transition-colors" style={{ backgroundColor: 'color-mix(in srgb, var(--primary) 8%, transparent)' }}>
                     <FolderOpen className="h-16 w-16 transition-colors" style={{ color: GOLD_DARK }} />
                   </div>
                   <p className="text-sm mt-3 leading-tight">{folder.name}</p>
@@ -1411,10 +1416,10 @@ function CalendarScreen({ yacht }: { yacht: YachtOption }) {
         <>
           <div className="flex items-center gap-4 flex-wrap text-xs text-muted-foreground mb-6">
             <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full inline-block bg-white border border-neutral-300" /> Available</span>
-            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full inline-block bg-emerald-500" /> On Hold</span>
-            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full inline-block bg-amber-400" /> Pending</span>
-            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full inline-block bg-red-500" /> Booked</span>
-            {hasSharedTrip && <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full inline-block bg-blue-500" /> Shared Trip (available)</span>}
+            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full inline-block bg-success" /> On Hold</span>
+            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full inline-block bg-warning" /> Pending</span>
+            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full inline-block bg-destructive" /> Booked</span>
+            {hasSharedTrip && <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full inline-block bg-info" /> Shared Trip (available)</span>}
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-5">
@@ -1469,9 +1474,9 @@ function CalendarScreen({ yacht }: { yacht: YachtOption }) {
                         <div className="flex items-center gap-2">
                           <p className="font-semibold text-sm">{trip.title}</p>
                           {isClosed && (
-                            <span className="text-[9px] uppercase tracking-wide font-semibold bg-neutral-200 text-neutral-600 px-2 py-0.5 rounded-full">
+                            <StatusBadge tone="neutral" size="sm" className="text-[9px] uppercase tracking-wide font-semibold px-2 py-0.5">
                               Closed
-                            </span>
+                            </StatusBadge>
                           )}
                         </div>
                         <p className="text-xs text-muted-foreground mt-0.5">{trip.destination}</p>
@@ -1484,7 +1489,7 @@ function CalendarScreen({ yacht }: { yacht: YachtOption }) {
                           key={cabin.id}
                           className={cn(
                             'flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-xs font-medium',
-                            cabin.bookingStatus ? 'bg-red-500 text-white' : 'bg-white border border-neutral-200 text-neutral-600'
+                            cabin.bookingStatus ? 'bg-destructive text-destructive-foreground' : 'bg-white border border-neutral-200 text-neutral-600'
                           )}
                         >
                           <span className="truncate">{cabin.name}</span>

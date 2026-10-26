@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
+import { useConfirm } from '@/components/ui/confirm-dialog'
 import { Loader2, Trash2, ArrowUpCircle, Phone, Mail } from 'lucide-react'
 import { toast } from 'sonner'
 import type { WaitingListEntry } from '@/hooks/useWaitingList'
@@ -16,6 +17,7 @@ interface Props {
 
 export default function WaitingListTable({ items, loading, onPromote, onRemove }: Props) {
   const [actionId, setActionId] = useState<string | null>(null)
+  const confirm = useConfirm()
 
   const handlePromote = async (id: string) => {
     setActionId(id)
@@ -28,7 +30,11 @@ export default function WaitingListTable({ items, loading, onPromote, onRemove }
   }
 
   const handleRemove = async (id: string, name: string) => {
-    if (!confirm(`Remove ${name} from the waiting list?`)) return
+    if (!(await confirm({
+      title: `Remove ${name} from the waiting list?`,
+      confirmLabel: 'Remove',
+      destructive: true,
+    }))) return
     setActionId(id)
     try {
       await onRemove(id)
@@ -55,7 +61,8 @@ export default function WaitingListTable({ items, loading, onPromote, onRemove }
   }
 
   return (
-    <div className="rounded-lg border overflow-hidden">
+    <div className="rounded-lg border overflow-x-auto">
+      <div className="min-w-[560px]">
       {/* Header row */}
       <div className="grid grid-cols-[40px_1fr_1.4fr_100px_40px] gap-0 bg-muted/60 border-b">
         {['#', 'Name', 'Contact', 'Added by', ''].map((h, i) => (
@@ -74,7 +81,7 @@ export default function WaitingListTable({ items, loading, onPromote, onRemove }
             key={item.id}
             className={[
               'grid grid-cols-[40px_1fr_1.4fr_100px_40px] gap-0 border-b last:border-0 items-center transition-colors',
-              dim ? 'opacity-50 bg-white' : 'bg-white hover:bg-slate-50/60',
+              dim ? 'opacity-50 bg-card' : 'bg-card hover:bg-muted/60',
             ].join(' ')}
           >
             {/* # */}
@@ -117,8 +124,9 @@ export default function WaitingListTable({ items, loading, onPromote, onRemove }
                 <>
                   <Button
                     variant="ghost" size="icon"
-                    className="h-8 w-8 text-green-600 hover:text-green-700 hover:bg-green-50"
+                    className="size-8 text-success hover:text-success/80 hover:bg-success/10"
                     title="Promote to On Hold"
+                    aria-label="Promote to On Hold"
                     disabled={busy}
                     onClick={() => handlePromote(item.id)}
                   >
@@ -126,8 +134,9 @@ export default function WaitingListTable({ items, loading, onPromote, onRemove }
                   </Button>
                   <Button
                     variant="ghost" size="icon"
-                    className="h-8 w-8 text-red-500 hover:text-red-600 hover:bg-red-50"
+                    className="size-8 text-destructive hover:text-destructive/80 hover:bg-destructive/10"
                     title="Remove from waiting list"
+                    aria-label="Remove from waiting list"
                     disabled={busy}
                     onClick={() => handleRemove(item.id, item.contactName)}
                   >
@@ -139,6 +148,7 @@ export default function WaitingListTable({ items, loading, onPromote, onRemove }
           </div>
         )
       })}
+      </div>
     </div>
   )
 }

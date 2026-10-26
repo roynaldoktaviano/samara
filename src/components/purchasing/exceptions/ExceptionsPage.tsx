@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from 'react'
 import { AlertTriangle, Clock, Package, RefreshCw, X, CheckCircle2 } from 'lucide-react'
+import { formatDate, formatMoney, formatNumber } from '@/lib/format'
+import { StatusBadge, type StatusTone } from '@/components/ui/status-badge'
 
 interface InventoryException {
   id: string; type: string; itemName: string; locationName: string
@@ -25,12 +27,11 @@ interface StaleStock {
 }
 interface Summary { openExceptions: number; lowStockCount: number; criticalCount: number; overduePOCount: number; staleStockCount: number }
 
-const SEV_COLOR: Record<string, string> = {
-  critical: 'bg-red-100 text-red-700',
-  high: 'bg-orange-100 text-orange-700',
-  medium: 'bg-yellow-100 text-yellow-700',
+const SEVERITY: Record<string, { label: string; tone: StatusTone }> = {
+  critical: { label: 'Out of Stock', tone: 'destructive' },
+  high:     { label: 'Critical',     tone: 'warning' },
+  medium:   { label: 'Low',          tone: 'warning' },
 }
-const SEV_LABEL: Record<string, string> = { critical: 'Out of Stock', high: 'Critical', medium: 'Low' }
 
 const EXC_TYPE_LABEL: Record<string, string> = {
   NEGATIVE_STOCK: 'Negative Stock',
@@ -39,15 +40,11 @@ const EXC_TYPE_LABEL: Record<string, string> = {
   STOCK_COUNT_VARIANCE: 'Stock Count Variance',
 }
 const EXC_TYPE_COLOR: Record<string, string> = {
-  NEGATIVE_STOCK: 'bg-red-100 text-red-700',
-  TRANSFER_DISCREPANCY: 'bg-orange-100 text-orange-700',
-  RECEIVING_DISCREPANCY: 'bg-orange-100 text-orange-700',
-  STOCK_COUNT_VARIANCE: 'bg-amber-100 text-amber-700',
+  NEGATIVE_STOCK: 'bg-destructive/15 text-destructive',
+  TRANSFER_DISCREPANCY: 'bg-warning/15 text-warning',
+  RECEIVING_DISCREPANCY: 'bg-warning/15 text-warning',
+  STOCK_COUNT_VARIANCE: 'bg-warning/15 text-warning',
 }
-
-const fmtDate = (s: string) => new Date(s).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })
-const fmtDateTime = (s: string) => new Date(s).toLocaleString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
-const fmtMoney = (n: number) => 'Rp ' + new Intl.NumberFormat('id-ID').format(Math.round(n))
 
 type Tab = 'register' | 'low-stock' | 'overdue-po' | 'stale-stock'
 
@@ -133,20 +130,20 @@ export default function ExceptionsPage() {
         </div>
       ) : (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div className={`rounded-xl border p-4 ${openCount > 0 ? 'bg-red-50 border-red-200' : 'bg-green-50 border-green-200'}`}>
-            <p className={`text-xs font-medium ${openCount > 0 ? 'text-red-500' : 'text-green-600'}`}>Open Exceptions</p>
-            <p className={`text-3xl font-bold mt-1 ${openCount > 0 ? 'text-red-700' : 'text-green-700'}`}>{openCount}</p>
-            <p className={`text-xs mt-0.5 ${openCount > 0 ? 'text-red-400' : 'text-green-500'}`}>{openCount > 0 ? 'require manager action' : 'all clear'}</p>
+          <div className={`rounded-xl border p-4 ${openCount > 0 ? 'bg-destructive/10 border-destructive/30' : 'bg-success/10 border-success/30'}`}>
+            <p className={`text-xs font-medium ${openCount > 0 ? 'text-destructive' : 'text-success'}`}>Open Exceptions</p>
+            <p className={`text-3xl font-bold mt-1 ${openCount > 0 ? 'text-destructive' : 'text-success'}`}>{openCount}</p>
+            <p className={`text-xs mt-0.5 ${openCount > 0 ? 'text-destructive/80' : 'text-success'}`}>{openCount > 0 ? 'require manager action' : 'all clear'}</p>
           </div>
-          <div className="rounded-xl border p-4 bg-orange-50 border-orange-100">
-            <p className="text-xs font-medium text-orange-500">Low Stock</p>
-            <p className="text-3xl font-bold text-orange-700 mt-1">{summary?.lowStockCount ?? 0}</p>
-            <p className="text-xs text-orange-400 mt-0.5">{summary?.criticalCount ?? 0} out of stock</p>
+          <div className="rounded-xl border p-4 bg-warning/10 border-warning/30">
+            <p className="text-xs font-medium text-warning">Low Stock</p>
+            <p className="text-3xl font-bold text-warning mt-1">{summary?.lowStockCount ?? 0}</p>
+            <p className="text-xs text-warning/80 mt-0.5">{summary?.criticalCount ?? 0} out of stock</p>
           </div>
-          <div className="rounded-xl border p-4 bg-amber-50 border-amber-100">
-            <p className="text-xs font-medium text-amber-600">Overdue POs</p>
-            <p className="text-3xl font-bold text-amber-700 mt-1">{summary?.overduePOCount ?? 0}</p>
-            <p className="text-xs text-amber-400 mt-0.5">past expected delivery</p>
+          <div className="rounded-xl border p-4 bg-warning/10 border-warning/30">
+            <p className="text-xs font-medium text-warning">Overdue POs</p>
+            <p className="text-3xl font-bold text-warning mt-1">{summary?.overduePOCount ?? 0}</p>
+            <p className="text-xs text-warning/80 mt-0.5">past expected delivery</p>
           </div>
           <div className="rounded-xl border p-4 bg-muted/40">
             <p className="text-xs font-medium text-muted-foreground">Stale Stock</p>
@@ -158,8 +155,8 @@ export default function ExceptionsPage() {
 
       {/* Open exceptions banner */}
       {!loading && openCount > 0 && tab === 'register' && (
-        <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-800">
-          <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-red-500" />
+        <div className="flex items-start gap-3 bg-destructive/10 border border-destructive/30 rounded-lg px-4 py-3 text-sm text-destructive">
+          <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-destructive" />
           <span>Negative balances and discrepancies remain visible until a manager documents and approves the correction. They are never silently reset to zero.</span>
         </div>
       )}
@@ -168,10 +165,10 @@ export default function ExceptionsPage() {
       <div className="border-b flex gap-0">
         {tabs.map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}
-            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${tab === t.id ? 'border-[#bdac7e] text-[#bdac7e]' : 'border-transparent text-muted-foreground hover:text-foreground'}`}>
+            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${tab === t.id ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'}`}>
             {t.label}
             {!loading && t.count !== undefined && t.count > 0 && (
-              <span className="ml-2 text-xs font-semibold px-1.5 py-0.5 rounded-full bg-red-100 text-red-600">{t.count}</span>
+              <span className="ml-2 text-xs font-semibold px-1.5 py-0.5 rounded-full bg-destructive/15 text-destructive">{t.count}</span>
             )}
           </button>
         ))}
@@ -225,8 +222,8 @@ export default function ExceptionsPage() {
                   {visibleRegister.map(exc => {
                     const isOpen = exc.status === 'OPEN'
                     return (
-                      <tr key={exc.id} className={`hover:bg-muted/20 ${isOpen ? 'bg-red-50/20' : ''}`}>
-                        <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">{fmtDate(exc.createdAt)}</td>
+                      <tr key={exc.id} className={`hover:bg-muted/20 ${isOpen ? 'bg-destructive/5' : ''}`}>
+                        <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">{formatDate(exc.createdAt)}</td>
                         <td className="px-4 py-3">
                           <span className={`inline-flex px-2 py-0.5 rounded text-xs font-semibold ${EXC_TYPE_COLOR[exc.type] ?? 'bg-muted text-muted-foreground'}`}>
                             {EXC_TYPE_LABEL[exc.type] ?? exc.type}
@@ -235,37 +232,37 @@ export default function ExceptionsPage() {
                         <td className="px-4 py-3 font-medium max-w-[160px] truncate">{exc.itemName}</td>
                         <td className="px-4 py-3 text-muted-foreground text-xs whitespace-nowrap">{exc.locationName}</td>
                         <td className="px-4 py-3 text-right tabular-nums font-medium">
-                          {exc.qty > 0 ? exc.qty.toLocaleString('id-ID', { maximumFractionDigits: 2 }) : '—'}
+                          {exc.qty > 0 ? formatNumber(exc.qty, { decimals: 2 }) : '—'}
                         </td>
                         <td className="px-4 py-3 text-right tabular-nums text-xs">
-                          {exc.value > 0 ? fmtMoney(exc.value) : '—'}
+                          {exc.value > 0 ? formatMoney(exc.value) : '—'}
                         </td>
                         <td className="px-4 py-3 text-xs text-muted-foreground max-w-[200px]">
                           <span title={exc.reason ?? ''} className="line-clamp-2">{exc.reason ?? '—'}</span>
                           {!isOpen && exc.resolution && (
-                            <span className="block text-green-700 mt-0.5" title={exc.resolution}>
+                            <span className="block text-success mt-0.5" title={exc.resolution}>
                               ✓ {exc.resolution.length > 60 ? exc.resolution.slice(0, 60) + '…' : exc.resolution}
                             </span>
                           )}
                         </td>
                         <td className="px-4 py-3 text-center">
                           {isOpen ? (
-                            <span className="inline-flex px-2 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-700">Open</span>
+                            <StatusBadge tone="destructive" className="font-semibold">Open</StatusBadge>
                           ) : (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-700">
+                            <StatusBadge tone="success" className="font-semibold">
                               <CheckCircle2 className="h-3 w-3" /> Resolved
-                            </span>
+                            </StatusBadge>
                           )}
                         </td>
                         <td className="px-4 py-3 text-right whitespace-nowrap">
                           {isOpen ? (
                             <button onClick={() => { setResolving(exc); setResolution(''); setResolveError('') }}
-                              className="px-3 py-1 text-xs font-medium bg-green-600 hover:bg-green-700 text-white rounded-md transition-colors">
+                              className="px-3 py-1 text-xs font-medium bg-success hover:bg-success/90 text-success-foreground rounded-md transition-colors">
                               Resolve
                             </button>
                           ) : (
                             <span className="text-xs text-muted-foreground whitespace-nowrap">
-                              {exc.resolvedBy?.name ?? ''}{exc.resolvedAt ? ` · ${fmtDate(exc.resolvedAt)}` : ''}
+                              {exc.resolvedBy?.name ?? ''}{exc.resolvedAt ? ` · ${formatDate(exc.resolvedAt)}` : ''}
                             </span>
                           )}
                         </td>
@@ -295,19 +292,19 @@ export default function ExceptionsPage() {
               </thead>
               <tbody className="divide-y">
                 {lowStock.map(({ item, totalQty, minStock, deficit, severity }) => (
-                  <tr key={item.id} className={`hover:bg-muted/20 ${severity === 'critical' ? 'bg-red-50/30' : ''}`}>
+                  <tr key={item.id} className={`hover:bg-muted/20 ${severity === 'critical' ? 'bg-destructive/5' : ''}`}>
                     <td className="px-4 py-3">
                       <p className="font-medium">{item.name}</p>
                       <p className="text-xs text-muted-foreground font-mono mt-0.5">{item.sku}</p>
                     </td>
                     <td className="px-4 py-3"><span className="px-2 py-0.5 rounded-full text-xs bg-muted text-muted-foreground">{item.category}</span></td>
-                    <td className={`px-4 py-3 text-right font-semibold tabular-nums ${severity === 'critical' ? 'text-red-600' : 'text-orange-600'}`}>
+                    <td className={`px-4 py-3 text-right font-semibold tabular-nums ${severity === 'critical' ? 'text-destructive' : 'text-warning'}`}>
                       {totalQty} <span className="font-normal text-muted-foreground text-xs">{item.baseUnit}</span>
                     </td>
                     <td className="px-4 py-3 text-right text-muted-foreground tabular-nums">{minStock} {item.baseUnit}</td>
-                    <td className="px-4 py-3 text-right font-medium text-red-600 tabular-nums">-{deficit} {item.baseUnit}</td>
+                    <td className="px-4 py-3 text-right font-medium text-destructive tabular-nums">-{deficit} {item.baseUnit}</td>
                     <td className="px-4 py-3 text-center">
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${SEV_COLOR[severity]}`}>{SEV_LABEL[severity]}</span>
+                      <StatusBadge tone={SEVERITY[severity]?.tone ?? 'neutral'}>{SEVERITY[severity]?.label}</StatusBadge>
                     </td>
                   </tr>
                 ))}
@@ -332,15 +329,15 @@ export default function ExceptionsPage() {
               </thead>
               <tbody className="divide-y">
                 {overduePOs.map(po => (
-                  <tr key={po.id} className="hover:bg-muted/20 bg-orange-50/20">
+                  <tr key={po.id} className="hover:bg-muted/20 bg-warning/5">
                     <td className="px-4 py-3 font-mono font-medium text-xs">{po.poNumber}</td>
                     <td className="px-4 py-3 font-medium">{po.supplierName}</td>
-                    <td className="px-4 py-3 text-muted-foreground">{fmtDate(po.expectedAt)}</td>
+                    <td className="px-4 py-3 text-muted-foreground">{formatDate(po.expectedAt)}</td>
                     <td className="px-4 py-3 text-center">
-                      <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-700">+{po.daysOverdue} days</span>
+                      <StatusBadge tone="destructive" className="font-semibold">+{po.daysOverdue} days</StatusBadge>
                     </td>
                     <td className="px-4 py-3 text-center">
-                      <span className="px-2 py-0.5 rounded-full text-xs bg-muted text-muted-foreground">{po.status}</span>
+                      <StatusBadge tone="neutral">{po.status}</StatusBadge>
                     </td>
                   </tr>
                 ))}
@@ -381,7 +378,7 @@ export default function ExceptionsPage() {
       {/* Resolve modal */}
       {resolving && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
+          <div className="bg-card rounded-xl shadow-xl w-full max-w-md">
             <div className="flex items-center justify-between p-5 border-b">
               <div>
                 <h3 className="font-semibold">Resolve Exception</h3>
@@ -392,29 +389,29 @@ export default function ExceptionsPage() {
             <div className="p-5 space-y-4">
               <div className="bg-muted/40 rounded-lg p-3 text-xs space-y-1 text-muted-foreground">
                 <p><span className="font-medium text-foreground">Location:</span> {resolving.locationName}</p>
-                {resolving.qty > 0 && <p><span className="font-medium text-foreground">Qty:</span> {resolving.qty.toLocaleString('id-ID', { maximumFractionDigits: 2 })}</p>}
-                {resolving.value > 0 && <p><span className="font-medium text-foreground">Value:</span> {fmtMoney(resolving.value)}</p>}
+                {resolving.qty > 0 && <p><span className="font-medium text-foreground">Qty:</span> {formatNumber(resolving.qty, { decimals: 2 })}</p>}
+                {resolving.value > 0 && <p><span className="font-medium text-foreground">Value:</span> {formatMoney(resolving.value)}</p>}
                 {resolving.reason && <p><span className="font-medium text-foreground">Reason:</span> {resolving.reason}</p>}
-                {resolving.createdAt && <p><span className="font-medium text-foreground">Created:</span> {fmtDateTime(resolving.createdAt)}</p>}
+                {resolving.createdAt && <p><span className="font-medium text-foreground">Created:</span> {formatDate(resolving.createdAt, 'datetime')}</p>}
               </div>
               <div className="space-y-1.5">
-                <label className="text-sm font-medium">Resolution Notes <span className="text-red-500">*</span></label>
+                <label className="text-sm font-medium">Resolution Notes <span className="text-destructive">*</span></label>
                 <textarea
                   rows={3}
-                  placeholder="Describe how this exception was investigated and resolved..."
+                  placeholder="Describe how this exception was investigated and resolved…"
                   value={resolution}
                   onChange={e => setResolution(e.target.value)}
-                  className="w-full border rounded-md px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-[#bdac7e]/50 focus:border-[#bdac7e]"
+                  className="w-full border rounded-md px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-ring/50 focus:border-ring"
                 />
               </div>
-              {resolveError && <p className="text-xs text-red-600">{resolveError}</p>}
+              {resolveError && <p className="text-xs text-destructive">{resolveError}</p>}
             </div>
             <div className="flex justify-end gap-3 px-5 py-4 border-t bg-muted/30">
               <button onClick={() => setResolving(null)} className="px-4 py-2 text-sm border rounded-md hover:bg-muted">Cancel</button>
               <button onClick={submitResolve} disabled={resolveLoading || !resolution.trim()}
-                className="flex items-center gap-2 px-4 py-2 text-sm bg-green-600 hover:bg-green-700 text-white rounded-md disabled:opacity-50 font-medium transition-colors">
+                className="flex items-center gap-2 px-4 py-2 text-sm bg-success hover:bg-success/90 text-success-foreground rounded-md disabled:opacity-50 font-medium transition-colors">
                 <CheckCircle2 className="h-4 w-4" />
-                {resolveLoading ? 'Resolving...' : 'Mark as Resolved'}
+                {resolveLoading ? 'Resolving…' : 'Mark as Resolved'}
               </button>
             </div>
           </div>

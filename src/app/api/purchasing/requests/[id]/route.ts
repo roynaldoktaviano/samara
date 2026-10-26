@@ -235,7 +235,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     // the edit below recreates every item, which would bring those back as unchecked and
     // get them transferred/bought a second time.
     if (current.items.length > 0) {
-      return NextResponse.json({ error: 'Sebagian item sudah ditransfer oleh Warehouse — PR ini tidak bisa diedit lagi' }, { status: 409 })
+      return NextResponse.json({ error: 'Some items have already been transferred by Warehouse — this PR can no longer be edited' }, { status: 409 })
     }
     if (!deliveryLocationId) return NextResponse.json({ error: 'Please select a delivery location' }, { status: 400 })
     if (!editItems || !Array.isArray(editItems) || editItems.length === 0) {
@@ -413,7 +413,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const transferByRequestItemId = new Map<string, { fromLocationId: string; baseQty: number }>()
   if (transferFulfillments?.length) {
     if (!current.deliveryLocationId) {
-      return NextResponse.json({ error: 'PR tidak punya delivery location — tidak bisa fulfill via transfer' }, { status: 409 })
+      return NextResponse.json({ error: 'PR has no delivery location — cannot fulfill via transfer' }, { status: 409 })
     }
     const fulfillItemIds = current.items.filter(i => i.itemId).map(i => i.itemId as string)
     const [masters, warehouses] = await Promise.all([
@@ -426,16 +426,16 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     for (const tf of transferFulfillments) {
       if (!readyItemIds.has(tf.requestItemId)) continue
       const item = current.items.find(i => i.id === tf.requestItemId)
-      if (!item || !item.itemId) return NextResponse.json({ error: 'Item transfer tidak valid' }, { status: 400 })
+      if (!item || !item.itemId) return NextResponse.json({ error: 'Invalid transfer item' }, { status: 400 })
       if (!warehouseIds.has(tf.fromLocationId) || tf.fromLocationId === current.deliveryLocationId) {
-        return NextResponse.json({ error: `Lokasi asal tidak valid untuk "${item.itemName}"` }, { status: 400 })
+        return NextResponse.json({ error: `Invalid source location for "${item.itemName}"` }, { status: 400 })
       }
       const master = masterMap.get(item.itemId)
       const baseQty = toBaseQty(item.quantity, item.unit, master)
       const lots = await db.stockLot.findMany({ where: { itemId: item.itemId, locationId: tf.fromLocationId }, select: { quantity: true } })
       const available = lots.reduce((s, l) => s + l.quantity, 0)
       if (available < baseQty) {
-        return NextResponse.json({ error: `Stok "${item.itemName}" tidak cukup (tersedia: ${available})` }, { status: 409 })
+        return NextResponse.json({ error: `Not enough stock for "${item.itemName}" (available: ${available})` }, { status: 409 })
       }
       transferByRequestItemId.set(item.id, { fromLocationId: tf.fromLocationId, baseQty })
     }
@@ -474,7 +474,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       const roomAssignable = poItems.filter(it => !it.sourceInventoryItemId && lineTreatment(it) === 'ASSET')
       const missing = roomAssignable.filter(it => !roomAssignmentByItemId.get(it.id)?.roomId || !roomAssignmentByItemId.get(it.id)?.categoryId)
       if (missing.length > 0) {
-        return NextResponse.json({ error: `Item Asset wajib menentukan Ruangan dan Kategori Barang: ${missing.map(it => it.itemName).join(', ')}` }, { status: 400 })
+        return NextResponse.json({ error: `Asset items must specify a Room and Item Category: ${missing.map(it => it.itemName).join(', ')}` }, { status: 400 })
       }
       const roomIds = [...new Set(roomAssignable.map(it => roomAssignmentByItemId.get(it.id)!.roomId!))]
       const categoryIds = [...new Set(roomAssignable.map(it => roomAssignmentByItemId.get(it.id)!.categoryId!))]
@@ -483,7 +483,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         db.inventoryCategory.count({ where: { id: { in: categoryIds }, room: { locationId: current.deliveryLocationId } } }),
       ])
       if (validRooms !== roomIds.length || validCategories !== categoryIds.length) {
-        return NextResponse.json({ error: 'Ruangan/Kategori tidak valid untuk lokasi ini' }, { status: 400 })
+        return NextResponse.json({ error: 'Room/Category is not valid for this location' }, { status: 400 })
       }
     }
   }
@@ -620,7 +620,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }, { timeout: 30000 })
   } catch (e) {
     if (e instanceof ConvertConflictError) {
-      return NextResponse.json({ error: 'Sebagian item PR ini baru saja di-convert oleh proses lain — muat ulang halaman.' }, { status: 409 })
+      return NextResponse.json({ error: 'Some items on this PR were just converted by another process — reload the page.' }, { status: 409 })
     }
     throw e
   }
@@ -629,8 +629,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   // has to dispatch it next and won't otherwise know a PR conversion just created it.
   if (createdTransferNumbers.length > 0) {
     await notifyByRoleForRequest(db, ['WAREHOUSE', 'ADMIN', 'SUPER_ADMIN'], 'TRANSFER_PENDING_DISPATCH',
-      'Transfer Baru Menunggu Dikirim',
-      `${createdTransferNumbers.join(', ')} dibuat dari ${request.prNumber} — siap dikirim ke lokasi tujuan.`,
+      'New Transfer Awaiting Dispatch',
+      `${createdTransferNumbers.join(', ')} created from ${request.prNumber} — ready to ship to the destination.`,
       id,
     )
     emitTenantEvent(session.user.tenantId, 'purchasing-transfers')
@@ -642,8 +642,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (newDraftPos.length > 0) {
     for (const po of newDraftPos) {
       await notifyByRole(db, ALLOWED, 'PO_DRAFT_CREATED',
-        'Draft PO Menunggu Dilengkapi',
-        `${po.poNumber} dibuat dari ${request.prNumber} — lengkapi supplier & harga sebelum dikonfirmasi.`,
+        'Draft PO Needs Completion',
+        `${po.poNumber} created from ${request.prNumber} — fill in the supplier & pricing before confirming.`,
         po.id,
       )
     }
@@ -665,9 +665,9 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   if (roleMatches(role, OWN_ONLY_ROLES) && existing.requestedById !== session.user.id) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
   }
-  if (existing.status !== 'DRAFT') return NextResponse.json({ error: 'Hanya PR yang masih Draft yang bisa dihapus' }, { status: 409 })
+  if (existing.status !== 'DRAFT') return NextResponse.json({ error: 'Only a Draft PR can be deleted' }, { status: 409 })
   const transferred = await db.purchaseRequestItem.count({ where: { requestId: id, convertedAt: { not: null } } })
-  if (transferred > 0) return NextResponse.json({ error: 'Sebagian item sudah ditransfer oleh Warehouse — PR ini tidak bisa dihapus' }, { status: 409 })
+  if (transferred > 0) return NextResponse.json({ error: 'Some items have already been transferred by Warehouse — this PR cannot be deleted' }, { status: 409 })
   await db.purchaseRequestItem.deleteMany({ where: { requestId: id } })
   await db.purchaseRequest.delete({ where: { id } })
   emitTenantEvent(session.user.tenantId, 'purchasing-requests')

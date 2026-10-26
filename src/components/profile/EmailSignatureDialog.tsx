@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Camera, Loader2, Trash2 } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog'
@@ -99,7 +99,7 @@ export default function EmailSignatureDialog({ open, onOpenChange, userId }: {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto" onInteractOutside={e => e.preventDefault()}>
         <DialogHeader>
           <DialogTitle>Email Signature</DialogTitle>
           <DialogDescription>Added below every email you send from Chat › Email. The layout is the same for everyone — only your details change.</DialogDescription>
@@ -118,8 +118,12 @@ export default function EmailSignatureDialog({ open, onOpenChange, userId }: {
               <div className="flex items-center gap-3">
                 <div
                   {...dropProps}
+                  role="button"
+                  tabIndex={0}
+                  aria-label="Upload photo"
                   onClick={() => !uploading && fileRef.current?.click()}
-                  className={`relative h-16 w-16 shrink-0 cursor-pointer overflow-hidden rounded-full border-2 border-dashed ${isDragging ? 'border-primary bg-primary/5' : 'border-muted-foreground/30'} flex items-center justify-center`}
+                  onKeyDown={e => { if ((e.key === 'Enter' || e.key === ' ') && !uploading) { e.preventDefault(); fileRef.current?.click() } }}
+                  className={`relative h-16 w-16 shrink-0 cursor-pointer overflow-hidden rounded-full border-2 border-dashed ${isDragging ? 'border-primary bg-primary/5' : 'border-muted-foreground/30'} flex items-center justify-center outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50`}
                 >
                   {uploading ? <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
                     : sig.photoUrl ? <img src={sig.photoUrl} alt="" className="h-full w-full object-cover" />
@@ -128,7 +132,7 @@ export default function EmailSignatureDialog({ open, onOpenChange, userId }: {
                 <div className="text-xs text-muted-foreground">
                   <p>Click or drop a photo. It is cropped to a square automatically.</p>
                   {sig.photoUrl && (
-                    <button type="button" onClick={() => set('photoUrl', '')} className="mt-1 inline-flex items-center gap-1 text-red-600 hover:underline">
+                    <button type="button" onClick={() => set('photoUrl', '')} className="mt-1 inline-flex items-center gap-1 text-destructive hover:underline">
                       <Trash2 className="h-3 w-3" /> Remove photo
                     </button>
                   )}
@@ -141,8 +145,8 @@ export default function EmailSignatureDialog({ open, onOpenChange, userId }: {
               <Field label="Job Title" value={sig.title} onChange={v => set('title', v)} disabled={busy} placeholder="Yacht Charter Consultant" />
               <Field label="Location" value={sig.location} onChange={v => set('location', v)} disabled={busy} placeholder="Indonesia" />
               <div className="space-y-1.5">
-                <Label>E-mail</Label>
-                <Input value={ctx.email} disabled />
+                <Label htmlFor="sig-email">E-mail</Label>
+                <Input id="sig-email" value={ctx.email} disabled />
                 <p className="text-[11px] text-muted-foreground">Always your login email, so it matches the sender address.</p>
               </div>
               <div className="grid grid-cols-[1fr_8rem] gap-2">
@@ -161,14 +165,14 @@ export default function EmailSignatureDialog({ open, onOpenChange, userId }: {
                   ? <div dangerouslySetInnerHTML={{ __html: previewHtml }} />
                   : <p className="mt-6 text-xs text-gray-400">Fill in your name to see the signature.</p>}
               </div>
-              {!sig.enabled && <p className="text-xs text-amber-600">Signature is turned off — it won’t be added to your emails.</p>}
+              {!sig.enabled && <p className="text-xs text-warning">Signature is turned off — it won’t be added to your emails.</p>}
             </div>
           </div>
         )}
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
-          <Button onClick={handleSave} disabled={busy || uploading}>{saving ? 'Saving...' : 'Save Signature'}</Button>
+          <Button onClick={handleSave} loading={saving} disabled={loading || uploading}>{saving ? 'Saving…' : 'Save Signature'}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -178,10 +182,11 @@ export default function EmailSignatureDialog({ open, onOpenChange, userId }: {
 function Field({ label, value, onChange, disabled, placeholder }: {
   label: string; value: string; onChange: (v: string) => void; disabled?: boolean; placeholder?: string
 }) {
+  const id = useId()
   return (
     <div className="space-y-1.5">
-      <Label>{label}</Label>
-      <Input value={value} onChange={e => onChange(e.target.value)} disabled={disabled} placeholder={placeholder} />
+      <Label htmlFor={id}>{label}</Label>
+      <Input id={id} value={value} onChange={e => onChange(e.target.value)} disabled={disabled} placeholder={placeholder} />
     </div>
   )
 }

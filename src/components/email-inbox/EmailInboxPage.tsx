@@ -7,13 +7,18 @@ import { uploadToR2 } from '@/lib/r2-client'
 import { useFileDrop } from '@/hooks/useFileDrop'
 import {
   Search, Send, Loader2, Mail, Paperclip, X, Star, Pencil, ArrowLeft, Image as ImageIcon, FileText, Inbox,
-  Reply, Forward, Trash2, ChevronDown, ChevronLeft, ChevronRight, Film, Plus,
+  Reply, Forward, Trash2, ChevronLeft, ChevronRight, Film, Plus,
 } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { NativeSelect } from '@/components/ui/native-select'
 import { isHttpUrl } from '@/lib/url-safety'
+import { formatDate } from '@/lib/format'
 import EmailComposer, { SignaturePreview, EMAIL_BODY_CLASSES, type ComposerValue } from './EmailComposer'
 
-const ACCENT = '#1f5eff'
+const ACCENT = 'var(--info)'
 const EMPTY_DRAFT: ComposerValue = { html: '', text: '', isEmpty: true }
 
 interface ConversationSummary {
@@ -55,7 +60,7 @@ const FOLDERS: { key: Folder; label: string }[] = [
   { key: 'sent', label: 'Sent' },
 ]
 
-const iconBtn = 'h-8 w-8 rounded-lg flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-30 disabled:pointer-events-none transition-colors'
+const iconBtn = 'size-8 text-muted-foreground hover:text-foreground'
 
 // Gmail-like letter avatars: a stable color per address
 const AVATAR_COLORS = ['#e8453c', '#f4511e', '#f6bf26', '#33b679', '#0b8043', '#039be5', '#3f51b5', '#7986cb', '#8e24aa', '#d81b60', '#616161', '#795548']
@@ -92,7 +97,7 @@ function AttachmentIcon({ name }: { name: string }) {
 function AttachmentChip({ url }: { url: string }) {
   const name = fileNameFromUrl(url)
   return (
-    <span className="flex items-center gap-1 rounded-md border bg-white px-2 py-1 text-[11px] text-foreground/70 max-w-[150px]">
+    <span className="flex items-center gap-1 rounded-md border bg-card px-2 py-1 text-[11px] text-foreground/70 max-w-[150px]">
       <FileTypeIcon name={name} className="h-3 w-3 shrink-0 text-muted-foreground" />
       <span className="truncate">{name}</span>
     </span>
@@ -104,7 +109,7 @@ function AttachmentFile({ url }: { url: string }) {
   const ext = name.includes('.') ? name.split('.').pop()!.toUpperCase() : 'FILE'
   return (
     <a href={url} target="_blank" rel="noopener noreferrer" className="group flex items-center gap-3 max-w-[260px]">
-      <span className="h-10 w-10 shrink-0 rounded-full bg-[#f4f5f7] group-hover:bg-[#eceef1] flex items-center justify-center text-muted-foreground transition-colors">
+      <span className="h-10 w-10 shrink-0 rounded-full bg-muted group-hover:bg-accent flex items-center justify-center text-muted-foreground transition-colors">
         <FileTypeIcon name={name} className="h-4 w-4" />
       </span>
       <span className="min-w-0">
@@ -128,10 +133,11 @@ function downloadAll(urls: string[]) {
 function fmtListTime(iso: string) {
   const d = new Date(iso)
   const now = new Date()
-  if (d.toDateString() === now.toDateString()) return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
-  if (d.getFullYear() === now.getFullYear()) return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  if (d.toDateString() === now.toDateString()) return formatDate(d, 'time')
+  if (d.getFullYear() === now.getFullYear()) return formatDate(d, 'short')
+  return formatDate(d)
 }
+// Quoted header inside forwarded/replied email bodies — leaves the UI, so it keeps its own format.
 function fmtDateTime(iso: string) {
   return new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })
 }
@@ -289,7 +295,7 @@ export default function EmailInboxPage({ initialConversationId }: { initialConve
   const activeIndex = filtered.findIndex(c => c.id === activeId)
 
   return (
-    <div className="h-[calc(100vh-6rem)] flex rounded-2xl border overflow-hidden bg-white">
+    <div className="h-[calc(100vh-6rem)] flex rounded-2xl border overflow-hidden bg-card">
       {/* ── Thread list ── */}
       <div className={`relative w-full md:w-[340px] xl:w-[380px] shrink-0 md:border-r flex-col ${activeId ? 'hidden md:flex' : 'flex'}`}>
         <div className="px-5 pt-5 pb-3 space-y-3">
@@ -298,34 +304,36 @@ export default function EmailInboxPage({ initialConversationId }: { initialConve
             <p className="text-xs text-muted-foreground mt-0.5">{filtered.length} Messages • {unreadTotal} Unread</p>
           </div>
           <div className="flex gap-2">
-            <div className="flex-1 flex items-center gap-2 h-10 rounded-lg bg-[#f4f5f7] px-3 focus-within:bg-white focus-within:ring-1 focus-within:ring-[#d0d7e2] transition-all">
-              <Search className="h-4 w-4 text-muted-foreground shrink-0" />
-              <input className="flex-1 min-w-0 bg-transparent text-sm focus:outline-none placeholder:text-muted-foreground"
-                placeholder="Search" value={search} onChange={e => setSearch(e.target.value)} />
-              {search && <button onClick={() => setSearch('')} className="text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>}
+            <div className="relative flex-1 min-w-0">
+              <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input aria-label="Search emails" placeholder="Search" value={search} onChange={e => setSearch(e.target.value)}
+                className="h-10 pl-9 pr-10 rounded-lg bg-muted dark:bg-muted border-transparent shadow-none focus-visible:bg-card" />
+              {search && (
+                <Button type="button" variant="ghost" size="icon" onClick={() => setSearch('')} aria-label="Clear search"
+                  className="absolute right-1 top-1/2 -translate-y-1/2 size-8 text-muted-foreground hover:text-foreground">
+                  <X className="h-4 w-4" />
+                </Button>
+              )}
             </div>
-            <button onClick={openCompose} title="New message"
-              className="h-10 w-10 shrink-0 rounded-lg bg-[#f4f5f7] hover:bg-[#eceef1] flex items-center justify-center text-foreground/70 transition-colors">
+            <Button type="button" variant="secondary" size="icon" onClick={openCompose} title="New message" aria-label="New message"
+              className="size-10 shrink-0 rounded-lg text-foreground/70">
               <Plus className="h-4 w-4" />
-            </button>
+            </Button>
           </div>
-          <div className="flex gap-1.5 overflow-x-auto">
+          <div role="group" aria-label="Folders" className="flex gap-1.5 overflow-x-auto">
             {FOLDERS.map(f => (
-              <button key={f.key} onClick={() => setFolder(f.key)}
-                className={`h-7 px-3 shrink-0 rounded-full text-xs font-medium transition-colors ${folder === f.key ? 'text-white' : 'bg-[#f4f5f7] text-foreground/70 hover:bg-[#eceef1]'}`}
+              <button key={f.key} type="button" aria-pressed={folder === f.key} onClick={() => setFolder(f.key)}
+                className={`h-7 px-3 shrink-0 rounded-full text-xs font-medium transition-colors ${folder === f.key ? 'text-info-foreground' : 'bg-muted text-foreground/70 hover:bg-accent'}`}
                 style={folder === f.key ? { backgroundColor: ACCENT } : undefined}>
                 {f.label} · {folderCounts[f.key]}
               </button>
             ))}
           </div>
-          <div className="relative inline-flex">
-            <select value={sort} onChange={e => setSort(e.target.value as Sort)}
-              className="appearance-none h-8 pl-3 pr-8 rounded-lg bg-[#f4f5f7] text-xs text-foreground/80 focus:outline-none cursor-pointer">
-              <option value="newest">Newest</option>
-              <option value="oldest">Oldest</option>
-            </select>
-            <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-          </div>
+          <NativeSelect aria-label="Sort emails" value={sort} onChange={e => setSort(e.target.value as Sort)}
+            className="h-8 w-24 cursor-pointer text-xs md:text-xs">
+            <option value="newest">Newest</option>
+            <option value="oldest">Oldest</option>
+          </NativeSelect>
         </div>
 
         <div className="flex-1 overflow-y-auto border-t">
@@ -346,7 +354,7 @@ export default function EmailInboxPage({ initialConversationId }: { initialConve
             return (
               <div key={c.id} role="button" tabIndex={0} onClick={() => openConversation(c)}
                 onKeyDown={e => { if (e.key === 'Enter') openConversation(c) }}
-                className={`group relative px-5 py-4 border-b cursor-pointer transition-colors ${active ? 'bg-[#f5f8ff]' : 'hover:bg-[#fafbfc]'}`}>
+                className={`group relative px-5 py-4 border-b cursor-pointer transition-colors ${active ? 'bg-info/5' : 'hover:bg-muted/50'}`}>
                 {active && <span className="absolute left-0 inset-y-0 w-[3px]" style={{ backgroundColor: ACCENT }} />}
                 <div className="flex items-center gap-2">
                   <span className="h-1.5 w-1.5 rounded-full shrink-0" style={{ backgroundColor: unread ? ACCENT : 'transparent' }} />
@@ -360,7 +368,8 @@ export default function EmailInboxPage({ initialConversationId }: { initialConve
                       {c.messageCount > 1 && <span className="ml-1.5 text-[11px] text-muted-foreground">({c.messageCount})</span>}
                     </p>
                     {c.hasReply && <span title="Replied"><Reply className="h-3.5 w-3.5 text-muted-foreground" /></span>}
-                    <button title={c.starred ? 'Starred' : 'Not starred'} onClick={e => { e.stopPropagation(); toggleStar(c.id, !c.starred) }}
+                    <button type="button" title={c.starred ? 'Starred' : 'Not starred'} aria-label="Star" aria-pressed={c.starred}
+                      onKeyDown={e => e.stopPropagation()} onClick={e => { e.stopPropagation(); toggleStar(c.id, !c.starred) }}
                       className={`shrink-0 text-muted-foreground/60 hover:text-muted-foreground transition-opacity ${c.starred ? '' : 'opacity-0 group-hover:opacity-100 focus:opacity-100'}`}>
                       <Star className={`h-3.5 w-3.5 ${c.starred ? 'fill-[#f4b400] text-[#f4b400]' : ''}`} />
                     </button>
@@ -393,26 +402,26 @@ export default function EmailInboxPage({ initialConversationId }: { initialConve
         ) : (
           <>
             <div className="flex items-center gap-2 h-14 px-3 md:px-5 border-b shrink-0">
-              <button onClick={closeThread} title="Back to inbox" className={iconBtn}>
-                <ArrowLeft className="h-[18px] w-[18px]" />
-              </button>
+              <Button type="button" variant="ghost" size="icon" onClick={closeThread} title="Back to inbox" aria-label="Back to inbox" className={iconBtn}>
+                <ArrowLeft className="size-[18px]" />
+              </Button>
               <div className="flex-1 flex items-center justify-center gap-1 text-xs text-muted-foreground">
                 {activeIndex >= 0 && (
                   <>
-                    <button onClick={() => openConversation(filtered[activeIndex - 1])} disabled={activeIndex <= 0} title="Newer" className={iconBtn}>
+                    <Button type="button" variant="ghost" size="icon" onClick={() => openConversation(filtered[activeIndex - 1])} disabled={activeIndex <= 0} title="Newer" aria-label="Newer" className={iconBtn}>
                       <ChevronLeft className="h-4 w-4" />
-                    </button>
+                    </Button>
                     <span className="px-2 tabular-nums">{activeIndex + 1} of {filtered.length}</span>
-                    <button onClick={() => openConversation(filtered[activeIndex + 1])} disabled={activeIndex >= filtered.length - 1} title="Older" className={iconBtn}>
+                    <Button type="button" variant="ghost" size="icon" onClick={() => openConversation(filtered[activeIndex + 1])} disabled={activeIndex >= filtered.length - 1} title="Older" aria-label="Older" className={iconBtn}>
                       <ChevronRight className="h-4 w-4" />
-                    </button>
+                    </Button>
                   </>
                 )}
               </div>
               {detail && (
-                <button title={detail.starred ? 'Starred' : 'Not starred'} onClick={() => toggleStar(detail.id, !detail.starred)} className={iconBtn}>
-                  <Star className={`h-[18px] w-[18px] ${detail.starred ? 'fill-[#f4b400] text-[#f4b400]' : ''}`} />
-                </button>
+                <Button type="button" variant="ghost" size="icon" title={detail.starred ? 'Starred' : 'Not starred'} aria-label="Star" aria-pressed={detail.starred} onClick={() => toggleStar(detail.id, !detail.starred)} className={iconBtn}>
+                  <Star className={`size-[18px] ${detail.starred ? 'fill-[#f4b400] text-[#f4b400]' : ''}`} />
+                </Button>
               )}
             </div>
 
@@ -438,7 +447,7 @@ export default function EmailInboxPage({ initialConversationId }: { initialConve
                     <div className="flex gap-3 px-4 md:px-6 py-5">
                       <LetterAvatar name={myName} email={`me:${myName}`} />
                       <div className="min-w-0 flex-1 rounded-xl border shadow-sm overflow-hidden">
-                        <div className="flex items-center gap-2 px-4 py-2.5 text-sm text-muted-foreground border-b bg-[#fafbfc]">
+                        <div className="flex items-center gap-2 px-4 py-2.5 text-sm text-muted-foreground border-b bg-muted/50">
                           <Reply className="h-4 w-4 shrink-0" />
                           <span className="truncate">{detail.fromName ? `${detail.fromName} ` : ''}<span className="text-xs">&lt;{detail.fromEmail}&gt;</span></span>
                         </div>
@@ -457,30 +466,27 @@ export default function EmailInboxPage({ initialConversationId }: { initialConve
                         <div className="flex items-center gap-1 px-4 py-3">
                           <input ref={fileInputRef} type="file" multiple className="hidden"
                             onChange={e => { replyFiles.upload(Array.from(e.target.files ?? [])); e.target.value = '' }} />
-                          <button onClick={sendReply} disabled={(draft.isEmpty && pendingAttachments.length === 0) || sending || uploading}
-                            className="flex items-center gap-2 h-9 px-5 rounded-lg text-sm font-medium text-white disabled:opacity-40 transition-colors"
-                            style={{ backgroundColor: ACCENT }}>
-                            {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-3.5 w-3.5" />} Send
-                          </button>
-                          <button onClick={() => fileInputRef.current?.click()} title="Attach files (or drag & drop)" className={`ml-2 ${iconBtn}`}>
+                          <Button type="button" onClick={sendReply} loading={sending} disabled={(draft.isEmpty && pendingAttachments.length === 0) || uploading}
+                            className="px-5 has-[>svg]:px-5 rounded-lg bg-info text-info-foreground hover:bg-info/90">
+                            {!sending && <Send className="size-3.5" />} Send
+                          </Button>
+                          <Button type="button" variant="ghost" size="icon" onClick={() => fileInputRef.current?.click()} title="Attach files (or drag & drop)" aria-label="Attach files" className={`ml-2 ${iconBtn}`}>
                             {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Paperclip className="h-4 w-4" />}
-                          </button>
-                          <button onClick={discardReply} title="Discard draft" className={`ml-auto ${iconBtn}`}>
+                          </Button>
+                          <Button type="button" variant="ghost" size="icon" onClick={discardReply} title="Discard draft" aria-label="Discard draft" className={`ml-auto ${iconBtn}`}>
                             <Trash2 className="h-4 w-4" />
-                          </button>
+                          </Button>
                         </div>
                       </div>
                     </div>
                   ) : (
                     <div className="flex flex-wrap items-center gap-3 px-4 md:pl-[80px] md:pr-6 py-5">
-                      <button onClick={() => setReplyOpen(true)}
-                        className="flex items-center gap-2 h-10 px-5 rounded-lg border border-[#e3e6eb] text-sm font-medium text-foreground/80 hover:bg-[#fafbfc] transition-colors">
+                      <Button type="button" variant="outline" onClick={() => setReplyOpen(true)} className="h-10 px-5 has-[>svg]:px-5 rounded-lg text-foreground/80">
                         <Reply className="h-4 w-4" /> Reply
-                      </button>
-                      <button onClick={() => openForward(detail)}
-                        className="flex items-center gap-2 h-10 px-5 rounded-lg border border-[#e3e6eb] text-sm font-medium text-foreground/80 hover:bg-[#fafbfc] transition-colors">
+                      </Button>
+                      <Button type="button" variant="outline" onClick={() => openForward(detail)} className="h-10 px-5 has-[>svg]:px-5 rounded-lg text-foreground/80">
                         <Forward className="h-4 w-4" /> Forward
-                      </button>
+                      </Button>
                     </div>
                   )}
                 </>
@@ -537,9 +543,9 @@ function PendingAttachments({ urls, uploading, onRemove }: { urls: string[]; upl
   return (
     <div className="flex flex-wrap gap-2 px-4 pb-3">
       {urls.map((url, i) => (
-        <span key={url} className="flex items-center gap-1.5 text-xs bg-[#f2f6fc] border px-2.5 py-1.5 rounded-full max-w-[240px]">
+        <span key={url} className="flex items-center gap-1.5 text-xs bg-muted/50 border px-2.5 py-1.5 rounded-full max-w-[240px]">
           <AttachmentIcon name={fileNameFromUrl(url)} /> <span className="truncate">{fileNameFromUrl(url)}</span>
-          <button onClick={() => onRemove(i)} title="Remove" className="ml-0.5 text-muted-foreground hover:text-foreground"><X className="h-3 w-3" /></button>
+          <button type="button" onClick={() => onRemove(i)} title="Remove" aria-label={`Remove ${fileNameFromUrl(url)}`} className="ml-0.5 text-muted-foreground hover:text-foreground"><X className="h-3 w-3" /></button>
         </span>
       ))}
       {uploading > 0 && (
@@ -553,8 +559,8 @@ function PendingAttachments({ urls, uploading, onRemove }: { urls: string[]; upl
 
 function DropOverlay() {
   return (
-    <div className="absolute inset-2 z-20 rounded-xl border-2 border-dashed border-[#1a73e8] bg-[#e8f0fe]/90 flex items-center justify-center pointer-events-none">
-      <div className="text-center text-[#1a73e8]">
+    <div className="absolute inset-2 z-20 rounded-xl border-2 border-dashed border-info bg-card/90 flex items-center justify-center pointer-events-none">
+      <div className="text-center text-info">
         <Paperclip className="h-8 w-8 mx-auto mb-2" />
         <p className="text-sm font-medium">Drop files to attach</p>
         <p className="text-xs opacity-80">Images, PDF, video, documents — up to 20MB each</p>
@@ -585,7 +591,7 @@ function MessageItem({ m, detail, expanded, onToggle, onReply, onForward }: {
   if (!expanded) {
     return (
       <div role="button" tabIndex={0} onClick={onToggle} onKeyDown={e => { if (e.key === 'Enter') onToggle() }}
-        className="flex items-center gap-3 px-4 md:px-6 py-3.5 border-b cursor-pointer hover:bg-[#fafbfc] transition-colors">
+        className="flex items-center gap-3 px-4 md:px-6 py-3.5 border-b cursor-pointer hover:bg-muted/50 transition-colors">
         <LetterAvatar name={name} email={avatarKey} size={36} />
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline justify-between gap-3">
@@ -610,10 +616,10 @@ function MessageItem({ m, detail, expanded, onToggle, onReply, onForward }: {
             </p>
           </div>
           <div className="shrink-0 flex flex-col items-end">
-            <span className="text-xs text-muted-foreground">{fmtDateTime(m.createdAt)}</span>
+            <span className="text-xs text-muted-foreground">{formatDate(m.createdAt, 'datetime')}</span>
             <div className="mt-1 flex items-center gap-0.5">
-              <button onClick={onReply} title="Reply" className={iconBtn}><Reply className="h-4 w-4" /></button>
-              <button onClick={onForward} title="Forward" className={iconBtn}><Forward className="h-4 w-4" /></button>
+              <Button type="button" variant="ghost" size="icon" onClick={onReply} title="Reply" aria-label="Reply" className={iconBtn}><Reply className="h-4 w-4" /></Button>
+              <Button type="button" variant="ghost" size="icon" onClick={onForward} title="Forward" aria-label="Forward" className={iconBtn}><Forward className="h-4 w-4" /></Button>
             </div>
           </div>
         </div>
@@ -631,7 +637,7 @@ function MessageItem({ m, detail, expanded, onToggle, onReply, onForward }: {
             <div className="flex items-center justify-between mb-3">
               <p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">Attachments ({attachments.length})</p>
               {attachments.length > 1 && (
-                <button onClick={() => downloadAll(attachments)} className="text-xs font-medium hover:underline" style={{ color: ACCENT }}>Download All</button>
+                <Button type="button" variant="link" onClick={() => downloadAll(attachments)} className="h-auto p-0 text-xs text-info">Download All</Button>
               )}
             </div>
             <div className="flex flex-wrap gap-x-8 gap-y-3">
@@ -639,7 +645,7 @@ function MessageItem({ m, detail, expanded, onToggle, onReply, onForward }: {
             </div>
           </div>
         )}
-        {out && m.status === 'FAILED' && <p className="text-xs mt-2 text-red-600">Failed to send</p>}
+        {out && m.status === 'FAILED' && <p className="text-xs mt-2 text-destructive">Failed to send</p>}
         {out && m.status === 'PENDING' && <p className="text-xs mt-2 text-muted-foreground">Sending…</p>}
       </div>
     </div>
@@ -659,7 +665,7 @@ function ComposeDialog({ open, onOpenChange, onSent, resetKey, initial }: {
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-3xl p-0 gap-0 overflow-hidden max-h-[92vh] flex flex-col">
+      <DialogContent className="sm:max-w-3xl p-0 gap-0 overflow-hidden max-h-[92vh] flex flex-col" aria-describedby={undefined} onInteractOutside={e => e.preventDefault()}>
         {/* Keyed so every Compose/Forward starts from a fresh form */}
         <ComposeForm key={resetKey} initial={initial} onClose={() => onOpenChange(false)} onSent={onSent} />
       </DialogContent>
@@ -705,34 +711,34 @@ function ComposeForm({ initial, onClose, onSent }: {
   useEffect(() => { sendRef.current = send })
 
   const row = 'flex items-center gap-2 px-4 border-b'
-  const input = 'flex-1 h-10 bg-transparent text-sm focus:outline-none'
+  const input = 'flex-1 h-10 px-0 rounded-none border-0 bg-transparent dark:bg-transparent shadow-none focus-visible:ring-0'
+  const label = 'w-14 shrink-0 font-normal text-muted-foreground'
   return (
     <>
-        <DialogHeader className="px-4 py-3 bg-[#f2f6fc] border-b">
+        <DialogHeader className="px-4 py-3 bg-muted/50 border-b">
           <DialogTitle className="text-sm font-medium">{initial ? 'Forward' : 'New Message'}</DialogTitle>
         </DialogHeader>
         <div {...drop.dropProps} className="relative overflow-y-auto">
           {drop.isDragging && <DropOverlay />}
-          <div className={row}><span className="text-sm text-muted-foreground w-14">To</span><input className={input} value={to} onChange={e => setTo(e.target.value)} placeholder="guest@example.com" autoFocus /></div>
-          <div className={row}><span className="text-sm text-muted-foreground w-14">Name</span><input className={input} value={name} onChange={e => setName(e.target.value)} placeholder="Recipient name (optional)" /></div>
-          <div className={row}><input className={input} value={subject} onChange={e => setSubject(e.target.value)} placeholder="Subject" /></div>
-          <EmailComposer placeholder="Write your message..." initialHtml={initial?.html ?? ''} onChange={setBody} onSubmit={() => sendRef.current()} minHeight={260} maxHeight="50vh" />
+          <div className={row}><Label htmlFor="email-compose-to" className={label}>To</Label><Input id="email-compose-to" type="email" className={input} value={to} onChange={e => setTo(e.target.value)} placeholder="guest@example.com" autoFocus /></div>
+          <div className={row}><Label htmlFor="email-compose-name" className={label}>Name</Label><Input id="email-compose-name" className={input} value={name} onChange={e => setName(e.target.value)} placeholder="Recipient name (optional)" /></div>
+          <div className={row}><Input aria-label="Subject" className={input} value={subject} onChange={e => setSubject(e.target.value)} placeholder="Subject" /></div>
+          <EmailComposer placeholder="Write your message…" initialHtml={initial?.html ?? ''} onChange={setBody} onSubmit={() => sendRef.current()} minHeight={260} maxHeight="50vh" />
           <PendingAttachments urls={attachments} uploading={files.uploading}
             onRemove={i => files.setUrls(prev => prev.filter((_, j) => j !== i))} />
           <SignaturePreview />
         </div>
         <div className="flex items-center px-4 py-3 border-t">
-          <button onClick={send} disabled={!canSend}
-            className="flex items-center gap-2 h-9 px-5 rounded-full text-sm font-medium text-white disabled:opacity-40"
-            style={{ backgroundColor: ACCENT }}>
-            {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-3.5 w-3.5" />} Send
-          </button>
+          <Button type="button" onClick={send} loading={sending} disabled={!canSend}
+            className="px-5 has-[>svg]:px-5 rounded-full bg-info text-info-foreground hover:bg-info/90">
+            {!sending && <Send className="size-3.5" />} Send
+          </Button>
           <input ref={fileRef} type="file" multiple className="hidden"
             onChange={e => { files.upload(Array.from(e.target.files ?? [])); e.target.value = '' }} />
-          <button onClick={() => fileRef.current?.click()} title="Attach files (or drag & drop)"
-            className="ml-2 h-9 w-9 rounded-full flex items-center justify-center text-muted-foreground hover:bg-muted transition-colors">
+          <Button type="button" variant="ghost" size="icon" onClick={() => fileRef.current?.click()} title="Attach files (or drag & drop)" aria-label="Attach files"
+            className="ml-2 rounded-full text-muted-foreground">
             <Paperclip className="h-4 w-4" />
-          </button>
+          </Button>
         </div>
     </>
   )

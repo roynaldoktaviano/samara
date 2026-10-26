@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useCallback, useEffect } from 'react'
+import { formatDate } from '@/lib/format'
 
 // Temporary, throwaway page — peek at a Freshsales contact view (who's in it, how
 // many) before deciding what the real newsletter sync needs. Delete this page (and
@@ -29,12 +30,6 @@ interface OwnerUser {
   id: number | string
   display_name?: string
   email?: string
-}
-
-const fmtCfDate = (d?: string) => {
-  if (!d) return '—'
-  const parsed = new Date(d)
-  return Number.isNaN(parsed.getTime()) ? d : parsed.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
 export default function FreshsalesPreviewPage() {
@@ -81,7 +76,7 @@ export default function FreshsalesPreviewPage() {
     <div style={{ maxWidth: 1600, margin: '0 auto', padding: '24px 24px', fontFamily: 'system-ui, sans-serif' }}>
       <h1 style={{ fontSize: 20, fontWeight: 700, marginBottom: 4 }}>Freshsales Contact Preview</h1>
       <p style={{ fontSize: 13, color: '#6b7280', marginBottom: 16 }}>
-        Halaman sementara — cuma buat lihat isi &amp; jumlah kontak dari sebuah Freshsales view. Hapus setelah selesai dipakai.
+        Temporary page — just to inspect the contacts &amp; count in a Freshsales view. Delete once no longer needed.
       </p>
 
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' }}>
@@ -94,14 +89,14 @@ export default function FreshsalesPreviewPage() {
           />
         </label>
         <label style={{ fontSize: 13 }}>
-          Urutkan:{' '}
+          Sort by:{' '}
           <select
             value={sort}
             onChange={e => { setSort(e.target.value as 'created_at' | 'updated_at'); setPage(1) }}
             style={{ border: '1px solid #d1d5db', borderRadius: 6, padding: '4px 8px', fontSize: 13 }}
           >
-            <option value="created_at">Terbaru dibuat</option>
-            <option value="updated_at">Terbaru diupdate</option>
+            <option value="created_at">Recently created</option>
+            <option value="updated_at">Recently updated</option>
           </select>
         </label>
         <button
@@ -118,7 +113,7 @@ export default function FreshsalesPreviewPage() {
 
       {loading && <p style={{ fontSize: 13, color: '#6b7280' }}>Loading…</p>}
       {error && (
-        <pre style={{ background: '#fef2f2', color: '#b91c1c', padding: 12, borderRadius: 8, fontSize: 12, overflowX: 'auto', marginBottom: 16 }}>
+        <pre style={{ background: 'color-mix(in srgb, var(--destructive) 10%, transparent)', color: 'var(--destructive)', padding: 12, borderRadius: 8, fontSize: 12, overflowX: 'auto', marginBottom: 16 }}>
           {error}
         </pre>
       )}
@@ -126,8 +121,8 @@ export default function FreshsalesPreviewPage() {
       {!loading && !error && (
         <>
           <p style={{ fontSize: 13, marginBottom: 8 }}>
-            <strong>{contacts.length}</strong> kontak di halaman ini
-            {meta && typeof meta.total === 'number' && <> — total keseluruhan: <strong>{String(meta.total)}</strong></>}
+            <strong>{contacts.length}</strong> contacts on this page
+            {meta && typeof meta.total === 'number' && <> — overall total: <strong>{String(meta.total)}</strong></>}
           </p>
 
           <div style={{ overflowX: 'auto' }}>
@@ -135,7 +130,7 @@ export default function FreshsalesPreviewPage() {
             <thead>
               <tr style={{ borderBottom: '2px solid #e5e7eb', textAlign: 'left', whiteSpace: 'nowrap' }}>
                 <th style={{ padding: '6px 8px' }}>ID</th>
-                <th style={{ padding: '6px 8px' }}>Nama</th>
+                <th style={{ padding: '6px 8px' }}>Name</th>
                 <th style={{ padding: '6px 8px' }}>Email</th>
                 <th style={{ padding: '6px 8px' }}>Sales Owner</th>
                 <th style={{ padding: '6px 8px' }}>WhatsApp</th>
@@ -156,8 +151,8 @@ export default function FreshsalesPreviewPage() {
                   <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{c.custom_field?.cf_whatsapp_number ?? '—'}</td>
                   <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{c.custom_field?.cf_trip_type ?? '—'}</td>
                   <td style={{ padding: '6px 8px' }}>{c.custom_field?.cf_number_of_guests ?? '—'}</td>
-                  <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{fmtCfDate(c.custom_field?.cf_trip_date)}</td>
-                  <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{fmtCfDate(c.custom_field?.cf_check_out_date)}</td>
+                  <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{formatDate(c.custom_field?.cf_trip_date, 'medium', { empty: c.custom_field?.cf_trip_date || '—' })}</td>
+                  <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>{formatDate(c.custom_field?.cf_check_out_date, 'medium', { empty: c.custom_field?.cf_check_out_date || '—' })}</td>
                   <td style={{ padding: '6px 8px', maxWidth: 420 }}>{c.custom_field?.cf_details_and_special_requests ?? '—'}</td>
                 </tr>
               ))}
@@ -173,7 +168,7 @@ export default function FreshsalesPreviewPage() {
             >
               ← Prev
             </button>
-            <span style={{ fontSize: 13 }}>Halaman {page}</span>
+            <span style={{ fontSize: 13 }}>Page {page}</span>
             <button
               onClick={() => setPage(p => p + 1)}
               style={{ border: '1px solid #d1d5db', borderRadius: 6, padding: '4px 12px', fontSize: 13, cursor: 'pointer' }}

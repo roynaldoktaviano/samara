@@ -7,6 +7,8 @@ import { useFileDrop } from '@/hooks/useFileDrop'
 import { PhotoSourceMenu } from '@/components/ui/file-preview'
 import { renderLocationOptions } from '@/components/purchasing/LocationOptions'
 import { TripPicker, tripShortLabel, tripDates, tripLinkBody, type TripOption } from '@/components/purchasing/TripPicker'
+import { formatDate, formatMoney, formatNumber } from '@/lib/format'
+import { StatusBadge, type StatusTone } from '@/components/ui/status-badge'
 
 interface StockLocation { id: string; name: string; type: string; parentId: string | null; yachtId?: string | null }
 
@@ -51,11 +53,12 @@ interface StockTransfer {
 }
 interface TransferDetail extends StockTransfer { items: TransferItem[]; expectedReceiverName?: string | null; receivedByName?: string | null; canDispatch?: boolean; dispatchOwnerLabel?: string }
 
-const STATUS_LABEL: Record<string, string> = { PENDING: 'Pending', DISPATCHED: 'In Transit', RECEIVED: 'Received', CANCELLED: 'Cancelled' }
-const STATUS_COLOR: Record<string, string> = { PENDING: 'bg-muted text-muted-foreground', DISPATCHED: 'bg-amber-100 text-amber-700', RECEIVED: 'bg-green-100 text-green-700', CANCELLED: 'bg-red-100 text-red-700' }
-const fmtDate = (s: string) => new Date(s).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
-const fmtTime = (s: string) => new Date(s).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
-const fmtMoney = (n: number) => 'Rp ' + new Intl.NumberFormat('id-ID').format(Math.round(n))
+const STATUS: Record<string, { label: string; tone: StatusTone }> = {
+  PENDING:    { label: 'Pending',    tone: 'warning' },
+  DISPATCHED: { label: 'In Transit', tone: 'info' },
+  RECEIVED:   { label: 'Received',   tone: 'success' },
+  CANCELLED:  { label: 'Cancelled',  tone: 'neutral' },
+}
 
 function compressPhoto(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -93,7 +96,7 @@ function PhotoUpload({ label, value, onChange }: { label: string; value: string;
       ) : (
         <div className="relative">
           <button onClick={() => setMenuOpen(o => !o)} {...dropProps} className={`w-full flex flex-col items-center justify-center gap-2 border-2 border-dashed rounded-lg py-6 transition-colors ${
-            isDragging ? 'border-amber-400 bg-amber-50 text-amber-700' : 'text-muted-foreground hover:bg-muted/30'
+            isDragging ? 'border-warning bg-warning/10 text-warning' : 'text-muted-foreground hover:bg-muted/30'
           }`}>
             <Camera className="h-6 w-6" />
             <span className="text-sm">{isDragging ? 'Drop to upload' : 'Tap or drag to upload photo'}</span>
@@ -118,22 +121,22 @@ function EmployeeCombobox({ employees, value, onChange }: {
   return (
     <div className="relative">
       <button type="button" onClick={() => { setOpen(o => !o); setSearch('') }}
-        className="w-full border rounded-md px-3 py-2 text-sm text-left flex items-center justify-between gap-2 bg-background focus:outline-none focus:ring-1 focus:ring-[#bdac7e]/50 focus:border-[#bdac7e] transition">
+        className="w-full border rounded-md px-3 py-2 text-sm text-left flex items-center justify-between gap-2 bg-background focus:outline-none focus:ring-1 focus:ring-ring/50 focus:border-ring transition">
         <span className={`truncate flex items-center gap-2 ${value ? '' : 'text-muted-foreground'}`}>
           <User className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-          {value || 'Select name...'}
+          {value || 'Select name…'}
         </span>
         <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
       </button>
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute left-0 right-0 top-full mt-1 bg-white border rounded-md shadow-xl z-50 max-h-64 flex flex-col overflow-hidden">
+          <div className="absolute left-0 right-0 top-full mt-1 bg-popover border rounded-md shadow-xl z-50 max-h-64 flex flex-col overflow-hidden">
             <div className="p-2 border-b shrink-0">
               <div className="relative">
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
-                <input autoFocus className="w-full h-8 border rounded px-2.5 pl-8 text-sm focus:outline-none focus:ring-1 focus:ring-[#bdac7e]/50 focus:border-[#bdac7e]"
-                  placeholder="Search name..." value={search} onChange={e => setSearch(e.target.value)} />
+                <input autoFocus className="w-full h-8 border rounded px-2.5 pl-8 text-sm focus:outline-none focus:ring-1 focus:ring-ring/50 focus:border-ring"
+                  placeholder="Search name…" value={search} onChange={e => setSearch(e.target.value)} />
               </div>
             </div>
             <div className="overflow-y-auto">
@@ -435,7 +438,7 @@ export default function TransfersPage({ deepLinkId, onDeepLinkHandled }: { deepL
         <p className="text-muted-foreground text-sm mt-1">Move inventory between locations</p>
       </div>
       {!receiveOnly && <div className="flex justify-end">
-        <button onClick={() => { setFromLoc(''); setToLoc(''); setTrip(null); setLines([]); setWarehouseStock([]); setView('create') }} className="flex items-center gap-2 bg-[#bdac7e] hover:bg-[#a89860] text-white text-sm font-medium px-4 py-2 rounded-md transition-colors">
+        <button onClick={() => { setFromLoc(''); setToLoc(''); setTrip(null); setLines([]); setWarehouseStock([]); setView('create') }} className="flex items-center gap-2 bg-primary hover:bg-primary-hover text-primary-foreground text-sm font-medium px-4 py-2 rounded-md transition-colors">
           <Plus className="h-4 w-4" /> Create Transfer
         </button>
       </div>}
@@ -473,7 +476,7 @@ export default function TransfersPage({ deepLinkId, onDeepLinkHandled }: { deepL
                     </p>
                   )}
                   {t.trip && (
-                    <p className="font-sans text-[10px] text-[#8a7a4e] font-medium mt-0.5 flex items-center gap-1">
+                    <p className="font-sans text-[10px] text-primary-strong font-medium mt-0.5 flex items-center gap-1">
                       <Ship className="h-3 w-3" /> {tripShortLabel(t.trip)}
                     </p>
                   )}
@@ -486,20 +489,20 @@ export default function TransfersPage({ deepLinkId, onDeepLinkHandled }: { deepL
                   </div>
                 </td>
                 <td className="px-4 py-3 text-muted-foreground text-xs max-w-[140px] truncate">{t.contents ?? `${t.itemCount} items`}</td>
-                <td className="px-4 py-3 text-right text-xs font-medium tabular-nums whitespace-nowrap">{t.totalValue ? fmtMoney(t.totalValue) : '—'}</td>
+                <td className="px-4 py-3 text-right text-xs font-medium tabular-nums whitespace-nowrap">{t.totalValue ? formatMoney(t.totalValue) : '—'}</td>
                 <td className="px-4 py-3">
                   {t.status === 'PENDING' ? (
                     <span className="text-xs text-muted-foreground">—</span>
                   ) : t.status === 'DISPATCHED' ? (
                     t.hasDispatchPhoto
-                      ? <span className="flex items-center gap-1 text-xs text-green-600"><CheckCircle2 className="h-3.5 w-3.5" /> OK</span>
-                      : <span className="flex items-center gap-1 text-xs text-red-600"><AlertTriangle className="h-3.5 w-3.5" /> Missing</span>
+                      ? <span className="flex items-center gap-1 text-xs text-success"><CheckCircle2 className="h-3.5 w-3.5" /> OK</span>
+                      : <span className="flex items-center gap-1 text-xs text-destructive"><AlertTriangle className="h-3.5 w-3.5" /> Missing</span>
                   ) : t.status === 'RECEIVED' ? (
-                    <span className="flex items-center gap-1 text-xs text-green-600"><CheckCircle2 className="h-3.5 w-3.5" /> Both</span>
+                    <span className="flex items-center gap-1 text-xs text-success"><CheckCircle2 className="h-3.5 w-3.5" /> Both</span>
                   ) : <span className="text-xs text-muted-foreground">—</span>}
                 </td>
-                <td className="px-4 py-3 text-muted-foreground text-xs whitespace-nowrap">{fmtDate(t.createdAt)}</td>
-                <td className="px-4 py-3"><span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLOR[t.status] ?? ''}`}>{STATUS_LABEL[t.status] ?? t.status}</span></td>
+                <td className="px-4 py-3 text-muted-foreground text-xs whitespace-nowrap">{formatDate(t.createdAt)}</td>
+                <td className="px-4 py-3"><StatusBadge tone={STATUS[t.status]?.tone ?? 'neutral'}>{STATUS[t.status]?.label ?? t.status}</StatusBadge></td>
                 <td className="px-4 py-3"><ChevronRight className="h-4 w-4 text-muted-foreground" /></td>
               </tr>
             ))}
@@ -528,11 +531,11 @@ export default function TransfersPage({ deepLinkId, onDeepLinkHandled }: { deepL
               <span className="font-mono text-xs font-semibold">
                 {t.transferNumber}
                 {t.purchaseOrder && <span className="font-sans font-normal text-muted-foreground"> · PO {t.purchaseOrder.poNumber}{t.legSequence ? ` L${t.legSequence}` : ''}</span>}
-                {t.trip && <span className="font-sans font-medium text-[#8a7a4e]"> · {tripShortLabel(t.trip)}</span>}
+                {t.trip && <span className="font-sans font-medium text-primary-strong"> · {tripShortLabel(t.trip)}</span>}
               </span>
               <div className="flex items-center gap-1.5 shrink-0">
-                <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${STATUS_COLOR[t.status] ?? ''}`}>{STATUS_LABEL[t.status] ?? t.status}</span>
-                <span className="text-xs text-muted-foreground">{fmtDate(t.createdAt)}</span>
+                <StatusBadge size="sm" tone={STATUS[t.status]?.tone ?? 'neutral'}>{STATUS[t.status]?.label ?? t.status}</StatusBadge>
+                <span className="text-xs text-muted-foreground">{formatDate(t.createdAt)}</span>
               </div>
             </div>
             <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
@@ -542,7 +545,7 @@ export default function TransfersPage({ deepLinkId, onDeepLinkHandled }: { deepL
                 <span className="font-medium text-foreground truncate">{t.toLocation?.name ?? '—'}</span>
                 <span> · {t.contents ?? `${t.itemCount} items`}</span>
               </span>
-              <span className="shrink-0 tabular-nums">{t.totalValue ? fmtMoney(t.totalValue) : '—'}</span>
+              <span className="shrink-0 tabular-nums">{t.totalValue ? formatMoney(t.totalValue) : '—'}</span>
             </div>
           </button>
         ))}
@@ -597,7 +600,7 @@ export default function TransfersPage({ deepLinkId, onDeepLinkHandled }: { deepL
         </div>
         <div className="flex gap-3">
           <button onClick={() => setView('list')} className="px-4 py-2 text-sm border rounded-md hover:bg-muted">Cancel</button>
-          <button onClick={submit} disabled={saving} className="px-6 py-2 text-sm bg-[#bdac7e] text-white rounded-md hover:bg-[#a89860] disabled:opacity-50 font-medium">{saving ? 'Saving...' : 'Create Transfer'}</button>
+          <button onClick={submit} disabled={saving} className="px-6 py-2 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary-hover disabled:opacity-50 font-medium">{saving ? 'Saving…' : 'Create Transfer'}</button>
         </div>
       </div>
 
@@ -613,8 +616,8 @@ export default function TransfersPage({ deepLinkId, onDeepLinkHandled }: { deepL
             <div className="p-5 space-y-4">
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">From <span className="text-destructive">*</span></label>
-                <select className="w-full h-9 border rounded-md px-3 text-sm bg-background focus:ring-1 focus:ring-[#bdac7e]/50 focus:border-[#bdac7e] outline-none transition" value={fromLoc} onChange={e => { setFromLoc(e.target.value); loadWarehouseStock(e.target.value) }}>
-                  <option value="">Select source location...</option>
+                <select className="w-full h-9 border rounded-md px-3 text-sm bg-background focus:ring-1 focus:ring-ring/50 focus:border-ring outline-none transition" value={fromLoc} onChange={e => { setFromLoc(e.target.value); loadWarehouseStock(e.target.value) }}>
+                  <option value="">Select source location…</option>
                   {renderLocationOptions(locations)}
                 </select>
               </div>
@@ -627,8 +630,8 @@ export default function TransfersPage({ deepLinkId, onDeepLinkHandled }: { deepL
               </div>
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">To <span className="text-destructive">*</span></label>
-                <select className="w-full h-9 border rounded-md px-3 text-sm bg-background focus:ring-1 focus:ring-[#bdac7e]/50 focus:border-[#bdac7e] outline-none transition" value={toLoc} onChange={e => setToLoc(e.target.value)}>
-                  <option value="">Select destination...</option>
+                <select className="w-full h-9 border rounded-md px-3 text-sm bg-background focus:ring-1 focus:ring-ring/50 focus:border-ring outline-none transition" value={toLoc} onChange={e => setToLoc(e.target.value)}>
+                  <option value="">Select destination…</option>
                   {renderLocationOptions(locations, { excludeIds: new Set([fromLoc]) })}
                 </select>
               </div>
@@ -644,7 +647,7 @@ export default function TransfersPage({ deepLinkId, onDeepLinkHandled }: { deepL
               <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Notes</h3>
             </div>
             <div className="p-5">
-              <textarea className="w-full border rounded-md px-3 py-2 text-sm resize-none bg-background focus:ring-1 focus:ring-[#bdac7e]/50 focus:border-[#bdac7e] outline-none transition" rows={3} placeholder="Optional notes..." value={notes} onChange={e => setNotes(e.target.value)} />
+              <textarea className="w-full border rounded-md px-3 py-2 text-sm resize-none bg-background focus:ring-1 focus:ring-ring/50 focus:border-ring outline-none transition" rows={3} placeholder="Optional notes…" value={notes} onChange={e => setNotes(e.target.value)} />
             </div>
           </div>
         </div>
@@ -656,7 +659,7 @@ export default function TransfersPage({ deepLinkId, onDeepLinkHandled }: { deepL
             <button
               onClick={openPicker}
               disabled={!fromLoc}
-              className="flex items-center gap-1.5 text-sm font-medium text-[#bdac7e] hover:text-[#a89860] transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+              className="flex items-center gap-1.5 text-sm font-medium text-primary hover:text-primary-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
               <Plus className="h-4 w-4" /> Add Item
             </button>
           </div>
@@ -670,7 +673,7 @@ export default function TransfersPage({ deepLinkId, onDeepLinkHandled }: { deepL
             <div className="flex flex-col items-center justify-center py-16 gap-3 text-muted-foreground">
               <Package className="h-8 w-8 opacity-20" />
               <p className="text-sm">No items yet</p>
-              <button onClick={openPicker} className="text-sm text-[#bdac7e] hover:text-[#a89860] font-medium">+ Select items from stock</button>
+              <button onClick={openPicker} className="text-sm text-primary hover:text-primary-hover font-medium">+ Select items from stock</button>
             </div>
           ) : (
             <>
@@ -701,7 +704,7 @@ export default function TransfersPage({ deepLinkId, onDeepLinkHandled }: { deepL
                           <div className="flex items-center gap-1.5">
                             <input
                               type="number" min={1} max={cap}
-                              className="w-20 border rounded-md px-2.5 py-1.5 text-sm text-right tabular-nums focus:ring-1 focus:ring-[#bdac7e]/50 focus:border-[#bdac7e] outline-none transition"
+                              className="w-20 border rounded-md px-2.5 py-1.5 text-sm text-right tabular-nums focus:ring-1 focus:ring-ring/50 focus:border-ring outline-none transition"
                               value={line.inputQty}
                               onChange={e => setLines(l => l.map((li, i) => i !== idx ? li : { ...li, inputQty: Math.min(Math.max(1, Number(e.target.value)), cap) }))}
                             />
@@ -709,7 +712,7 @@ export default function TransfersPage({ deepLinkId, onDeepLinkHandled }: { deepL
                               <button
                                 title="Click to switch unit"
                                 onClick={() => setLines(l => l.map((li, i) => i !== idx ? li : { ...li, usePurchaseUnit: !li.usePurchaseUnit }))}
-                                className={`flex items-center gap-1 text-xs px-2 py-1 rounded border transition-colors shrink-0 cursor-pointer ${line.usePurchaseUnit ? 'bg-[#bdac7e] text-white border-[#bdac7e]' : 'text-muted-foreground border-dashed border-[#bdac7e]/60 hover:border-[#bdac7e] hover:text-[#bdac7e]'}`}
+                                className={`flex items-center gap-1 text-xs px-2 py-1 rounded border transition-colors shrink-0 cursor-pointer ${line.usePurchaseUnit ? 'bg-primary text-primary-foreground border-primary' : 'text-muted-foreground border-dashed border-primary/60 hover:border-primary hover:text-primary'}`}
                               >
                                 {line.usePurchaseUnit ? line.purchaseUnit : line.baseUnit}
                                 <ArrowLeftRight className="h-2.5 w-2.5 opacity-70" />
@@ -720,7 +723,7 @@ export default function TransfersPage({ deepLinkId, onDeepLinkHandled }: { deepL
                           </div>
                           {line.purchaseUnit && line.purchaseUnit !== line.baseUnit && line.conversionFactor > 1 && line.usePurchaseUnit && (
                             <p className="text-xs text-muted-foreground tabular-nums">
-                              = {(line.inputQty * line.conversionFactor).toLocaleString()} {line.baseUnit}
+                              = {formatNumber(line.inputQty * line.conversionFactor, { decimals: 3 })} {line.baseUnit}
                             </p>
                           )}
                         </div>
@@ -737,7 +740,7 @@ export default function TransfersPage({ deepLinkId, onDeepLinkHandled }: { deepL
                 </tbody>
               </table></div>
               <div className="px-5 py-2.5 border-t bg-muted/20">
-                <button onClick={openPicker} className="text-xs text-[#bdac7e] hover:text-[#a89860] font-medium">+ Add / change items</button>
+                <button onClick={openPicker} className="text-xs text-primary hover:text-primary-hover font-medium">+ Add / change items</button>
               </div>
             </>
           )}
@@ -747,7 +750,7 @@ export default function TransfersPage({ deepLinkId, onDeepLinkHandled }: { deepL
       {/* ── Item Picker Modal ── */}
       {pickerOpen && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg overflow-hidden">
+          <div className="bg-card rounded-xl shadow-xl w-full max-w-lg overflow-hidden">
             <div className="flex items-center justify-between px-5 py-4 border-b">
               <div>
                 <h3 className="font-semibold text-base">Select Items</h3>
@@ -759,8 +762,8 @@ export default function TransfersPage({ deepLinkId, onDeepLinkHandled }: { deepL
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <input
-                  className="w-full pl-9 pr-3 h-9 border rounded-md text-sm focus:ring-1 focus:ring-[#bdac7e]/50 focus:border-[#bdac7e] outline-none"
-                  placeholder="Search item name..."
+                  className="w-full pl-9 pr-3 h-9 border rounded-md text-sm focus:ring-1 focus:ring-ring/50 focus:border-ring outline-none"
+                  placeholder="Search item name…"
                   value={pickerSearch}
                   onChange={e => setPickerSearch(e.target.value)}
                   autoFocus
@@ -768,12 +771,12 @@ export default function TransfersPage({ deepLinkId, onDeepLinkHandled }: { deepL
               </div>
               {poOptions.length > 0 && (
                 <select
-                  className="w-full h-8 border rounded-md px-2 text-xs bg-white focus:ring-1 focus:ring-[#bdac7e]/50 focus:border-[#bdac7e] outline-none"
+                  className="w-full h-8 border rounded-md px-2 text-xs bg-card focus:ring-1 focus:ring-ring/50 focus:border-ring outline-none"
                   value={pickerPoFilter}
                   onChange={e => setPickerPoFilter(e.target.value)}
                 >
                   <option value="">All sources (stock &amp; any PO)</option>
-                  {poOptions.map(po => <option key={po.id} value={po.id}>Dari PO {po.number}</option>)}
+                  {poOptions.map(po => <option key={po.id} value={po.id}>From PO {po.number}</option>)}
                 </select>
               )}
             </div>
@@ -788,9 +791,9 @@ export default function TransfersPage({ deepLinkId, onDeepLinkHandled }: { deepL
                         checked ? next.delete(key) : next.add(key)
                         return next
                       })}
-                      className={`w-full flex items-center gap-3 px-5 py-3 text-left hover:bg-muted/30 transition-colors ${checked ? 'bg-[#bdac7e]/6' : ''}`}>
-                      <div className={`w-4 h-4 rounded border-2 shrink-0 flex items-center justify-center transition-colors ${checked ? 'bg-[#bdac7e] border-[#bdac7e]' : 'border-muted-foreground/40'}`}>
-                        {checked && <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 10 10"><path d="M1.5 5l2.5 2.5 4.5-4.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                      className={`w-full flex items-center gap-3 px-5 py-3 text-left hover:bg-muted/30 transition-colors ${checked ? 'bg-primary/6' : ''}`}>
+                      <div className={`w-4 h-4 rounded border-2 shrink-0 flex items-center justify-center transition-colors ${checked ? 'bg-primary border-primary' : 'border-muted-foreground/40'}`}>
+                        {checked && <svg className="w-2.5 h-2.5 text-primary-foreground" fill="none" viewBox="0 0 10 10"><path d="M1.5 5l2.5 2.5 4.5-4.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>}
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium truncate">{s.name}</p>
@@ -808,7 +811,7 @@ export default function TransfersPage({ deepLinkId, onDeepLinkHandled }: { deepL
             </div>
             <div className="flex justify-end gap-3 px-5 py-4 border-t bg-muted/20">
               <button onClick={() => setPickerOpen(false)} className="px-4 py-2 text-sm border rounded-md hover:bg-muted">Cancel</button>
-              <button onClick={confirmPicker} className="px-5 py-2 text-sm bg-[#bdac7e] text-white rounded-md hover:bg-[#a89860] font-medium">
+              <button onClick={confirmPicker} className="px-5 py-2 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary-hover font-medium">
                 Confirm ({pickerSelected.size} items)
               </button>
             </div>
@@ -851,12 +854,12 @@ export default function TransfersPage({ deepLinkId, onDeepLinkHandled }: { deepL
               {!!detail.totalValue && (
                 <p className="text-xs text-muted-foreground mt-1">
                   {detail.status === 'DISPATCHED' ? 'Transfer value: ' : detail.status === 'RECEIVED' ? 'Received value: ' : 'Goods value: '}
-                  <span className="font-semibold text-foreground">{fmtMoney(detail.totalValue)}</span>
+                  <span className="font-semibold text-foreground">{formatMoney(detail.totalValue)}</span>
                 </p>
               )}
             </div>
             <div className="flex items-center gap-2">
-              <span className={`px-3 py-1 rounded-full text-sm font-medium ${STATUS_COLOR[detail.status] ?? ''}`}>{STATUS_LABEL[detail.status] ?? detail.status}</span>
+              <StatusBadge tone={STATUS[detail.status]?.tone ?? 'neutral'} className="px-3 py-1 text-sm">{STATUS[detail.status]?.label ?? detail.status}</StatusBadge>
               {detail.status !== 'CANCELLED' && (
                 <button onClick={() => window.open(`/print/stock-transfer/${detail.id}`, '_blank')} title="Print the packing list for this transfer"
                   className="flex items-center gap-1.5 px-3 py-1.5 text-sm border rounded-md hover:bg-muted font-medium">
@@ -864,9 +867,9 @@ export default function TransfersPage({ deepLinkId, onDeepLinkHandled }: { deepL
                 </button>
               )}
               {detail.status === 'PENDING' && (detail.canDispatch
-                ? <button onClick={openDispatch} className="px-3 py-1.5 text-sm bg-amber-600 text-white rounded-md hover:bg-amber-700 font-medium">Dispatch</button>
+                ? <button onClick={openDispatch} className="px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary-hover font-medium">Dispatch</button>
                 : <span className="px-3 py-1.5 text-xs text-muted-foreground border border-dashed rounded-md">Waiting for {detail.dispatchOwnerLabel ?? 'the source location'} to dispatch</span>)}
-              {detail.status === 'DISPATCHED' && !(receiveOnly && detail.canDispatch) && <button onClick={openReceive} className="px-3 py-1.5 text-sm bg-green-600 text-white rounded-md hover:bg-green-700 font-medium">Receive</button>}
+              {detail.status === 'DISPATCHED' && !(receiveOnly && detail.canDispatch) && <button onClick={openReceive} className="px-3 py-1.5 text-sm bg-success text-success-foreground rounded-md hover:bg-success/90 font-medium">Receive</button>}
               {detail.status === 'DISPATCHED' && !receiveOnly && (
                 <button onClick={openCrewLink} className="px-3 py-1.5 text-sm border rounded-md hover:bg-muted font-medium">Get Crew Link</button>
               )}
@@ -889,15 +892,15 @@ export default function TransfersPage({ deepLinkId, onDeepLinkHandled }: { deepL
           {(() => {
             const cancelled = detail.status === 'CANCELLED'
             const steps = [
-              { label: 'Created', sublabel: 'Transfer requested', done: true, active: detail.status === 'PENDING', date: fmtDate(detail.createdAt), time: fmtTime(detail.createdAt), by: null },
-              { label: 'Dispatched', sublabel: 'In transit', done: !!detail.dispatchedAt, active: detail.status === 'DISPATCHED', date: detail.dispatchedAt ? fmtDate(detail.dispatchedAt) : null, time: detail.dispatchedAt ? fmtTime(detail.dispatchedAt) : null, by: detail.dispatchedBy?.name ?? null },
-              { label: 'Received', sublabel: 'Completed', done: !!detail.receivedAt, active: false, date: detail.receivedAt ? fmtDate(detail.receivedAt) : null, time: detail.receivedAt ? fmtTime(detail.receivedAt) : null, by: detail.receivedByName ?? detail.receivedBy?.name ?? null },
+              { label: 'Created', sublabel: 'Transfer requested', done: true, active: detail.status === 'PENDING', date: formatDate(detail.createdAt), time: formatDate(detail.createdAt, 'time'), by: null },
+              { label: 'Dispatched', sublabel: 'In transit', done: !!detail.dispatchedAt, active: detail.status === 'DISPATCHED', date: detail.dispatchedAt ? formatDate(detail.dispatchedAt) : null, time: detail.dispatchedAt ? formatDate(detail.dispatchedAt, 'time') : null, by: detail.dispatchedBy?.name ?? null },
+              { label: 'Received', sublabel: 'Completed', done: !!detail.receivedAt, active: false, date: detail.receivedAt ? formatDate(detail.receivedAt) : null, time: detail.receivedAt ? formatDate(detail.receivedAt, 'time') : null, by: detail.receivedByName ?? detail.receivedBy?.name ?? null },
             ]
             return (
               <div className="rounded-xl border overflow-hidden">
                 {cancelled && (
-                  <div className="px-5 py-2.5 bg-red-50 border-b">
-                    <p className="text-xs font-semibold text-red-600 uppercase tracking-widest">Transfer Cancelled</p>
+                  <div className="px-5 py-2.5 bg-destructive/10 border-b">
+                    <p className="text-xs font-semibold text-destructive uppercase tracking-widest">Transfer Cancelled</p>
                   </div>
                 )}
                 <div className={`px-6 py-5 ${cancelled ? 'opacity-40' : ''}`}>
@@ -906,20 +909,20 @@ export default function TransfersPage({ deepLinkId, onDeepLinkHandled }: { deepL
                       <div key={i} className="flex-1 flex flex-col items-center relative">
                         {i < steps.length - 1 && (
                           <div className="absolute top-[15px] left-1/2 w-full h-[2px]" style={{ zIndex: 0 }}>
-                            <div className={`h-full ${step.done && steps[i + 1].done ? 'bg-green-400' : step.done ? 'bg-green-200' : 'bg-muted'}`} />
+                            <div className={`h-full ${step.done && steps[i + 1].done ? 'bg-success' : step.done ? 'bg-success/40' : 'bg-muted'}`} />
                           </div>
                         )}
                         <div className={`relative z-10 w-[30px] h-[30px] rounded-full flex items-center justify-center transition-all ${
-                          step.done ? 'bg-green-500 shadow-sm shadow-green-200' : step.active ? 'bg-white ring-2 ring-[#bdac7e]' : 'bg-muted'
+                          step.done ? 'bg-success shadow-sm shadow-success/30' : step.active ? 'bg-card ring-2 ring-ring' : 'bg-muted'
                         }`}>
                           {step.done ? (
-                            <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 16 16"><path d="M3 8l3.5 3.5L13 5" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                            <svg className="w-3.5 h-3.5 text-success-foreground" fill="none" viewBox="0 0 16 16"><path d="M3 8l3.5 3.5L13 5" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/></svg>
                           ) : (
-                            <span className={`text-[10px] font-bold ${step.active ? 'text-[#bdac7e]' : 'text-muted-foreground'}`}>{i + 1}</span>
+                            <span className={`text-[10px] font-bold ${step.active ? 'text-primary' : 'text-muted-foreground'}`}>{i + 1}</span>
                           )}
                         </div>
                         <div className="mt-3 text-center px-2 w-full">
-                          <p className={`text-xs font-semibold tracking-wide ${step.done ? 'text-green-600' : step.active ? 'text-[#bdac7e]' : 'text-muted-foreground/60'}`}>{step.label}</p>
+                          <p className={`text-xs font-semibold tracking-wide ${step.done ? 'text-success' : step.active ? 'text-primary' : 'text-muted-foreground/60'}`}>{step.label}</p>
                           {step.date ? (
                             <>
                               <p className="text-[11px] text-muted-foreground mt-1 leading-tight">{step.date}</p>
@@ -961,7 +964,7 @@ export default function TransfersPage({ deepLinkId, onDeepLinkHandled }: { deepL
             <div className="px-5 py-3 bg-muted/50 text-xs font-medium text-muted-foreground uppercase flex items-center justify-between">
               Item List
               {detail.status === 'PENDING' && !receiveOnly && (
-                <button onClick={openAddItem} className="normal-case text-xs font-medium px-2.5 py-1 rounded-md border bg-white hover:bg-muted transition-colors flex items-center gap-1">
+                <button onClick={openAddItem} className="normal-case text-xs font-medium px-2.5 py-1 rounded-md border bg-card hover:bg-muted transition-colors flex items-center gap-1">
                   <Plus className="h-3 w-3" /> Add Item
                 </button>
               )}
@@ -999,10 +1002,10 @@ export default function TransfersPage({ deepLinkId, onDeepLinkHandled }: { deepL
                       </td>
                       <td className="px-5 py-3 text-right text-muted-foreground">{fmtQty(it.requestedQty)}</td>
                       <td className="px-5 py-3 text-right">{it.dispatchedQty > 0 ? fmtQty(it.dispatchedQty) : '—'}</td>
-                      <td className={`px-5 py-3 text-right font-medium ${hasDiscrepancy ? 'text-red-600' : it.receivedQty >= it.requestedQty && it.receivedQty > 0 ? 'text-green-600' : ''}`}>
+                      <td className={`px-5 py-3 text-right font-medium ${hasDiscrepancy ? 'text-destructive' : it.receivedQty >= it.requestedQty && it.receivedQty > 0 ? 'text-success' : ''}`}>
                         {it.receivedQty > 0 ? fmtQty(it.receivedQty) : '—'}
                       </td>
-                      <td className="px-5 py-3 text-right tabular-nums text-muted-foreground">{lineValue ? fmtMoney(lineValue) : '—'}</td>
+                      <td className="px-5 py-3 text-right tabular-nums text-muted-foreground">{lineValue ? formatMoney(lineValue) : '—'}</td>
                     </tr>
                   )
                 })}
@@ -1011,7 +1014,7 @@ export default function TransfersPage({ deepLinkId, onDeepLinkHandled }: { deepL
                 <tfoot>
                   <tr className="border-t bg-muted/20">
                     <td className="px-5 py-2.5 font-medium text-xs text-muted-foreground uppercase" colSpan={4}>Total Value</td>
-                    <td className="px-5 py-2.5 text-right font-semibold tabular-nums">{fmtMoney(detail.totalValue)}</td>
+                    <td className="px-5 py-2.5 text-right font-semibold tabular-nums">{formatMoney(detail.totalValue)}</td>
                   </tr>
                 </tfoot>
               )}
@@ -1024,8 +1027,8 @@ export default function TransfersPage({ deepLinkId, onDeepLinkHandled }: { deepL
       {/* ── Dispatch Modal ── */}
       {dispatchModal && detail && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
-          <div className="bg-white rounded-t-2xl sm:rounded-xl shadow-xl w-full sm:max-w-2xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between p-5 border-b sticky top-0 bg-white">
+          <div className="bg-card rounded-t-2xl sm:rounded-xl shadow-xl w-full sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-5 border-b sticky top-0 bg-card">
               <h3 className="font-semibold text-lg">Dispatch Items</h3>
               <button onClick={() => setDispatchModal(false)}><X className="h-5 w-5 text-muted-foreground" /></button>
             </div>
@@ -1033,8 +1036,8 @@ export default function TransfersPage({ deepLinkId, onDeepLinkHandled }: { deepL
               {dispatchError && <div className="text-sm text-destructive bg-destructive/10 rounded px-3 py-2">{dispatchError}</div>}
               <div className="space-y-1.5">
                 <label className="text-sm font-medium">Expected Receiver</label>
-                <input type="text" className="w-full border rounded-md px-3 py-2 text-sm focus:ring-1 focus:ring-[#bdac7e]/50 focus:border-[#bdac7e] outline-none transition"
-                  placeholder="Receiver name..." value={expectedReceiverName} onChange={e => setExpectedReceiverName(e.target.value)} />
+                <input type="text" className="w-full border rounded-md px-3 py-2 text-sm focus:ring-1 focus:ring-ring/50 focus:border-ring outline-none transition"
+                  placeholder="Receiver name…" value={expectedReceiverName} onChange={e => setExpectedReceiverName(e.target.value)} />
               </div>
               <div className="space-y-1">
                 <label className="text-sm font-medium">Qty Dispatched</label>
@@ -1068,12 +1071,12 @@ export default function TransfersPage({ deepLinkId, onDeepLinkHandled }: { deepL
                               <div className="flex flex-col items-end gap-1">
                                 <div className="flex items-center gap-1.5">
                                   <input type="number" min={0} max={cap} autoFocus
-                                    className="w-20 border rounded px-2 py-1 text-sm text-center focus:ring-1 focus:ring-[#bdac7e]/50 focus:border-[#bdac7e] outline-none"
+                                    className="w-20 border rounded px-2 py-1 text-sm text-center focus:ring-1 focus:ring-ring/50 focus:border-ring outline-none"
                                     value={line.qty}
                                     onChange={e => setDispatchLines(l => l.map((li, idx) => idx !== i ? li : { ...li, qty: Math.min(Math.max(0, Number(e.target.value)), cap) }))} />
                                   {hasPU ? (
                                     <button onClick={() => setDispatchLines(l => l.map((li, idx) => idx !== i ? li : { ...li, usePurchaseUnit: !li.usePurchaseUnit, qty: 1 }))}
-                                      className={`flex items-center gap-1 text-xs px-2 py-1 rounded border shrink-0 ${line.usePurchaseUnit ? 'bg-[#bdac7e] text-white border-[#bdac7e]' : 'border-dashed border-[#bdac7e]/60 text-muted-foreground hover:border-[#bdac7e]'}`}>
+                                      className={`flex items-center gap-1 text-xs px-2 py-1 rounded border shrink-0 ${line.usePurchaseUnit ? 'bg-primary text-primary-foreground border-primary' : 'border-dashed border-primary/60 text-muted-foreground hover:border-primary'}`}>
                                       {displayUnit} <ArrowLeftRight className="h-2.5 w-2.5" />
                                     </button>
                                   ) : (
@@ -1133,8 +1136,8 @@ export default function TransfersPage({ deepLinkId, onDeepLinkHandled }: { deepL
             </div>
             <div className="flex justify-end gap-3 px-5 py-4 border-t bg-muted/30">
               <button onClick={() => setDispatchModal(false)} className="px-4 py-2 text-sm border rounded-md hover:bg-muted">Cancel</button>
-              <button onClick={submitDispatch} disabled={dispatchSaving} className="px-4 py-2 text-sm text-white rounded-md font-medium disabled:opacity-50 bg-amber-600 hover:bg-amber-700">
-                {dispatchSaving ? 'Saving...' : 'Confirm Dispatch'}
+              <button onClick={submitDispatch} disabled={dispatchSaving} className="px-4 py-2 text-sm text-primary-foreground rounded-md font-medium disabled:opacity-50 bg-primary hover:bg-primary-hover">
+                {dispatchSaving ? 'Saving…' : 'Confirm Dispatch'}
               </button>
             </div>
           </div>
@@ -1144,8 +1147,8 @@ export default function TransfersPage({ deepLinkId, onDeepLinkHandled }: { deepL
       {/* ── Receive Modal ── */}
       {receiveModal && detail && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
-          <div className="bg-white rounded-t-2xl sm:rounded-xl shadow-xl w-full sm:max-w-2xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between p-5 border-b sticky top-0 bg-white">
+          <div className="bg-card rounded-t-2xl sm:rounded-xl shadow-xl w-full sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-5 border-b sticky top-0 bg-card">
               <h3 className="font-semibold text-lg">Receive Items</h3>
               <button onClick={() => setReceiveModal(false)}><X className="h-5 w-5 text-muted-foreground" /></button>
             </div>
@@ -1206,12 +1209,12 @@ export default function TransfersPage({ deepLinkId, onDeepLinkHandled }: { deepL
                               <div className="flex flex-col items-end gap-1">
                                 <div className="flex items-center gap-1.5">
                                   <input type="number" min={0} max={cap} autoFocus
-                                    className="w-20 border rounded px-2 py-1 text-sm text-center focus:ring-1 focus:ring-[#bdac7e]/50 focus:border-[#bdac7e] outline-none"
+                                    className="w-20 border rounded px-2 py-1 text-sm text-center focus:ring-1 focus:ring-ring/50 focus:border-ring outline-none"
                                     value={line.qty}
                                     onChange={e => setReceiveLines(l => l.map((li, idx) => idx !== i ? li : { ...li, qty: Math.min(Math.max(0, Number(e.target.value)), cap) }))} />
                                   {hasPU ? (
                                     <button onClick={() => setReceiveLines(l => l.map((li, idx) => idx !== i ? li : { ...li, usePurchaseUnit: !li.usePurchaseUnit, qty: 1 }))}
-                                      className={`flex items-center gap-1 text-xs px-2 py-1 rounded border shrink-0 ${line.usePurchaseUnit ? 'bg-[#bdac7e] text-white border-[#bdac7e]' : 'border-dashed border-[#bdac7e]/60 text-muted-foreground hover:border-[#bdac7e]'}`}>
+                                      className={`flex items-center gap-1 text-xs px-2 py-1 rounded border shrink-0 ${line.usePurchaseUnit ? 'bg-primary text-primary-foreground border-primary' : 'border-dashed border-primary/60 text-muted-foreground hover:border-primary'}`}>
                                       {displayUnit} <ArrowLeftRight className="h-2.5 w-2.5" />
                                     </button>
                                   ) : (
@@ -1272,8 +1275,8 @@ export default function TransfersPage({ deepLinkId, onDeepLinkHandled }: { deepL
             </div>
             <div className="flex justify-end gap-3 px-5 py-4 border-t bg-muted/30">
               <button onClick={() => setReceiveModal(false)} className="px-4 py-2 text-sm border rounded-md hover:bg-muted">Cancel</button>
-              <button onClick={submitReceive} disabled={receiveSaving} className="px-4 py-2 text-sm text-white rounded-md font-medium disabled:opacity-50 bg-green-600 hover:bg-green-700">
-                {receiveSaving ? 'Saving...' : 'Confirm Receipt'}
+              <button onClick={submitReceive} disabled={receiveSaving} className="px-4 py-2 text-sm text-success-foreground rounded-md font-medium disabled:opacity-50 bg-success hover:bg-success/90">
+                {receiveSaving ? 'Saving…' : 'Confirm Receipt'}
               </button>
             </div>
           </div>
@@ -1282,7 +1285,7 @@ export default function TransfersPage({ deepLinkId, onDeepLinkHandled }: { deepL
 
       {crewLinkModal && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
-          <div className="bg-white rounded-t-2xl sm:rounded-xl shadow-xl w-full sm:max-w-md">
+          <div className="bg-card rounded-t-2xl sm:rounded-xl shadow-xl w-full sm:max-w-md">
             <div className="flex items-center justify-between p-5 border-b">
               <h3 className="font-semibold text-lg">Crew Receive Link</h3>
               <button onClick={() => setCrewLinkModal(false)}><X className="h-5 w-5 text-muted-foreground" /></button>
@@ -1293,7 +1296,7 @@ export default function TransfersPage({ deepLinkId, onDeepLinkHandled }: { deepL
               </p>
               {crewLinkError && <div className="text-sm text-destructive bg-destructive/10 rounded px-3 py-2">{crewLinkError}</div>}
               {crewLinkLoading ? (
-                <div className="text-sm text-muted-foreground py-4 text-center">Creating link...</div>
+                <div className="text-sm text-muted-foreground py-4 text-center">Creating link…</div>
               ) : crewLink && (
                 <>
                   <div className="border rounded-md px-3 py-2.5 text-sm font-mono bg-muted/30 break-all">{crewLink}</div>
@@ -1306,7 +1309,7 @@ export default function TransfersPage({ deepLinkId, onDeepLinkHandled }: { deepL
                     <a
                       href={`https://wa.me/?text=${encodeURIComponent(`Please confirm receipt of ${detail?.transferNumber ?? ''} here: ${crewLink}`)}`}
                       target="_blank" rel="noopener noreferrer"
-                      className="flex-1 px-4 py-2 text-sm bg-green-600 text-white rounded-md hover:bg-green-700 font-medium text-center">
+                      className="flex-1 px-4 py-2 text-sm bg-success text-success-foreground rounded-md hover:bg-success/90 font-medium text-center">
                       Share via WhatsApp
                     </a>
                   </div>
@@ -1319,7 +1322,7 @@ export default function TransfersPage({ deepLinkId, onDeepLinkHandled }: { deepL
 
       {addItemModal && detail && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
-          <div className="bg-white rounded-t-2xl sm:rounded-xl shadow-xl w-full sm:max-w-md">
+          <div className="bg-card rounded-t-2xl sm:rounded-xl shadow-xl w-full sm:max-w-md">
             <div className="flex items-center justify-between p-5 border-b">
               <h3 className="font-semibold text-lg">Add Item — {detail.transferNumber}</h3>
               <button onClick={() => setAddItemModal(false)}><X className="h-5 w-5 text-muted-foreground" /></button>
@@ -1331,15 +1334,15 @@ export default function TransfersPage({ deepLinkId, onDeepLinkHandled }: { deepL
                 <>
                   <div className="relative">
                     <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
-                    <input autoFocus value={addItemSearch} onChange={e => setAddItemSearch(e.target.value)} placeholder="Search items..."
-                      className="w-full h-9 border rounded-md pl-8 pr-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500" />
+                    <input autoFocus value={addItemSearch} onChange={e => setAddItemSearch(e.target.value)} placeholder="Search items…"
+                      className="w-full h-9 border rounded-md pl-8 pr-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring" />
                   </div>
                   <div className="max-h-64 overflow-y-auto border rounded-md divide-y">
                     {warehouseStock
                       .filter(s => !addItemSearch.trim() || s.name.toLowerCase().includes(addItemSearch.trim().toLowerCase()) || s.sku.toLowerCase().includes(addItemSearch.trim().toLowerCase()))
                       .map(s => (
                         <button key={s.kind === 'stock' ? s.id : `name:${s.name}:${s.sourcePoId ?? ''}`} onClick={() => setAddItemPicked(s)}
-                          className="w-full text-left px-3 py-2 text-sm hover:bg-amber-50 transition-colors flex items-center justify-between gap-2">
+                          className="w-full text-left px-3 py-2 text-sm hover:bg-warning/10 transition-colors flex items-center justify-between gap-2">
                           <span>{s.name}{s.sku && <span className="text-muted-foreground"> ({s.sku})</span>}</span>
                           <span className="text-xs text-muted-foreground shrink-0">{s.qty} {s.baseUnit}</span>
                         </button>
@@ -1352,23 +1355,23 @@ export default function TransfersPage({ deepLinkId, onDeepLinkHandled }: { deepL
                   <div className="flex items-center justify-between border rounded-md px-3 py-2.5">
                     <div>
                       <p className="text-sm font-medium">{addItemPicked.name}</p>
-                      <p className="text-xs text-muted-foreground">Tersedia: {addItemPicked.qty} {addItemPicked.baseUnit}</p>
+                      <p className="text-xs text-muted-foreground">Available: {addItemPicked.qty} {addItemPicked.baseUnit}</p>
                     </div>
                     <button onClick={() => setAddItemPicked(null)} className="text-xs text-muted-foreground hover:underline">Change</button>
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Qty ({addItemPicked.baseUnit})</label>
                     <input type="number" min={0} step="any" value={addItemQty} onChange={e => setAddItemQty(e.target.value)}
-                      className="w-full h-10 border rounded-lg px-3 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500" />
+                      className="w-full h-10 border rounded-lg px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring" />
                   </div>
                 </div>
               )}
             </div>
-            <div className="flex items-center justify-end gap-2 p-5 border-t bg-gray-50/80">
-              <button onClick={() => setAddItemModal(false)} className="px-4 py-2 text-sm border rounded-lg hover:bg-white transition-colors">Cancel</button>
+            <div className="flex items-center justify-end gap-2 p-5 border-t bg-muted/50">
+              <button onClick={() => setAddItemModal(false)} className="px-4 py-2 text-sm border rounded-lg hover:bg-card transition-colors">Cancel</button>
               <button onClick={confirmAddItem} disabled={!addItemPicked || addItemSaving}
-                className="px-5 py-2 text-sm text-white rounded-lg font-semibold bg-amber-600 hover:bg-amber-700 disabled:opacity-50 transition-colors">
-                {addItemSaving ? 'Adding...' : 'Add'}
+                className="px-5 py-2 text-sm text-primary-foreground rounded-lg font-semibold bg-primary hover:bg-primary-hover disabled:opacity-50 transition-colors">
+                {addItemSaving ? 'Adding…' : 'Add'}
               </button>
             </div>
           </div>

@@ -6,7 +6,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Badge } from '@/components/ui/badge'
+import { Textarea } from '@/components/ui/textarea'
+import { useConfirm } from '@/components/ui/confirm-dialog'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -28,8 +29,10 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { NATIONALITIES } from '@/lib/nationalities'
 import { roleMatches } from '@/lib/role-utils'
 import { parseDuplicateNote } from '@/lib/agent-duplicate'
+import { formatDate } from '@/lib/format'
+import { StatusBadge, type StatusTone } from '@/components/ui/status-badge'
 
-function CountrySelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+function CountrySelect({ id, value, onChange }: { id?: string; value: string; onChange: (v: string) => void }) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const filtered = query.trim()
@@ -38,18 +41,19 @@ function CountrySelect({ value, onChange }: { value: string; onChange: (v: strin
   return (
     <Popover open={open} onOpenChange={v => { setOpen(v); if (!v) setQuery('') }}>
       <PopoverTrigger asChild>
-        <Button variant="outline" role="combobox" className="w-full justify-between font-normal">
+        <Button id={id} variant="outline" role="combobox" aria-haspopup="listbox" aria-expanded={open} className="w-full justify-between font-normal border-input">
           <span className={value ? '' : 'text-muted-foreground'}>{value || 'Select country'}</span>
-          <ChevronDown className="h-3.5 w-3.5 opacity-50 ml-2 shrink-0" />
+          <ChevronDown className="size-3.5 opacity-50 ml-2 shrink-0" />
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-64 p-0" align="start">
         <div className="flex flex-col">
           <div className="flex items-center gap-2 border-b px-3 py-2">
             <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-            <input
+            <Input
               autoFocus
-              className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+              aria-label="Search country"
+              className="h-7 flex-1 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0 dark:bg-transparent"
               placeholder="Search country…"
               value={query}
               onChange={e => setQuery(e.target.value)}
@@ -130,7 +134,7 @@ interface AgentContact {
 
 const EMPTY_FORM = { name: '', commission: '0', commissionOpenTrip: '0', commissionPrivateCharter: '0', commissionB2B: '0', salespersonId: '', country: '', address: '', email: '', whatsapp: '', note: '', website: '', instagram: '', source: '', currentCondition: '', contract: '', contractFile: '', contractFileName: '' }
 const EMPTY_CONTACT = { name: '', email: '', whatsapp: '', jobTitle: '', dateOfBirth: '' }
-const ACCENT = '#bdac7e'
+const ACCENT = 'var(--primary)'
 const TODAY = new Date().toISOString().split('T')[0]
 
 export default function Agents() {
@@ -145,6 +149,7 @@ export default function Agents() {
   const canGenerateContract = !!(session?.user as { tenantFeatures?: Record<string, boolean> })?.tenantFeatures?.agentContract
 
   const canActOnAgent = (a: AgentRecord) => isAdmin || a.salespersonId === userId
+  const confirm = useConfirm()
 
   const [agents,     setAgents]     = useState<AgentRecord[]>([])
   const [loading,    setLoading]    = useState(true)
@@ -341,8 +346,8 @@ export default function Agents() {
 
   const handleSetPortalPassword = async () => {
     if (!portalDialogAgent) return
-    if (portalPasswordValue.length < 8) { setPortalPasswordError('Password minimal 8 karakter'); return }
-    if (portalPasswordValue !== portalPasswordConfirm) { setPortalPasswordError('Konfirmasi password tidak sama'); return }
+    if (portalPasswordValue.length < 8) { setPortalPasswordError('Password must be at least 8 characters'); return }
+    if (portalPasswordValue !== portalPasswordConfirm) { setPortalPasswordError('Passwords do not match'); return }
     setPortalSaving(true)
     setPortalPasswordError('')
     try {
@@ -351,8 +356,8 @@ export default function Agents() {
         body: JSON.stringify({ password: portalPasswordValue }),
       })
       if (res.ok) { await fetchAgents(); setPortalDialogAgent(null) }
-      else { const data = await res.json().catch(() => ({})); setPortalPasswordError(data.error || 'Gagal menyimpan password') }
-    } catch (e) { console.error(e); setPortalPasswordError('Gagal menyimpan password') }
+      else { const data = await res.json().catch(() => ({})); setPortalPasswordError(data.error || 'Failed to save password') }
+    } catch (e) { console.error(e); setPortalPasswordError('Failed to save password') }
     finally { setPortalSaving(false) }
   }
 
@@ -768,26 +773,31 @@ export default function Agents() {
     <div className="space-y-6">
 
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <div className="flex items-center gap-3 mb-0.5">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 mb-0.5">
             <h3 className="text-2xl font-bold tracking-tight">Agents</h3>
-            <button onClick={() => fetchAgents()} title="Refresh" className="text-muted-foreground hover:text-foreground transition-colors mt-0.5">
-              <RotateCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-            </button>
+            <Button variant="ghost" size="icon" onClick={() => fetchAgents()} title="Refresh" aria-label="Refresh"
+              className="size-8 text-muted-foreground hover:text-foreground">
+              <RotateCw className={`size-4 ${loading ? 'animate-spin' : ''}`} />
+            </Button>
             {isSales && (
-              <div className="flex items-center rounded-lg border bg-muted p-0.5 text-xs font-semibold">
+              <div role="group" aria-label="Agent scope" className="flex items-center rounded-lg border bg-muted p-0.5 text-xs font-semibold">
                 <button
+                  type="button"
+                  aria-pressed={scope === 'mine'}
                   onClick={() => setScope('mine')}
                   className="px-3 py-1 rounded-md transition-colors"
-                  style={scope === 'mine' ? { background: ACCENT, color: 'white' } : { color: '#6b7280' }}
+                  style={scope === 'mine' ? { background: ACCENT, color: 'var(--primary-foreground)' } : { color: 'var(--muted-foreground)' }}
                 >
                   My Agents
                 </button>
                 <button
+                  type="button"
+                  aria-pressed={scope === 'all'}
                   onClick={() => setScope('all')}
                   className="px-3 py-1 rounded-md transition-colors"
-                  style={scope === 'all' ? { background: ACCENT, color: 'white' } : { color: '#6b7280' }}
+                  style={scope === 'all' ? { background: ACCENT, color: 'var(--primary-foreground)' } : { color: 'var(--muted-foreground)' }}
                 >
                   All Agents
                 </button>
@@ -798,16 +808,16 @@ export default function Agents() {
             {loading ? '…' : `${activeCount} active agent${activeCount !== 1 ? 's' : ''}`}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {canManage && (
             <>
               <Button
                 variant="outline" size="sm"
                 onClick={downloadTemplate}
-                className="h-8 px-3 text-xs"
+                className="text-xs"
                 title="Download a sample CSV with the correct columns"
               >
-                <FileDown className="h-3.5 w-3.5 mr-1.5" />
+                <FileDown className="size-3.5" />
                 Template
               </Button>
 
@@ -834,24 +844,18 @@ export default function Agents() {
               <Button
                 variant="outline" size="sm"
                 onClick={handleExport}
-                disabled={exporting}
-                className="h-8 px-3 text-xs"
+                loading={exporting}
+                className="text-xs"
               >
-                {exporting
-                  ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
-                  : <Download className="h-3.5 w-3.5 mr-1.5" />}
+                {!exporting && <Download className="size-3.5" />}
                 Export CSV
               </Button>
             </>
           )}
 
           {canManage && (
-            <Button
-              onClick={openCreate}
-              style={{ backgroundColor: ACCENT, color: 'white' }}
-              className="hover:opacity-90"
-            >
-              <Plus className="h-4 w-4 mr-2" /> Add Agent
+            <Button onClick={openCreate}>
+              <Plus className="size-4" /> Add Agent
             </Button>
           )}
         </div>
@@ -859,10 +863,11 @@ export default function Agents() {
 
       {/* Search + Filters */}
       <div className="flex flex-wrap items-center gap-2">
-        <div className="relative">
+        <div className="relative w-full sm:w-auto">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input
-            className="pl-9 h-9 w-56"
+            aria-label="Search agents"
+            className="pl-9 w-full sm:w-56"
             placeholder="Search agent…"
             value={search}
             onChange={e => setSearch(e.target.value)}
@@ -870,7 +875,7 @@ export default function Agents() {
         </div>
 
         <Select value={filterCountry || 'all'} onValueChange={v => setFilterCountry(v === 'all' ? '' : v)}>
-          <SelectTrigger className="h-9 w-44 text-sm">
+          <SelectTrigger aria-label="Filter by country" className="w-full sm:w-44">
             <SelectValue placeholder="All Countries" />
           </SelectTrigger>
           <SelectContent>
@@ -880,7 +885,7 @@ export default function Agents() {
         </Select>
 
         <Select value={filterSalesperson || 'all'} onValueChange={v => setFilterSalesperson(v === 'all' ? '' : v)}>
-          <SelectTrigger className="h-9 w-44 text-sm">
+          <SelectTrigger aria-label="Filter by salesperson" className="w-full sm:w-44">
             <SelectValue placeholder="All Salespersons" />
           </SelectTrigger>
           <SelectContent>
@@ -890,12 +895,13 @@ export default function Agents() {
         </Select>
 
         {hasActiveFilter && (
-          <button
+          <Button
+            variant="ghost" size="sm"
             onClick={() => { setFilterCountry(''); setFilterSalesperson('') }}
-            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            className="gap-1 text-xs text-muted-foreground hover:text-foreground"
           >
-            <X className="h-3.5 w-3.5" /> Clear filters
-          </button>
+            <X className="size-3.5" /> Clear filters
+          </Button>
         )}
       </div>
 
@@ -922,7 +928,7 @@ export default function Agents() {
               <p className="text-sm">{search || hasActiveFilter ? 'No agents match the filters' : 'No agents yet'}</p>
               {canManage && !search && !hasActiveFilter && (
                 <Button onClick={openCreate} variant="outline" size="sm" className="mt-3">
-                  <Plus className="h-4 w-4 mr-1" /> Add First Agent
+                  <Plus className="size-4" /> Add First Agent
                 </Button>
               )}
             </div>
@@ -950,7 +956,7 @@ export default function Agents() {
                     const duplicateInfo = !a.isActive ? parseDuplicateNote(a.note) : null
                     return (
                     <React.Fragment key={a.id}>
-                    <tr className={`hover:bg-muted/30 transition-colors cursor-pointer ${duplicateInfo ? 'opacity-60 bg-red-50/50' : ''}`} onClick={() => handleToggleExpand(a.id)}>
+                    <tr className={`hover:bg-muted/30 transition-colors cursor-pointer ${duplicateInfo ? 'opacity-60 bg-destructive/5' : ''}`} onClick={() => handleToggleExpand(a.id)}>
 
                       {/* Expand chevron */}
                       <td className="py-2.5 pr-1 w-6">
@@ -965,8 +971,8 @@ export default function Agents() {
                       <td className="py-2.5 pr-3">
                         <div className="flex items-center gap-2.5">
                           <div
-                            className="h-8 w-8 shrink-0 rounded-full flex items-center justify-center text-white text-xs font-bold uppercase"
-                            style={{ backgroundColor: a.isActive ? ACCENT : '#9ca3af' }}
+                            className="h-8 w-8 shrink-0 rounded-full flex items-center justify-center text-primary-foreground text-xs font-bold uppercase"
+                            style={{ backgroundColor: a.isActive ? ACCENT : 'var(--muted-foreground)' }}
                           >
                             {a.name.charAt(0)}
                           </div>
@@ -974,16 +980,16 @@ export default function Agents() {
                             <div className="font-semibold text-sm leading-tight flex items-center gap-1.5">
                               {a.name}
                               {duplicateInfo && (
-                                <Badge variant="outline" className="text-[10px] px-1.5 py-0 leading-4 bg-red-50 text-red-600 border-red-200">
+                                <StatusBadge size="sm" tone="destructive" className="leading-4">
                                   Duplicate
-                                </Badge>
+                                </StatusBadge>
                               )}
                             </div>
                             {a.country && <div className="text-[11px] text-muted-foreground lg:hidden">{a.country}</div>}
                             {duplicateInfo && (
-                              <div className="flex items-center gap-1 text-[11px] text-red-600 font-medium mt-0.5">
+                              <div className="flex items-center gap-1 text-[11px] text-destructive font-medium mt-0.5">
                                 <AlertTriangle className="h-3 w-3 shrink-0" />
-                                Duplikat — sudah dibuat lebih dulu oleh {duplicateInfo.salesperson} pada {new Date(duplicateInfo.date).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                Duplicate — already created by {duplicateInfo.salesperson} on {formatDate(duplicateInfo.date)}
                               </div>
                             )}
                           </div>
@@ -1000,9 +1006,7 @@ export default function Agents() {
                         {canActOnAgent(a) ? (
                           <div className="flex items-center gap-1.5">
                             {a.contract
-                              ? <span className={`text-[11px] font-medium px-1.5 py-0.5 rounded-full whitespace-nowrap ${
-                                  a.contract === 'Yes' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'
-                                }`}>{a.contract}</span>
+                              ? <StatusBadge size="sm" tone={a.contract === 'Yes' ? 'success' : 'destructive'}>{a.contract}</StatusBadge>
                               : <span className="text-muted-foreground/40 text-xs">—</span>}
                             {a.contract === 'Yes' && a.contractFileName && (
                               <a
@@ -1010,7 +1014,8 @@ export default function Agents() {
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 title={a.contractFileName}
-                                className="text-muted-foreground hover:text-[#bdac7e] transition-colors"
+                                aria-label={`Download contract ${a.contractFileName}`}
+                                className="text-muted-foreground hover:text-primary-strong transition-colors"
                               >
                                 <Download className="h-3 w-3" />
                               </a>
@@ -1025,47 +1030,57 @@ export default function Agents() {
                           {!canActOnAgent(a) ? (
                             <span className="text-muted-foreground/40 text-xs">—</span>
                           ) : (
-                            <div className="flex items-center gap-1">
+                            <div className="flex items-center gap-0.5">
                               {!a.calendarToken ? (
-                                <button
+                                <Button
+                                  variant="link" size="sm"
                                   onClick={() => setCalendarConfirm({ agent: a, action: 'generate' })}
-                                  className="flex items-center gap-1 text-[11px] text-[#bdac7e] hover:underline font-medium"
+                                  title="Generate calendar link"
+                                  className="h-7 gap-1 px-1 has-[>svg]:px-1 text-[11px] text-primary-strong"
                                 >
-                                  <Link2 className="h-3 w-3" /> Gen
-                                </button>
+                                  <Link2 className="size-3" /> Gen
+                                </Button>
                               ) : (
                                 <>
-                                  <span className={`text-[11px] font-medium px-1.5 py-0.5 rounded-full ${a.calendarActive ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>
+                                  <StatusBadge size="sm" tone={a.calendarActive ? 'success' : 'neutral'}>
                                     {a.calendarActive ? 'On' : 'Off'}
-                                  </span>
-                                  <button
+                                  </StatusBadge>
+                                  <Button
+                                    variant="ghost" size="icon"
                                     onClick={() => copyCalendarLink(a.calendarToken!, a.id)}
-                                    className="p-0.5 rounded hover:bg-muted text-muted-foreground"
+                                    className="size-7 text-muted-foreground"
                                     title="Copy calendar link"
+                                    aria-label="Copy calendar link"
                                   >
-                                    {copiedId === a.id ? <Check className="h-3 w-3 text-emerald-600" /> : <Copy className="h-3 w-3" />}
-                                  </button>
-                                  <button
+                                    {copiedId === a.id ? <Check className="size-3 text-success" /> : <Copy className="size-3" />}
+                                  </Button>
+                                  <Button
+                                    variant="ghost" size="icon"
                                     onClick={() => setCalendarConfirm({ agent: a, action: a.calendarActive ? 'deactivate' : 'activate' })}
-                                    className="p-0.5 rounded hover:bg-muted text-muted-foreground"
+                                    className="size-7 text-muted-foreground"
                                     title={a.calendarActive ? 'Deactivate calendar' : 'Activate calendar'}
+                                    aria-label={a.calendarActive ? 'Deactivate calendar' : 'Activate calendar'}
                                   >
-                                    {a.calendarActive ? <ShieldOff className="h-3 w-3 text-red-500" /> : <ShieldCheck className="h-3 w-3 text-emerald-600" />}
-                                  </button>
-                                  <button
+                                    {a.calendarActive ? <ShieldOff className="size-3 text-destructive" /> : <ShieldCheck className="size-3 text-success" />}
+                                  </Button>
+                                  <Button
+                                    variant="ghost" size="icon"
                                     onClick={() => setCalendarConfirm({ agent: a, action: 'reset' })}
-                                    className="p-0.5 rounded hover:bg-muted text-muted-foreground"
+                                    className="size-7 text-muted-foreground"
                                     title="Reset calendar token"
+                                    aria-label="Reset calendar token"
                                   >
-                                    <RotateCw className="h-3 w-3 text-amber-500" />
-                                  </button>
-                                  <button
+                                    <RotateCw className="size-3 text-warning" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost" size="icon"
                                     onClick={() => openStats(a)}
-                                    className="p-0.5 rounded hover:bg-muted text-muted-foreground"
+                                    className="size-7 text-muted-foreground"
                                     title="View access stats"
+                                    aria-label="View calendar access stats"
                                   >
-                                    <BarChart2 className="h-3 w-3" />
-                                  </button>
+                                    <BarChart2 className="size-3" />
+                                  </Button>
                                 </>
                               )}
                             </div>
@@ -1079,50 +1094,60 @@ export default function Agents() {
                           {!canActOnAgent(a) ? (
                             <span className="text-muted-foreground/40 text-xs">—</span>
                           ) : (
-                            <div className="flex items-center gap-1">
+                            <div className="flex items-center gap-0.5">
                               {!a.hasPortalPassword ? (
-                                <button
+                                <Button
+                                  variant="link" size="sm"
                                   onClick={() => openPortalDialog(a)}
-                                  className="flex items-center gap-1 text-[11px] text-[#bdac7e] hover:underline font-medium"
+                                  title="Set portal password"
+                                  className="h-7 gap-1 px-1 has-[>svg]:px-1 text-[11px] text-primary-strong"
                                 >
-                                  <KeyRound className="h-3 w-3" /> Set
-                                </button>
+                                  <KeyRound className="size-3" /> Set
+                                </Button>
                               ) : (
                                 <>
-                                  <span className={`text-[11px] font-medium px-1.5 py-0.5 rounded-full ${a.portalActive ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>
+                                  <StatusBadge size="sm" tone={a.portalActive ? 'success' : 'neutral'}>
                                     {a.portalActive ? 'On' : 'Off'}
-                                  </span>
-                                  <button
+                                  </StatusBadge>
+                                  <Button
+                                    variant="ghost" size="icon"
                                     onClick={() => openPortalDialog(a)}
-                                    className="p-0.5 rounded hover:bg-muted text-muted-foreground"
+                                    className="size-7 text-muted-foreground"
                                     title="Reset portal password"
+                                    aria-label="Reset portal password"
                                   >
-                                    <RotateCw className="h-3 w-3 text-amber-500" />
-                                  </button>
-                                  <button
+                                    <RotateCw className="size-3 text-warning" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost" size="icon"
                                     onClick={() => setPortalConfirm({ agent: a, action: a.portalActive ? 'deactivate' : 'activate' })}
-                                    className="p-0.5 rounded hover:bg-muted text-muted-foreground"
+                                    className="size-7 text-muted-foreground"
                                     title={a.portalActive ? 'Deactivate portal access' : 'Activate portal access'}
+                                    aria-label={a.portalActive ? 'Deactivate portal access' : 'Activate portal access'}
                                   >
-                                    {a.portalActive ? <ShieldOff className="h-3 w-3 text-red-500" /> : <ShieldCheck className="h-3 w-3 text-emerald-600" />}
-                                  </button>
+                                    {a.portalActive ? <ShieldOff className="size-3 text-destructive" /> : <ShieldCheck className="size-3 text-success" />}
+                                  </Button>
                                 </>
                               )}
-                              <button
+                              <Button
+                                variant="ghost" size="icon"
                                 onClick={() => openCategoryDialog(a)}
-                                className="p-0.5 rounded hover:bg-muted text-muted-foreground"
+                                className="size-7 text-muted-foreground"
                                 title="Media Kit categories shown to this agent"
+                                aria-label="Media Kit categories shown to this agent"
                               >
-                                <ListChecks className="h-3 w-3" />
-                              </button>
+                                <ListChecks className="size-3" />
+                              </Button>
                               {a.hasPortalPassword && (
-                                <button
+                                <Button
+                                  variant="ghost" size="icon"
                                   onClick={() => openPortalStats(a)}
-                                  className="p-0.5 rounded hover:bg-muted text-muted-foreground"
+                                  className="size-7 text-muted-foreground"
                                   title="Portal login history"
+                                  aria-label="Portal login history"
                                 >
-                                  <BarChart2 className="h-3 w-3" />
-                                </button>
+                                  <BarChart2 className="size-3" />
+                                </Button>
                               )}
                             </div>
                           )}
@@ -1166,27 +1191,27 @@ export default function Agents() {
 
                       {/* Created date — hidden on small/medium screens */}
                       <td className="py-2.5 pr-3 text-xs text-muted-foreground hidden lg:table-cell whitespace-nowrap">
-                        {new Date(a.createdAt).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}
+                        {formatDate(a.createdAt)}
                       </td>
 
                       {/* Status badge — currentCondition */}
                       <td className="py-2.5 pr-3 text-center">
                         {(() => {
                           const cond = a.currentCondition
-                          const cfg: Record<string, string> = {
-                            'Active':           'bg-emerald-50 text-emerald-700 border-emerald-200',
-                            'In Conversation':  'bg-blue-50 text-blue-700 border-blue-200',
-                            'Follow Up':        'bg-violet-50 text-violet-700 border-violet-200',
-                            'Contract Sent':    'bg-amber-50 text-amber-700 border-amber-200',
-                            'No Response':      'bg-orange-50 text-orange-600 border-orange-200',
-                            'Not Qualified':    'bg-red-50 text-red-600 border-red-200',
-                            'Inactive':         'bg-gray-50 text-gray-400 border-gray-200',
+                          const cfg: Record<string, StatusTone> = {
+                            'Active':           'success',
+                            'In Conversation':  'info',
+                            'Follow Up':        'warning',
+                            'Contract Sent':    'warning',
+                            'No Response':      'warning',
+                            'Not Qualified':    'destructive',
+                            'Inactive':         'neutral',
                           }
-                          const cls = cond && cfg[cond] ? cfg[cond] : 'bg-gray-50 text-gray-400 border-gray-200'
+                          const tone: StatusTone = cond && cfg[cond] ? cfg[cond] : 'neutral'
                           return (
-                            <Badge variant="outline" className={`text-[11px] px-1.5 py-0 whitespace-nowrap ${cls}`}>
+                            <StatusBadge size="sm" tone={tone}>
                               {cond ?? '—'}
-                            </Badge>
+                            </StatusBadge>
                           )
                         })()}
                       </td>
@@ -1197,53 +1222,70 @@ export default function Agents() {
                           <div className="flex items-center gap-0.5 justify-end">
                             {canActOnAgent(a) && canGenerateContract && !duplicateInfo && (
                               a.contract === 'Yes' && a.contractFileName ? (
-                                <button
-                                  className="p-1.5 rounded hover:bg-red-50 text-muted-foreground hover:text-red-600 transition-colors"
-                                  onClick={() => { if (confirm('Void contract? The uploaded contract will be removed and a new one can be generated.')) handleVoidContract(a.id) }}
+                                <Button
+                                  variant="ghost" size="icon"
+                                  className="size-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                                  onClick={async () => {
+                                    if (await confirm({
+                                      title: 'Void contract?',
+                                      description: 'The uploaded contract will be removed and a new one can be generated.',
+                                      confirmLabel: 'Void contract',
+                                      destructive: true,
+                                    })) handleVoidContract(a.id)
+                                  }}
                                   title="Void contract"
+                                  aria-label="Void contract"
                                   disabled={voidingId === a.id}
                                 >
-                                  <X className="h-3.5 w-3.5" />
-                                </button>
+                                  <X className="size-3.5" />
+                                </Button>
                               ) : (
-                                <button
-                                  className="p-1.5 rounded hover:bg-muted text-muted-foreground transition-colors"
+                                <Button
+                                  variant="ghost" size="icon"
+                                  className="size-7 text-muted-foreground"
                                   onClick={() => handleGenerateContract(a)}
                                   title="Generate agent contract"
+                                  aria-label="Generate agent contract"
                                 >
-                                  <FileDown className="h-3.5 w-3.5" />
-                                </button>
+                                  <FileDown className="size-3.5" />
+                                </Button>
                               )
                             )}
                             {canActOnAgent(a) && !duplicateInfo && (
-                              <button
-                                className="p-1.5 rounded hover:bg-muted text-muted-foreground transition-colors"
+                              <Button
+                                variant="ghost" size="icon"
+                                className="size-7 text-muted-foreground"
                                 onClick={() => openEdit(a)}
                                 title="Edit agent"
+                                aria-label="Edit agent"
                               >
-                                <Pencil className="h-3.5 w-3.5" />
-                              </button>
+                                <Pencil className="size-3.5" />
+                              </Button>
                             )}
                             {canActOnAgent(a) && (
                               duplicateInfo ? (
-                                <button
-                                  className="p-1.5 rounded hover:bg-red-50 text-red-600 transition-colors"
+                                <Button
+                                  variant="ghost" size="icon"
+                                  className="size-7 text-destructive hover:text-destructive hover:bg-destructive/10"
                                   onClick={() => setDeleteAgent(a)}
                                   title="Delete duplicate agent"
+                                  aria-label="Delete duplicate agent"
                                 >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </button>
+                                  <Trash2 className="size-3.5" />
+                                </Button>
                               ) : (
-                                <button
-                                  className={`p-1.5 rounded transition-colors ${a.isActive
-                                    ? 'hover:bg-red-50 text-red-500'
-                                    : 'hover:bg-emerald-50 text-emerald-600'
+                                <Button
+                                  variant="ghost" size="icon"
+                                  className={`size-7 ${a.isActive
+                                    ? 'text-destructive hover:text-destructive hover:bg-destructive/10'
+                                    : 'text-success hover:text-success hover:bg-success/10'
                                   }`}
                                   onClick={() => setConfirmAgent(a)}
                                   title={a.isActive ? 'Deactivate agent' : 'Activate agent'}
+                                  aria-label={a.isActive ? 'Deactivate agent' : 'Activate agent'}
                                 >
-                                  {a.isActive ? <UserX className="h-3.5 w-3.5" /> : <UserCheck className="h-3.5 w-3.5" />}
-                                </button>
+                                  {a.isActive ? <UserX className="size-3.5" /> : <UserCheck className="size-3.5" />}
+                                </Button>
                               )
                             )}
                           </div>
@@ -1262,12 +1304,13 @@ export default function Agents() {
                                 Contact Persons {contactsCache[a.id]?.length ? `(${contactsCache[a.id].length})` : ''}
                               </p>
                               {canManage && expandedAddingId !== a.id && (
-                                <button
+                                <Button
+                                  variant="link" size="sm"
                                   onClick={() => { setExpandedAddingId(a.id); setExpandedContactForm(EMPTY_CONTACT); setExpandedEditingId(null) }}
-                                  className="flex items-center gap-1 text-xs text-[#bdac7e] hover:underline font-medium"
+                                  className="h-7 gap-1 px-1 has-[>svg]:px-1 text-xs text-primary-strong"
                                 >
-                                  <Plus className="h-3 w-3" /> Add
-                                </button>
+                                  <Plus className="size-3" /> Add
+                                </Button>
                               )}
                             </div>
 
@@ -1281,31 +1324,31 @@ export default function Agents() {
                                   <div key={c.id} className="rounded-md border bg-background px-3 py-2">
                                     {expandedEditingId === c.id ? (
                                       <div className="space-y-2">
-                                        <div className="grid grid-cols-2 gap-2">
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                                           <div className="space-y-1">
-                                            <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Name *</label>
-                                            <input className="w-full h-7 text-xs border rounded px-2" value={expandedEditForm.name} onChange={e => setExpandedEditForm(f => ({ ...f, name: e.target.value }))} />
+                                            <Label htmlFor={`agent-exp-edit-name-${c.id}`} className="text-[10px] text-muted-foreground uppercase tracking-wide">Name *</Label>
+                                            <Input id={`agent-exp-edit-name-${c.id}`} className="h-7 px-2 text-xs md:text-xs" value={expandedEditForm.name} onChange={e => setExpandedEditForm(f => ({ ...f, name: e.target.value }))} />
                                           </div>
                                           <div className="space-y-1">
-                                            <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Job Title</label>
-                                            <input className="w-full h-7 text-xs border rounded px-2" value={expandedEditForm.jobTitle} onChange={e => setExpandedEditForm(f => ({ ...f, jobTitle: e.target.value }))} />
+                                            <Label htmlFor={`agent-exp-edit-job-${c.id}`} className="text-[10px] text-muted-foreground uppercase tracking-wide">Job Title</Label>
+                                            <Input id={`agent-exp-edit-job-${c.id}`} className="h-7 px-2 text-xs md:text-xs" value={expandedEditForm.jobTitle} onChange={e => setExpandedEditForm(f => ({ ...f, jobTitle: e.target.value }))} />
                                           </div>
                                         </div>
-                                        <div className="grid grid-cols-2 gap-2">
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                                           <div className="space-y-1">
-                                            <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Email</label>
-                                            <input className="w-full h-7 text-xs border rounded px-2" value={expandedEditForm.email} onChange={e => setExpandedEditForm(f => ({ ...f, email: e.target.value }))} />
+                                            <Label htmlFor={`agent-exp-edit-email-${c.id}`} className="text-[10px] text-muted-foreground uppercase tracking-wide">Email</Label>
+                                            <Input id={`agent-exp-edit-email-${c.id}`} className="h-7 px-2 text-xs md:text-xs" value={expandedEditForm.email} onChange={e => setExpandedEditForm(f => ({ ...f, email: e.target.value }))} />
                                           </div>
                                           <div className="space-y-1">
-                                            <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">WhatsApp</label>
-                                            <input className="w-full h-7 text-xs border rounded px-2" value={expandedEditForm.whatsapp} onChange={e => setExpandedEditForm(f => ({ ...f, whatsapp: e.target.value }))} />
+                                            <Label htmlFor={`agent-exp-edit-wa-${c.id}`} className="text-[10px] text-muted-foreground uppercase tracking-wide">WhatsApp</Label>
+                                            <Input id={`agent-exp-edit-wa-${c.id}`} className="h-7 px-2 text-xs md:text-xs" value={expandedEditForm.whatsapp} onChange={e => setExpandedEditForm(f => ({ ...f, whatsapp: e.target.value }))} />
                                           </div>
                                         </div>
                                         <div className="flex gap-2 justify-end">
-                                          <button type="button" onClick={() => setExpandedEditingId(null)} className="text-xs text-muted-foreground hover:text-foreground">Cancel</button>
-                                          <button type="button" disabled={expandedSaving || !expandedEditForm.name.trim()} onClick={() => handleExpandedUpdate(a.id, c.id)} className="text-xs font-medium text-[#bdac7e] hover:underline disabled:opacity-50">
+                                          <Button type="button" variant="ghost" size="sm" onClick={() => setExpandedEditingId(null)} className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground">Cancel</Button>
+                                          <Button type="button" variant="link" size="sm" loading={expandedSaving} disabled={!expandedEditForm.name.trim()} onClick={() => handleExpandedUpdate(a.id, c.id)} className="h-7 gap-1 px-1 has-[>svg]:px-1 text-xs text-primary-strong">
                                             {expandedSaving ? 'Saving…' : 'Save'}
-                                          </button>
+                                          </Button>
                                         </div>
                                       </div>
                                     ) : (
@@ -1318,14 +1361,14 @@ export default function Agents() {
                                           <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
                                             {c.email && <span className="flex items-center gap-1 text-[11px] text-muted-foreground"><Mail className="h-3 w-3" />{c.email}</span>}
                                             {c.whatsapp && <span className="flex items-center gap-1 text-[11px] text-muted-foreground"><MessageCircle className="h-3 w-3" />{c.whatsapp}</span>}
-                                            {c.dateOfBirth && <span className="text-[11px] text-muted-foreground">🎂 {new Date(c.dateOfBirth).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}</span>}
+                                            {c.dateOfBirth && <span className="text-[11px] text-muted-foreground">🎂 {formatDate(c.dateOfBirth, 'short')}</span>}
                                             {c.addedByName && <span className="text-[10px] text-muted-foreground/60">added by {c.addedByName}</span>}
                                           </div>
                                         </div>
                                         {canManage && (
                                           <div className="flex items-center gap-0.5 shrink-0">
-                                            <button onClick={() => { setExpandedEditingId(c.id); setExpandedEditForm({ name: c.name, email: c.email ?? '', whatsapp: c.whatsapp ?? '', jobTitle: c.jobTitle ?? '', dateOfBirth: c.dateOfBirth ? c.dateOfBirth.split('T')[0] : '' }) }} className="p-1 rounded hover:bg-muted text-muted-foreground"><Pencil className="h-3 w-3" /></button>
-                                            <button onClick={() => handleExpandedDelete(a.id, c.id)} className="p-1 rounded hover:bg-red-50 text-muted-foreground hover:text-red-600"><Trash2 className="h-3 w-3" /></button>
+                                            <Button variant="ghost" size="icon" aria-label={`Edit contact ${c.name}`} title="Edit contact" onClick={() => { setExpandedEditingId(c.id); setExpandedEditForm({ name: c.name, email: c.email ?? '', whatsapp: c.whatsapp ?? '', jobTitle: c.jobTitle ?? '', dateOfBirth: c.dateOfBirth ? c.dateOfBirth.split('T')[0] : '' }) }} className="size-7 text-muted-foreground"><Pencil className="size-3" /></Button>
+                                            <Button variant="ghost" size="icon" aria-label={`Delete contact ${c.name}`} title="Delete contact" onClick={() => handleExpandedDelete(a.id, c.id)} className="size-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10"><Trash2 className="size-3" /></Button>
                                           </div>
                                         )}
                                       </div>
@@ -1339,32 +1382,32 @@ export default function Agents() {
 
                                 {/* Add form */}
                                 {expandedAddingId === a.id && (
-                                  <div className="rounded-md border border-dashed border-[#bdac7e]/50 bg-[#bdac7e]/5 p-3 space-y-2">
-                                    <div className="grid grid-cols-2 gap-2">
+                                  <div className="rounded-md border border-dashed border-primary/50 bg-primary/5 p-3 space-y-2">
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                                       <div className="space-y-1">
-                                        <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Name *</label>
-                                        <input autoFocus className="w-full h-7 text-xs border rounded px-2" value={expandedContactForm.name} onChange={e => setExpandedContactForm(f => ({ ...f, name: e.target.value }))} />
+                                        <Label htmlFor={`agent-exp-add-name-${a.id}`} className="text-[10px] text-muted-foreground uppercase tracking-wide">Name *</Label>
+                                        <Input id={`agent-exp-add-name-${a.id}`} autoFocus className="h-7 px-2 text-xs md:text-xs" value={expandedContactForm.name} onChange={e => setExpandedContactForm(f => ({ ...f, name: e.target.value }))} />
                                       </div>
                                       <div className="space-y-1">
-                                        <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Job Title</label>
-                                        <input className="w-full h-7 text-xs border rounded px-2" value={expandedContactForm.jobTitle} onChange={e => setExpandedContactForm(f => ({ ...f, jobTitle: e.target.value }))} />
+                                        <Label htmlFor={`agent-exp-add-job-${a.id}`} className="text-[10px] text-muted-foreground uppercase tracking-wide">Job Title</Label>
+                                        <Input id={`agent-exp-add-job-${a.id}`} className="h-7 px-2 text-xs md:text-xs" value={expandedContactForm.jobTitle} onChange={e => setExpandedContactForm(f => ({ ...f, jobTitle: e.target.value }))} />
                                       </div>
                                     </div>
-                                    <div className="grid grid-cols-2 gap-2">
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                                       <div className="space-y-1">
-                                        <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Email</label>
-                                        <input className="w-full h-7 text-xs border rounded px-2" value={expandedContactForm.email} onChange={e => setExpandedContactForm(f => ({ ...f, email: e.target.value }))} />
+                                        <Label htmlFor={`agent-exp-add-email-${a.id}`} className="text-[10px] text-muted-foreground uppercase tracking-wide">Email</Label>
+                                        <Input id={`agent-exp-add-email-${a.id}`} className="h-7 px-2 text-xs md:text-xs" value={expandedContactForm.email} onChange={e => setExpandedContactForm(f => ({ ...f, email: e.target.value }))} />
                                       </div>
                                       <div className="space-y-1">
-                                        <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">WhatsApp</label>
-                                        <input className="w-full h-7 text-xs border rounded px-2" value={expandedContactForm.whatsapp} onChange={e => setExpandedContactForm(f => ({ ...f, whatsapp: e.target.value }))} />
+                                        <Label htmlFor={`agent-exp-add-wa-${a.id}`} className="text-[10px] text-muted-foreground uppercase tracking-wide">WhatsApp</Label>
+                                        <Input id={`agent-exp-add-wa-${a.id}`} className="h-7 px-2 text-xs md:text-xs" value={expandedContactForm.whatsapp} onChange={e => setExpandedContactForm(f => ({ ...f, whatsapp: e.target.value }))} />
                                       </div>
                                     </div>
                                     <div className="flex gap-2 justify-end">
-                                      <button type="button" onClick={() => { setExpandedAddingId(null); setExpandedContactForm(EMPTY_CONTACT) }} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"><X className="h-3 w-3" /> Cancel</button>
-                                      <button type="button" disabled={expandedSaving || !expandedContactForm.name.trim()} onClick={() => handleExpandedAdd(a.id)} className="flex items-center gap-1 text-xs font-medium text-[#bdac7e] hover:underline disabled:opacity-50">
-                                        {expandedSaving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />} Save
-                                      </button>
+                                      <Button type="button" variant="ghost" size="sm" onClick={() => { setExpandedAddingId(null); setExpandedContactForm(EMPTY_CONTACT) }} className="h-7 gap-1 px-2 has-[>svg]:px-2 text-xs text-muted-foreground hover:text-foreground"><X className="size-3" /> Cancel</Button>
+                                      <Button type="button" variant="link" size="sm" loading={expandedSaving} disabled={!expandedContactForm.name.trim()} onClick={() => handleExpandedAdd(a.id)} className="h-7 gap-1 px-1 has-[>svg]:px-1 text-xs text-primary-strong">
+                                        {!expandedSaving && <Check className="size-3" />} Save
+                                      </Button>
                                     </div>
                                   </div>
                                 )}
@@ -1383,11 +1426,11 @@ export default function Agents() {
 
           {/* Pagination */}
           {!loading && filtered.length > 0 && (
-            <div className="flex items-center justify-between pt-4 border-t text-sm text-muted-foreground">
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-4 border-t text-sm text-muted-foreground">
               <div className="flex items-center gap-2">
                 <span className="text-xs">Rows per page</span>
                 <Select value={String(pageSize)} onValueChange={v => { setPageSize(Number(v)); setPage(0) }}>
-                  <SelectTrigger className="h-7 w-16 text-xs">
+                  <SelectTrigger aria-label="Rows per page" className="h-7 w-16 text-xs">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -1403,37 +1446,45 @@ export default function Agents() {
               </span>
 
               <div className="flex items-center gap-1">
-                <button
+                <Button
+                  variant="ghost" size="icon"
                   onClick={() => setPage(0)}
                   disabled={safePage === 0}
-                  className="p-1 rounded hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed"
+                  className="size-7"
+                  aria-label="First page"
                   title="First page"
                 >
-                  <ChevronLeft className="h-3.5 w-3.5" />
-                </button>
-                <button
+                  <ChevronLeft className="size-3.5" />
+                </Button>
+                <Button
+                  variant="ghost" size="icon"
                   onClick={() => setPage(p => Math.max(0, p - 1))}
                   disabled={safePage === 0}
-                  className="p-1 rounded hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed"
+                  className="size-7"
+                  aria-label="Previous page"
                 >
-                  <ChevronLeft className="h-3.5 w-3.5" />
-                </button>
+                  <ChevronLeft className="size-3.5" />
+                </Button>
                 <span className="text-xs px-1">Page {safePage + 1} / {totalPages}</span>
-                <button
+                <Button
+                  variant="ghost" size="icon"
                   onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
                   disabled={safePage >= totalPages - 1}
-                  className="p-1 rounded hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed"
+                  className="size-7"
+                  aria-label="Next page"
                 >
-                  <ChevronRight className="h-3.5 w-3.5" />
-                </button>
-                <button
+                  <ChevronRight className="size-3.5" />
+                </Button>
+                <Button
+                  variant="ghost" size="icon"
                   onClick={() => setPage(totalPages - 1)}
                   disabled={safePage >= totalPages - 1}
-                  className="p-1 rounded hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed"
+                  className="size-7"
+                  aria-label="Last page"
                   title="Last page"
                 >
-                  <ChevronRight className="h-3.5 w-3.5" />
-                </button>
+                  <ChevronRight className="size-3.5" />
+                </Button>
               </div>
             </div>
           )}
@@ -1443,13 +1494,13 @@ export default function Agents() {
       {/* ── Create / Edit Sheet ── */}
       {canManage && (
         <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
-          <SheetContent className="sm:max-w-md flex flex-col gap-0 p-0">
+          <SheetContent className="sm:max-w-md flex flex-col gap-0 p-0" onInteractOutside={e => e.preventDefault()}>
             {/* Colored header */}
-            <SheetHeader className="p-6 border-b" style={{ background: `linear-gradient(135deg, ${ACCENT}18, transparent)` }}>
+            <SheetHeader className="p-6 border-b" style={{ background: `linear-gradient(135deg, color-mix(in srgb, ${ACCENT} 9%, transparent), transparent)` }}>
               <div className="flex items-center gap-3">
                 <div className="h-11 w-11 rounded-full flex items-center justify-center shrink-0"
                   style={{ backgroundColor: ACCENT }}>
-                  <Briefcase className="h-5 w-5 text-white" />
+                  <Briefcase className="h-5 w-5 text-primary-foreground" />
                 </div>
                 <div>
                   <SheetTitle>{editing ? 'Edit Agent' : 'Add New Agent'}</SheetTitle>
@@ -1465,23 +1516,24 @@ export default function Agents() {
 
               {/* Name */}
               <div className="space-y-1.5">
-                <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Agency / Company Name <span className="text-destructive">*</span></Label>
+                <Label htmlFor="agent-name" className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Agency / Company Name <span className="text-destructive">*</span></Label>
                 <div className="relative">
                   <Building2 className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
                   <Input
-                    className="pl-9 h-10"
+                    id="agent-name"
+                    className="pl-9"
                     placeholder="e.g. ABC Tours, Raja Ampat Travel"
                     value={form.name}
                     onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
                   />
                 </div>
                 {similarAgents.length > 0 && (
-                  <div className="flex items-start gap-2 text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs">
+                  <div className="flex items-start gap-2 text-warning bg-warning/10 border border-warning/30 rounded-lg px-3 py-2 text-xs">
                     <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
                     <div className="space-y-0.5">
                       {similarAgents.map(a => (
                         <div key={a.id}>
-                          Agent ini mirip seperti <span className="font-semibold">{a.name}</span> milik {a.salesperson?.name || 'tanpa salesperson'}, biar tidak double
+                          This agent looks similar to <span className="font-semibold">{a.name}</span> owned by {a.salesperson?.name || 'no salesperson'} — avoid creating a duplicate
                         </div>
                       ))}
                     </div>
@@ -1491,39 +1543,42 @@ export default function Agents() {
 
               {/* Commission */}
               <div className="space-y-1.5">
-                <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Commission</Label>
-                <div className="grid grid-cols-3 gap-2 p-3 rounded-lg bg-muted/40 border">
+                <Label id="agent-commission-label" className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Commission</Label>
+                <div role="group" aria-labelledby="agent-commission-label" className="grid grid-cols-1 sm:grid-cols-3 gap-2 p-3 rounded-lg bg-muted/40 border">
                   <div className="space-y-1">
-                    <p className="text-[11px] text-muted-foreground">Open Trip</p>
+                    <Label htmlFor="agent-commission-ot" className="text-[11px] font-normal text-muted-foreground">Open Trip</Label>
                     <div className="relative">
                       <Percent className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
                       <Input
+                        id="agent-commission-ot"
                         type="number" min="0" max="100" step="0.5"
-                        className="pl-8 h-9 text-sm"
+                        className="pl-8"
                         value={form.commissionOpenTrip}
                         onChange={e => setForm(f => ({ ...f, commissionOpenTrip: e.target.value }))}
                       />
                     </div>
                   </div>
                   <div className="space-y-1">
-                    <p className="text-[11px] text-muted-foreground">Private Charter</p>
+                    <Label htmlFor="agent-commission-pc" className="text-[11px] font-normal text-muted-foreground">Private Charter</Label>
                     <div className="relative">
                       <Percent className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
                       <Input
+                        id="agent-commission-pc"
                         type="number" min="0" max="100" step="0.5"
-                        className="pl-8 h-9 text-sm"
+                        className="pl-8"
                         value={form.commissionPrivateCharter}
                         onChange={e => setForm(f => ({ ...f, commissionPrivateCharter: e.target.value }))}
                       />
                     </div>
                   </div>
                   <div className="space-y-1">
-                    <p className="text-[11px] text-muted-foreground">B2B</p>
+                    <Label htmlFor="agent-commission-b2b" className="text-[11px] font-normal text-muted-foreground">B2B</Label>
                     <div className="relative">
                       <Percent className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
                       <Input
+                        id="agent-commission-b2b"
                         type="number" min="0" max="100" step="0.5"
-                        className="pl-8 h-9 text-sm"
+                        className="pl-8"
                         value={form.commissionB2B}
                         onChange={e => setForm(f => ({ ...f, commissionB2B: e.target.value }))}
                       />
@@ -1535,12 +1590,12 @@ export default function Agents() {
               {/* Salesperson — admin only */}
               {isAdmin && (
                 <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Salesperson</Label>
+                  <Label htmlFor="agent-salesperson" className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Salesperson</Label>
                   <Select
                     value={form.salespersonId || 'none'}
                     onValueChange={v => setForm(f => ({ ...f, salespersonId: v === 'none' ? '' : v }))}
                   >
-                    <SelectTrigger className="h-10">
+                    <SelectTrigger id="agent-salesperson">
                       <SelectValue placeholder="— Select sales —" />
                     </SelectTrigger>
                     <SelectContent>
@@ -1557,15 +1612,15 @@ export default function Agents() {
 
               {/* Country */}
               <div className="space-y-1.5">
-                <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Country</Label>
-                <CountrySelect value={form.country} onChange={v => setForm(f => ({ ...f, country: v }))} />
+                <Label htmlFor="agent-country" className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Country</Label>
+                <CountrySelect id="agent-country" value={form.country} onChange={v => setForm(f => ({ ...f, country: v }))} />
               </div>
 
               <div className="space-y-1.5">
-                <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Email</Label>
+                <Label htmlFor="agent-email" className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Email</Label>
                 <Input
+                  id="agent-email"
                   type="email"
-                  className="h-10"
                   placeholder="agent@example.com"
                   value={form.email}
                   onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
@@ -1573,9 +1628,9 @@ export default function Agents() {
               </div>
 
               <div className="space-y-1.5">
-                <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">WhatsApp</Label>
+                <Label htmlFor="agent-whatsapp" className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">WhatsApp</Label>
                 <Input
-                  className="h-10"
+                  id="agent-whatsapp"
                   placeholder="+62 812 3456 7890"
                   value={form.whatsapp}
                   onChange={e => setForm(f => ({ ...f, whatsapp: e.target.value }))}
@@ -1583,9 +1638,9 @@ export default function Agents() {
               </div>
 
               <div className="space-y-1.5">
-                <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Website</Label>
+                <Label htmlFor="agent-website" className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Website</Label>
                 <Input
-                  className="h-10"
+                  id="agent-website"
                   placeholder="https://example.com"
                   value={form.website}
                   onChange={e => setForm(f => ({ ...f, website: e.target.value }))}
@@ -1593,9 +1648,9 @@ export default function Agents() {
               </div>
 
               <div className="space-y-1.5">
-                <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Instagram</Label>
+                <Label htmlFor="agent-instagram" className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Instagram</Label>
                 <Input
-                  className="h-10"
+                  id="agent-instagram"
                   placeholder="@username"
                   value={form.instagram}
                   onChange={e => setForm(f => ({ ...f, instagram: e.target.value }))}
@@ -1603,18 +1658,19 @@ export default function Agents() {
               </div>
 
               <div className="space-y-1.5">
-                <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Address</Label>
-                <textarea
+                <Label htmlFor="agent-address" className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Address</Label>
+                <Textarea
+                  id="agent-address"
                   rows={2}
-                  placeholder="Company address..."
-                  className="w-full rounded-md border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-none"
+                  placeholder="Company address…"
+                  className="resize-none"
                   value={form.address}
                   onChange={e => setForm(f => ({ ...f, address: e.target.value }))}
                 />
               </div>
 
               <div className="space-y-1.5">
-                <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Source</Label>
+                <Label htmlFor="agent-source" className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Source</Label>
                 {(() => {
                   const SOURCES = ['Referral','Cold Outreach','Exhibition / Event','Social Media','Website','WhatsApp Blast','Walk In','Other']
                   const isOther = form.source !== '' && !SOURCES.slice(0, -1).includes(form.source)
@@ -1625,7 +1681,7 @@ export default function Agents() {
                         value={selectVal}
                         onValueChange={v => setForm(f => ({ ...f, source: v === 'none' ? '' : v === 'Other' ? 'Other' : v }))}
                       >
-                        <SelectTrigger className="h-10"><SelectValue placeholder="— Select —" /></SelectTrigger>
+                        <SelectTrigger id="agent-source"><SelectValue placeholder="— Select —" /></SelectTrigger>
                         <SelectContent>
                           <SelectItem value="none">— None —</SelectItem>
                           {SOURCES.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
@@ -1634,8 +1690,8 @@ export default function Agents() {
                       {(form.source === 'Other' || isOther) && (
                         <Input
                           autoFocus
-                          className="h-9"
-                          placeholder="Please specify source..."
+                          aria-label="Specify source"
+                          placeholder="Please specify source…"
                           value={isOther ? form.source : ''}
                           onChange={e => setForm(f => ({ ...f, source: e.target.value || 'Other' }))}
                         />
@@ -1646,9 +1702,9 @@ export default function Agents() {
               </div>
 
               <div className="space-y-1.5">
-                <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Current Condition</Label>
+                <Label htmlFor="agent-condition" className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Current Condition</Label>
                 <Select value={form.currentCondition || 'none'} onValueChange={v => setForm(f => ({ ...f, currentCondition: v === 'none' ? '' : v }))}>
-                  <SelectTrigger className="h-10"><SelectValue placeholder="— Select —" /></SelectTrigger>
+                  <SelectTrigger id="agent-condition"><SelectValue placeholder="— Select —" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">— None —</SelectItem>
                     <SelectItem value="In Conversation">In Conversation</SelectItem>
@@ -1663,18 +1719,19 @@ export default function Agents() {
               </div>
 
               <div className="space-y-1.5">
-                <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Note</Label>
-                <textarea
+                <Label htmlFor="agent-note" className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Note</Label>
+                <Textarea
+                  id="agent-note"
                   rows={3}
-                  placeholder="Special notes about this agent..."
-                  className="w-full rounded-md border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-none"
+                  placeholder="Special notes about this agent…"
+                  className="resize-none"
                   value={form.note}
                   onChange={e => setForm(f => ({ ...f, note: e.target.value }))}
                 />
               </div>
 
               <div className="space-y-1.5">
-                <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Contract</Label>
+                <Label htmlFor="agent-contract" className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Contract</Label>
                 <Select
                   value={form.contract || 'none'}
                   onValueChange={v => {
@@ -1682,7 +1739,7 @@ export default function Agents() {
                     setFileError('')
                   }}
                 >
-                  <SelectTrigger className="h-10"><SelectValue placeholder="— Select —" /></SelectTrigger>
+                  <SelectTrigger id="agent-contract"><SelectValue placeholder="— Select —" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">— None —</SelectItem>
                     <SelectItem value="Yes">Yes</SelectItem>
@@ -1698,7 +1755,7 @@ export default function Agents() {
 
                   {/* existing file indicator */}
                   {editing && editing.contractFileName && !form.contractFile && (
-                    <div className="flex items-center gap-2 rounded-md border bg-background px-3 py-2">
+                    <div className="flex items-center gap-2 rounded-md border bg-background pl-3 pr-1 py-1">
                       <span className="text-xs text-muted-foreground flex-1 truncate">{editing.contractFileName}</span>
                       <a
                         href={`/api/agents/${editing.id}/contract`}
@@ -1709,40 +1766,47 @@ export default function Agents() {
                       >
                         <Download className="h-3.5 w-3.5" /> View
                       </a>
-                      <button
+                      <Button
                         type="button"
-                        className="text-muted-foreground hover:text-destructive"
+                        variant="ghost" size="icon"
+                        className="size-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
                         onClick={() => setForm(f => ({ ...f, contractFile: 'REMOVE', contractFileName: '' }))}
+                        aria-label="Remove contract file"
+                        title="Remove contract file"
                       >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
+                        <X className="size-3.5" />
+                      </Button>
                     </div>
                   )}
 
                   {/* new file selected */}
                   {form.contractFile && form.contractFile !== 'REMOVE' && (
-                    <div className="flex items-center gap-2 rounded-md border bg-emerald-50 px-3 py-2">
-                      <Check className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
-                      <span className="text-xs text-emerald-700 flex-1 truncate">{form.contractFileName}</span>
-                      <button
+                    <div className="flex items-center gap-2 rounded-md border bg-success/10 pl-3 pr-1 py-1">
+                      <Check className="h-3.5 w-3.5 text-success shrink-0" />
+                      <span className="text-xs text-success flex-1 truncate">{form.contractFileName}</span>
+                      <Button
                         type="button"
-                        className="text-emerald-600 hover:text-destructive"
+                        variant="ghost" size="icon"
+                        className="size-7 text-success hover:text-destructive hover:bg-destructive/10"
                         onClick={() => setForm(f => ({ ...f, contractFile: '', contractFileName: editing?.contractFileName ?? '' }))}
+                        aria-label="Discard selected file"
+                        title="Discard selected file"
                       >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
+                        <X className="size-3.5" />
+                      </Button>
                     </div>
                   )}
 
                   {/* remove indicator */}
                   {form.contractFile === 'REMOVE' && (
-                    <div className="flex items-center gap-2 rounded-md border border-destructive/30 bg-red-50 px-3 py-2">
+                    <div className="flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/10 pl-3 pr-1 py-1">
                       <span className="text-xs text-destructive flex-1">File will be removed on save</span>
-                      <button
+                      <Button
                         type="button"
-                        className="text-xs text-muted-foreground hover:underline"
+                        variant="link" size="sm"
+                        className="h-7 px-1 text-xs text-muted-foreground"
                         onClick={() => setForm(f => ({ ...f, contractFile: '', contractFileName: editing?.contractFileName ?? '' }))}
-                      >Undo</button>
+                      >Undo</Button>
                     </div>
                   )}
 
@@ -1818,13 +1882,14 @@ export default function Agents() {
                       )}
                     </div>
                     {!addingContact && (
-                      <button
+                      <Button
                         type="button"
+                        variant="link" size="sm"
                         onClick={() => { setAddingContact(true); setEditingContact(null) }}
-                        className="flex items-center gap-1 text-xs text-[#bdac7e] hover:underline font-medium"
+                        className="h-7 gap-1 px-1 has-[>svg]:px-1 text-xs text-primary-strong"
                       >
-                        <Plus className="h-3.5 w-3.5" /> Add
-                      </button>
+                        <Plus className="size-3.5" /> Add
+                      </Button>
                     )}
                   </div>
 
@@ -1841,45 +1906,50 @@ export default function Agents() {
                           {editingContact?.id === c.id ? (
                             /* inline edit form */
                             <div className="space-y-2">
-                              <div className="grid grid-cols-2 gap-2">
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                                 <div className="space-y-1">
-                                  <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Name *</label>
+                                  <Label htmlFor="agent-contact-edit-name" className="text-[10px] text-muted-foreground uppercase tracking-wide">Name *</Label>
                                   <Input
+                                    id="agent-contact-edit-name"
                                     value={editContactForm.name}
                                     onChange={e => setEditContactForm(f => ({ ...f, name: e.target.value }))}
                                     className="h-7 text-sm"
                                   />
                                 </div>
                                 <div className="space-y-1">
-                                  <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Job Title</label>
+                                  <Label htmlFor="agent-contact-edit-job" className="text-[10px] text-muted-foreground uppercase tracking-wide">Job Title</Label>
                                   <Input
+                                    id="agent-contact-edit-job"
                                     value={editContactForm.jobTitle}
                                     onChange={e => setEditContactForm(f => ({ ...f, jobTitle: e.target.value }))}
                                     className="h-7 text-sm"
                                   />
                                 </div>
                               </div>
-                              <div className="grid grid-cols-2 gap-2">
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                                 <div className="space-y-1">
-                                  <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Email</label>
+                                  <Label htmlFor="agent-contact-edit-email" className="text-[10px] text-muted-foreground uppercase tracking-wide">Email</Label>
                                   <Input
+                                    id="agent-contact-edit-email"
                                     value={editContactForm.email}
                                     onChange={e => setEditContactForm(f => ({ ...f, email: e.target.value }))}
                                     className="h-7 text-sm"
                                   />
                                 </div>
                                 <div className="space-y-1">
-                                  <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">WhatsApp</label>
+                                  <Label htmlFor="agent-contact-edit-wa" className="text-[10px] text-muted-foreground uppercase tracking-wide">WhatsApp</Label>
                                   <Input
+                                    id="agent-contact-edit-wa"
                                     value={editContactForm.whatsapp}
                                     onChange={e => setEditContactForm(f => ({ ...f, whatsapp: e.target.value }))}
                                     className="h-7 text-sm"
                                   />
                                 </div>
                               </div>
-                              <div className="space-y-1 w-1/2 pr-1">
-                                <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Date of Birth</label>
+                              <div className="space-y-1 sm:w-1/2 sm:pr-1">
+                                <Label htmlFor="agent-contact-edit-dob" className="text-[10px] text-muted-foreground uppercase tracking-wide">Date of Birth</Label>
                                 <Input
+                                  id="agent-contact-edit-dob"
                                   type="date"
                                   max={TODAY}
                                   value={editContactForm.dateOfBirth}
@@ -1888,21 +1958,24 @@ export default function Agents() {
                                 />
                               </div>
                               <div className="flex gap-2 justify-end">
-                                <button
+                                <Button
                                   type="button"
+                                  variant="ghost" size="sm"
                                   onClick={() => setEditingContact(null)}
-                                  className="text-xs text-muted-foreground hover:text-foreground"
+                                  className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
                                 >
                                   Cancel
-                                </button>
-                                <button
+                                </Button>
+                                <Button
                                   type="button"
-                                  disabled={savingContact || !editContactForm.name.trim()}
+                                  variant="link" size="sm"
+                                  loading={savingContact}
+                                  disabled={!editContactForm.name.trim()}
                                   onClick={handleUpdateContact}
-                                  className="text-xs font-medium text-[#bdac7e] hover:underline disabled:opacity-50"
+                                  className="h-7 gap-1 px-1 has-[>svg]:px-1 text-xs text-primary-strong"
                                 >
                                   {savingContact ? 'Saving…' : 'Save'}
-                                </button>
+                                </Button>
                               </div>
                             </div>
                           ) : (
@@ -1928,30 +2001,36 @@ export default function Agents() {
                                   )}
                                   {c.dateOfBirth && (
                                     <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                                      🎂 {new Date(c.dateOfBirth).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                      🎂 {formatDate(c.dateOfBirth)}
                                     </span>
                                   )}
                                 </div>
                               </div>
                               <div className="flex items-center gap-1 shrink-0">
-                                <button
+                                <Button
                                   type="button"
+                                  variant="ghost" size="icon"
                                   onClick={() => {
                                     setEditingContact(c)
                                     setEditContactForm({ name: c.name, email: c.email ?? '', whatsapp: c.whatsapp ?? '', jobTitle: c.jobTitle ?? '', dateOfBirth: c.dateOfBirth ? c.dateOfBirth.split('T')[0] : '' })
                                     setAddingContact(false)
                                   }}
-                                  className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
+                                  className="size-7 text-muted-foreground hover:text-foreground"
+                                  aria-label={`Edit contact ${c.name}`}
+                                  title="Edit contact"
                                 >
-                                  <Pencil className="h-3.5 w-3.5" />
-                                </button>
-                                <button
+                                  <Pencil className="size-3.5" />
+                                </Button>
+                                <Button
                                   type="button"
+                                  variant="ghost" size="icon"
                                   onClick={() => handleDeleteContact(c.id)}
-                                  className="p-1 rounded hover:bg-red-50 text-muted-foreground hover:text-red-600"
+                                  className="size-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                                  aria-label={`Delete contact ${c.name}`}
+                                  title="Delete contact"
                                 >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </button>
+                                  <Trash2 className="size-3.5" />
+                                </Button>
                               </div>
                             </div>
                           )}
@@ -1960,11 +2039,12 @@ export default function Agents() {
 
                       {/* Add form */}
                       {addingContact && (
-                        <div className="rounded-lg border border-dashed border-[#bdac7e]/50 bg-[#bdac7e]/5 p-3 space-y-2">
-                          <div className="grid grid-cols-2 gap-2">
+                        <div className="rounded-lg border border-dashed border-primary/50 bg-primary/5 p-3 space-y-2">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                             <div className="space-y-1">
-                              <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Name *</label>
+                              <Label htmlFor="agent-contact-add-name" className="text-[10px] text-muted-foreground uppercase tracking-wide">Name *</Label>
                               <Input
+                                id="agent-contact-add-name"
                                 autoFocus
                                 value={contactForm.name}
                                 onChange={e => setContactForm(f => ({ ...f, name: e.target.value }))}
@@ -1972,35 +2052,39 @@ export default function Agents() {
                               />
                             </div>
                             <div className="space-y-1">
-                              <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Job Title</label>
+                              <Label htmlFor="agent-contact-add-job" className="text-[10px] text-muted-foreground uppercase tracking-wide">Job Title</Label>
                               <Input
+                                id="agent-contact-add-job"
                                 value={contactForm.jobTitle}
                                 onChange={e => setContactForm(f => ({ ...f, jobTitle: e.target.value }))}
                                 className="h-7 text-sm"
                               />
                             </div>
                           </div>
-                          <div className="grid grid-cols-2 gap-2">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                             <div className="space-y-1">
-                              <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Email</label>
+                              <Label htmlFor="agent-contact-add-email" className="text-[10px] text-muted-foreground uppercase tracking-wide">Email</Label>
                               <Input
+                                id="agent-contact-add-email"
                                 value={contactForm.email}
                                 onChange={e => setContactForm(f => ({ ...f, email: e.target.value }))}
                                 className="h-7 text-sm"
                               />
                             </div>
                             <div className="space-y-1">
-                              <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">WhatsApp</label>
+                              <Label htmlFor="agent-contact-add-wa" className="text-[10px] text-muted-foreground uppercase tracking-wide">WhatsApp</Label>
                               <Input
+                                id="agent-contact-add-wa"
                                 value={contactForm.whatsapp}
                                 onChange={e => setContactForm(f => ({ ...f, whatsapp: e.target.value }))}
                                 className="h-7 text-sm"
                               />
                             </div>
                           </div>
-                          <div className="space-y-1 w-1/2 pr-1">
-                            <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Date of Birth</label>
+                          <div className="space-y-1 sm:w-1/2 sm:pr-1">
+                            <Label htmlFor="agent-contact-add-dob" className="text-[10px] text-muted-foreground uppercase tracking-wide">Date of Birth</Label>
                             <Input
+                              id="agent-contact-add-dob"
                               type="date"
                               max={TODAY}
                               value={contactForm.dateOfBirth}
@@ -2009,25 +2093,25 @@ export default function Agents() {
                             />
                           </div>
                           <div className="flex gap-2 justify-end">
-                            <button
+                            <Button
                               type="button"
+                              variant="ghost" size="sm"
                               onClick={() => { setAddingContact(false); setContactForm(EMPTY_CONTACT) }}
-                              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                              className="h-7 gap-1 px-2 has-[>svg]:px-2 text-xs text-muted-foreground hover:text-foreground"
                             >
-                              <X className="h-3 w-3" /> Cancel
-                            </button>
-                            <button
+                              <X className="size-3" /> Cancel
+                            </Button>
+                            <Button
                               type="button"
-                              disabled={savingContact || !contactForm.name.trim()}
+                              variant="link" size="sm"
+                              loading={savingContact}
+                              disabled={!contactForm.name.trim()}
                               onClick={handleAddContact}
-                              className="flex items-center gap-1 text-xs font-medium text-[#bdac7e] hover:underline disabled:opacity-50"
+                              className="h-7 gap-1 px-1 has-[>svg]:px-1 text-xs text-primary-strong"
                             >
-                              {savingContact
-                                ? <Loader2 className="h-3 w-3 animate-spin" />
-                                : <Check className="h-3 w-3" />
-                              }
+                              {!savingContact && <Check className="size-3" />}
                               Save
-                            </button>
+                            </Button>
                           </div>
                         </div>
                       )}
@@ -2053,12 +2137,11 @@ export default function Agents() {
                   Cancel
                 </Button>
                 <Button
-                  disabled={!form.name.trim() || saving}
+                  disabled={!form.name.trim()}
+                  loading={saving}
                   onClick={handleSave}
-                  className="flex-1 hover:opacity-90"
-                  style={{ backgroundColor: ACCENT, color: 'white' }}
+                  className="flex-1"
                 >
-                  {saving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
                   {editing ? 'Save Changes' : 'Add Agent'}
                 </Button>
               </div>
@@ -2086,8 +2169,8 @@ export default function Agents() {
               disabled={toggling}
               onClick={handleToggleActive}
               className={confirmAgent?.isActive
-                ? 'bg-red-600 hover:bg-red-700 text-white'
-                : 'bg-emerald-600 hover:bg-emerald-700 text-white'}
+                ? 'bg-destructive hover:bg-destructive/90 text-destructive-foreground'
+                : 'bg-success hover:bg-success/90 text-success-foreground'}
             >
               {toggling && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
               {confirmAgent?.isActive ? 'Yes, Deactivate' : 'Yes, Activate'}
@@ -2110,7 +2193,7 @@ export default function Agents() {
             <AlertDialogAction
               disabled={deleting}
               onClick={handleDeleteAgent}
-              className="bg-red-600 hover:bg-red-700 text-white"
+              className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
             >
               {deleting && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
               Yes, Delete Permanently
@@ -2124,11 +2207,11 @@ export default function Agents() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2">
-              {calendarConfirm?.action === 'generate' && <><Link2 className="h-4 w-4 text-[#bdac7e]" /> Generate Calendar Link</>}
-              {calendarConfirm?.action === 'reset' && <><RotateCw className="h-4 w-4 text-amber-500" /> Reset Calendar Token</>}
-              {calendarConfirm?.action === 'deactivate' && <><ShieldOff className="h-4 w-4 text-red-500" /> Deactivate Calendar Access</>}
-              {calendarConfirm?.action === 'activate' && <><ShieldCheck className="h-4 w-4 text-emerald-600" /> Activate Calendar Access</>}
-              {calendarConfirm?.action === 'revoke' && <><AlertTriangle className="h-4 w-4 text-red-600" /> Revoke Calendar Token</>}
+              {calendarConfirm?.action === 'generate' && <><Link2 className="h-4 w-4 text-primary-strong" /> Generate Calendar Link</>}
+              {calendarConfirm?.action === 'reset' && <><RotateCw className="h-4 w-4 text-warning" /> Reset Calendar Token</>}
+              {calendarConfirm?.action === 'deactivate' && <><ShieldOff className="h-4 w-4 text-destructive" /> Deactivate Calendar Access</>}
+              {calendarConfirm?.action === 'activate' && <><ShieldCheck className="h-4 w-4 text-success" /> Activate Calendar Access</>}
+              {calendarConfirm?.action === 'revoke' && <><AlertTriangle className="h-4 w-4 text-destructive" /> Revoke Calendar Token</>}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {calendarConfirm?.action === 'generate' && `Generate a unique calendar access link for ${calendarConfirm.agent.name}. Share this link so they can view the vessel schedule.`}
@@ -2145,10 +2228,10 @@ export default function Agents() {
               onClick={handleCalendarAction}
               className={
                 calendarConfirm?.action === 'deactivate' || calendarConfirm?.action === 'revoke'
-                  ? 'bg-red-600 hover:bg-red-700 text-white'
+                  ? 'bg-destructive hover:bg-destructive/90 text-destructive-foreground'
                   : calendarConfirm?.action === 'activate'
-                  ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
-                  : 'text-white'
+                  ? 'bg-success hover:bg-success/90 text-success-foreground'
+                  : 'text-primary-foreground'
               }
               style={calendarConfirm?.action === 'generate' || calendarConfirm?.action === 'reset' ? { backgroundColor: ACCENT } : {}}
             >
@@ -2165,10 +2248,10 @@ export default function Agents() {
 
       {/* ── Agent Portal Password Dialog ── */}
       <Dialog open={!!portalDialogAgent} onOpenChange={v => !v && setPortalDialogAgent(null)}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-md" onInteractOutside={e => e.preventDefault()}>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <KeyRound className="h-4 w-4 text-[#bdac7e]" />
+              <KeyRound className="h-4 w-4 text-primary-strong" />
               {portalDialogAgent?.hasPortalPassword ? 'Reset Portal Password' : 'Set Portal Password'}
             </DialogTitle>
             <DialogDescription>
@@ -2186,7 +2269,7 @@ export default function Agents() {
                 autoFocus
                 value={portalPasswordValue}
                 onChange={e => setPortalPasswordValue(e.target.value)}
-                placeholder="Minimal 8 karakter"
+                placeholder="At least 8 characters"
               />
             </div>
             <div className="space-y-1.5">
@@ -2199,12 +2282,11 @@ export default function Agents() {
                 onKeyDown={e => e.key === 'Enter' && handleSetPortalPassword()}
               />
             </div>
-            {portalPasswordError && <p className="text-xs text-red-600">{portalPasswordError}</p>}
+            {portalPasswordError && <p className="text-xs text-destructive">{portalPasswordError}</p>}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setPortalDialogAgent(null)}>Cancel</Button>
-            <Button disabled={portalSaving} onClick={handleSetPortalPassword} style={{ backgroundColor: ACCENT }} className="text-white">
-              {portalSaving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+            <Button loading={portalSaving} onClick={handleSetPortalPassword}>
               {portalDialogAgent?.hasPortalPassword ? 'Reset Password' : 'Set Password'}
             </Button>
           </DialogFooter>
@@ -2216,8 +2298,8 @@ export default function Agents() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2">
-              {portalConfirm?.action === 'deactivate' && <><ShieldOff className="h-4 w-4 text-red-500" /> Deactivate Portal Access</>}
-              {portalConfirm?.action === 'activate' && <><ShieldCheck className="h-4 w-4 text-emerald-600" /> Activate Portal Access</>}
+              {portalConfirm?.action === 'deactivate' && <><ShieldOff className="h-4 w-4 text-destructive" /> Deactivate Portal Access</>}
+              {portalConfirm?.action === 'activate' && <><ShieldCheck className="h-4 w-4 text-success" /> Activate Portal Access</>}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {portalConfirm?.action === 'deactivate' && `Deactivate agent portal access for ${portalConfirm?.agent.name}. They will not be able to log in until reactivated. Their password is preserved.`}
@@ -2229,7 +2311,7 @@ export default function Agents() {
             <AlertDialogAction
               disabled={portalActing}
               onClick={handlePortalAction}
-              className={portalConfirm?.action === 'deactivate' ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-emerald-600 hover:bg-emerald-700 text-white'}
+              className={portalConfirm?.action === 'deactivate' ? 'bg-destructive hover:bg-destructive/90 text-destructive-foreground' : 'bg-success hover:bg-success/90 text-success-foreground'}
             >
               {portalActing && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
               {portalConfirm?.action === 'deactivate' && 'Yes, Deactivate'}
@@ -2241,10 +2323,10 @@ export default function Agents() {
 
       {/* ── Media Kit Category Visibility ── */}
       <Dialog open={!!categoryDialogAgent} onOpenChange={v => !v && setCategoryDialogAgent(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <ListChecks className="h-4 w-4 text-[#bdac7e]" /> Media Kit Categories — {categoryDialogAgent?.name}
+        <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto" onInteractOutside={e => e.preventDefault()}>
+          <DialogHeader className="pr-6">
+            <DialogTitle className="flex items-center gap-2 leading-snug">
+              <ListChecks className="h-4 w-4 shrink-0 text-primary-strong" /> Media Kit Categories — {categoryDialogAgent?.name}
             </DialogTitle>
             <DialogDescription>Choose which Media Kit categories this agent sees in their portal.</DialogDescription>
           </DialogHeader>
@@ -2278,7 +2360,7 @@ export default function Agents() {
                     </div>
                   ))}
                   {categorySelectedIds.size === 0 && (
-                    <p className="text-xs text-amber-600 mt-1">No categories selected — this agent will see nothing in Media Kit.</p>
+                    <p className="text-xs text-warning mt-1">No categories selected — this agent will see nothing in Media Kit.</p>
                   )}
                 </div>
               )}
@@ -2286,8 +2368,7 @@ export default function Agents() {
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setCategoryDialogAgent(null)}>Cancel</Button>
-            <Button disabled={categorySaving || categoryLoading} onClick={handleSaveCategories} style={{ backgroundColor: ACCENT }} className="text-white">
-              {categorySaving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+            <Button loading={categorySaving} disabled={categoryLoading} onClick={handleSaveCategories}>
               Save
             </Button>
           </DialogFooter>
@@ -2312,12 +2393,12 @@ export default function Agents() {
                 <div className="grid grid-cols-3 gap-3">
                   {[
                     { label: 'Total Opens', value: statsData.totalAccess, color: 'text-foreground' },
-                    { label: 'Last Access', value: statsData.lastAccess ? new Date(statsData.lastAccess).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—', color: 'text-foreground' },
-                    { label: 'Suspicious', value: statsData.suspiciousCount, color: statsData.suspiciousCount > 0 ? 'text-red-600' : 'text-muted-foreground' },
+                    { label: 'Last Access', value: formatDate(statsData.lastAccess), color: 'text-foreground' },
+                    { label: 'Suspicious', value: statsData.suspiciousCount, color: statsData.suspiciousCount > 0 ? 'text-destructive' : 'text-muted-foreground' },
                   ].map(s => (
-                    <div key={s.label} className="rounded-lg border p-3 text-center">
+                    <div key={s.label} className="min-w-0 rounded-lg border p-2 sm:p-3 text-center">
                       <p className="text-xs text-muted-foreground mb-1">{s.label}</p>
-                      <p className={`text-lg font-bold ${s.color}`}>{s.value}</p>
+                      <p className={`text-base sm:text-lg font-bold break-words ${s.color}`}>{s.value}</p>
                     </div>
                   ))}
                 </div>
@@ -2327,10 +2408,10 @@ export default function Agents() {
                     <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Recent Access</p>
                     <div className="space-y-1 max-h-48 overflow-y-auto">
                       {statsData.recentLogs.map((log: any) => (
-                        <div key={log.id} className={`flex items-center justify-between text-xs px-3 py-1.5 rounded ${log.isSuspicious ? 'bg-red-50 text-red-700' : 'bg-muted/30'}`}>
+                        <div key={log.id} className={`flex items-center justify-between text-xs px-3 py-1.5 rounded ${log.isSuspicious ? 'bg-destructive/10 text-destructive' : 'bg-muted/30'}`}>
                           <span className="font-mono">{log.ip}</span>
-                          {log.isSuspicious && <AlertTriangle className="h-3 w-3 text-red-500 shrink-0" />}
-                          <span className="text-muted-foreground shrink-0">{new Date(log.createdAt).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
+                          {log.isSuspicious && <AlertTriangle className="h-3 w-3 text-destructive shrink-0" />}
+                          <span className="text-muted-foreground shrink-0">{formatDate(log.createdAt, 'datetimeShort')}</span>
                         </div>
                       ))}
                     </div>
@@ -2364,12 +2445,12 @@ export default function Agents() {
                 <div className="grid grid-cols-3 gap-3">
                   {[
                     { label: 'Total Logins', value: portalStatsData.totalAccess, color: 'text-foreground' },
-                    { label: 'Last Login', value: portalStatsData.lastAccess ? new Date(portalStatsData.lastAccess).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—', color: 'text-foreground' },
-                    { label: 'Suspicious', value: portalStatsData.suspiciousCount, color: portalStatsData.suspiciousCount > 0 ? 'text-red-600' : 'text-muted-foreground' },
+                    { label: 'Last Login', value: formatDate(portalStatsData.lastAccess, 'datetimeShort'), color: 'text-foreground' },
+                    { label: 'Suspicious', value: portalStatsData.suspiciousCount, color: portalStatsData.suspiciousCount > 0 ? 'text-destructive' : 'text-muted-foreground' },
                   ].map(s => (
-                    <div key={s.label} className="rounded-lg border p-3 text-center">
+                    <div key={s.label} className="min-w-0 rounded-lg border p-2 sm:p-3 text-center">
                       <p className="text-xs text-muted-foreground mb-1">{s.label}</p>
-                      <p className={`text-lg font-bold ${s.color}`}>{s.value}</p>
+                      <p className={`text-base sm:text-lg font-bold break-words ${s.color}`}>{s.value}</p>
                     </div>
                   ))}
                 </div>
@@ -2378,10 +2459,10 @@ export default function Agents() {
                     <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Recent Logins</p>
                     <div className="space-y-1 max-h-48 overflow-y-auto">
                       {portalStatsData.recentLogs.map((log: any) => (
-                        <div key={log.id} className={`flex items-center justify-between text-xs px-3 py-1.5 rounded ${log.isSuspicious ? 'bg-red-50 text-red-700' : 'bg-muted/30'}`}>
+                        <div key={log.id} className={`flex items-center justify-between text-xs px-3 py-1.5 rounded ${log.isSuspicious ? 'bg-destructive/10 text-destructive' : 'bg-muted/30'}`}>
                           <span className="font-mono">{log.ip}</span>
-                          {log.isSuspicious && <AlertTriangle className="h-3 w-3 text-red-500 shrink-0" />}
-                          <span className="text-muted-foreground shrink-0">{new Date(log.createdAt).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
+                          {log.isSuspicious && <AlertTriangle className="h-3 w-3 text-destructive shrink-0" />}
+                          <span className="text-muted-foreground shrink-0">{formatDate(log.createdAt, 'datetimeShort')}</span>
                         </div>
                       ))}
                     </div>
@@ -2411,36 +2492,38 @@ export default function Agents() {
             <div className="grid grid-cols-2 gap-3">
               <div className="rounded-lg border p-3 text-center">
                 <p className="text-xs text-muted-foreground mb-1">Agents Created</p>
-                <p className="text-2xl font-bold text-emerald-600">{importResult?.agentsCreated ?? 0}</p>
+                <p className="text-2xl font-bold text-success">{importResult?.agentsCreated ?? 0}</p>
               </div>
               <div className="rounded-lg border p-3 text-center">
                 <p className="text-xs text-muted-foreground mb-1">Agents Existing</p>
-                <p className="text-2xl font-bold text-blue-500">{importResult?.agentsExisting ?? 0}</p>
+                <p className="text-2xl font-bold text-info">{importResult?.agentsExisting ?? 0}</p>
               </div>
               <div className="rounded-lg border p-3 text-center">
                 <p className="text-xs text-muted-foreground mb-1">Contacts Created</p>
-                <p className="text-2xl font-bold text-emerald-600">{importResult?.contactsCreated ?? 0}</p>
+                <p className="text-2xl font-bold text-success">{importResult?.contactsCreated ?? 0}</p>
               </div>
               <button
+                type="button"
+                aria-expanded={(importResult?.contactsSkipped ?? 0) > 0 ? showSkipDetails : undefined}
                 className="rounded-lg border p-3 text-center hover:bg-muted/40 transition-colors cursor-pointer"
                 onClick={() => (importResult?.contactsSkipped ?? 0) > 0 && setShowSkipDetails(v => !v)}
               >
                 <p className="text-xs text-muted-foreground mb-1 flex items-center justify-center gap-1">
                   Contacts Skipped
                   {(importResult?.contactsSkipped ?? 0) > 0 && (
-                    <span className="text-[10px] text-amber-500 underline">
+                    <span className="text-[10px] text-warning underline">
                       {showSkipDetails ? '▲ hide' : '▼ details'}
                     </span>
                   )}
                 </p>
-                <p className="text-2xl font-bold text-amber-600">{importResult?.contactsSkipped ?? 0}</p>
+                <p className="text-2xl font-bold text-warning">{importResult?.contactsSkipped ?? 0}</p>
               </button>
             </div>
 
             {/* Skipped contacts detail */}
             {showSkipDetails && (importResult?.skippedContacts?.length ?? 0) > 0 && (
               <div>
-                <p className="text-xs font-semibold text-amber-600 uppercase tracking-wider mb-1.5">
+                <p className="text-xs font-semibold text-warning uppercase tracking-wider mb-1.5">
                   Skipped Detail ({importResult!.skippedContacts.length} rows)
                 </p>
                 {/* Group by reason first */}
@@ -2453,16 +2536,16 @@ export default function Agents() {
                   return (
                     <div className="space-y-2">
                       {Object.entries(grouped).map(([reason, items]) => (
-                        <div key={reason} className="rounded-lg border border-amber-100 bg-amber-50/50">
-                          <div className="flex items-center justify-between px-3 py-1.5 border-b border-amber-100">
-                            <span className="text-xs font-semibold text-amber-700">{reason}</span>
-                            <span className="text-[10px] font-bold text-amber-500 bg-amber-100 rounded px-1.5 py-0.5">{items.length}</span>
+                        <div key={reason} className="rounded-lg border border-warning/30 bg-warning/5">
+                          <div className="flex items-center justify-between px-3 py-1.5 border-b border-warning/30">
+                            <span className="text-xs font-semibold text-warning">{reason}</span>
+                            <span className="text-[10px] font-bold text-warning bg-warning/15 rounded px-1.5 py-0.5">{items.length}</span>
                           </div>
-                          <div className="max-h-36 overflow-y-auto divide-y divide-amber-100">
+                          <div className="max-h-36 overflow-y-auto divide-y divide-warning/30">
                             {items.map((s, i) => (
                               <div key={i} className="flex items-center justify-between px-3 py-1 text-xs">
-                                <span className="text-amber-800 font-medium truncate max-w-[240px]">{s.agent}</span>
-                                <span className="text-amber-500 shrink-0 ml-2">row {s.row}</span>
+                                <span className="text-warning font-medium truncate max-w-[240px]">{s.agent}</span>
+                                <span className="text-warning shrink-0 ml-2">row {s.row}</span>
                               </div>
                             ))}
                           </div>
@@ -2477,12 +2560,12 @@ export default function Agents() {
             {/* Errors */}
             {importResult?.errors && importResult.errors.length > 0 && (
               <div>
-                <p className="text-xs font-semibold text-red-600 uppercase tracking-wider mb-1.5">
+                <p className="text-xs font-semibold text-destructive uppercase tracking-wider mb-1.5">
                   Errors ({importResult.errors.length})
                 </p>
                 <div className="max-h-40 overflow-y-auto space-y-1">
                   {importResult.errors.map((e, i) => (
-                    <p key={i} className="text-xs text-red-600 bg-red-50 rounded px-2 py-1">{e}</p>
+                    <p key={i} className="text-xs text-destructive bg-destructive/10 rounded px-2 py-1">{e}</p>
                   ))}
                 </div>
               </div>
@@ -2501,14 +2584,14 @@ export default function Agents() {
             {contractConfirmModal?.missing[0]?.startsWith('__blocked_condition__') ? (
               <>
                 <AlertDialogTitle className="flex items-center gap-2">
-                  <span className="flex items-center justify-center w-8 h-8 rounded-full bg-red-100 text-red-600 shrink-0">
+                  <span className="flex items-center justify-center w-8 h-8 rounded-full bg-destructive/15 text-destructive shrink-0">
                     <X className="h-4 w-4" />
                   </span>
                   Cannot Generate Contract
                 </AlertDialogTitle>
                 <p className="text-sm text-muted-foreground pt-1">
                   Contract cannot be generated for <strong>{contractConfirmModal?.agent.name}</strong> because their current condition is{' '}
-                  <span className="font-semibold text-red-600">
+                  <span className="font-semibold text-destructive">
                     {contractConfirmModal?.missing[0]?.split(':')[1]}
                   </span>.
                   Please update the agent&apos;s condition before proceeding.
@@ -2517,7 +2600,7 @@ export default function Agents() {
             ) : contractConfirmModal?.missing[0] === '__contract_uploaded__' ? (
               <>
                 <AlertDialogTitle className="flex items-center gap-2">
-                  <span className="flex items-center justify-center w-8 h-8 rounded-full bg-amber-100 text-amber-600 shrink-0">
+                  <span className="flex items-center justify-center w-8 h-8 rounded-full bg-warning/15 text-warning shrink-0">
                     <FileDown className="h-4 w-4" />
                   </span>
                   Contract Already Uploaded
@@ -2530,7 +2613,7 @@ export default function Agents() {
             ) : (
               <>
                 <AlertDialogTitle className="flex items-center gap-2">
-                  <span className="flex items-center justify-center w-8 h-8 rounded-full bg-[#1a3050]/10 text-[#1a3050] shrink-0">
+                  <span className="flex items-center justify-center w-8 h-8 rounded-full bg-foreground/10 text-foreground shrink-0">
                     <FileDown className="h-4 w-4" />
                   </span>
                   Confirm Agent Data
@@ -2560,10 +2643,10 @@ export default function Agents() {
                   return (
                     <div className="mt-3 rounded-lg border overflow-hidden text-sm">
                       {rows.map(r => (
-                        <div key={r.label} className={`grid grid-cols-[90px_1fr] gap-2 px-3 py-2.5 border-b last:border-b-0 ${r.missing ? 'bg-red-50' : ''}`}>
+                        <div key={r.label} className={`grid grid-cols-[90px_1fr] gap-2 px-3 py-2.5 border-b last:border-b-0 ${r.missing ? 'bg-destructive/10' : ''}`}>
                           <span className="text-muted-foreground text-xs pt-0.5 shrink-0">{r.label}</span>
                           {r.missing ? (
-                            <span className="flex items-center gap-1 text-red-500 font-medium text-xs">
+                            <span className="flex items-center gap-1 text-destructive font-medium text-xs">
                               <X className="h-3 w-3 shrink-0" /> Not filled
                             </span>
                           ) : (
@@ -2577,7 +2660,7 @@ export default function Agents() {
                   )
                 })()}
                 {contractConfirmModal?.missing.length ? (
-                  <p className="text-xs text-red-500 mt-2 font-medium">
+                  <p className="text-xs text-destructive mt-2 font-medium">
                     ⚠ Some required fields are missing. Please fill them in before generating.
                   </p>
                 ) : null}

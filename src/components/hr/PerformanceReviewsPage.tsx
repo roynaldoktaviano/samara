@@ -1,7 +1,14 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Plus, X, Search, ClipboardCheck, Star, PenLine } from 'lucide-react'
+import { Plus, Search, ClipboardCheck, Star, PenLine } from 'lucide-react'
+import { StatusBadge, type StatusTone } from '@/components/ui/status-badge'
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import { Label } from '@/components/ui/label'
+import { formatDate, formatMoney } from '@/lib/format'
 
 interface EmployeeLite { id: string; fullName: string; employeeNumber: string; department: string | null; employmentStatus: string | null }
 
@@ -57,16 +64,15 @@ const DECISION_OPTIONS: { value: Decision; label: string }[] = [
 ]
 
 const STATUS_LABEL: Record<string, string> = { REQUESTED: 'Requested', COMPLETED: 'Completed' }
-const STATUS_COLOR: Record<string, string> = {
-  REQUESTED: 'bg-amber-100 text-amber-700',
-  COMPLETED: 'bg-green-100 text-green-700',
+const STATUS_TONE: Record<string, StatusTone> = {
+  REQUESTED: 'warning',
+  COMPLETED: 'success',
 }
 
-const fmtDate = (s: string) => new Date(s).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
-const fmtMoney = (n: number) => `Rp ${new Intl.NumberFormat('id-ID').format(n)}`
-
-function EmployeeCombobox({ value, options, onChange, disabled }: {
-  value: string; options: EmployeeLite[]; onChange: (id: string) => void; disabled?: boolean
+// `id` goes on the trigger; the field's <Label> must use `${id}-label` as its id so the
+// trigger is announced as "<label> <selected employee>".
+function EmployeeCombobox({ id, value, options, onChange, disabled }: {
+  id: string; value: string; options: EmployeeLite[]; onChange: (id: string) => void; disabled?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
@@ -75,26 +81,26 @@ function EmployeeCombobox({ value, options, onChange, disabled }: {
   const selected = options.find(e => e.id === value)
   return (
     <div className="relative">
-      <button type="button" disabled={disabled} onClick={() => { setOpen(o => !o); setSearch('') }}
-        className="w-full h-10 border rounded-lg px-3 text-sm text-left flex items-center justify-between bg-background focus:outline-none focus:ring-1 focus:ring-amber-500 transition-colors disabled:opacity-60 disabled:cursor-not-allowed">
+      <button type="button" id={id} aria-labelledby={`${id}-label ${id}`} aria-expanded={open && !disabled} disabled={disabled} onClick={() => { setOpen(o => !o); setSearch('') }}
+        className="w-full h-9 border border-input rounded-md px-3 text-sm text-left flex items-center justify-between bg-transparent dark:bg-input/30 shadow-xs outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-60 disabled:cursor-not-allowed">
         <span className={selected ? '' : 'text-muted-foreground'}>{selected ? `${selected.fullName} (${selected.employeeNumber})` : '— Select employee —'}</span>
       </button>
       {open && !disabled && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute left-0 right-0 top-full mt-1 bg-white border rounded-lg shadow-xl z-50 max-h-60 flex flex-col">
+          <div className="absolute left-0 right-0 top-full mt-1 bg-popover border rounded-lg shadow-xl z-50 max-h-60 flex flex-col">
             <div className="p-2 border-b shrink-0">
               <div className="relative">
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
-                <input autoFocus className="w-full h-8 border rounded px-2.5 pl-8 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
-                  placeholder="Search employee..." value={search} onChange={e => setSearch(e.target.value)} />
+                <Input autoFocus className="h-8 pl-8" aria-label="Search employee"
+                  placeholder="Search employee…" value={search} onChange={e => setSearch(e.target.value)} />
               </div>
             </div>
             <div className="overflow-y-auto">
               {opts.length === 0 && <p className="px-3 py-3 text-sm text-muted-foreground">No employees found</p>}
               {opts.map(e => (
                 <button key={e.id} type="button" onClick={() => { onChange(e.id); setOpen(false); setSearch('') }}
-                  className="w-full text-left px-3 py-2 text-sm hover:bg-amber-50 transition-colors">
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-primary/10 transition-colors">
                   {e.fullName} <span className="text-muted-foreground">({e.employeeNumber})</span>
                 </button>
               ))}
@@ -209,9 +215,9 @@ export default function PerformanceReviewsPage() {
           <h2 className="text-2xl font-bold tracking-tight">Performance Reviews</h2>
           <p className="text-muted-foreground text-sm mt-1">HR can start a review directly, or fill in one a manager requested for their team.</p>
         </div>
-        <button onClick={openNew} className="flex items-center gap-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium px-4 py-2 rounded-md transition-colors">
-          <Plus className="h-4 w-4" /> New Performance Review
-        </button>
+        <Button onClick={openNew}>
+          <Plus /> New Performance Review
+        </Button>
       </div>
 
       <div className="flex gap-1 border-b overflow-x-auto">
@@ -220,11 +226,11 @@ export default function PerformanceReviewsPage() {
           return (
             <button key={s} onClick={() => setStatusFilter(s)}
               className={`shrink-0 whitespace-nowrap px-3 py-2 text-sm font-medium border-b-2 transition-colors -mb-px flex items-center gap-1.5 ${
-                statusFilter === s ? 'border-amber-500 text-amber-700' : 'border-transparent text-muted-foreground hover:text-foreground'
+                statusFilter === s ? 'border-primary text-primary-strong' : 'border-transparent text-muted-foreground hover:text-foreground'
               }`}>
               {s === 'All' ? 'All' : STATUS_LABEL[s]}
               {count > 0 && (
-                <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${statusFilter === s ? 'bg-amber-100 text-amber-700' : 'bg-muted text-muted-foreground'}`}>
+                <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${statusFilter === s ? 'bg-primary/15 text-primary-strong' : 'bg-muted text-muted-foreground'}`}>
                   {count}
                 </span>
               )}
@@ -252,15 +258,15 @@ export default function PerformanceReviewsPage() {
                   <p className="font-semibold text-sm">{r.employee.fullName}</p>
                   <p className="text-xs text-muted-foreground font-mono">{r.employee.employeeNumber} {r.employee.department ? `· ${r.employee.department}` : ''}</p>
                 </div>
-                <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${STATUS_COLOR[r.status]}`}>{STATUS_LABEL[r.status]}</span>
+                <StatusBadge tone={STATUS_TONE[r.status]} className="px-2.5 py-1 font-semibold">{STATUS_LABEL[r.status]}</StatusBadge>
               </div>
               <div className="px-5 py-3 text-xs text-muted-foreground space-y-1">
-                {r.requestedBy && <p>Requested by {r.requestedBy.name ?? '—'} on {fmtDate(r.requestedAt)}{r.requestNote ? ` — "${r.requestNote}"` : ''}</p>}
+                {r.requestedBy && <p>Requested by {r.requestedBy.name ?? '—'} on {formatDate(r.requestedAt)}{r.requestNote ? ` — "${r.requestNote}"` : ''}</p>}
                 {r.status === 'COMPLETED' && (
                   <>
-                    <p>Reviewed by {r.reviewedBy?.name ?? '—'} on {r.reviewedAt ? fmtDate(r.reviewedAt) : '—'}</p>
+                    <p>Reviewed by {r.reviewedBy?.name ?? '—'} on {formatDate(r.reviewedAt)}</p>
                     {r.decision && <p>Decision: <span className="font-medium text-foreground">{DECISION_OPTIONS.find(d => d.value === r.decision)?.label}</span>{r.salaryIncrementApproved ? ' · Salary Increment Approved' : ''}</p>}
-                    {r.currentSalary != null && r.newSalary != null && <p>Salary: {fmtMoney(r.currentSalary)} → {fmtMoney(r.newSalary)}</p>}
+                    {r.currentSalary != null && r.newSalary != null && <p>Salary: {formatMoney(r.currentSalary)} → {formatMoney(r.newSalary)}</p>}
                   </>
                 )}
               </div>
@@ -276,55 +282,51 @@ export default function PerformanceReviewsPage() {
               )}
 
               <div className="flex items-center justify-end gap-2 px-5 py-3 border-t">
-                <button onClick={() => r.status === 'REQUESTED' ? openFill(r) : openEdit(r)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md bg-amber-50 text-amber-700 hover:bg-amber-100 transition-colors">
-                  <PenLine className="h-3.5 w-3.5" /> {r.status === 'REQUESTED' ? 'Fill In Review' : 'Edit'}
-                </button>
+                <Button variant="secondary" size="sm" onClick={() => r.status === 'REQUESTED' ? openFill(r) : openEdit(r)}
+                  className="bg-primary/10 text-primary-strong hover:bg-primary/15 shadow-none">
+                  <PenLine /> {r.status === 'REQUESTED' ? 'Fill In Review' : 'Edit'}
+                </Button>
               </div>
             </div>
           ))}
         </div>
       )}
 
-      {formModal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
-            <div className="flex items-center justify-between px-6 py-4 border-b shrink-0">
-              <h3 className="font-bold text-sm">
+      <Dialog open={!!formModal} onOpenChange={o => { if (!o) setFormModal(null) }}>
+        {formModal && (
+          <DialogContent className="sm:max-w-2xl p-0 gap-0 overflow-hidden max-h-[90vh] flex flex-col" aria-describedby={undefined} onInteractOutside={e => e.preventDefault()}>
+            <DialogHeader className="px-6 py-4 pr-12 border-b shrink-0 text-left">
+              <DialogTitle className="text-sm font-bold">
                 {formModal.mode === 'new' ? 'New Performance Review' : formModal.mode === 'fill' ? `Fill In Review — ${formModal.review?.employee.fullName}` : `Edit Review — ${formModal.review?.employee.fullName}`}
-              </h3>
-              <button onClick={() => setFormModal(null)} className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors">
-                <X className="h-4 w-4" />
-              </button>
-            </div>
+              </DialogTitle>
+            </DialogHeader>
             <div className="px-6 py-5 space-y-5 overflow-y-auto">
-              {formError && <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{formError}</p>}
+              {formError && <p className="text-xs text-destructive bg-destructive/10 border border-destructive/30 rounded-lg px-3 py-2">{formError}</p>}
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Employee</label>
-                  <EmployeeCombobox value={form.employeeId} options={employees} disabled={formModal.mode !== 'new'}
+                  <Label id="review-employee-label" htmlFor="review-employee" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Employee</Label>
+                  <EmployeeCombobox id="review-employee" value={form.employeeId} options={employees} disabled={formModal.mode !== 'new'}
                     onChange={id => setForm(f => ({ ...f, employeeId: id }))} />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Review Date</label>
-                  <input type="date" value={form.reviewDate} onChange={e => setForm(f => ({ ...f, reviewDate: e.target.value }))}
-                    className="w-full h-10 border rounded-lg px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500" />
+                  <Label htmlFor="review-date" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Review Date</Label>
+                  <Input id="review-date" type="date" value={form.reviewDate} onChange={e => setForm(f => ({ ...f, reviewDate: e.target.value }))} />
                 </div>
               </div>
 
               <div className="space-y-2">
-                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Criteria</label>
-                <div className="rounded-lg border divide-y overflow-hidden">
+                <p id="review-criteria-label" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Criteria</p>
+                <div role="group" aria-labelledby="review-criteria-label" className="rounded-lg border divide-y overflow-hidden">
                   {CRITERIA.map(c => (
                     <div key={c.key} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5">
-                      <span className="text-sm">{c.label}</span>
-                      <div className="flex gap-1.5">
+                      <span id={`review-criterion-${c.key}`} className="text-sm">{c.label}</span>
+                      <div role="group" aria-labelledby={`review-criterion-${c.key}`} className="flex gap-1.5">
                         {RATING_OPTIONS.map(o => (
-                          <button key={o.value} type="button"
+                          <button key={o.value} type="button" aria-pressed={form.ratings[c.key] === o.value}
                             onClick={() => setForm(f => ({ ...f, ratings: { ...f.ratings, [c.key]: f.ratings[c.key] === o.value ? null : o.value } }))}
                             className={`px-2.5 py-1 rounded-md text-[11px] font-medium border transition-colors ${
-                              form.ratings[c.key] === o.value ? 'bg-amber-600 border-amber-600 text-white' : 'text-muted-foreground hover:bg-muted'
+                              form.ratings[c.key] === o.value ? 'bg-primary border-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'
                             }`}>
                             {o.label}
                           </button>
@@ -336,27 +338,27 @@ export default function PerformanceReviewsPage() {
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Manager Comments</label>
-                <textarea rows={3} value={form.managerComments} onChange={e => setForm(f => ({ ...f, managerComments: e.target.value }))}
-                  className="w-full border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500 resize-none" />
+                <Label htmlFor="review-manager-comments" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Manager Comments</Label>
+                <Textarea id="review-manager-comments" rows={3} className="resize-none"
+                  value={form.managerComments} onChange={e => setForm(f => ({ ...f, managerComments: e.target.value }))} />
               </div>
 
               <div className="space-y-2">
-                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Final Decision</label>
-                <div className="flex flex-wrap gap-2">
+                <p id="review-decision-label" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Final Decision</p>
+                <div role="group" aria-labelledby="review-decision-label" className="flex flex-wrap gap-2">
                   {DECISION_OPTIONS.map(o => (
-                    <button key={o.value} type="button"
+                    <button key={o.value} type="button" aria-pressed={form.decision === o.value}
                       onClick={() => setForm(f => ({ ...f, decision: f.decision === o.value ? null : o.value }))}
                       className={`px-3 py-1.5 rounded-md text-xs font-medium border transition-colors ${
-                        form.decision === o.value ? 'bg-amber-600 border-amber-600 text-white' : 'text-muted-foreground hover:bg-muted'
+                        form.decision === o.value ? 'bg-primary border-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'
                       }`}>
                       {o.label}
                     </button>
                   ))}
-                  <button type="button"
+                  <button type="button" aria-pressed={form.salaryIncrementApproved}
                     onClick={() => setForm(f => ({ ...f, salaryIncrementApproved: !f.salaryIncrementApproved }))}
                     className={`px-3 py-1.5 rounded-md text-xs font-medium border transition-colors ${
-                      form.salaryIncrementApproved ? 'bg-green-600 border-green-600 text-white' : 'text-muted-foreground hover:bg-muted'
+                      form.salaryIncrementApproved ? 'bg-success border-success text-success-foreground' : 'text-muted-foreground hover:bg-muted'
                     }`}>
                     Salary Increment Approved
                   </button>
@@ -365,37 +367,34 @@ export default function PerformanceReviewsPage() {
 
               <div className="grid grid-cols-3 gap-4">
                 <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Current Salary</label>
-                  <input type="number" value={form.currentSalary} onChange={e => setForm(f => ({ ...f, currentSalary: e.target.value }))}
-                    className="w-full h-10 border rounded-lg px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500" />
+                  <Label htmlFor="review-current-salary" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Current Salary</Label>
+                  <Input id="review-current-salary" type="number" value={form.currentSalary} onChange={e => setForm(f => ({ ...f, currentSalary: e.target.value }))} />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">New Salary</label>
-                  <input type="number" value={form.newSalary} onChange={e => setForm(f => ({ ...f, newSalary: e.target.value }))}
-                    className="w-full h-10 border rounded-lg px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500" />
+                  <Label htmlFor="review-new-salary" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">New Salary</Label>
+                  <Input id="review-new-salary" type="number" value={form.newSalary} onChange={e => setForm(f => ({ ...f, newSalary: e.target.value }))} />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Effective Date</label>
-                  <input type="date" value={form.effectiveDate} onChange={e => setForm(f => ({ ...f, effectiveDate: e.target.value }))}
-                    className="w-full h-10 border rounded-lg px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500" />
+                  <Label htmlFor="review-effective-date" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Effective Date</Label>
+                  <Input id="review-effective-date" type="date" value={form.effectiveDate} onChange={e => setForm(f => ({ ...f, effectiveDate: e.target.value }))} />
                 </div>
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Reason / Notes</label>
-                <textarea rows={2} value={form.reasonNotes} onChange={e => setForm(f => ({ ...f, reasonNotes: e.target.value }))}
-                  className="w-full border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500 resize-none" />
+                <Label htmlFor="review-reason-notes" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Reason / Notes</Label>
+                <Textarea id="review-reason-notes" rows={2} className="resize-none"
+                  value={form.reasonNotes} onChange={e => setForm(f => ({ ...f, reasonNotes: e.target.value }))} />
               </div>
             </div>
-            <div className="flex items-center justify-end gap-2 px-6 py-4 border-t bg-gray-50/80 shrink-0">
-              <button onClick={() => setFormModal(null)} className="px-4 py-2 text-sm border rounded-lg hover:bg-white transition-colors">Cancel</button>
-              <button onClick={save} disabled={saving} className="px-5 py-2 text-sm text-white rounded-lg font-semibold bg-amber-600 hover:bg-amber-700 disabled:opacity-50 transition-colors">
-                {saving ? 'Saving...' : formModal.mode === 'new' ? 'Submit' : 'Save'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+            <DialogFooter className="px-6 py-4 border-t bg-muted/50 shrink-0">
+              <Button variant="outline" onClick={() => setFormModal(null)}>Cancel</Button>
+              <Button onClick={save} loading={saving}>
+                {saving ? 'Saving…' : formModal.mode === 'new' ? 'Submit' : 'Save'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        )}
+      </Dialog>
     </div>
   )
 }

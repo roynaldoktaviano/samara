@@ -3,6 +3,8 @@
 import { useSession, signOut } from 'next-auth/react'
 import { useEffect, useRef, useState } from 'react'
 import { usePathname } from 'next/navigation'
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
+import { Button } from '@/components/ui/button'
 
 const PUBLIC_PATHS = ['/agent/calendar', '/login']
 
@@ -24,41 +26,45 @@ export function SessionWatcher() {
 
   if (!expired) return null
 
+  // Blocking: no close button, outside click and Escape are ignored — the only way out is logging in again.
   return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div
-        className="bg-white rounded-2xl shadow-2xl mx-4 overflow-hidden"
-        style={{ maxWidth: 360, width: '100%' }}
+    <Dialog open>
+      <DialogContent
+        className="sm:max-w-[360px] p-0 gap-0 overflow-hidden"
+        showCloseButton={false}
+        onInteractOutside={e => e.preventDefault()}
+        onEscapeKeyDown={e => e.preventDefault()}
       >
         {/* Header accent */}
-        <div className="h-1.5 w-full" style={{ backgroundColor: 'var(--brand-primary)' }} />
+        <div className="h-1.5 w-full" style={{ backgroundColor: 'var(--brand)' }} />
 
         <div className="px-6 py-6 text-center">
           {/* Icon */}
           <div
             className="w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-4"
-            style={{ backgroundColor: '#f0f9fb' }}
+            style={{ backgroundColor: 'color-mix(in srgb, var(--brand) 8%, transparent)' }}
           >
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--brand-primary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--brand)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="12" cy="12" r="10" />
               <polyline points="12 6 12 12 16 14" />
             </svg>
           </div>
 
-          <h2 className="text-lg font-bold text-gray-800 mb-1">Session Expired</h2>
-          <p className="text-sm text-gray-500 leading-relaxed">
+          <DialogTitle className="text-lg font-bold text-foreground mb-1 leading-normal">Session Expired</DialogTitle>
+          <DialogDescription className="text-sm text-muted-foreground leading-relaxed">
             Your session has expired due to inactivity. Please log in again to continue.
-          </p>
+          </DialogDescription>
 
-          <button
+          <Button
+            variant="brand"
+            size="lg"
             onClick={() => signOut({ callbackUrl: '/login' })}
-            className="mt-5 w-full py-2.5 rounded-lg text-sm font-semibold text-white transition-opacity hover:opacity-90"
-            style={{ backgroundColor: 'var(--brand-primary)' }}
+            className="mt-5 w-full font-semibold"
           >
             Log In Again
-          </button>
+          </Button>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   )
 }

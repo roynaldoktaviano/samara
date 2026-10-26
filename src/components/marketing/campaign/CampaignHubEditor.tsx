@@ -28,20 +28,20 @@ const CHANNEL_HINTS: Record<CampaignChannelType, string> = {
 }
 
 function label(text: string) {
-  return <label className="block text-[9px] text-[#5f656c] mb-1.5">{text}</label>
+  return <label className="block text-[9px] text-muted-foreground mb-1.5">{text}</label>
 }
 
 function inputCls() {
-  return 'block w-full h-[38px] rounded-md border border-[#dce0e4] px-2.5 text-[11px] text-[#2a2d31] bg-white focus:outline-none focus:ring-1 focus:ring-[#22262b]'
+  return 'block w-full h-[38px] rounded-md border border-border px-2.5 text-[11px] text-foreground bg-card focus:outline-none focus:ring-1 focus:ring-foreground'
 }
 
 function TagField({ values, onChange, placeholder }: { values: string[]; onChange: (v: string[]) => void; placeholder: string }) {
   const [input, setInput] = useState('')
   const add = () => { if (input.trim()) { onChange([...values, input.trim()]); setInput('') } }
   return (
-    <div className="min-h-10 border border-[#dce0e4] rounded-md flex items-center gap-1.5 flex-wrap p-1.5">
+    <div className="min-h-10 border border-border rounded-md flex items-center gap-1.5 flex-wrap p-1.5">
       {values.map((v, i) => (
-        <span key={i} className="text-[9px] bg-[#eef2f9] text-[#355a91] rounded px-1.5 py-1 inline-flex items-center gap-1">
+        <span key={i} className="text-[9px] bg-info/10 text-info rounded px-1.5 py-1 inline-flex items-center gap-1">
           {v}
           <button type="button" onClick={() => onChange(values.filter((_, j) => j !== i))}><X className="h-2.5 w-2.5" /></button>
         </span>
@@ -124,28 +124,28 @@ export default function CampaignHubEditor({ open, onOpenChange, onCreated }: {
     <Dialog open={open} onOpenChange={o => !o && close()}>
       <DialogContent showCloseButton={false} className="p-0 gap-0 rounded-xl overflow-hidden border-0 shadow-[0_20px_60px_rgba(0,0,0,.23)] w-[min(820px,95vw)] sm:max-w-[820px]">
         {/* Modal head */}
-        <div className="min-h-[86px] flex items-center justify-between px-[21px] py-[17px] border-b border-[#e6e8eb]">
+        <div className="min-h-[86px] flex items-center justify-between px-[21px] py-[17px] border-b border-border">
           <div>
-            <div className="text-[10px] tracking-[.12em] font-bold text-[#9b7c43] mb-1.5">NEW CAMPAIGN</div>
-            <DialogTitle className="text-[17px] font-semibold text-[#1c1e21] m-0">{stepTitle}</DialogTitle>
-            <DialogDescription className="text-[9px] text-[#80858d] m-0 mt-1">{stepDesc}</DialogDescription>
+            <div className="text-[10px] tracking-[.12em] font-bold text-primary-strong mb-1.5">NEW CAMPAIGN</div>
+            <DialogTitle className="text-[17px] font-semibold text-foreground m-0">{stepTitle}</DialogTitle>
+            <DialogDescription className="text-[9px] text-muted-foreground m-0 mt-1">{stepDesc}</DialogDescription>
           </div>
-          <button onClick={close} className="h-[30px] w-[30px] rounded-full bg-[#f1f3f4] grid place-items-center text-[#5b6067] shrink-0">
+          <button onClick={close} className="h-[30px] w-[30px] rounded-full bg-muted grid place-items-center text-muted-foreground shrink-0">
             <X className="h-4 w-4" />
           </button>
         </div>
 
         {/* Wizard steps */}
-        <div className="h-14 bg-[#f8f9fa] border-b border-[#e4e7e9] flex items-center justify-center">
+        <div className="h-14 bg-muted/50 border-b border-border flex items-center justify-center">
           {STEPS.map((s, i) => (
             <div key={s} className="flex items-center min-w-[130px] sm:min-w-[150px] relative">
               <span className={`h-[22px] w-[22px] rounded-full border grid place-items-center text-[9px] shrink-0 ${
-                step > i + 1 ? 'bg-[#1ba36a] border-[#1ba36a] text-white' : step === i + 1 ? 'bg-[#22262b] border-[#22262b] text-white' : 'border-[#cbd0d5] text-[#7d828a]'
+                step > i + 1 ? 'bg-success border-success text-success-foreground' : step === i + 1 ? 'bg-foreground border-foreground text-background' : 'border-border text-muted-foreground'
               }`}>
                 {step > i + 1 ? <Check className="h-3 w-3" /> : i + 1}
               </span>
-              <b className={`text-[9px] ml-1.5 font-normal hidden sm:inline ${step === i + 1 ? 'text-[#222] font-medium' : 'text-[#8a8f96]'}`}>{s}</b>
-              {i < STEPS.length - 1 && <span className="h-px w-[30px] sm:w-[45px] bg-[#d9dde1] mx-2 sm:mx-3" />}
+              <b className={`text-[9px] ml-1.5 font-normal hidden sm:inline ${step === i + 1 ? 'text-foreground font-medium' : 'text-muted-foreground'}`}>{s}</b>
+              {i < STEPS.length - 1 && <span className="h-px w-[30px] sm:w-[45px] bg-border mx-2 sm:mx-3" />}
             </div>
           ))}
         </div>
@@ -187,7 +187,7 @@ export default function CampaignHubEditor({ open, onOpenChange, onCreated }: {
               </div>
               <div className="sm:col-span-2">
                 {label('PLANNED BUDGET (OPTIONAL)')}
-                <RupiahInput value={plannedBudget} onChange={setPlannedBudget} className="h-[38px] text-[11px] rounded-md border-[#dce0e4] focus:ring-[#22262b]" />
+                <RupiahInput value={plannedBudget} onChange={setPlannedBudget} className="h-[38px] text-[11px] rounded-md border-border focus:ring-foreground" />
               </div>
             </div>
           )}
@@ -201,24 +201,24 @@ export default function CampaignHubEditor({ open, onOpenChange, onCreated }: {
                   return (
                     <button
                       key={t} type="button" onClick={() => toggleChannel(t)}
-                      className={`h-32 rounded-lg border p-3 text-left relative transition-colors ${selected ? 'border-[#2b65d6] bg-[#f5f8ff] ring-1 ring-[#2b65d6]' : 'border-[#dfe3e7] bg-white hover:bg-[#fafbfc]'}`}
+                      className={`h-32 rounded-lg border p-3 text-left relative transition-colors ${selected ? 'border-info bg-info/5 ring-1 ring-info' : 'border-border bg-card hover:bg-muted/50'}`}
                     >
-                      <span className="h-9 w-9 rounded-md bg-[#eff1f3] grid place-items-center text-[#596068]">
+                      <span className="h-9 w-9 rounded-md bg-muted grid place-items-center text-muted-foreground">
                         <Icon className="h-4 w-4" />
                       </span>
-                      <strong className="text-[10px] block mt-2.5 mb-1 text-[#1c1e21]">{CHANNEL_LABELS[t]}</strong>
-                      <small className="text-[8px] text-[#858a91] leading-snug block">{CHANNEL_HINTS[t]}</small>
-                      <span className={`absolute right-2 top-2 h-[18px] w-[18px] rounded-full border grid place-items-center ${selected ? 'bg-[#2462d4] border-[#2462d4] text-white' : 'border-[#d3d7db] text-white'}`}>
+                      <strong className="text-[10px] block mt-2.5 mb-1 text-foreground">{CHANNEL_LABELS[t]}</strong>
+                      <small className="text-[8px] text-muted-foreground leading-snug block">{CHANNEL_HINTS[t]}</small>
+                      <span className={`absolute right-2 top-2 h-[18px] w-[18px] rounded-full border grid place-items-center ${selected ? 'bg-info border-info text-info-foreground' : 'border-border text-transparent'}`}>
                         {selected && <Check className="h-2.5 w-2.5" />}
                       </span>
                     </button>
                   )
                 })}
               </div>
-              <div className="mt-3.5 bg-[#fff8eb] border border-[#f1dfb9] rounded-lg p-2.5 flex gap-2 text-[#9b6b18]">
+              <div className="mt-3.5 bg-warning/10 border border-warning/30 rounded-lg p-2.5 flex gap-2 text-warning">
                 <div>
                   <strong className="text-[9px] block">{channelTypes.length} component{channelTypes.length === 1 ? '' : 's'} selected</strong>
-                  <p className="text-[8px] text-[#806f53] mt-0.5 m-0">The campaign will get a shared brief plus a dedicated workspace and content queue for each component.</p>
+                  <p className="text-[8px] text-warning/80 mt-0.5 m-0">The campaign will get a shared brief plus a dedicated workspace and content queue for each component.</p>
                 </div>
               </div>
             </div>
@@ -228,11 +228,11 @@ export default function CampaignHubEditor({ open, onOpenChange, onCreated }: {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="sm:col-span-2">
                 {label('AUDIENCE SEGMENTS')}
-                <TagField values={audienceSegments} onChange={setAudienceSegments} placeholder="Add audience..." />
+                <TagField values={audienceSegments} onChange={setAudienceSegments} placeholder="Add audience…" />
               </div>
               <div className="sm:col-span-2">
                 {label('MARKETS')}
-                <TagField values={markets} onChange={setMarkets} placeholder="Add country or region..." />
+                <TagField values={markets} onChange={setMarkets} placeholder="Add country or region…" />
               </div>
               <div>
                 {label('MASTER LANGUAGE')}
@@ -240,40 +240,40 @@ export default function CampaignHubEditor({ open, onOpenChange, onCreated }: {
               </div>
               <div>
                 {label('ADDITIONAL LANGUAGES')}
-                <TagField values={additionalLanguages} onChange={setAdditionalLanguages} placeholder="Add..." />
+                <TagField values={additionalLanguages} onChange={setAdditionalLanguages} placeholder="Add…" />
               </div>
               <div className="sm:col-span-2">
                 {label('EXCLUSIONS')}
-                <TagField values={exclusions} onChange={setExclusions} placeholder="Add exclusion..." />
+                <TagField values={exclusions} onChange={setExclusions} placeholder="Add exclusion…" />
               </div>
             </div>
           )}
 
           {step === 4 && (
             <div className="max-w-[560px] mx-auto">
-              <div className="border border-[#e1e4e7] rounded-lg p-3.5 flex items-center gap-3">
+              <div className="border border-border rounded-lg p-3.5 flex items-center gap-3">
                 <span className="h-[45px] w-[45px] rounded-full bg-[#243946] text-white grid place-items-center font-semibold shrink-0">{(brand || name || 'C')[0].toUpperCase()}</span>
                 <div className="flex-1 min-w-0">
-                  <small className="text-[7px] tracking-[.15em] text-[#9b7d45] block">{(brand || 'CAMPAIGN').toUpperCase()}</small>
+                  <small className="text-[7px] tracking-[.15em] text-primary-strong block">{(brand || 'CAMPAIGN').toUpperCase()}</small>
                   <h3 className="text-[14px] font-semibold m-0 my-0.5 truncate">{name || `${brand || 'New'} Campaign`}</h3>
-                  <p className="text-[8px] text-[#858a91] m-0">{objective || 'No objective set'} {startDate && `· ${startDate} – ${endDate || '…'}`}</p>
+                  <p className="text-[8px] text-muted-foreground m-0">{objective || 'No objective set'} {startDate && `· ${startDate} – ${endDate || '…'}`}</p>
                 </div>
               </div>
-              <div className="grid grid-cols-3 border border-[#e1e4e7] rounded-lg mt-2.5">
-                <div className="p-3 border-r border-[#eceef0]">
-                  <span className="text-[7px] text-[#8a8f96] block">COMPONENTS</span>
+              <div className="grid grid-cols-3 border border-border rounded-lg mt-2.5">
+                <div className="p-3 border-r border-border">
+                  <span className="text-[7px] text-muted-foreground block">COMPONENTS</span>
                   <strong className="text-[15px] block my-1">{channelTypes.length}</strong>
-                  <small className="text-[7px] text-[#7e848c] leading-snug">{channelTypes.map(t => CHANNEL_LABELS[t]).join(' · ') || 'None'}</small>
+                  <small className="text-[7px] text-muted-foreground leading-snug">{channelTypes.map(t => CHANNEL_LABELS[t]).join(' · ') || 'None'}</small>
                 </div>
-                <div className="p-3 border-r border-[#eceef0]">
-                  <span className="text-[7px] text-[#8a8f96] block">MARKETS</span>
+                <div className="p-3 border-r border-border">
+                  <span className="text-[7px] text-muted-foreground block">MARKETS</span>
                   <strong className="text-[15px] block my-1">{markets.length || '—'}</strong>
-                  <small className="text-[7px] text-[#7e848c] leading-snug">{markets.join(' · ') || 'Not set'}</small>
+                  <small className="text-[7px] text-muted-foreground leading-snug">{markets.join(' · ') || 'Not set'}</small>
                 </div>
                 <div className="p-3">
-                  <span className="text-[7px] text-[#8a8f96] block">AUDIENCE SEGMENTS</span>
+                  <span className="text-[7px] text-muted-foreground block">AUDIENCE SEGMENTS</span>
                   <strong className="text-[15px] block my-1">{audienceSegments.length || '—'}</strong>
-                  <small className="text-[7px] text-[#7e848c] leading-snug">{audienceSegments.join(' · ') || 'Not set'}</small>
+                  <small className="text-[7px] text-muted-foreground leading-snug">{audienceSegments.join(' · ') || 'Not set'}</small>
                 </div>
               </div>
               <div className="mt-4">
@@ -284,8 +284,8 @@ export default function CampaignHubEditor({ open, onOpenChange, onCreated }: {
                   'A content queue scoped to this campaign in Content Studio',
                   'A budget rollup across every component',
                 ].map(x => (
-                  <div key={x} className="min-h-[31px] border-b border-[#eceef0] flex items-center gap-1.5 text-[9px] text-[#3a3d41]">
-                    <Check className="h-3 w-3 text-[#17a066] shrink-0" /> {x}
+                  <div key={x} className="min-h-[31px] border-b border-border flex items-center gap-1.5 text-[9px] text-foreground/80">
+                    <Check className="h-3 w-3 text-success shrink-0" /> {x}
                   </div>
                 ))}
               </div>
@@ -294,20 +294,20 @@ export default function CampaignHubEditor({ open, onOpenChange, onCreated }: {
         </div>
 
         {/* Footer */}
-        <div className="h-[62px] border-t border-[#e3e6e9] px-[22px] flex items-center justify-between">
+        <div className="h-[62px] border-t border-border px-[22px] flex items-center justify-between">
           <button
             onClick={() => step === 1 ? close() : setStep(step - 1)}
-            className="h-[35px] px-3.5 rounded-md border border-[#dfe3e7] bg-white text-[#444950] text-[11px] font-semibold"
+            className="h-[35px] px-3.5 rounded-md border border-border bg-card text-foreground/80 text-[11px] font-semibold"
           >
             {step === 1 ? 'Cancel' : 'Back'}
           </button>
-          <span className="text-[8px] text-[#8b9097]">Step {step} of 4</span>
+          <span className="text-[8px] text-muted-foreground">Step {step} of 4</span>
           <button
             onClick={() => step < 4 ? setStep(step + 1) : submit()}
             disabled={(step === 1 && !name.trim()) || saving}
-            className="h-[35px] px-3.5 rounded-md bg-[#22262b] hover:bg-[#0d0f11] text-white text-[11px] font-semibold disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center gap-1.5"
+            className="h-[35px] px-3.5 rounded-md bg-foreground hover:bg-foreground/90 text-background text-[11px] font-semibold disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center gap-1.5"
           >
-            {step === 4 ? (saving ? 'Creating...' : 'Create campaign') : 'Continue'}
+            {step === 4 ? (saving ? 'Creating…' : 'Create campaign') : 'Continue'}
           </button>
         </div>
       </DialogContent>

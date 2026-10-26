@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { Search, Receipt, X, Anchor, AlertTriangle, Check } from 'lucide-react'
+import { StatusBadge } from '@/components/ui/status-badge'
+import { formatDate, formatDateRange, formatMoney } from '@/lib/format'
 
 interface TripSummary {
   booking: { id: string; bookingCode: string; startDate: string; endDate: string; status: string; customer: { name: string }; yacht: { id: string; name: string } | null }
@@ -25,8 +27,6 @@ interface TripDetail {
   sales: Sale[]
 }
 
-const fmtMoney = (n: number) => 'Rp ' + new Intl.NumberFormat('id-ID').format(n)
-const fmtDate = (s: string) => new Date(s).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
 
 export default function PosBillingHistoryPage() {
   const [trips, setTrips] = useState<TripSummary[]>([])
@@ -86,16 +86,16 @@ export default function PosBillingHistoryPage() {
       </div>
 
       {reviews.length > 0 && (
-        <div className="rounded-lg border border-amber-300 bg-amber-50">
+        <div className="rounded-lg border border-warning/30 bg-warning/10">
           <button onClick={() => setReviewOpen(o => !o)} className="w-full px-4 py-3 flex items-center justify-between text-left">
-            <span className="flex items-center gap-2 text-sm font-medium text-amber-800">
+            <span className="flex items-center gap-2 text-sm font-medium text-warning">
               <AlertTriangle className="h-4 w-4" />
               {reviews.length} cashier sale{reviews.length !== 1 ? 's' : ''} need review — discount failed validation when the offline terminal synced
             </span>
-            <span className="text-xs text-amber-700">{reviewOpen ? 'Hide' : 'Show'}</span>
+            <span className="text-xs text-warning">{reviewOpen ? 'Hide' : 'Show'}</span>
           </button>
           {reviewOpen && (
-            <div className="border-t border-amber-200 divide-y divide-amber-200">
+            <div className="border-t border-warning/30 divide-y divide-warning/30">
               {reviews.map(r => (
                 <div key={r.id} className="px-4 py-3 flex items-start justify-between gap-4 text-sm">
                   <div className="min-w-0">
@@ -103,12 +103,12 @@ export default function PosBillingHistoryPage() {
                       {r.guestName ?? 'Guest'} · {r.yacht?.name ?? '—'}{r.booking ? ` · ${r.booking.bookingCode}` : ' · Walk-in'}
                     </p>
                     <p className="text-xs text-muted-foreground mt-0.5">
-                      {fmtDate(r.closedAt ?? r.createdAt)} · {r.payMethod ?? 'Open'} · Subtotal {fmtMoney(r.total)} · Discount {r.discountName ?? ''} −{fmtMoney(r.discountAmount)} · Charged {fmtMoney(r.total - r.discountAmount)}
+                      {formatDate(r.closedAt ?? r.createdAt)} · {r.payMethod ?? 'Open'} · Subtotal {formatMoney(r.total)} · Discount {r.discountName ?? ''} −{formatMoney(r.discountAmount)} · Charged {formatMoney(r.total - r.discountAmount)}
                     </p>
-                    {r.reviewNote && <p className="text-xs text-amber-800 mt-1">{r.reviewNote}</p>}
+                    {r.reviewNote && <p className="text-xs text-warning mt-1">{r.reviewNote}</p>}
                   </div>
                   <button onClick={() => markReviewed(r.id)} disabled={marking === r.id}
-                    className="shrink-0 inline-flex items-center gap-1 h-8 px-3 rounded-md border bg-white text-xs font-medium hover:bg-muted disabled:opacity-50">
+                    className="shrink-0 inline-flex items-center gap-1 h-8 px-3 rounded-md border bg-card text-xs font-medium hover:bg-muted disabled:opacity-50">
                     <Check className="h-3.5 w-3.5" /> Mark reviewed
                   </button>
                 </div>
@@ -120,7 +120,7 @@ export default function PosBillingHistoryPage() {
 
       <div className="relative max-w-sm">
         <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-        <input className="w-full h-9 border rounded-md pl-8 pr-3 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white transition-colors"
+        <input className="w-full h-9 border rounded-md pl-8 pr-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring bg-card transition-colors"
           placeholder="Search by booking code or guest…" value={search} onChange={e => setSearch(e.target.value)} />
       </div>
 
@@ -155,10 +155,10 @@ export default function PosBillingHistoryPage() {
                 <td className="px-4 py-3 text-muted-foreground">
                   {t.booking.yacht && <span className="flex items-center gap-1"><Anchor className="h-3 w-3 shrink-0" />{t.booking.yacht.name}</span>}
                 </td>
-                <td className="px-4 py-3 text-muted-foreground text-xs">{fmtDate(t.booking.startDate)} – {fmtDate(t.booking.endDate)}</td>
+                <td className="px-4 py-3 text-muted-foreground text-xs">{formatDateRange(t.booking.startDate, t.booking.endDate)}</td>
                 <td className="px-4 py-3 text-center text-muted-foreground">{t.saleCount}</td>
-                <td className="px-4 py-3 text-right text-muted-foreground">{t.discountAmount > 0 ? `−${fmtMoney(t.discountAmount)}` : '—'}</td>
-                <td className="px-4 py-3 text-right font-semibold">{fmtMoney(t.total)}</td>
+                <td className="px-4 py-3 text-right text-muted-foreground">{t.discountAmount > 0 ? `−${formatMoney(t.discountAmount)}` : '—'}</td>
+                <td className="px-4 py-3 text-right font-semibold">{formatMoney(t.total)}</td>
               </tr>
             ))}
           </tbody>
@@ -167,11 +167,11 @@ export default function PosBillingHistoryPage() {
 
       {(detail || detailLoading) && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setDetail(null)}>
-          <div onClick={e => e.stopPropagation()} className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden">
+          <div onClick={e => e.stopPropagation()} className="bg-card rounded-xl shadow-xl w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden">
             <div className="px-6 py-4 border-b flex items-start justify-between shrink-0">
               <div>
                 <h3 className="font-semibold text-base">{detail?.booking.bookingCode ?? 'Loading…'}</h3>
-                {detail && <p className="text-xs text-muted-foreground mt-0.5">{detail.booking.customer.name} · {detail.booking.yacht?.name} · {fmtDate(detail.booking.startDate)} – {fmtDate(detail.booking.endDate)}</p>}
+                {detail && <p className="text-xs text-muted-foreground mt-0.5">{detail.booking.customer.name} · {detail.booking.yacht?.name} · {formatDateRange(detail.booking.startDate, detail.booking.endDate)}</p>}
               </div>
               <button onClick={() => setDetail(null)} className="text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
             </div>
@@ -186,34 +186,34 @@ export default function PosBillingHistoryPage() {
                     <div>
                       <p className="text-sm font-medium">{sale.guestName ?? sale.guest?.customer?.name ?? 'Guest'}</p>
                       <p className="text-xs text-muted-foreground">
-                        {sale.status === 'open' ? 'Open tab' : `Closed ${sale.closedAt ? fmtDate(sale.closedAt) : ''} · ${sale.payMethod}`}
+                        {sale.status === 'open' ? 'Open tab' : `Closed ${sale.closedAt ? formatDate(sale.closedAt) : ''} · ${sale.payMethod}`}
                       </p>
                     </div>
                     <span className="flex items-center gap-1.5">
-                      {sale.needsReview && <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800" title={sale.reviewNote ?? undefined}>Needs review</span>}
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${sale.status === 'open' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'}`}>
+                      {sale.needsReview && <StatusBadge tone="warning" title={sale.reviewNote ?? undefined}>Needs review</StatusBadge>}
+                      <StatusBadge tone={sale.status === 'open' ? 'info' : 'success'}>
                         {sale.status === 'open' ? 'Open' : 'Closed'}
-                      </span>
+                      </StatusBadge>
                     </span>
                   </div>
                   <div className="px-4 py-2 divide-y">
                     {sale.items.map(item => (
                       <div key={item.id} className="flex justify-between py-1.5 text-sm">
-                        <span>{item.qty} × {item.name}{item.packageId && <span className="ml-1.5 text-[10px] font-bold text-amber-600">PKG</span>}</span>
-                        <span className="tabular-nums text-muted-foreground">{fmtMoney(item.qty * item.price)}</span>
+                        <span>{item.qty} × {item.name}{item.packageId && <span className="ml-1.5 text-[10px] font-bold text-primary-strong">PKG</span>}</span>
+                        <span className="tabular-nums text-muted-foreground">{formatMoney(item.qty * item.price)}</span>
                       </div>
                     ))}
                   </div>
                   <div className="px-4 py-2 border-t bg-muted/20 space-y-1">
                     {sale.discountAmount > 0 && (
-                      <div className="flex justify-between text-xs text-green-700">
+                      <div className="flex justify-between text-xs text-success">
                         <span>Discount{sale.discountName ? ` (${sale.discountName})` : ''}</span>
-                        <span>−{fmtMoney(sale.discountAmount)}</span>
+                        <span>−{formatMoney(sale.discountAmount)}</span>
                       </div>
                     )}
                     <div className="flex justify-between text-sm font-semibold">
                       <span>Total</span>
-                      <span>{fmtMoney(sale.total - sale.discountAmount)}</span>
+                      <span>{formatMoney(sale.total - sale.discountAmount)}</span>
                     </div>
                   </div>
                 </div>

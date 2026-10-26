@@ -4,7 +4,7 @@ import { useState, useEffect, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { Loader2, MailX, CheckCircle2 } from 'lucide-react'
 
-const ACCENT = '#bdac7e'
+const ACCENT = 'var(--primary)'
 
 interface Info {
   email: string
@@ -53,7 +53,7 @@ function UnsubscribeContent() {
           <Loader2 className="h-6 w-6 animate-spin mx-auto text-muted-foreground" />
         ) : error ? (
           <>
-            <MailX className="h-8 w-8 mx-auto text-red-400" />
+            <MailX className="h-8 w-8 mx-auto text-destructive/70" />
             <p className="text-sm text-gray-600">{error}</p>
           </>
         ) : done ? (
@@ -70,10 +70,10 @@ function UnsubscribeContent() {
             <button
               onClick={confirm}
               disabled={submitting}
-              className="w-full rounded-md py-2 text-sm font-medium text-white hover:opacity-90 transition-opacity disabled:opacity-60"
+              className="w-full rounded-md py-2 text-sm font-medium text-primary-foreground hover:opacity-90 transition-opacity disabled:opacity-60"
               style={{ backgroundColor: ACCENT }}
             >
-              {submitting ? 'Unsubscribing...' : 'Unsubscribe'}
+              {submitting ? 'Unsubscribing…' : 'Unsubscribe'}
             </button>
           </>
         )}

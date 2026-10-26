@@ -4,24 +4,16 @@ import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { Loader2, X, UserRound, Ship, MessageCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import type { WhatsappContactPanel as PanelData } from '@/app/api/whatsapp/conversations/[id]/contact/route'
 import { LEAD_STAGE_COLOR, LEAD_STAGE_LABEL, type LeadStage } from '@/lib/lead-pipeline'
 import { WHATSAPP_BRAND_LABELS, type WhatsappBrand } from '@/lib/whatsapp-brands'
+import { StatusBadge, BookingStatusBadge } from '@/components/ui/status-badge'
+import { formatDate, formatDateRange, formatMoney, formatNumber } from '@/lib/format'
 
 const QUALITY_COLOR: Record<string, string> = {
-  HOT: 'bg-red-100 text-red-700', WARM: 'bg-amber-100 text-amber-800', COLD: 'bg-sky-100 text-sky-700',
-}
-const BOOKING_STATUS_COLOR: Record<string, string> = {
-  completed: 'bg-green-100 text-green-700', fully_paid: 'bg-green-100 text-green-700', confirmed: 'bg-teal-100 text-teal-700',
-  partially_paid: 'bg-blue-100 text-blue-700', pending: 'bg-amber-100 text-amber-800', on_hold: 'bg-amber-100 text-amber-800',
-  cancelled: 'bg-muted text-muted-foreground', pending_refund: 'bg-red-100 text-red-700',
-}
-
-function fmtDate(iso: string | null) {
-  return iso ? new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : null
-}
-function fmtMoney(n: number, currency: string) {
-  return `${currency} ${n.toLocaleString('en-US', { maximumFractionDigits: 0 })}`
+  HOT: 'bg-destructive/15 text-destructive', WARM: 'bg-warning/15 text-warning', COLD: 'bg-info/15 text-info',
 }
 function label(s: string) { return s.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) }
 
@@ -81,17 +73,17 @@ export default function WhatsappContactPanel({ conversationId, leadId, onClose, 
   const customer = data?.customer
   const notesDirty = !!lead && (notes.trim() || null) !== (lead.notes ?? null)
   const travelDates = lead && (lead.travelStartDate
-    ? [fmtDate(lead.travelStartDate), fmtDate(lead.travelEndDate)].filter(Boolean).join(' – ')
+    ? formatDateRange(lead.travelStartDate, lead.travelEndDate)
     : lead.travelSeason)
   const budget = lead && (lead.budgetMin || lead.budgetMax)
-    ? [lead.budgetMin, lead.budgetMax].filter(v => v != null).map(v => v!.toLocaleString('en-US')).join(' – ') + (lead.budgetCurrency ? ` ${lead.budgetCurrency}` : '')
+    ? [lead.budgetMin, lead.budgetMax].filter(v => v != null).map(v => lead.budgetCurrency ? formatMoney(v, { currency: lead.budgetCurrency, decimals: 0 }) : formatNumber(v)).join(' – ')
     : null
 
   return (
-    <aside className="fixed inset-0 z-40 md:static md:z-auto w-full md:w-72 shrink-0 md:border-l bg-white flex flex-col min-h-0">
+    <aside className="fixed inset-0 z-40 md:static md:z-auto w-full md:w-72 shrink-0 md:border-l bg-card flex flex-col min-h-0">
       <div className="px-4 h-[57px] border-b flex items-center justify-between shrink-0">
         <p className="text-sm font-semibold">Contact info</p>
-        <button onClick={onClose} className="text-muted-foreground hover:text-foreground" title="Hide panel"><X className="h-4 w-4" /></button>
+        <Button variant="ghost" size="icon" onClick={onClose} className="size-8 -mr-2 text-muted-foreground hover:text-foreground" title="Hide panel" aria-label="Hide panel"><X className="h-4 w-4" /></Button>
       </div>
       {!data ? (
         <div className="flex justify-center pt-10"><Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /></div>
@@ -118,13 +110,13 @@ export default function WhatsappContactPanel({ conversationId, leadId, onClose, 
                   <Row k="Source" v={lead.source && label(lead.source)} />
                 </div>
                 <div className="space-y-1.5 pt-1">
-                  <p className="text-xs text-muted-foreground">Notes</p>
-                  <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={4}
+                  <Label htmlFor="wa-contact-notes" className="text-xs font-normal text-muted-foreground">Notes</Label>
+                  <Textarea id="wa-contact-notes" value={notes} onChange={e => setNotes(e.target.value)} rows={4}
                     placeholder="What did they tell you? Dates, group, preferences…"
-                    className="w-full resize-y border rounded-md px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-green-500" />
+                    className="resize-y px-2 py-1.5 text-xs md:text-xs" />
                   {notesDirty && (
-                    <Button size="sm" className="h-7 w-full text-xs" onClick={saveNotes} disabled={savingNotes}>
-                      {savingNotes ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Save notes'}
+                    <Button size="sm" className="h-7 w-full text-xs" onClick={saveNotes} loading={savingNotes}>
+                      Save notes
                     </Button>
                   )}
                 </div>
@@ -146,10 +138,13 @@ export default function WhatsappContactPanel({ conversationId, leadId, onClose, 
                     className="w-full text-left rounded-md border px-2.5 py-2 hover:bg-muted/50 disabled:hover:bg-transparent transition-colors space-y-0.5">
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-xs font-medium">{b.bookingCode}</span>
-                      <span className={`text-[10px] rounded-full px-1.5 py-0.5 ${BOOKING_STATUS_COLOR[b.status] ?? 'bg-muted'}`}>{label(b.status)}</span>
+                      {/* pending_refund is not a booking status in the shared map — keep it red here. */}
+                      {b.status === 'pending_refund'
+                        ? <StatusBadge size="sm" tone="destructive">{label(b.status)}</StatusBadge>
+                        : <BookingStatusBadge size="sm" status={b.status} />}
                     </div>
-                    <p className="text-[11px] text-muted-foreground">{fmtDate(b.startDate)} · {[b.yacht, b.destination].filter(Boolean).join(' · ')}</p>
-                    <p className="text-[11px] text-muted-foreground">{b.guestCount} pax · {fmtMoney(b.totalPrice, b.currency)}</p>
+                    <p className="text-[11px] text-muted-foreground">{formatDate(b.startDate)} · {[b.yacht, b.destination].filter(Boolean).join(' · ')}</p>
+                    <p className="text-[11px] text-muted-foreground">{b.guestCount} pax · {formatMoney(b.totalPrice, { currency: b.currency, decimals: 0 })}</p>
                   </button>
                 ))}
               </>
@@ -165,7 +160,7 @@ export default function WhatsappContactPanel({ conversationId, leadId, onClose, 
                 <button key={c.id} onClick={() => onOpenChat?.(c.id)} disabled={!onOpenChat || !c.canOpen} title={c.canOpen ? undefined : 'Handled by another sales rep'}
                   className="w-full text-left rounded-md border px-2.5 py-1.5 hover:bg-muted/50 disabled:hover:bg-transparent disabled:opacity-60 transition-colors">
                   <p className="text-xs font-medium">{WHATSAPP_BRAND_LABELS[c.brand as WhatsappBrand] ?? c.brand}</p>
-                  <p className="text-[11px] text-muted-foreground">Last message {fmtDate(c.lastMessageAt)}{c.assignedToName && ` · ${c.assignedToName}`}</p>
+                  <p className="text-[11px] text-muted-foreground">Last message {formatDate(c.lastMessageAt)}{c.assignedToName && ` · ${c.assignedToName}`}</p>
                 </button>
               ))}
             </section>

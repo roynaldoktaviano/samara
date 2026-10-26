@@ -25,22 +25,22 @@ function labelBreakWarnings(label: string): string[] {
     const lastChar = lines[i].slice(-1)
     const firstChar = lines[i + 1].slice(0, 1)
     if (/\S/.test(lastChar) && /\S/.test(firstChar)) {
-      warnings.push(`Baris ${i + 1} & ${i + 2} terputus di tengah kata ("...${lastChar}" / "${firstChar}...") — pindahkan Enter ke sebelah spasi.`)
+      warnings.push(`Lines ${i + 1} & ${i + 2} break mid-word ("...${lastChar}" / "${firstChar}...") — move the line break next to a space.`)
     }
   }
   lines.forEach((line, i) => {
     const trimmed = line.trim()
     if (!trimmed) return
     const wordCount = trimmed.split(/\s+/).filter(Boolean).length
-    if (wordCount === 1) warnings.push(`Baris ${i + 1} cuma 1 kata ("${trimmed}") — bisa kelihatan aneh sendirian, coba gabung ke baris sebelah.`)
-    else if (trimmed.length > 30) warnings.push(`Baris ${i + 1} agak panjang (${trimmed.length} karakter) — kemungkinan tetap wrap ulang otomatis kalau layar/tombolnya sempit.`)
+    if (wordCount === 1) warnings.push(`Line ${i + 1} is only 1 word ("${trimmed}") — it may look odd on its own, try joining it to an adjacent line.`)
+    else if (trimmed.length > 30) warnings.push(`Line ${i + 1} is quite long (${trimmed.length} characters) — it may still wrap automatically on a narrow screen/button.`)
   })
   return warnings
 }
 
 /** Full-bleed section divider bar — groups fields the way "BLOCK OPTIONS" / "ACTION" do in the reference builder. */
 function SectionHeader({ label }: { label: string }) {
-  return <p className="-mx-3 bg-gray-100 px-3 py-1.5 text-[11px] font-semibold tracking-wide text-gray-500 uppercase">{label}</p>
+  return <p className="-mx-3 bg-muted px-3 py-1.5 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">{label}</p>
 }
 
 function Stepper({ value, onChange, min = 0, max = 200, step = 1 }: { value: number; onChange: (v: number) => void; min?: number; max?: number; step?: number }) {
@@ -49,13 +49,13 @@ function Stepper({ value, onChange, min = 0, max = 200, step = 1 }: { value: num
   const inc = () => onChange(Math.min(max, round(value + step)))
   return (
     <div className="flex items-center rounded-md border overflow-hidden">
-      <button type="button" onClick={dec} className="flex h-8 w-7 shrink-0 items-center justify-center text-gray-500 hover:bg-gray-50 border-r">−</button>
+      <button type="button" onClick={dec} className="flex h-8 w-7 shrink-0 items-center justify-center text-muted-foreground hover:bg-accent border-r">−</button>
       <input
         type="number" min={min} max={max} step={step} value={value}
         onChange={e => onChange(Math.min(max, Math.max(min, Number(e.target.value) || 0)))}
         className="h-8 w-full min-w-0 text-center text-sm outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
       />
-      <button type="button" onClick={inc} className="flex h-8 w-7 shrink-0 items-center justify-center text-gray-500 hover:bg-gray-50 border-l">+</button>
+      <button type="button" onClick={inc} className="flex h-8 w-7 shrink-0 items-center justify-center text-muted-foreground hover:bg-accent border-l">+</button>
     </div>
   )
 }
@@ -75,7 +75,7 @@ function AlignField({ value, onChange }: { value: BlockAlign; onChange: (v: Bloc
             key={o.v}
             type="button"
             onClick={() => onChange(o.v)}
-            className={`flex h-8 items-center justify-center rounded-md border transition-colors ${value === o.v ? 'bg-[#bdac7e] text-white border-[#bdac7e]' : 'text-muted-foreground hover:bg-muted/50'}`}
+            className={`flex h-8 items-center justify-center rounded-md border transition-colors ${value === o.v ? 'bg-primary text-primary-foreground border-primary' : 'text-muted-foreground hover:bg-muted/50'}`}
           >
             <o.icon className="h-3.5 w-3.5" />
           </button>
@@ -101,7 +101,7 @@ function VerticalAlignField({ value, onChange }: { value: ColumnsVerticalAlign; 
             type="button"
             title={o.title}
             onClick={() => onChange(o.v)}
-            className={`flex h-8 items-center justify-center rounded-md border transition-colors ${value === o.v ? 'bg-[#bdac7e] text-white border-[#bdac7e]' : 'text-muted-foreground hover:bg-muted/50'}`}
+            className={`flex h-8 items-center justify-center rounded-md border transition-colors ${value === o.v ? 'bg-primary text-primary-foreground border-primary' : 'text-muted-foreground hover:bg-muted/50'}`}
           >
             <o.icon className="h-3.5 w-3.5" />
           </button>
@@ -335,7 +335,7 @@ function ColumnWidthsField({ block, onChange }: { block: ColumnsBlock; onChange:
       </div>
       <div className="flex h-5 overflow-hidden rounded border">
         {current.map((w, i) => (
-          <div key={i} style={{ width: `${w}%` }} className={`flex items-center justify-center text-[10px] font-medium ${i % 2 ? 'bg-[#bdac7e]/25' : 'bg-[#bdac7e]/50'} ${i > 0 ? 'border-l border-white' : ''}`}>{w}%</div>
+          <div key={i} style={{ width: `${w}%` }} className={`flex items-center justify-center text-[10px] font-medium ${i % 2 ? 'bg-primary/25' : 'bg-primary/50'} ${i > 0 ? 'border-l border-card' : ''}`}>{w}%</div>
         ))}
       </div>
       <div className={`grid gap-2 ${n === 2 ? 'grid-cols-2' : 'grid-cols-3'}`}>
@@ -350,7 +350,7 @@ function ColumnWidthsField({ block, onChange }: { block: ColumnsBlock; onChange:
         <div className="flex flex-wrap gap-1">
           {presets.map(p => (
             <button key={p.join('/')} type="button" onClick={() => onChange({ ...block, widths: p })}
-              className={`h-6 rounded border px-1.5 text-[10px] transition-colors ${same(p) ? 'bg-[#bdac7e] text-white border-[#bdac7e]' : 'text-muted-foreground hover:bg-muted/50'}`}>
+              className={`h-6 rounded border px-1.5 text-[10px] transition-colors ${same(p) ? 'bg-primary text-primary-foreground border-primary' : 'text-muted-foreground hover:bg-muted/50'}`}>
               {p.join(' / ')}
             </button>
           ))}
@@ -363,7 +363,7 @@ function ColumnWidthsField({ block, onChange }: { block: ColumnsBlock; onChange:
 /** Desktop/Mobile tab switcher for a group of fields that support a mobile-only override (see TextMobileOverride/ButtonMobileOverride) — the same 2-icon pattern as HideOnField, but for style values instead of visibility. */
 function DeviceToggle({ device, onChange }: { device: 'desktop' | 'mobile'; onChange: (d: 'desktop' | 'mobile') => void }) {
   const base = 'flex items-center justify-center gap-1.5 h-7 px-3 rounded-md border text-xs font-medium transition-colors'
-  const active = 'bg-[#bdac7e] text-white border-[#bdac7e]'
+  const active = 'bg-primary text-primary-foreground border-primary'
   const inactive = 'text-muted-foreground hover:bg-muted/50'
   return (
     <div className="inline-flex gap-1.5">
@@ -387,7 +387,7 @@ function ResetMobileLink({ onClick }: { onClick: () => void }) {
 
 function HideOnField({ value, onChange }: { value: HideOn; onChange: (v: HideOn) => void }) {
   const base = 'flex items-center justify-center gap-1 h-8 rounded-md border text-xs font-medium transition-colors'
-  const active = 'bg-[#bdac7e] text-white border-[#bdac7e]'
+  const active = 'bg-primary text-primary-foreground border-primary'
   const inactive = 'text-muted-foreground hover:bg-muted/50'
   return (
     <div className="space-y-1.5">
@@ -474,7 +474,7 @@ function RichTextField({ label = 'Text', html, onChange, linkColor, variant = 'f
         ref={ref}
         contentEditable
         suppressContentEditableWarning
-        className="email-rich-text border rounded-md p-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#bdac7e]"
+        className="email-rich-text border rounded-md p-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
         style={{ minHeight, ...(linkColor ? ({ '--link-color': linkColor } as React.CSSProperties) : undefined) }}
         dangerouslySetInnerHTML={{ __html: html }}
         onMouseUp={saveSelection}
@@ -513,7 +513,7 @@ export function ImageUploadField({ label = 'Image', src, onChange }: { label?: s
   return (
     <div className="space-y-1.5">
       <Label className="text-xs">{label}</Label>
-      <div {...dropProps} className={`flex gap-2 rounded-md p-1 -m-1 transition-colors ${isDragging ? 'ring-2 ring-[#bdac7e] bg-[#bdac7e]/5' : ''}`}>
+      <div {...dropProps} className={`flex gap-2 rounded-md p-1 -m-1 transition-colors ${isDragging ? 'ring-2 ring-ring bg-primary/5' : ''}`}>
         <Input value={src} onChange={e => onChange(e.target.value)} placeholder={isDragging ? 'Drop image to upload' : 'https://...'} className="h-8 text-xs" />
         <Button type="button" variant="outline" size="sm" className="h-8 shrink-0" disabled={uploading} onClick={() => inputRef.current?.click()}>
           {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
@@ -556,20 +556,20 @@ function BrandCombobox({ onPick }: { onPick: (brand: BrandOption) => void }) {
   return (
     <div className="relative">
       <button type="button" onClick={() => { setOpen(o => !o); setSearch('') }}
-        className="w-full h-8 border rounded-md px-2.5 text-xs text-left flex items-center justify-between bg-white focus:outline-none focus:ring-1 focus:ring-[#bdac7e] transition-colors">
-        <span className="text-muted-foreground">Apply a saved brand...</span>
+        className="w-full h-8 border rounded-md px-2.5 text-xs text-left flex items-center justify-between bg-card focus:outline-none focus:ring-1 focus:ring-ring transition-colors">
+        <span className="text-muted-foreground">Apply a saved brand…</span>
         <Palette className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
       </button>
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute left-0 right-0 top-full mt-1 bg-white border rounded-lg shadow-xl z-50 max-h-60 flex flex-col">
+          <div className="absolute left-0 right-0 top-full mt-1 bg-popover border rounded-lg shadow-xl z-50 max-h-60 flex flex-col">
             {brands.length > 0 && (
               <div className="p-2 border-b shrink-0">
                 <div className="relative">
                   <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
-                  <input autoFocus className="w-full h-8 border rounded px-2.5 pl-8 text-sm focus:outline-none focus:ring-1 focus:ring-[#bdac7e]"
-                    placeholder="Search brands..." value={search} onChange={e => setSearch(e.target.value)} />
+                  <input autoFocus className="w-full h-8 border rounded px-2.5 pl-8 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                    placeholder="Search brands…" value={search} onChange={e => setSearch(e.target.value)} />
                 </div>
               </div>
             )}
@@ -580,7 +580,7 @@ function BrandCombobox({ onPick }: { onPick: (brand: BrandOption) => void }) {
               {brands.length > 0 && opts.length === 0 && <p className="px-3 py-3 text-sm text-muted-foreground">No matches</p>}
               {opts.map(b => (
                 <button key={b.id} type="button" onClick={() => { onPick(b); setOpen(false); setSearch('') }}
-                  className="w-full text-left px-3 py-2 text-sm hover:bg-[#bdac7e]/10 transition-colors">
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-primary/10 transition-colors">
                   <p className="font-medium">{b.name}</p>
                   <p className="text-xs text-muted-foreground">{b.companyName}</p>
                 </button>
@@ -734,7 +734,7 @@ export default function BlockInspector({ block, onChange }: { block: EmailBlock;
             />
             <p className="text-[11px] text-muted-foreground">Press Enter for a line break — it shows the same way on desktop and mobile.</p>
             {labelBreakWarnings(block.label).map((w, i) => (
-              <p key={i} className="flex items-start gap-1 text-[11px] text-amber-600">
+              <p key={i} className="flex items-start gap-1 text-[11px] text-warning">
                 <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
                 <span>{w}</span>
               </p>
@@ -882,7 +882,7 @@ export default function BlockInspector({ block, onChange }: { block: EmailBlock;
                   const links = [...block.links]; links[i] = { ...l, url: e.target.value }; onChange({ ...block, links })
                 }} placeholder="https://example.com" className="h-8 text-sm" />
               </div>
-              <Button type="button" variant="ghost" size="sm" className="h-8 text-xs text-red-600" onClick={() => onChange({ ...block, links: block.links.filter((_, idx) => idx !== i) })}>Remove</Button>
+              <Button type="button" variant="ghost" size="sm" className="h-8 text-xs text-destructive" onClick={() => onChange({ ...block, links: block.links.filter((_, idx) => idx !== i) })}>Remove</Button>
             </div>
           ))}
           <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={() => onChange({ ...block, links: [...block.links, { platform: 'Website', url: '' }] })}>

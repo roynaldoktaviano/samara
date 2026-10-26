@@ -7,6 +7,9 @@ import { PRIORITIES, PRIORITY_META, fmtDay, todayKey, newSubtaskId, MAX_SUBTASK_
 import AssigneePicker from './AssigneePicker'
 import { SubtaskCheck } from './SubtasksField'
 import { TextCell, TypeCell, RangeCell } from './InlineCells'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { useConfirm } from '@/components/ui/confirm-dialog'
 
 // ClickUp-style sub task rows for the List view: one table row per sub task (aligned to the
 // parent table's 8 columns) plus an inline "create" row. Every change is saved immediately
@@ -18,18 +21,18 @@ function DatePick({ value, onChange, compact }: { value: string | null; onChange
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <button type="button" title="Due date"
+        <button type="button" title="Due date" aria-label={compact && !value ? 'Due date' : undefined}
           className={compact
             ? `h-8 min-w-8 px-2 flex items-center justify-center gap-1 rounded-md border text-xs hover:bg-muted ${value ? 'text-foreground' : 'text-muted-foreground'}`
-            : `text-sm rounded px-1 -mx-1 hover:bg-muted ${value ? (overdue ? 'text-red-600 font-medium' : '') : 'text-muted-foreground'}`}>
+            : `text-sm rounded px-1 -mx-1 hover:bg-muted ${value ? (overdue ? 'text-destructive font-medium' : '') : 'text-muted-foreground'}`}>
           {compact && <CalendarDays className="h-4 w-4" />}
           {value ? fmtDay(value) : compact ? null : '-'}
         </button>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-56 space-y-2 p-3">
-        <input type="date" autoFocus className="w-full h-9 border rounded-lg px-2 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
+        <Input type="date" autoFocus className="px-2" aria-label="Due date"
           value={value ?? ''} onChange={e => { onChange(e.target.value || null); setOpen(false) }} />
-        {value && <button type="button" onClick={() => { onChange(null); setOpen(false) }} className="text-xs text-muted-foreground hover:text-foreground underline">Clear date</button>}
+        {value && <Button type="button" variant="link" size="sm" onClick={() => { onChange(null); setOpen(false) }} className="h-auto p-0 text-xs text-muted-foreground hover:text-foreground underline">Clear date</Button>}
       </PopoverContent>
     </Popover>
   )
@@ -44,7 +47,7 @@ export function PriorityPick({ value, onChange, compact, required, readOnly }: {
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <button type="button" title="Priority"
+        <button type="button" title="Priority" aria-label={meta ? `Priority: ${meta.label}` : 'Priority'}
           className={compact
             ? `h-8 min-w-8 px-2 flex items-center justify-center gap-1 rounded-md border text-xs hover:bg-muted ${meta ? '' : 'text-muted-foreground'}`
             : 'rounded hover:bg-muted p-0.5 -m-0.5'}>
@@ -120,33 +123,34 @@ function SubtaskRow({ sub, depth, open, state, canTick, ro, onUpdate, onDelete }
   onUpdate: (patch: Partial<Subtask>) => void; onDelete: () => void
 }) {
   const { meId } = useWorks()
+  const confirm = useConfirm()
   const overdue = !sub.done && !!sub.dueDate && sub.dueDate < todayKey()
   const kids = sub.children ?? []
   const canNest = !ro && depth < MAX_SUBTASK_DEPTH
   const mine = (sub.assigneeIds ?? []).includes(meId)
   return (
-    <tr className={`border-b hover:bg-muted/30 transition-colors group ${ro && mine ? 'bg-amber-50/50' : 'bg-muted/10'}`}>
+    <tr className={`border-b hover:bg-muted/30 transition-colors group ${ro && mine ? 'bg-primary/5' : 'bg-muted/10'}`}>
       <td />
       <td className="pr-3 py-2" style={indent(depth)}>
         <div className="flex items-center gap-1.5">
           {kids.length > 0 ? (
-            <button onClick={() => state.toggleExpand(sub.id)} className="p-0.5 rounded hover:bg-muted text-muted-foreground shrink-0" title={open ? 'Hide sub tasks' : 'Show sub tasks'}>
+            <button onClick={() => state.toggleExpand(sub.id)} className="p-0.5 rounded hover:bg-muted text-muted-foreground shrink-0" title={open ? 'Hide sub tasks' : 'Show sub tasks'} aria-label={open ? 'Hide sub tasks' : 'Show sub tasks'} aria-expanded={open}>
               <ChevronDown className={`h-3.5 w-3.5 transition-transform ${open ? '' : '-rotate-90'}`} />
             </button>
           ) : <span className="w-[18px] shrink-0" />}
           {canTick
             ? <SubtaskCheck done={sub.done} onToggle={() => onUpdate({ done: !sub.done })} />
-            : <span title="Not assigned to you" className={`h-4 w-4 shrink-0 rounded border opacity-40 ${sub.done ? 'bg-emerald-600 border-emerald-600' : 'border-muted-foreground/40'}`} />}
+            : <span title="Not assigned to you" className={`h-4 w-4 shrink-0 rounded border opacity-40 ${sub.done ? 'bg-success border-success' : 'border-muted-foreground/40'}`} />}
           <div className="flex-1 min-w-0">
             <TextCell value={sub.title} required readOnly={ro} onSave={title => onUpdate({ title })}
               className={`text-sm break-words ${sub.done ? 'line-through text-muted-foreground' : ''}`} />
           </div>
-          {kids.length > 0 && <button onClick={() => state.toggleExpand(sub.id)} className="shrink-0"><SubtaskCount subtasks={kids} /></button>}
+          {kids.length > 0 && <button onClick={() => state.toggleExpand(sub.id)} className="shrink-0" aria-expanded={open}><SubtaskCount subtasks={kids} /></button>}
           {canNest && (
-            <button onClick={() => state.startCreate(sub.id)} title="Create sub task"
-              className="h-7 w-7 shrink-0 flex items-center justify-center rounded-md border bg-background text-muted-foreground hover:text-foreground hover:bg-muted opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity">
-              <Plus className="h-4 w-4" />
-            </button>
+            <Button variant="outline" size="icon" onClick={() => state.startCreate(sub.id)} title="Create sub task" aria-label="Create sub task"
+              className="size-7 text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100">
+              <Plus />
+            </Button>
           )}
         </div>
       </td>
@@ -161,10 +165,12 @@ function SubtaskRow({ sub, depth, open, state, canTick, ro, onUpdate, onDelete }
       <td className="px-3 py-2 border-l"><PriorityPick value={sub.priority} readOnly={ro} onChange={priority => onUpdate({ priority })} /></td>
       <td className="px-2 py-2 border-l text-center">
         {!ro && (
-          <button onClick={() => { if (!kids.length || confirm(`Delete "${sub.title}" and its ${flattenSubtasks(kids).length} sub task(s)?`)) onDelete() }}
-            title="Delete sub task" className="p-1 rounded text-muted-foreground hover:text-red-600 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-opacity">
-            <Trash2 className="h-3.5 w-3.5" />
-          </button>
+          <Button variant="ghost" size="icon"
+            onClick={async () => { if (!kids.length || await confirm({ title: `Delete "${sub.title}" and its ${flattenSubtasks(kids).length} sub task(s)?`, destructive: true })) onDelete() }}
+            title="Delete sub task" aria-label="Delete sub task"
+            className="size-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10 dark:hover:bg-destructive/10 opacity-0 group-hover:opacity-100 focus-visible:opacity-100">
+            <Trash2 className="size-3.5" />
+          </Button>
         )}
       </td>
     </tr>
@@ -190,17 +196,16 @@ function SubtaskCreateRow({ depth, onCreate, onCancel }: { depth: number; onCrea
         <div className="flex items-center gap-2">
           <span className="w-[18px] shrink-0" />
           <span className="h-4 w-4 shrink-0 rounded-full border border-dashed border-muted-foreground/50" />
-          <input autoFocus className="flex-1 min-w-0 h-8 text-sm bg-transparent focus:outline-none placeholder:text-muted-foreground"
+          <input autoFocus aria-label="Sub task name" className="flex-1 min-w-0 h-8 text-sm bg-transparent focus:outline-none placeholder:text-muted-foreground"
             placeholder={depth > 1 ? `Level ${depth} sub task name` : 'Sub task name'} value={title} onChange={e => setTitle(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); save() } if (e.key === 'Escape') onCancel() }} />
           <AssigneePicker value={assigneeIds} onChange={setAssigneeIds} compact size={20} />
           <DatePick value={dueDate} onChange={setDueDate} compact />
           <PriorityPick value={priority} onChange={setPriority} compact />
-          <button type="button" onClick={onCancel} className="h-8 px-3 text-sm border rounded-md hover:bg-muted">Cancel</button>
-          <button type="button" onClick={save} disabled={!title.trim()}
-            className="h-8 px-3 flex items-center gap-1.5 text-sm font-semibold text-white rounded-md bg-amber-600 hover:bg-amber-700 disabled:opacity-50">
-            Save<CornerDownLeft className="h-3.5 w-3.5" />
-          </button>
+          <Button type="button" variant="outline" size="sm" onClick={onCancel}>Cancel</Button>
+          <Button type="button" size="sm" onClick={save} disabled={!title.trim()} className="font-semibold">
+            Save<CornerDownLeft className="size-3.5" />
+          </Button>
         </div>
       </td>
     </tr>

@@ -2,6 +2,10 @@
 
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import { Label } from '@/components/ui/label'
 
 interface CompanyInfo {
   name:    string
@@ -50,8 +54,7 @@ export default function CompanySettings() {
     }
   }
 
-  const fieldClass = 'w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring'
-  const labelClass = 'block text-xs font-medium text-muted-foreground mb-1'
+  const labelClass = 'text-xs font-medium text-muted-foreground mb-1'
 
   if (loading) return <div className="text-sm text-muted-foreground py-4">Loading…</div>
 
@@ -64,36 +67,36 @@ export default function CompanySettings() {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
-          <label className={labelClass}>Company Name</label>
-          <input className={fieldClass} value={data.name} onChange={e => set('name', e.target.value)} placeholder="e.g. Loho Siloina" />
+          <Label htmlFor="company-name" className={labelClass}>Company Name</Label>
+          <Input id="company-name" value={data.name} onChange={e => set('name', e.target.value)} placeholder="e.g. Loho Siloina" />
         </div>
         <div>
-          <label className={labelClass}>Tagline</label>
-          <input className={fieldClass} value={data.tagline} onChange={e => set('tagline', e.target.value)} placeholder="e.g. PREMIUM YACHT EXPERIENCES" />
+          <Label htmlFor="company-tagline" className={labelClass}>Tagline</Label>
+          <Input id="company-tagline" value={data.tagline} onChange={e => set('tagline', e.target.value)} placeholder="e.g. PREMIUM YACHT EXPERIENCES" />
         </div>
         <div className="sm:col-span-2">
-          <label className={labelClass}>Logo URL</label>
-          <input className={fieldClass} value={data.logoUrl} onChange={e => set('logoUrl', e.target.value)} placeholder="https://..." />
+          <Label htmlFor="company-logourl" className={labelClass}>Logo URL</Label>
+          <Input id="company-logourl" value={data.logoUrl} onChange={e => set('logoUrl', e.target.value)} placeholder="https://..." />
           {data.logoUrl && (
             /* eslint-disable-next-line @next/next/no-img-element */
             <img src={data.logoUrl} alt="logo preview" className="mt-2 h-10 object-contain" />
           )}
         </div>
         <div className="sm:col-span-2">
-          <label className={labelClass}>Office Address</label>
-          <textarea className={fieldClass} rows={2} value={data.address} onChange={e => set('address', e.target.value)} placeholder="Full address" />
+          <Label htmlFor="company-address" className={labelClass}>Office Address</Label>
+          <Textarea id="company-address" rows={2} value={data.address} onChange={e => set('address', e.target.value)} placeholder="Full address" />
         </div>
         <div>
-          <label className={labelClass}>Phone / WhatsApp</label>
-          <input className={fieldClass} value={data.phone} onChange={e => set('phone', e.target.value)} placeholder="+62 ..." />
+          <Label htmlFor="company-phone" className={labelClass}>Phone / WhatsApp</Label>
+          <Input id="company-phone" value={data.phone} onChange={e => set('phone', e.target.value)} placeholder="+62 ..." />
         </div>
         <div>
-          <label className={labelClass}>Website</label>
-          <input className={fieldClass} value={data.website} onChange={e => set('website', e.target.value)} placeholder="www.example.com" />
+          <Label htmlFor="company-website" className={labelClass}>Website</Label>
+          <Input id="company-website" value={data.website} onChange={e => set('website', e.target.value)} placeholder="www.example.com" />
         </div>
         <div>
-          <label className={labelClass}>Email</label>
-          <input className={fieldClass} value={data.email} onChange={e => set('email', e.target.value)} placeholder="info@example.com" />
+          <Label htmlFor="company-email" className={labelClass}>Email</Label>
+          <Input id="company-email" value={data.email} onChange={e => set('email', e.target.value)} placeholder="info@example.com" />
         </div>
       </div>
 
@@ -104,27 +107,27 @@ export default function CompanySettings() {
           <p className="text-xs text-muted-foreground mt-0.5">Append Terms &amp; Conditions pages when printing invoice</p>
         </div>
         <button
+          type="button"
+          role="switch"
+          aria-checked={data.showTnc}
+          aria-label="Show T&C on Invoice"
           onClick={() => set('showTnc', !data.showTnc)}
           className={[
-            'relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none',
+            'relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
             data.showTnc ? 'bg-primary' : 'bg-input',
           ].join(' ')}
         >
           <span className={[
-            'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+            'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-background shadow ring-0 transition duration-200 ease-in-out',
             data.showTnc ? 'translate-x-5' : 'translate-x-0',
           ].join(' ')} />
         </button>
       </div>
 
       <div className="flex justify-end">
-        <button
-          onClick={save}
-          disabled={saving}
-          className="px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50"
-        >
+        <Button onClick={save} loading={saving}>
           {saving ? 'Saving…' : 'Save Changes'}
-        </button>
+        </Button>
       </div>
     </div>
   )

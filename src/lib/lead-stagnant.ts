@@ -36,7 +36,7 @@ export async function runLeadStagnantCheck(db: PrismaClient): Promise<{ reassign
   })
   for (const c of chats) {
     if (c.lastOutboundAt && c.lastInboundAt && c.lastOutboundAt >= c.lastInboundAt) continue
-    if (c.leadId && !stagnant.has(c.leadId)) stagnant.set(c.leadId, { brand: c.brand, channel: 'WHATSAPP', why: `chat WhatsApp belum dibalas ${STAGNANT_HOURS} jam` })
+    if (c.leadId && !stagnant.has(c.leadId)) stagnant.set(c.leadId, { brand: c.brand, channel: 'WHATSAPP', why: `WhatsApp chat unanswered for ${STAGNANT_HOURS} hours` })
   }
 
   // No chat: still NEW 24h after being assigned.
@@ -48,7 +48,7 @@ export async function runLeadStagnantCheck(db: PrismaClient): Promise<{ reassign
     select: { id: true, inquiries: { orderBy: { createdAt: 'desc' }, take: 1, select: { website: true, tripType: true } } },
   })
   for (const l of idle) {
-    if (!stagnant.has(l.id)) stagnant.set(l.id, { brand: brandForInquiry(l.inquiries[0]?.website, l.inquiries[0]?.tripType), channel: 'WEBSITE', why: `masih New ${STAGNANT_HOURS} jam setelah di-assign` })
+    if (!stagnant.has(l.id)) stagnant.set(l.id, { brand: brandForInquiry(l.inquiries[0]?.website, l.inquiries[0]?.tripType), channel: 'WEBSITE', why: `still New ${STAGNANT_HOURS} hours after assignment` })
   }
 
   if (stagnant.size === 0) return { reassigned: 0, escalated: 0 }
@@ -74,7 +74,7 @@ export async function runLeadStagnantCheck(db: PrismaClient): Promise<{ reassign
       // Everyone in the pool has had it — hand it to a human decision, remind again in 24h.
       await db.lead.update({ where: { id: leadId }, data: { ownerAssignedAt: new Date() } })
       for (const a of admins) {
-        db.notification.create({ data: { userId: a.id, type: 'LEAD_STAGNANT', title: `Lead stagnan: ${lead.name}`, body: `${why} (pegangan ${oldOwnerName}); semua sales di pool sudah pernah memegangnya — perlu keputusan admin` } }).catch(() => {})
+        db.notification.create({ data: { userId: a.id, type: 'LEAD_STAGNANT', title: `Stagnant lead: ${lead.name}`, body: `${why} (held by ${oldOwnerName}); every sales rep in the pool has already had it — needs an admin decision` } }).catch(() => {})
       }
       escalated++
       continue
@@ -83,13 +83,13 @@ export async function runLeadStagnantCheck(db: PrismaClient): Promise<{ reassign
     await setLeadOwner(db, leadId, nextOwner, 'STAGNANT')
     reassigned++
 
-    const newTitle = `Lead dialihkan ke kamu: ${lead.name}`
-    const newBody = `Dari ${oldOwnerName} — ${why}. Segera follow up.`
+    const newTitle = `Lead reassigned to you: ${lead.name}`
+    const newBody = `From ${oldOwnerName} — ${why}. Please follow up soon.`
     db.notification.create({ data: { userId: nextOwner, type: 'LEAD_ASSIGNED', title: newTitle, body: newBody } }).catch(() => {})
     sendPushToUser(db, nextOwner, { title: newTitle, body: newBody, url: '/' }).catch(() => {})
-    db.notification.create({ data: { userId: lead.ownerId, type: 'LEAD_STAGNANT', title: `Lead dialihkan: ${lead.name}`, body: `${why}, jadi dipindahkan ke sales lain.` } }).catch(() => {})
+    db.notification.create({ data: { userId: lead.ownerId, type: 'LEAD_STAGNANT', title: `Lead reassigned: ${lead.name}`, body: `Moved to another sales rep: ${why}.` } }).catch(() => {})
     for (const a of admins) {
-      db.notification.create({ data: { userId: a.id, type: 'LEAD_STAGNANT', title: `Lead dialihkan otomatis: ${lead.name}`, body: `${oldOwnerName} → sales berikutnya (${why})` } }).catch(() => {})
+      db.notification.create({ data: { userId: a.id, type: 'LEAD_STAGNANT', title: `Lead auto-reassigned: ${lead.name}`, body: `${oldOwnerName} → next sales rep (${why})` } }).catch(() => {})
     }
   }
 

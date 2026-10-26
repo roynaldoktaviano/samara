@@ -7,6 +7,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Button } from '@/components/ui/button'
 import { ExternalLink, Ship, Calendar, Users, ChevronRight, ClipboardList, FileText, RefreshCw, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
+import { formatDate, formatDateRange, formatMoney, formatPercent } from '@/lib/format'
+import { StatusBadge, type StatusTone } from '@/components/ui/status-badge'
 
 interface TripRow {
   bookingId: string
@@ -48,20 +50,9 @@ interface TripGroup {
   rows: TripRow[]
 }
 
-const fmt = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-const fmtRange = (start: string, end: string) => {
-  const s = new Date(start), e = new Date(end)
-  const sameMonth = s.getMonth() === e.getMonth() && s.getFullYear() === e.getFullYear()
-  const dayFmt = (d: Date) => d.getDate()
-  const monthYear = e.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' }).toUpperCase()
-  return sameMonth
-    ? `${dayFmt(s)}-${dayFmt(e)} ${monthYear}`
-    : `${s.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }).toUpperCase()} - ${e.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase()}`
-}
-
 const TRIP_TYPE_STYLE: Record<'Sharing' | 'Private', string> = {
-  Sharing: 'bg-sky-100 text-sky-700 border-sky-200',
-  Private: 'bg-orange-100 text-orange-700 border-orange-200',
+  Sharing: 'bg-info/15 text-info border-info/30',
+  Private: 'bg-warning/15 text-warning border-warning/30',
 }
 
 const YACHT_PALETTE = ['#3b82f6', '#f97316', '#8b5cf6', '#10b981', '#ec4899', '#06b6d4', '#eab308', '#ef4444']
@@ -73,18 +64,18 @@ function buildYachtColorMap(yachtNames: string[]): Record<string, string> {
 }
 
 const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-const ACCENT = '#bdac7e'
+const ACCENT = 'var(--primary)'
 
-const PAYMENT_STATUS_STYLE: Record<string, string> = {
-  PAID:                 'bg-green-100 text-green-700 border-green-200',
-  confirmed:            'bg-green-100 text-green-700 border-green-200',
-  pending_confirmation: 'bg-amber-100 text-amber-700 border-amber-200',
-  invoice_ready:        'bg-violet-100 text-violet-700 border-violet-200',
-  requested:            'bg-blue-100 text-blue-700 border-blue-200',
-  rejected:             'bg-red-100 text-red-700 border-red-200',
-  cancelled:            'bg-slate-100 text-slate-600 border-slate-200',
-  refunded:             'bg-blue-100 text-blue-700 border-blue-200',
-  unpaid:               'bg-slate-100 text-slate-500 border-slate-200',
+const PAYMENT_STATUS_TONE: Record<string, StatusTone> = {
+  PAID:                 'success',
+  confirmed:            'success',
+  pending_confirmation: 'warning',
+  invoice_ready:        'primary',
+  requested:            'info',
+  rejected:             'destructive',
+  cancelled:            'neutral',
+  refunded:             'info',
+  unpaid:               'neutral',
 }
 
 export default function TripSheet() {
@@ -149,7 +140,7 @@ export default function TripSheet() {
       <div className="flex flex-col sm:flex-row sm:items-center gap-2 px-1">
         <div className="relative flex-1 min-w-0">
           <input
-            placeholder="Search guest, booking, invoice, agent..."
+            placeholder="Search guest, booking, invoice, agent…"
             value={search}
             onChange={e => setSearch(e.target.value)}
             className="h-8 w-full rounded-md border border-input bg-background px-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
@@ -176,13 +167,13 @@ export default function TripSheet() {
         <div className="flex items-center gap-1 pl-3 pr-3 shrink-0">
           <span className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-widest shrink-0 mr-1">Month</span>
           <button onClick={() => setMonthFilter('')}
-            className={`px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-colors shrink-0 ${!monthFilter ? 'text-white' : 'text-muted-foreground hover:bg-muted'}`}
+            className={`px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-colors shrink-0 ${!monthFilter ? 'text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}
             style={!monthFilter ? { backgroundColor: ACCENT } : {}}>
             All
           </button>
           {MONTH_SHORT.map((m, i) => (
             <button key={m} onClick={() => setMonthFilter(String(i))}
-              className={`px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-colors shrink-0 ${monthFilter === String(i) ? 'text-white' : 'text-muted-foreground hover:bg-muted'}`}
+              className={`px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-colors shrink-0 ${monthFilter === String(i) ? 'text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}
               style={monthFilter === String(i) ? { backgroundColor: ACCENT } : {}}>
               {m}
             </button>
@@ -192,7 +183,7 @@ export default function TripSheet() {
         <div className="flex items-center gap-1.5 pl-3 shrink-0">
           <span className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-widest shrink-0 mr-1">Vessel</span>
           <button onClick={() => setVesselFilter('')}
-            className={`h-6 flex items-center px-2.5 rounded-full text-[11px] font-medium transition-all shrink-0 whitespace-nowrap ${!vesselFilter ? 'text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100'}`}
+            className={`h-6 flex items-center px-2.5 rounded-full text-[11px] font-medium transition-all shrink-0 whitespace-nowrap ${!vesselFilter ? 'text-primary-foreground shadow-sm' : 'text-muted-foreground hover:bg-accent'}`}
             style={!vesselFilter ? { backgroundColor: ACCENT } : {}}>
             All
           </button>
@@ -201,7 +192,7 @@ export default function TripSheet() {
             const active = vesselFilter === v
             return (
               <button key={v} onClick={() => setVesselFilter(v)}
-                className={`h-6 flex items-center gap-1 px-2.5 rounded-full text-[11px] font-medium transition-all shrink-0 whitespace-nowrap ${active ? 'text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100'}`}
+                className={`h-6 flex items-center gap-1 px-2.5 rounded-full text-[11px] font-medium transition-all shrink-0 whitespace-nowrap ${active ? 'text-white shadow-sm' : 'text-muted-foreground hover:bg-accent'}`}
                 style={active ? { backgroundColor: color } : {}}>
                 <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: active ? 'rgba(255,255,255,0.7)' : color }} />
                 {v}
@@ -253,7 +244,7 @@ export default function TripSheet() {
                   <TableRow key={`month-${g.id}`} className="hover:bg-transparent">
                     <TableCell colSpan={14} className="py-1.5 px-3 bg-muted/60 border-y">
                       <span className="text-xs font-bold tracking-wide text-foreground">
-                        {new Date(g.startDate).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }).toUpperCase()}
+                        {formatDate(g.startDate, 'monthYear').toUpperCase()}
                       </span>
                     </TableCell>
                   </TableRow>
@@ -272,7 +263,7 @@ export default function TripSheet() {
                             onClick={() => setSelectedTrip(g)}
                           >
                             <div className="flex items-center gap-1">
-                              <span className="group-hover:underline">{fmtRange(g.startDate, g.endDate)}</span>
+                              <span className="group-hover:underline">{formatDateRange(g.startDate, g.endDate).toUpperCase()}</span>
                               <ChevronRight className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
                             </div>
                             <div className="text-[10px] font-semibold mt-0.5" style={{ color: yachtColorMap[g.yachtName] }}>{g.yachtName}</div>
@@ -286,9 +277,9 @@ export default function TripSheet() {
                             </div>
                           </TableCell>
                           <TableCell rowSpan={totalGroupRows} className="align-middle text-center">
-                            <Badge className={`text-[10px] ${g.status === 'Done' ? 'bg-green-100 text-green-700 border-green-200' : 'bg-blue-100 text-blue-700 border-blue-200'}`}>
+                            <StatusBadge size="sm" tone={g.status === 'Done' ? 'success' : 'info'}>
                               {g.status}
-                            </Badge>
+                            </StatusBadge>
                           </TableCell>
                         </>
                       )}
@@ -307,7 +298,7 @@ export default function TripSheet() {
                               <div className="flex flex-col gap-0.5">
                                 {r.invoices.map(inv => (
                                   <a key={inv.paymentId} href={`/print/invoice/${inv.paymentId}`} target="_blank" rel="noopener noreferrer"
-                                    className="inline-flex items-center gap-1 text-[#1a5f6e] hover:underline font-medium whitespace-nowrap">
+                                    className="inline-flex items-center gap-1 text-brand hover:underline font-medium whitespace-nowrap">
                                     {inv.invoiceNumber}
                                     <ExternalLink className="h-3 w-3" />
                                   </a>
@@ -315,20 +306,20 @@ export default function TripSheet() {
                               </div>
                             ) : <span className="text-muted-foreground">—</span>}
                           </TableCell>
-                          <TableCell rowSpan={r.guestRowCount} className="text-right border-l">${fmt(r.publish)}</TableCell>
-                          <TableCell rowSpan={r.guestRowCount} className="text-right">{r.discountPct > 0 ? `${fmt(r.discountPct)}%` : ''}</TableCell>
-                          <TableCell rowSpan={r.guestRowCount} className="text-right">{r.agentCommission > 0 ? `$${fmt(r.agentCommission)}` : ''}</TableCell>
+                          <TableCell rowSpan={r.guestRowCount} className="text-right border-l">{formatMoney(r.publish, { currency: 'USD' })}</TableCell>
+                          <TableCell rowSpan={r.guestRowCount} className="text-right">{r.discountPct > 0 ? formatPercent(r.discountPct, { fraction: false, decimals: 2 }) : ''}</TableCell>
+                          <TableCell rowSpan={r.guestRowCount} className="text-right">{r.agentCommission > 0 ? formatMoney(r.agentCommission, { currency: 'USD' }) : ''}</TableCell>
                           <TableCell rowSpan={r.guestRowCount} className="text-right border-l">
-                            <div className="font-semibold">${fmt(r.totalUSD)}</div>
-                            {r.totalIDR != null && <div className="text-[10px] text-muted-foreground">Rp {r.totalIDR.toLocaleString('id-ID', { maximumFractionDigits: 0 })}</div>}
+                            <div className="font-semibold">{formatMoney(r.totalUSD, { currency: 'USD' })}</div>
+                            {r.totalIDR != null && <div className="text-[10px] text-muted-foreground">{formatMoney(r.totalIDR)}</div>}
                           </TableCell>
-                          <TableCell rowSpan={r.guestRowCount} className="text-right">{r.dp > 0 ? `$${fmt(r.dp)}` : ''}</TableCell>
-                          <TableCell rowSpan={r.guestRowCount} className="text-right">{r.pelunasan > 0 ? `$${fmt(r.pelunasan)}` : ''}</TableCell>
-                          <TableCell rowSpan={r.guestRowCount} className="text-right">{r.balance > 0 ? `$${fmt(r.balance)}` : '$-'}</TableCell>
+                          <TableCell rowSpan={r.guestRowCount} className="text-right">{r.dp > 0 ? formatMoney(r.dp, { currency: 'USD' }) : ''}</TableCell>
+                          <TableCell rowSpan={r.guestRowCount} className="text-right">{r.pelunasan > 0 ? formatMoney(r.pelunasan, { currency: 'USD' }) : ''}</TableCell>
+                          <TableCell rowSpan={r.guestRowCount} className="text-right">{r.balance > 0 ? formatMoney(r.balance, { currency: 'USD' }) : '$-'}</TableCell>
                           <TableCell rowSpan={r.guestRowCount}>
-                            <Badge className={`text-[10px] ${PAYMENT_STATUS_STYLE[r.paymentStatusLabel] ?? PAYMENT_STATUS_STYLE.unpaid}`}>
+                            <StatusBadge size="sm" tone={PAYMENT_STATUS_TONE[r.paymentStatusLabel] ?? PAYMENT_STATUS_TONE.unpaid}>
                               {r.paymentStatusLabel === 'PAID' ? 'PAID' : r.paymentStatusLabel.replace('_', ' ')}
-                            </Badge>
+                            </StatusBadge>
                           </TableCell>
                         </>
                       )}
@@ -383,7 +374,7 @@ export default function TripSheet() {
                   <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1 flex items-center gap-1">
                     <Calendar className="h-3 w-3" /> Trip Date
                   </p>
-                  <p className="text-sm font-medium">{fmtRange(selectedTrip.startDate, selectedTrip.endDate)}</p>
+                  <p className="text-sm font-medium">{formatDateRange(selectedTrip.startDate, selectedTrip.endDate).toUpperCase()}</p>
                 </div>
                 <div className="rounded-lg border p-3">
                   <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1">Duration</p>
@@ -395,9 +386,9 @@ export default function TripSheet() {
                 </div>
                 <div className="rounded-lg border p-3">
                   <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1">Status</p>
-                  <Badge className={`text-[10px] ${selectedTrip.status === 'Done' ? 'bg-green-100 text-green-700 border-green-200' : 'bg-blue-100 text-blue-700 border-blue-200'}`}>
+                  <StatusBadge size="sm" tone={selectedTrip.status === 'Done' ? 'success' : 'info'}>
                     {selectedTrip.status}
-                  </Badge>
+                  </StatusBadge>
                 </div>
               </div>
 
@@ -421,12 +412,12 @@ export default function TripSheet() {
                           <div className="flex items-center justify-between flex-wrap gap-1.5">
                             <span className="font-mono text-[11px] text-muted-foreground">{r0.bookingCode}</span>
                             <div className="flex items-center gap-1.5">
-                              <Badge className={`text-[10px] ${PAYMENT_STATUS_STYLE[r0.paymentStatusLabel] ?? PAYMENT_STATUS_STYLE.unpaid}`}>
+                              <StatusBadge size="sm" tone={PAYMENT_STATUS_TONE[r0.paymentStatusLabel] ?? PAYMENT_STATUS_TONE.unpaid}>
                                 {r0.paymentStatusLabel === 'PAID' ? 'PAID' : r0.paymentStatusLabel.replace('_', ' ')}
-                              </Badge>
+                              </StatusBadge>
                               {r0.invoices.map(inv => (
                                 <a key={inv.paymentId} href={`/print/invoice/${inv.paymentId}`} target="_blank" rel="noopener noreferrer"
-                                  className="inline-flex items-center gap-1 text-[#1a5f6e] hover:underline font-medium">
+                                  className="inline-flex items-center gap-1 text-brand hover:underline font-medium">
                                   {inv.invoiceNumber}
                                   <ExternalLink className="h-3 w-3" />
                                 </a>
@@ -451,16 +442,16 @@ export default function TripSheet() {
                           </div>
 
                           <div className="border-t pt-1.5 grid grid-cols-2 sm:grid-cols-4 gap-x-3 gap-y-1 text-muted-foreground">
-                            <span>Publish: <span className="text-foreground">${fmt(r0.publish)}</span></span>
-                            {r0.discountPct > 0 && <span>Disc.: <span className="text-foreground">{fmt(r0.discountPct)}%</span></span>}
-                            {r0.agentCommission > 0 && <span>Agent Com.: <span className="text-foreground">${fmt(r0.agentCommission)}</span></span>}
-                            <span>TRIP: <span className="text-foreground">${fmt(r0.trip)}</span></span>
-                            {r0.tnk > 0 && <span>TNK: <span className="text-foreground">${fmt(r0.tnk)}</span></span>}
-                            <span>Total (USD): <span className="text-foreground font-semibold">${fmt(r0.totalUSD)}</span></span>
-                            {r0.totalIDR != null && <span>Total (IDR): <span className="text-foreground font-semibold">Rp {r0.totalIDR.toLocaleString('id-ID', { maximumFractionDigits: 0 })}</span></span>}
-                            {r0.dp > 0 && <span>DP: <span className="text-foreground">${fmt(r0.dp)}</span></span>}
-                            {r0.pelunasan > 0 && <span>2nd DP/Payment: <span className="text-foreground">${fmt(r0.pelunasan)}</span></span>}
-                            <span>Balance: <span className="text-foreground">{r0.balance > 0 ? `$${fmt(r0.balance)}` : '$-'}</span></span>
+                            <span>Publish: <span className="text-foreground">{formatMoney(r0.publish, { currency: 'USD' })}</span></span>
+                            {r0.discountPct > 0 && <span>Disc.: <span className="text-foreground">{formatPercent(r0.discountPct, { fraction: false, decimals: 2 })}</span></span>}
+                            {r0.agentCommission > 0 && <span>Agent Com.: <span className="text-foreground">{formatMoney(r0.agentCommission, { currency: 'USD' })}</span></span>}
+                            <span>TRIP: <span className="text-foreground">{formatMoney(r0.trip, { currency: 'USD' })}</span></span>
+                            {r0.tnk > 0 && <span>TNK: <span className="text-foreground">{formatMoney(r0.tnk, { currency: 'USD' })}</span></span>}
+                            <span>Total (USD): <span className="text-foreground font-semibold">{formatMoney(r0.totalUSD, { currency: 'USD' })}</span></span>
+                            {r0.totalIDR != null && <span>Total (IDR): <span className="text-foreground font-semibold">{formatMoney(r0.totalIDR)}</span></span>}
+                            {r0.dp > 0 && <span>DP: <span className="text-foreground">{formatMoney(r0.dp, { currency: 'USD' })}</span></span>}
+                            {r0.pelunasan > 0 && <span>2nd DP/Payment: <span className="text-foreground">{formatMoney(r0.pelunasan, { currency: 'USD' })}</span></span>}
+                            <span>Balance: <span className="text-foreground">{r0.balance > 0 ? formatMoney(r0.balance, { currency: 'USD' }) : '$-'}</span></span>
                           </div>
                         </div>
                       )

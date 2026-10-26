@@ -11,16 +11,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const db = await getDb(session)
 
   const type = await db.purchaseItemTypeConfig.findUnique({ where: { id } })
-  if (!type) return NextResponse.json({ error: 'Tipe tidak ditemukan' }, { status: 404 })
+  if (!type) return NextResponse.json({ error: 'Type not found' }, { status: 404 })
 
   const body = await req.json()
   const { name, skuPrefix } = body
-  if (!name || !name.trim()) return NextResponse.json({ error: 'name wajib diisi' }, { status: 400 })
-  if (!skuPrefix || !skuPrefix.trim()) return NextResponse.json({ error: 'SKU prefix wajib diisi' }, { status: 400 })
+  if (!name || !name.trim()) return NextResponse.json({ error: 'name is required' }, { status: 400 })
+  if (!skuPrefix || !skuPrefix.trim()) return NextResponse.json({ error: 'SKU prefix is required' }, { status: 400 })
   const cleanName = name.trim()
 
   const existing = await db.purchaseItemCategory.findUnique({ where: { typeCode_name: { typeCode: type.code, name: cleanName } } })
-  if (existing) return NextResponse.json({ error: `Kategori "${cleanName}" sudah ada di tipe ini` }, { status: 409 })
+  if (existing) return NextResponse.json({ error: `Category "${cleanName}" already exists in this type` }, { status: 409 })
 
   const category = await db.purchaseItemCategory.create({
     data: { typeCode: type.code, name: cleanName, skuPrefix: skuPrefix.trim().toUpperCase() },

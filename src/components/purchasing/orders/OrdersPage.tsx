@@ -18,6 +18,8 @@ import { readUploadFile } from '@/lib/fileUpload'
 import { toast } from 'sonner'
 import type { ExtractedInvoice } from '@/app/api/purchasing/orders/extract-invoice/route'
 import { TREATMENTS, TREATMENT_LABEL, type Treatment } from '@/lib/purchasing/treatment'
+import { formatDate, formatMoney } from '@/lib/format'
+import { StatusBadge, type StatusTone } from '@/components/ui/status-badge'
 
 
 interface PaymentRequest {
@@ -115,16 +117,13 @@ function POTimeline({ detail }: { detail: OrderDetail }) {
 }
 
 const STATUS_LABEL: Record<string, string> = { DRAFT: 'Draft', ORDERED: 'Ordered', IN_TRANSIT: 'On Delivery', PARTIALLY_RECEIVED: 'Partially Received', RECEIVED: 'Received', CANCELLED: 'Cancelled', REJECTED: 'Payment Rejected' }
-const STATUS_COLOR: Record<string, string> = { DRAFT: 'bg-muted text-muted-foreground', ORDERED: 'bg-blue-100 text-blue-700', IN_TRANSIT: 'bg-amber-100 text-amber-700', PARTIALLY_RECEIVED: 'bg-orange-100 text-orange-700', RECEIVED: 'bg-green-100 text-green-700', CANCELLED: 'bg-red-100 text-red-700', REJECTED: 'bg-pink-100 text-pink-700' }
+const STATUS_TONE: Record<string, StatusTone> = { DRAFT: 'neutral', ORDERED: 'info', IN_TRANSIT: 'warning', PARTIALLY_RECEIVED: 'warning', RECEIVED: 'success', CANCELLED: 'neutral', REJECTED: 'destructive' }
 // Where the goods physically are right now — distinct from the static final destination.
 // For routed POs mid-transit, reuses the server-computed currentLegLabel (which already
 // tracks the open transit leg); for a direct (no transit stops) PO, derives it from
 // status + dispatchedAt instead, since there's no per-leg data to draw from.
 const PAYMENT_STATUS_LABEL: Record<string, string> = { UNPAID: 'Unpaid', PENDING: 'Waiting for Payment', PARTIALLY_PAID: 'Partially Paid', PAID: 'Paid', REJECTED: 'Rejected' }
-const PAYMENT_STATUS_COLOR: Record<string, string> = { UNPAID: 'bg-muted text-muted-foreground', PENDING: 'bg-amber-100 text-amber-700', PARTIALLY_PAID: 'bg-orange-100 text-orange-700', PAID: 'bg-green-100 text-green-700', REJECTED: 'bg-red-100 text-red-700' }
-export const fmtDate = (s: string) => new Date(s).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
-export const fmtDateTime = (s: string) => new Date(s).toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
-export const fmtMoney = (n: number) => 'Rp ' + new Intl.NumberFormat('id-ID').format(n)
+const PAYMENT_STATUS_TONE: Record<string, StatusTone> = { UNPAID: 'neutral', PENDING: 'warning', PARTIALLY_PAID: 'warning', PAID: 'success', REJECTED: 'destructive' }
 export const toDateInputValue = (s: string) => {
   const d = new Date(s)
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
@@ -166,21 +165,21 @@ export function SupplierCombobox({ value, suppliers, onChange, onAdded }: {
   return (
     <div className="relative">
       <button type="button" onClick={() => { setOpen(o => !o); setSearch(''); setAddError('') }}
-        className="w-full h-9 border rounded-md px-3 text-sm text-left flex items-center justify-between bg-white focus:outline-none focus:ring-1 focus:ring-amber-500 transition-colors">
-        <span className={value ? '' : 'text-muted-foreground'}>{value || 'Select supplier...'}</span>
+        className="w-full h-9 border rounded-md px-3 text-sm text-left flex items-center justify-between bg-card focus:outline-none focus:ring-1 focus:ring-ring transition-colors">
+        <span className={value ? '' : 'text-muted-foreground'}>{value || 'Select supplier…'}</span>
         <Building2 className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
       </button>
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute left-0 right-0 top-full mt-1 bg-white border rounded-lg shadow-xl z-50 max-h-60 flex flex-col">
+          <div className="absolute left-0 right-0 top-full mt-1 bg-popover border rounded-lg shadow-xl z-50 max-h-60 flex flex-col">
             <div className="p-2 border-b shrink-0">
               <div className="relative">
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
-                <input autoFocus className="w-full h-8 border rounded px-2.5 pl-8 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
-                  placeholder="Search or add supplier..." value={search} onChange={e => { setSearch(e.target.value); setAddError('') }} />
+                <input autoFocus className="w-full h-8 border rounded px-2.5 pl-8 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                  placeholder="Search or add supplier…" value={search} onChange={e => { setSearch(e.target.value); setAddError('') }} />
               </div>
-              {addError && <p className="text-xs text-red-600 mt-1.5">{addError}</p>}
+              {addError && <p className="text-xs text-destructive mt-1.5">{addError}</p>}
             </div>
             <div className="overflow-y-auto">
               {opts.length === 0 && !q && (
@@ -188,16 +187,16 @@ export function SupplierCombobox({ value, suppliers, onChange, onAdded }: {
               )}
               {opts.map(s => (
                 <button key={s.id} type="button" onClick={() => { onChange(s.name, s.id); setOpen(false); setSearch('') }}
-                  className="w-full text-left px-3 py-2 text-sm hover:bg-amber-50 flex items-center gap-2 transition-colors">
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-warning/10 flex items-center gap-2 transition-colors">
                   <Building2 className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                   {s.name}
                 </button>
               ))}
               {q && !exactMatch && (
                 <button type="button" onClick={addNew} disabled={adding}
-                  className="w-full text-left px-3 py-2.5 text-sm text-amber-700 hover:bg-amber-50 flex items-center gap-2 border-t transition-colors disabled:opacity-50">
+                  className="w-full text-left px-3 py-2.5 text-sm text-warning hover:bg-warning/10 flex items-center gap-2 border-t transition-colors disabled:opacity-50">
                   <Plus className="h-3.5 w-3.5 shrink-0" />
-                  {adding ? 'Adding...' : <>Add &ldquo;{search.trim()}&rdquo; as new supplier</>}
+                  {adding ? 'Adding…' : <>Add &ldquo;{search.trim()}&rdquo; as new supplier</>}
                 </button>
               )}
             </div>
@@ -228,26 +227,26 @@ export function ReimburseAccountCombobox({ accounts, onPick }: {
   return (
     <div className="relative">
       <button type="button" onClick={() => { setOpen(o => !o); setSearch('') }}
-        className="w-full h-9 border rounded-md px-3 text-sm text-left flex items-center justify-between bg-white focus:outline-none focus:ring-1 focus:ring-amber-500 transition-colors">
-        <span className="text-muted-foreground">Pick a saved account...</span>
+        className="w-full h-9 border rounded-md px-3 text-sm text-left flex items-center justify-between bg-card focus:outline-none focus:ring-1 focus:ring-ring transition-colors">
+        <span className="text-muted-foreground">Pick a saved account…</span>
         <Banknote className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
       </button>
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute left-0 right-0 top-full mt-1 bg-white border rounded-lg shadow-xl z-50 max-h-60 flex flex-col">
+          <div className="absolute left-0 right-0 top-full mt-1 bg-popover border rounded-lg shadow-xl z-50 max-h-60 flex flex-col">
             <div className="p-2 border-b shrink-0">
               <div className="relative">
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
-                <input autoFocus className="w-full h-8 border rounded px-2.5 pl-8 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
-                  placeholder="Search saved accounts..." value={search} onChange={e => setSearch(e.target.value)} />
+                <input autoFocus className="w-full h-8 border rounded px-2.5 pl-8 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                  placeholder="Search saved accounts…" value={search} onChange={e => setSearch(e.target.value)} />
               </div>
             </div>
             <div className="overflow-y-auto">
               {opts.length === 0 && <p className="px-3 py-3 text-sm text-muted-foreground">No matches</p>}
               {opts.map(a => (
                 <button key={a.id} type="button" onClick={() => { onPick(a); setOpen(false); setSearch('') }}
-                  className="w-full text-left px-3 py-2 text-sm hover:bg-amber-50 transition-colors">
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-warning/10 transition-colors">
                   <p className="font-medium">{a.accountHolderName}</p>
                   <p className="text-xs text-muted-foreground">{a.bankName} · {a.accountNumber}</p>
                 </button>
@@ -272,19 +271,19 @@ export function EmployeeCombobox({ value, employees, onChange }: {
   return (
     <div className="relative">
       <button type="button" onClick={() => { setOpen(o => !o); setSearch('') }}
-        className="w-full h-9 border rounded-md px-3 text-sm text-left flex items-center justify-between bg-white focus:outline-none focus:ring-1 focus:ring-amber-500 transition-colors">
-        <span className={selected ? '' : 'text-muted-foreground'}>{selected ? selected.fullName : 'Select employee (optional)...'}</span>
+        className="w-full h-9 border rounded-md px-3 text-sm text-left flex items-center justify-between bg-card focus:outline-none focus:ring-1 focus:ring-ring transition-colors">
+        <span className={selected ? '' : 'text-muted-foreground'}>{selected ? selected.fullName : 'Select employee (optional)…'}</span>
         <Users className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
       </button>
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute left-0 right-0 top-full mt-1 bg-white border rounded-lg shadow-xl z-50 max-h-60 flex flex-col">
+          <div className="absolute left-0 right-0 top-full mt-1 bg-popover border rounded-lg shadow-xl z-50 max-h-60 flex flex-col">
             <div className="p-2 border-b shrink-0">
               <div className="relative">
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
-                <input autoFocus className="w-full h-8 border rounded px-2.5 pl-8 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
-                  placeholder="Search employee..." value={search} onChange={e => setSearch(e.target.value)} />
+                <input autoFocus className="w-full h-8 border rounded px-2.5 pl-8 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                  placeholder="Search employee…" value={search} onChange={e => setSearch(e.target.value)} />
               </div>
             </div>
             <div className="overflow-y-auto">
@@ -299,7 +298,7 @@ export function EmployeeCombobox({ value, employees, onChange }: {
               )}
               {opts.map(e => (
                 <button key={e.id} type="button" onClick={() => { onChange(e.id); setOpen(false); setSearch('') }}
-                  className="w-full text-left px-3 py-2 text-sm hover:bg-amber-50 flex items-start gap-2 transition-colors">
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-warning/10 flex items-start gap-2 transition-colors">
                   <Users className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-0.5" />
                   <span className="min-w-0">
                     <span className="block truncate">{e.fullName}</span>
@@ -375,7 +374,7 @@ function ItemPickerCell({ idx, line, locked, purchaseItems, historicalCustomItem
         className={`${inp} text-left flex items-center gap-2 ${!line.itemName ? 'text-muted-foreground' : ''}`}>
         {line.itemName
           ? <><Package className="h-3.5 w-3.5 text-muted-foreground shrink-0" /><span className="flex-1 truncate">{line.itemName}</span></>
-          : <><Search className="h-3.5 w-3.5 shrink-0" /><span>Select item...</span></>
+          : <><Search className="h-3.5 w-3.5 shrink-0" /><span>Select item…</span></>
         }
       </button>
     )
@@ -386,7 +385,7 @@ function ItemPickerCell({ idx, line, locked, purchaseItems, historicalCustomItem
   return (
     <div ref={wrapRef} className="relative">
       <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
-      <input autoFocus className={`${inp} pl-8`} placeholder="Search item..."
+      <input autoFocus className={`${inp} pl-8`} placeholder="Search item…"
         value={line.search}
         onChange={e => setLines(l => l.map((li, i) => i !== idx ? li : { ...li, search: e.target.value }))}
         onKeyDown={e => {
@@ -402,18 +401,18 @@ function ItemPickerCell({ idx, line, locked, purchaseItems, historicalCustomItem
       {pos && createPortal(
         <>
           <div className="fixed inset-0 z-40" onClick={close} />
-          <div className="fixed z-50 bg-white border rounded-lg shadow-xl max-h-52 overflow-y-auto"
+          <div className="fixed z-50 bg-popover border rounded-lg shadow-xl max-h-52 overflow-y-auto"
             style={{ top: pos.top + 2, left: pos.left, width: pos.width }}>
             {sugg.length === 0 ? (
               <p className="px-3 py-3 text-sm text-muted-foreground">No items found</p>
             ) : sugg.map(item => (
               <button key={item.id} onClick={() => pickItem(idx, item)}
-                className="w-full text-left px-3 py-2.5 text-sm hover:bg-amber-50 flex items-center gap-2.5 border-b last:border-0 transition-colors">
+                className="w-full text-left px-3 py-2.5 text-sm hover:bg-warning/10 flex items-center gap-2.5 border-b last:border-0 transition-colors">
                 <Package className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                 <span className="font-medium flex-1">{item.name}</span>
                 <span className="text-muted-foreground text-xs font-mono">{item.sku}</span>
                 <span className="text-muted-foreground text-xs">{item.baseUnit}</span>
-                {item.avgPrice > 0 && <span className="text-xs text-amber-700 font-medium">{fmtMoney(item.avgPrice)}</span>}
+                {item.avgPrice > 0 && <span className="text-xs text-warning font-medium">{formatMoney(item.avgPrice)}</span>}
               </button>
             ))}
             {customSugg.length > 0 && (
@@ -421,7 +420,7 @@ function ItemPickerCell({ idx, line, locked, purchaseItems, historicalCustomItem
                 <p className="px-3 pt-2 pb-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">Previously used (non-stock)</p>
                 {customSugg.map(c => (
                   <button key={c.name} onClick={() => pickCustomItem(idx, c.name, c.unit)}
-                    className="w-full text-left px-3 py-2.5 text-sm hover:bg-amber-50 flex items-center gap-2.5 border-b last:border-0 transition-colors">
+                    className="w-full text-left px-3 py-2.5 text-sm hover:bg-warning/10 flex items-center gap-2.5 border-b last:border-0 transition-colors">
                     <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                     <span className="font-medium flex-1">{c.name}</span>
                     {c.unit && <span className="text-muted-foreground text-xs">{c.unit}</span>}
@@ -433,10 +432,10 @@ function ItemPickerCell({ idx, line, locked, purchaseItems, historicalCustomItem
               && !purchaseItems.some(i => i.name.toLowerCase() === line.search.trim().toLowerCase())
               && !historicalCustomItems.some(c => c.name.toLowerCase() === line.search.trim().toLowerCase()) && (
               <button onClick={() => pickCustomItem(idx, line.search)}
-                className="w-full text-left px-3 py-2.5 text-sm hover:bg-green-50 flex items-center gap-2.5 border-t transition-colors">
-                <Plus className="h-3.5 w-3.5 text-green-600 shrink-0" />
-                <span className="font-medium text-green-700 flex-1">Use &quot;{line.search.trim()}&quot;</span>
-                <span className="text-xs text-green-600">Not in master list</span>
+                className="w-full text-left px-3 py-2.5 text-sm hover:bg-success/10 flex items-center gap-2.5 border-t transition-colors">
+                <Plus className="h-3.5 w-3.5 text-success shrink-0" />
+                <span className="font-medium text-success flex-1">Use &quot;{line.search.trim()}&quot;</span>
+                <span className="text-xs text-success">Not in master list</span>
               </button>
             )}
           </div>
@@ -460,13 +459,13 @@ function PoPreview({ order: o, onOpen, onClose, sheet = false }: { order: Purcha
     </div>
   )
   return (
-    <div className={`bg-white border shadow-sm flex flex-col min-h-0 ${sheet ? 'rounded-t-2xl max-h-[88vh]' : 'rounded-xl max-h-[calc(100vh-5rem)]'}`}>
+    <div className={`bg-card border shadow-sm flex flex-col min-h-0 ${sheet ? 'rounded-t-2xl max-h-[88vh]' : 'rounded-xl max-h-[calc(100vh-5rem)]'}`}>
       <div className="flex items-start justify-between gap-3 px-4 py-3 border-b shrink-0">
         <div className="min-w-0">
           <p className="font-mono text-sm font-semibold">{o.poNumber}</p>
           <div className="flex flex-wrap items-center gap-1.5 mt-1">
-            <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${STATUS_COLOR[o.status] ?? ''}`}>{o.currentLegLabel ?? STATUS_LABEL[o.status] ?? o.status}</span>
-            <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium whitespace-nowrap ${PAYMENT_STATUS_COLOR[o.paymentStatus] ?? ''}`}>{PAYMENT_STATUS_LABEL[o.paymentStatus] ?? o.paymentStatus}</span>
+            <StatusBadge tone={STATUS_TONE[o.status]} size="sm">{o.currentLegLabel ?? STATUS_LABEL[o.status] ?? o.status}</StatusBadge>
+            <StatusBadge tone={PAYMENT_STATUS_TONE[o.paymentStatus]} size="sm">{PAYMENT_STATUS_LABEL[o.paymentStatus] ?? o.paymentStatus}</StatusBadge>
           </div>
         </div>
         <button onClick={onClose} className="p-1 text-muted-foreground hover:text-foreground transition-colors shrink-0"><X className="h-4 w-4" /></button>
@@ -491,7 +490,7 @@ function PoPreview({ order: o, onOpen, onClose, sheet = false }: { order: Purcha
           ) : '—')}
           {row('Supplier', o.supplierName ?? <span className="italic text-muted-foreground">TBD</span>)}
           {o.trip && row('Trip', <span className="text-xs">{tripShortLabel(o.trip)} · {tripDates(o.trip)}</span>)}
-          {row('Ordered', <span className="text-xs">{fmtDate(o.orderedAt)}{o.expectedAt && <span className="text-muted-foreground"> · expected {fmtDate(o.expectedAt)}</span>}</span>)}
+          {row('Ordered', <span className="text-xs">{formatDate(o.orderedAt)}{o.expectedAt && <span className="text-muted-foreground"> · expected {formatDate(o.expectedAt)}</span>}</span>)}
           {row('PO by', <span className="text-xs">{o.createdByName ?? '—'}</span>)}
         </div>
 
@@ -506,14 +505,14 @@ function PoPreview({ order: o, onOpen, onClose, sheet = false }: { order: Purcha
                     <div className="min-w-0 flex-1">
                       <p className="text-xs font-medium leading-snug">{i.itemName}</p>
                       <p className="text-[11px] text-muted-foreground">
-                        {fmtMoney(i.unitCost)} / {i.unit ?? 'unit'}
-                        {poLineDiscount(i) > 0 && <span className="text-green-700"> · disc {i.discountType === 'PERCENT' ? `${i.discountValue}%` : fmtMoney(poLineDiscount(i))}</span>}
+                        {formatMoney(i.unitCost)} / {i.unit ?? 'unit'}
+                        {poLineDiscount(i) > 0 && <span className="text-success"> · disc {i.discountType === 'PERCENT' ? `${i.discountValue}%` : formatMoney(poLineDiscount(i))}</span>}
                       </p>
                     </div>
                     <div className="text-right shrink-0">
                       <p className="text-xs font-semibold tabular-nums">{i.orderedQty}{i.unit ? ` ${i.unit}` : ''}</p>
                       {received > 0 && (
-                        <p className={`text-[10px] tabular-nums ${received >= i.orderedQty ? 'text-green-700' : 'text-orange-600'}`}>recv {received}/{i.orderedQty}</p>
+                        <p className={`text-[10px] tabular-nums ${received >= i.orderedQty ? 'text-success' : 'text-warning'}`}>recv {received}/{i.orderedQty}</p>
                       )}
                     </div>
                   </div>
@@ -524,7 +523,7 @@ function PoPreview({ order: o, onOpen, onClose, sheet = false }: { order: Purcha
           {total > 0 && (
             <div className="flex items-center justify-between pt-2 text-xs">
               <span className="text-muted-foreground">Items total</span>
-              <span className="font-semibold tabular-nums">{fmtMoney(total)}</span>
+              <span className="font-semibold tabular-nums">{formatMoney(total)}</span>
             </div>
           )}
         </div>
@@ -538,7 +537,7 @@ function PoPreview({ order: o, onOpen, onClose, sheet = false }: { order: Purcha
       </div>
 
       <div className="p-3 border-t shrink-0">
-        <button onClick={onOpen} className="w-full flex items-center justify-center gap-1.5 h-10 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold transition-colors">
+        <button onClick={onOpen} className="w-full flex items-center justify-center gap-1.5 h-10 rounded-lg bg-primary hover:bg-primary-hover text-primary-foreground text-sm font-semibold transition-colors">
           Open full detail <ChevronRight className="h-4 w-4" />
         </button>
       </div>
@@ -928,7 +927,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
     const res = await fetch(`/api/purchasing/orders/${detail.id}/receive-link`, { method: 'POST' })
     const data = await res.json()
     setReceiveLinkLoading(false)
-    if (!res.ok) { setReceiveLinkError(data.error ?? 'Gagal membuat link'); return }
+    if (!res.ok) { setReceiveLinkError(data.error ?? 'Failed to create link'); return }
     setReceiveLink(data.link)
   }
 
@@ -948,10 +947,10 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
   async function submitReceive() {
     if (!detail) return
     setReceiveSaving(true); setReceiveError('')
-    if (!receiveLocation) { setReceiveError('Delivery location PO tidak ditemukan'); setReceiveSaving(false); return }
-    if (!receivePhoto) { setReceiveError('Foto bukti penerimaan barang wajib diupload'); setReceiveSaving(false); return }
+    if (!receiveLocation) { setReceiveError('PO delivery location not found'); setReceiveSaving(false); return }
+    if (!receivePhoto) { setReceiveError('Proof photo of received items is required'); setReceiveSaving(false); return }
     const validLines = receiveLines.filter(l => l.receivedQty > 0)
-    if (!validLines.length) { setReceiveError('Masukkan jumlah barang yang diterima'); setReceiveSaving(false); return }
+    if (!validLines.length) { setReceiveError('Enter the quantity received'); setReceiveSaving(false); return }
     const res = await fetch('/api/purchasing/receipts', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ orderId: detail.id, locationId: receiveLocation, notes: receiveNotes, receivePhotoKey: receivePhoto, receiverName: receiverName.trim() || undefined, items: validLines }),
@@ -1009,7 +1008,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">{visibleOrders.length} purchase order</p>
         {!warehouseView && (
-          <button onClick={() => { resetOrderForm(); setView('create') }} className="flex items-center gap-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium px-4 py-2 rounded-md transition-colors">
+          <button onClick={() => { resetOrderForm(); setView('create') }} className="flex items-center gap-2 bg-primary hover:bg-primary-hover text-primary-foreground text-sm font-medium px-4 py-2 rounded-md transition-colors">
             <Plus className="h-4 w-4" /> Create PO
           </button>
         )}
@@ -1019,7 +1018,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
           <button
             key={t.key}
             onClick={() => { setStatusTab(t.key); setCardPage(1) }}
-            className={`shrink-0 px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${statusTab === t.key ? 'border-amber-600 text-amber-700' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+            className={`shrink-0 px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${statusTab === t.key ? 'border-primary text-primary-strong' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
           >
             {t.label} <span className="text-xs">({t.count})</span>
           </button>
@@ -1032,26 +1031,26 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
           <input
-            className="h-9 w-full border rounded-md pl-9 pr-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500 transition-colors"
-            placeholder="Search item..."
+            className="h-9 w-full border rounded-md pl-9 pr-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-ring transition-colors"
+            placeholder="Search item…"
             value={itemSearch}
             onChange={e => { setItemSearch(e.target.value); setCardPage(1) }}
           />
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-        <select className="h-9 w-full border rounded-md px-2.5 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500 transition-colors" value={filterSupplier} onChange={e => { setFilterSupplier(e.target.value); setCardPage(1) }}>
+        <select className="h-9 w-full border rounded-md px-2.5 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-ring transition-colors" value={filterSupplier} onChange={e => { setFilterSupplier(e.target.value); setCardPage(1) }}>
           <option value="">All suppliers</option>
           {supplierOptions.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
-        <select className="h-9 w-full border rounded-md px-2.5 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500 transition-colors" value={filterDestination} onChange={e => { setFilterDestination(e.target.value); setCardPage(1) }}>
+        <select className="h-9 w-full border rounded-md px-2.5 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-ring transition-colors" value={filterDestination} onChange={e => { setFilterDestination(e.target.value); setCardPage(1) }}>
           <option value="">All destinations</option>
           {destinationOptions.map(d => <option key={d} value={d}>{d}</option>)}
         </select>
-        <select className="h-9 w-full border rounded-md px-2.5 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500 transition-colors" value={filterRequestedBy} onChange={e => { setFilterRequestedBy(e.target.value); setCardPage(1) }}>
+        <select className="h-9 w-full border rounded-md px-2.5 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-ring transition-colors" value={filterRequestedBy} onChange={e => { setFilterRequestedBy(e.target.value); setCardPage(1) }}>
           <option value="">All requesters</option>
           {requestedByOptions.map(r => <option key={r} value={r}>{r}</option>)}
         </select>
-        <input type="date" className="h-9 w-full border rounded-md px-2.5 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500 transition-colors" value={filterDate} onChange={e => { setFilterDate(e.target.value); setCardPage(1) }} />
+        <input type="date" className="h-9 w-full border rounded-md px-2.5 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-ring transition-colors" value={filterDate} onChange={e => { setFilterDate(e.target.value); setCardPage(1) }} />
         {hasActiveFilters && (
           <button
             onClick={() => { setFilterSupplier(''); setFilterDestination(''); setFilterRequestedBy(''); setFilterDate(''); setItemSearch(''); setCardPage(1) }}
@@ -1075,7 +1074,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
             ))
           ) : visibleOrders.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground text-sm border rounded-lg">
-              {hasActiveFilters ? 'No matching purchase orders.' : warehouseView ? 'Tidak ada PO yang perlu diproses.' : 'No POs yet.'}
+              {hasActiveFilters ? 'No matching purchase orders.' : warehouseView ? 'No POs to process.' : 'No POs yet.'}
             </div>
           ) : cardPageOrders.map(o => {
             const selected = preview?.id === o.id
@@ -1084,13 +1083,13 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                 key={o.id}
                 onClick={() => setPreviewOrder(selected ? null : o)}
                 onDoubleClick={() => openDetail(o)}
-                className={`w-full text-left rounded-lg border bg-white p-3 space-y-1.5 transition-colors ${selected ? 'border-amber-500 ring-1 ring-amber-500 bg-amber-50/40' : 'hover:bg-muted/30 active:bg-muted/50'}`}
+                className={`w-full text-left rounded-lg border bg-card p-3 space-y-1.5 transition-colors ${selected ? 'border-warning ring-1 ring-warning bg-warning/5' : 'hover:bg-muted/30 active:bg-muted/50'}`}
               >
                 <div className="flex items-center justify-between gap-2">
                   <span className="font-mono text-xs font-semibold">{o.poNumber}</span>
                   <div className="flex items-center gap-1.5 shrink-0">
-                    <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${STATUS_COLOR[o.status] ?? ''}`}>{o.currentLegLabel ?? STATUS_LABEL[o.status] ?? o.status}</span>
-                    <span className="text-xs text-muted-foreground hidden sm:inline">{fmtDate(o.orderedAt)}</span>
+                    <StatusBadge tone={STATUS_TONE[o.status]} size="sm">{o.currentLegLabel ?? STATUS_LABEL[o.status] ?? o.status}</StatusBadge>
+                    <span className="text-xs text-muted-foreground hidden sm:inline">{formatDate(o.orderedAt)}</span>
                   </div>
                 </div>
                 <p className="text-xs truncate">
@@ -1110,9 +1109,9 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                   </span>
                   <span className="flex items-center gap-1 shrink-0">
                     {o.paymentStatus === 'PAID' && o.status === 'ORDERED' && (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-100 text-blue-700 whitespace-nowrap hidden sm:inline">Needs to be Delivered</span>
+                      <StatusBadge tone="info" size="sm" className="font-semibold hidden sm:inline-flex">Needs to be Delivered</StatusBadge>
                     )}
-                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium whitespace-nowrap ${PAYMENT_STATUS_COLOR[o.paymentStatus] ?? ''}`}>{PAYMENT_STATUS_LABEL[o.paymentStatus] ?? o.paymentStatus}</span>
+                    <StatusBadge tone={PAYMENT_STATUS_TONE[o.paymentStatus]} size="sm">{PAYMENT_STATUS_LABEL[o.paymentStatus] ?? o.paymentStatus}</StatusBadge>
                   </span>
                 </div>
               </button>
@@ -1187,7 +1186,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
     const discountAmount = Math.min(itemsTotal, discountType === 'PERCENT' ? itemsTotal * (discountValue / 100) : discountValue)
     const afterDiscount = itemsTotal - discountAmount
     const total = afterDiscount + chargesTotal
-    const inp = 'w-full h-9 border rounded-md px-3 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white transition-colors disabled:opacity-60 disabled:cursor-not-allowed'
+    const inp = 'w-full h-9 border rounded-md px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring bg-card transition-colors disabled:opacity-60 disabled:cursor-not-allowed'
     // Non-stock items (custom PO lines with no itemId) aren't in the master
     // catalog, so they'd normally have to be retyped from scratch every time —
     // surfacing names already used on past POs lets a repeat non-stock buy
@@ -1198,14 +1197,14 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
     return (
       <>
         {/* Order Info */}
-        <div className="rounded-xl border bg-white">
+        <div className="rounded-xl border bg-card">
           <div className="px-5 py-4 border-b">
             <h3 className="text-sm font-semibold">Order Info</h3>
           </div>
           <div className="p-5 space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
-                <label className="text-sm font-medium">Supplier <span className="text-red-500">*</span></label>
+                <label className="text-sm font-medium">Supplier <span className="text-destructive">*</span></label>
                 <SupplierCombobox
                   value={supplier}
                   suppliers={suppliers}
@@ -1232,7 +1231,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                 <input type="date" className={inp} value={expectedAt} onChange={e => setExpectedAt(e.target.value)} />
               </div>
               <div className="space-y-1.5">
-                <label className="text-sm font-medium">Requested By <span className="text-red-500">*</span></label>
+                <label className="text-sm font-medium">Requested By <span className="text-destructive">*</span></label>
                 <EmployeeCombobox value={requestedByEmployeeId} employees={employees} onChange={setRequestedByEmployeeId} />
                 {requestedByEmployeeId && (() => {
                   const emp = employees.find(e => e.id === requestedByEmployeeId)
@@ -1255,7 +1254,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
             <div className="space-y-1.5">
               <label className="text-sm font-medium text-muted-foreground">Shipping Route <span className="font-normal">(optional — routes goods through one or more transit stops before Delivery Location)</span></label>
               {routeLocked && (
-                <div className="flex items-center gap-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+                <div className="flex items-center gap-2 text-xs text-warning bg-warning/10 border border-warning/30 rounded-md px-3 py-2">
                   <Lock className="h-3.5 w-3.5 shrink-0" /> Route is locked — this PO has already been dispatched.
                 </div>
               )}
@@ -1276,14 +1275,14 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                               onClick={() => setTransitStopIds(ids => { const next = [...ids];[next[idx + 1], next[idx]] = [next[idx], next[idx + 1]]; return next })}
                               className="text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed px-1">↓</button>
                             <button type="button" onClick={() => setTransitStopIds(ids => ids.filter(id => id !== locId))}
-                              className="text-red-500 hover:text-red-700 px-1"><X className="h-3.5 w-3.5" /></button>
+                              className="text-destructive hover:text-destructive/80 px-1"><X className="h-3.5 w-3.5" /></button>
                           </>
                         )}
                       </div>
                     )
                   })}
                   <p className="text-xs text-muted-foreground">
-                    Final destination: <span className="font-medium">{locations.find(l => l.id === deliveryLocationId)?.name ?? '— pilih Delivery Location —'}</span>
+                    Final destination: <span className="font-medium">{locations.find(l => l.id === deliveryLocationId)?.name ?? '— select Delivery Location —'}</span>
                   </p>
                 </div>
               )}
@@ -1298,7 +1297,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
 
             <div className="space-y-1.5">
               <label className="text-sm font-medium text-muted-foreground">Notes <span className="font-normal">(optional)</span></label>
-              <textarea className="w-full border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white resize-none transition-colors"
+              <textarea className="w-full border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring bg-card resize-none transition-colors"
                 rows={2} placeholder="Payment terms, delivery instructions, etc."
                 value={notes} onChange={e => setNotes(e.target.value)} />
             </div>
@@ -1306,7 +1305,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
         </div>
 
         {/* Line items */}
-        <div className="rounded-xl border bg-white">
+        <div className="rounded-xl border bg-card">
           <div className="flex items-center justify-between px-5 py-4 border-b rounded-t-xl">
             <h3 className="text-sm font-semibold">Items</h3>
             {!locked && (
@@ -1315,12 +1314,12 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                   onChange={e => { const f = e.target.files?.[0]; if (f) importInvoice(f) }} />
                 <button onClick={() => invoiceInputRef.current?.click()} disabled={importingInvoice}
                   title="Upload a supplier invoice or quotation (photo/PDF) — items & prices are filled in automatically"
-                  className="flex items-center gap-1.5 text-xs font-semibold text-violet-700 hover:text-violet-900 border border-violet-200 bg-violet-50 hover:bg-violet-100 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-60">
+                  className="flex items-center gap-1.5 text-xs font-semibold text-violet-700 hover:text-violet-900 border border-violet-200 bg-violet-50 hover:bg-violet-100 dark:text-violet-300 dark:hover:text-violet-200 dark:border-violet-500/30 dark:bg-violet-500/10 dark:hover:bg-violet-500/20 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-60">
                   {importingInvoice ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
                   {importingInvoice ? 'Reading invoice…' : 'Import from Invoice'}
                 </button>
                 <button onClick={addLine}
-                  className="flex items-center gap-1.5 text-xs font-semibold text-amber-700 hover:text-amber-900 border border-amber-200 bg-amber-50 hover:bg-amber-100 px-3 py-1.5 rounded-lg transition-colors">
+                  className="flex items-center gap-1.5 text-xs font-semibold text-warning hover:text-warning/80 border border-warning/30 bg-warning/10 hover:bg-warning/20 px-3 py-1.5 rounded-lg transition-colors">
                   <Plus className="h-3.5 w-3.5" /> Add Row
                 </button>
               </div>
@@ -1328,7 +1327,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
           </div>
 
           {locked && (
-            <div className="flex items-center gap-2 px-5 py-2.5 bg-amber-50 border-b text-xs text-amber-800">
+            <div className="flex items-center gap-2 px-5 py-2.5 bg-warning/10 border-b text-xs text-warning">
               <Lock className="h-3.5 w-3.5 shrink-0" /> Items &amp; pricing are locked — this PO already has receipts or payment records.
             </div>
           )}
@@ -1383,7 +1382,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                           <div className="flex rounded-md border overflow-hidden h-9">
                             {[line.purchaseUnit, line.baseUnit].map(u => (
                               <button key={u} disabled={locked} onClick={() => setLines(l => l.map((li, i) => i !== idx ? li : { ...li, itemUnit: u }))}
-                                className={`flex-1 text-xs font-medium px-2 transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${line.itemUnit === u ? 'bg-amber-500 text-white' : 'text-muted-foreground hover:bg-muted'}`}>
+                                className={`flex-1 text-xs font-medium px-2 transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${line.itemUnit === u ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}>
                                 {u}
                               </button>
                             ))}
@@ -1416,7 +1415,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                           {(['PERCENT', 'FIXED'] as const).map(t => (
                             <button key={t} type="button" disabled={locked}
                               onClick={() => setLines(l => l.map((li, i) => i !== idx ? li : { ...li, discountType: t }))}
-                              className={`px-2 text-xs font-medium transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${(line.discountType ?? 'PERCENT') === t ? 'bg-amber-500 text-white' : 'text-muted-foreground hover:bg-muted bg-white'}`}>
+                              className={`px-2 text-xs font-medium transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${(line.discountType ?? 'PERCENT') === t ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted bg-card'}`}>
                               {t === 'PERCENT' ? '%' : 'Rp'}
                             </button>
                           ))}
@@ -1458,15 +1457,15 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                     <td className="px-4 py-2.5 text-right font-semibold whitespace-nowrap">
                       {gross > 0 ? (
                         <>
-                          {subtotal < gross && <span className="block text-[11px] font-normal text-muted-foreground line-through">{fmtMoney(gross)}</span>}
-                          {fmtMoney(subtotal)}
+                          {subtotal < gross && <span className="block text-[11px] font-normal text-muted-foreground line-through">{formatMoney(gross)}</span>}
+                          {formatMoney(subtotal)}
                         </>
                       ) : <span className="text-muted-foreground font-normal">—</span>}
                     </td>
                     <td className="px-2 py-2.5 text-center">
                       {!locked && (
                         <button onClick={() => removeLine(idx)} disabled={lines.length === 1}
-                          className="p-1.5 text-muted-foreground/40 hover:text-red-500 hover:bg-red-50 rounded-md transition-colors disabled:opacity-0 disabled:pointer-events-none">
+                          className="p-1.5 text-muted-foreground/40 hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors disabled:opacity-0 disabled:pointer-events-none">
                           <Trash2 className="h-3.5 w-3.5" />
                         </button>
                       )}
@@ -1480,14 +1479,14 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
           <div className="px-5 py-4 bg-muted/20 border-t space-y-2.5">
             <div className="flex items-center justify-between">
               <span className="text-sm text-muted-foreground">{lines.length} item{lines.length > 1 ? 's' : ''}</span>
-              <span className="text-sm text-muted-foreground">Subtotal <span className="ml-3 text-foreground font-medium">{fmtMoney(itemsTotal)}</span></span>
+              <span className="text-sm text-muted-foreground">Subtotal <span className="ml-3 text-foreground font-medium">{formatMoney(itemsTotal)}</span></span>
             </div>
 
             {extraCharges.map((c, i) => (
               <div key={i} className="flex items-center justify-end gap-2">
                 <input
                   disabled={locked}
-                  className="h-8 w-48 border rounded-md px-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white disabled:opacity-60"
+                  className="h-8 w-48 border rounded-md px-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-ring bg-card disabled:opacity-60"
                   placeholder="e.g. VAT, MOQ Fee 15%"
                   value={c.label}
                   onChange={e => updateCharge(i, { label: e.target.value })}
@@ -1495,13 +1494,13 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                 <input
                   disabled={locked}
                   type="number" step="any"
-                  className="h-8 w-32 border rounded-md px-2.5 text-xs text-right focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white disabled:opacity-60 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  className="h-8 w-32 border rounded-md px-2.5 text-xs text-right focus:outline-none focus:ring-1 focus:ring-ring bg-card disabled:opacity-60 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                   placeholder="0"
                   value={c.amount || ''}
                   onChange={e => updateCharge(i, { amount: Number(e.target.value) || 0 })}
                 />
                 {!locked && (
-                  <button onClick={() => removeCharge(i)} className="p-1.5 text-muted-foreground/40 hover:text-red-500 hover:bg-red-50 rounded-md transition-colors">
+                  <button onClick={() => removeCharge(i)} className="p-1.5 text-muted-foreground/40 hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors">
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
                 )}
@@ -1511,7 +1510,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
             {!locked && (
               <div className="flex justify-end">
                 <button onClick={addCharge}
-                  className="flex items-center gap-1.5 text-xs font-semibold text-amber-700 hover:text-amber-900 border border-amber-200 bg-amber-50 hover:bg-amber-100 px-3 py-1.5 rounded-lg transition-colors">
+                  className="flex items-center gap-1.5 text-xs font-semibold text-warning hover:text-warning/80 border border-warning/30 bg-warning/10 hover:bg-warning/20 px-3 py-1.5 rounded-lg transition-colors">
                   <Plus className="h-3.5 w-3.5" /> Add Pricing (Tax, Fee, etc.)
                 </button>
               </div>
@@ -1521,24 +1520,24 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
               <span className="text-xs text-muted-foreground">Discount</span>
               <div className="flex rounded-md border overflow-hidden h-8">
                 <button type="button" disabled={locked} onClick={() => setDiscountType('PERCENT')}
-                  className={`px-2.5 text-xs font-medium transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${discountType === 'PERCENT' ? 'bg-amber-500 text-white' : 'text-muted-foreground hover:bg-muted'}`}>%</button>
+                  className={`px-2.5 text-xs font-medium transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${discountType === 'PERCENT' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}>%</button>
                 <button type="button" disabled={locked} onClick={() => setDiscountType('FIXED')}
-                  className={`px-2.5 text-xs font-medium transition-colors border-l disabled:opacity-60 disabled:cursor-not-allowed ${discountType === 'FIXED' ? 'bg-amber-500 text-white' : 'text-muted-foreground hover:bg-muted'}`}>Rp</button>
+                  className={`px-2.5 text-xs font-medium transition-colors border-l disabled:opacity-60 disabled:cursor-not-allowed ${discountType === 'FIXED' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}>Rp</button>
               </div>
               <input
                 disabled={locked}
                 type="number" step="any" min={0}
-                className="h-8 w-32 border rounded-md px-2.5 text-xs text-right focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white disabled:opacity-60 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                className="h-8 w-32 border rounded-md px-2.5 text-xs text-right focus:outline-none focus:ring-1 focus:ring-ring bg-card disabled:opacity-60 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 placeholder="0"
                 value={discountValue || ''}
                 onChange={e => setDiscountValue(Number(e.target.value) || 0)}
               />
-              {discountAmount > 0 && <span className="text-xs text-muted-foreground w-32 text-right">-{fmtMoney(discountAmount)}</span>}
+              {discountAmount > 0 && <span className="text-xs text-muted-foreground w-32 text-right">-{formatMoney(discountAmount)}</span>}
             </div>
 
             <div className="flex items-center justify-between pt-2 border-t">
               <span className="text-sm text-muted-foreground">Order Total</span>
-              <span className="text-lg font-bold">{fmtMoney(total)}</span>
+              <span className="text-lg font-bold">{formatMoney(total)}</span>
             </div>
           </div>
         </div>
@@ -1556,15 +1555,15 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
           <span className="text-sm font-medium">Create Purchase Order</span>
         </div>
 
-        {saveError && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3">{saveError}</div>}
+        {saveError && <div className="rounded-lg bg-destructive/10 border border-destructive/30 text-destructive text-sm px-4 py-3">{saveError}</div>}
 
         {renderOrderFormFields()}
 
         <div className="flex justify-end gap-3 pb-4">
           <button onClick={() => setView('list')} className="px-5 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">Cancel</button>
           <button onClick={submit} disabled={saving}
-            className="flex items-center gap-2 px-6 py-2 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50 font-semibold transition-colors">
-            {saving ? <><div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Saving...</> : 'Create PO'}
+            className="flex items-center gap-2 px-6 py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary-hover disabled:opacity-50 font-semibold transition-colors">
+            {saving ? <><div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Saving…</> : 'Create PO'}
           </button>
         </div>
       </div>
@@ -1621,7 +1620,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
   async function submitLegAction() {
     if (!legActionModal) return
     const { leg, action } = legActionModal
-    if (!legPhoto) { setLegError('Foto wajib diupload'); return }
+    if (!legPhoto) { setLegError('Photo is required'); return }
     setLegSaving(true); setLegError('')
     const items = leg.items.map(i => ({
       itemId: i.itemId, itemName: i.itemName,
@@ -1703,7 +1702,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
   async function submitPaymentRequest() {
     if (!detail) return
     if (!paymentAmount || Number(paymentAmount) <= 0) { setPaymentError('Amount must be greater than 0'); return }
-    if (paymentPhotos.length === 0) { setPaymentError('At least one receipt/nota photo is required'); return }
+    if (paymentPhotos.length === 0) { setPaymentError('At least one receipt photo is required'); return }
     setPaymentSaving(true); setPaymentError('')
     const url = paymentEditId
       ? `/api/purchasing/orders/${detail.id}/payment-request/${paymentEditId}`
@@ -1722,7 +1721,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
   async function submitReimbursement() {
     if (!detail) return
     if (!reimburseAmount || Number(reimburseAmount) <= 0) { setReimburseError('Amount must be greater than 0'); return }
-    if (reimbursePhotos.length === 0) { setReimburseError('At least one receipt/nota photo is required'); return }
+    if (reimbursePhotos.length === 0) { setReimburseError('At least one receipt photo is required'); return }
     if (!reimburseRequesterName.trim()) { setReimburseError('Name is required'); return }
     if (!reimburseBankName.trim()) { setReimburseError('Bank name is required'); return }
     if (!reimburseAccountNumber.trim()) { setReimburseError('Account number is required'); return }
@@ -1889,10 +1888,10 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
           <div className="min-w-0">
             <h2 className="text-2xl font-bold tracking-tight whitespace-nowrap">{detail.poNumber}</h2>
             <p className="text-muted-foreground text-sm mt-0.5">
-              {detail.supplierName ?? <span className="italic">No supplier yet</span>} · {fmtDate(detail.orderedAt)} ·{' '}
-              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLOR[detail.status] ?? ''}`}>
+              {detail.supplierName ?? <span className="italic">No supplier yet</span>} · {formatDate(detail.orderedAt)} ·{' '}
+              <StatusBadge tone={STATUS_TONE[detail.status]}>
                 {detail.currentLegLabel ?? STATUS_LABEL[detail.status] ?? detail.status}
-              </span>
+              </StatusBadge>
             </p>
             <p className="text-muted-foreground text-xs mt-1">
               PO Created By <span className="font-medium text-foreground">{detail.createdByName ?? 'Unknown'}</span>
@@ -1961,7 +1960,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
               const allowed = managedBy === 'PURCHASING' ? ['PURCHASING', 'ADMIN', 'SUPER_ADMIN'] : ['WAREHOUSE', 'ADMIN', 'SUPER_ADMIN']
               return roleMatches(role, allowed)
             })() && (
-              <button onClick={openReceive} className="px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium transition-colors">Receive Items</button>
+              <button onClick={openReceive} className="px-4 py-2 text-sm bg-success text-success-foreground rounded-lg hover:bg-success/90 font-medium transition-colors">Receive Items</button>
             )}
             {(detail.status === 'IN_TRANSIT' || detail.status === 'PARTIALLY_RECEIVED') && detail.items.some(i => (i.receivedQty ?? 0) < i.orderedQty)
               && roleMatches(role, ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE', 'BOAT_CAPTAIN', 'CRUISE_DIRECTOR']) && (
@@ -1982,7 +1981,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
               }
               return (
                 <button onClick={() => openLegAction(openLeg, action)}
-                  className="px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium transition-colors">
+                  className="px-4 py-2 text-sm bg-success text-success-foreground rounded-lg hover:bg-success/90 font-medium transition-colors">
                   {action === 'dispatch' ? `Send to ${openLeg.toLocation.name}` : `Confirm Arrival at ${openLeg.toLocation.name}`}
                 </button>
               )
@@ -1997,7 +1996,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
               detail.status === 'REJECTED' || (['DRAFT', 'ORDERED'].includes(detail.status) && !hasAnyPaymentRecord)
             ) && (
               <button onClick={() => { setCancelReason(''); setCancelError(''); setCancelModal(true) }}
-                className="px-4 py-2 text-sm text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-colors">
+                className="px-4 py-2 text-sm text-destructive border border-destructive/30 rounded-lg hover:bg-destructive/10 transition-colors">
                 Cancel PO
               </button>
             )}
@@ -2018,20 +2017,20 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
           <div className="space-y-5 min-w-0">
           {/* Draft: fill supplier & confirm */}
           {detail.status === 'DRAFT' && (
-            <div className="rounded-xl border bg-amber-50 border-amber-200">
-              <div className="px-5 py-4 border-b border-amber-200">
-                <h3 className="text-sm font-semibold text-amber-900">Confirm Purchase Order</h3>
-                <p className="text-xs text-amber-700 mt-0.5">This PO was auto-created from an approved PR. Fill in supplier details and confirm.</p>
+            <div className="rounded-xl border bg-warning/10 border-warning/30">
+              <div className="px-5 py-4 border-b border-warning/30">
+                <h3 className="text-sm font-semibold text-warning">Confirm Purchase Order</h3>
+                <p className="text-xs text-warning mt-0.5">This PO was auto-created from an approved PR. Fill in supplier details and confirm.</p>
               </div>
               <div className="p-5 space-y-4">
-                {draftError && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2">{draftError}</div>}
+                {draftError && <div className="rounded-lg bg-destructive/10 border border-destructive/30 text-destructive text-sm px-3 py-2">{draftError}</div>}
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
                     <div className="flex items-center justify-between">
-                      <label className="text-sm font-medium">Supplier <span className="text-red-500">*</span></label>
+                      <label className="text-sm font-medium">Supplier <span className="text-destructive">*</span></label>
                       {!draftSupplierEditing ? (
                         <button onClick={() => setDraftSupplierEditing(true)}
-                          className="text-xs text-amber-700 hover:text-amber-900 font-medium underline underline-offset-2">
+                          className="text-xs text-warning hover:text-warning/80 font-medium underline underline-offset-2">
                           Edit
                         </button>
                       ) : (
@@ -2043,12 +2042,12 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                     </div>
                     <input
                       disabled={!draftSupplierEditing}
-                      className={`w-full h-9 border rounded-md px-3 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500 transition-colors ${draftSupplierEditing ? 'bg-white' : 'bg-muted/40 text-foreground cursor-default select-none'}`}
+                      className={`w-full h-9 border rounded-md px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring transition-colors ${draftSupplierEditing ? 'bg-card' : 'bg-muted/40 text-foreground cursor-default select-none'}`}
                       placeholder="Supplier name" value={draftSupplier} onChange={e => setDraftSupplier(e.target.value)} />
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-sm font-medium text-muted-foreground">Expected Arrival</label>
-                    <input type="date" className="w-full h-9 border rounded-md px-3 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white"
+                    <input type="date" className="w-full h-9 border rounded-md px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring bg-card"
                       value={draftExpectedAt} onChange={e => setDraftExpectedAt(e.target.value)} />
                     {detail.request?.neededByDate && (
                       <p className="text-xs text-muted-foreground mt-1">Defaulted from the PR&apos;s needed-by date — adjust if needed.</p>
@@ -2060,7 +2059,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                   <div className="relative">
                     <MapPin className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
                     <select
-                      className="w-full h-9 border rounded-md pl-8 pr-3 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white"
+                      className="w-full h-9 border rounded-md pl-8 pr-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring bg-card"
                       value={deliveryLocationId} onChange={e => setDeliveryLocationId(e.target.value)}
                     >
                       <option value="">— Select location —</option>
@@ -2082,7 +2081,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                       {transitStopIds.map((locId, idx) => {
                         const loc = locations.find(l => l.id === locId)
                         return (
-                          <div key={locId} className="flex items-center gap-2 border rounded-md px-3 py-1.5 bg-white text-sm">
+                          <div key={locId} className="flex items-center gap-2 border rounded-md px-3 py-1.5 bg-card text-sm">
                             <span className="text-xs font-semibold text-muted-foreground w-4 shrink-0">{idx + 1}</span>
                             <span className="flex-1 truncate">{loc?.name ?? locId}</span>
                             <button type="button" disabled={idx === 0}
@@ -2092,16 +2091,16 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                               onClick={() => setTransitStopIds(ids => { const next = [...ids];[next[idx + 1], next[idx]] = [next[idx], next[idx + 1]]; return next })}
                               className="text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed px-1">↓</button>
                             <button type="button" onClick={() => setTransitStopIds(ids => ids.filter(id => id !== locId))}
-                              className="text-red-500 hover:text-red-700 px-1"><X className="h-3.5 w-3.5" /></button>
+                              className="text-destructive hover:text-destructive/80 px-1"><X className="h-3.5 w-3.5" /></button>
                           </div>
                         )
                       })}
                       <p className="text-xs text-muted-foreground">
-                        Final destination: <span className="font-medium">{locations.find(l => l.id === deliveryLocationId)?.name ?? '— pilih Delivery Location —'}</span>
+                        Final destination: <span className="font-medium">{locations.find(l => l.id === deliveryLocationId)?.name ?? '— select Delivery Location —'}</span>
                       </p>
                     </div>
                   )}
-                  <select className="w-full h-9 border rounded-md px-3 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white" value=""
+                  <select className="w-full h-9 border rounded-md px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring bg-card" value=""
                     onChange={e => { const v = e.target.value; if (v) setTransitStopIds(ids => [...ids, v]) }}>
                     <option value="">+ Add transit stop…</option>
                     {renderLocationOptions(locations, { excludeIds: new Set([deliveryLocationId, ...transitStopIds]), topLevelOnly: true })}
@@ -2110,13 +2109,13 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
 
                 <div className="space-y-1.5">
                   <label className="text-sm font-medium text-muted-foreground">Notes</label>
-                  <textarea className="w-full border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white resize-none"
-                    rows={2} placeholder="Payment terms, delivery instructions..." value={draftNotes} onChange={e => setDraftNotes(e.target.value)} />
+                  <textarea className="w-full border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring bg-card resize-none"
+                    rows={2} placeholder="Payment terms, delivery instructions…" value={draftNotes} onChange={e => setDraftNotes(e.target.value)} />
                 </div>
                 <div className="flex justify-end">
                   <button onClick={confirmDraft} disabled={draftSaving}
-                    className="flex items-center gap-2 px-5 py-2 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700 font-semibold disabled:opacity-50 transition-colors">
-                    {draftSaving ? <><div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Saving...</> : 'Confirm & Send PO'}
+                    className="flex items-center gap-2 px-5 py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary-hover font-semibold disabled:opacity-50 transition-colors">
+                    {draftSaving ? <><div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Saving…</> : 'Confirm & Send PO'}
                   </button>
                 </div>
               </div>
@@ -2148,20 +2147,20 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                     </td>
                     <td className="px-5 py-3 text-right">{it.orderedQty} <span className="text-muted-foreground text-xs">{it.unit ?? ''}</span></td>
                     <td className="px-5 py-3 text-right">
-                      <span className={it.receivedQty && it.receivedQty >= it.orderedQty ? 'text-green-600 font-medium' : it.receivedQty ? 'text-amber-600' : 'text-muted-foreground'}>
+                      <span className={it.receivedQty && it.receivedQty >= it.orderedQty ? 'text-success font-medium' : it.receivedQty ? 'text-warning' : 'text-muted-foreground'}>
                         {it.receivedQty ?? 0}
                       </span>
                       {it.unit && <span className="text-muted-foreground text-xs"> {it.unit}</span>}
                     </td>
-                    <td className="px-5 py-3 text-right text-muted-foreground">{fmtMoney(it.unitCost)}</td>
+                    <td className="px-5 py-3 text-right text-muted-foreground">{formatMoney(it.unitCost)}</td>
                     <td className="px-5 py-3 text-right font-medium whitespace-nowrap">
                       {poLineDiscount(it) > 0 && (
                         <span className="block text-[11px] font-normal text-muted-foreground">
-                          <span className="line-through">{fmtMoney(it.orderedQty * it.unitCost)}</span>
-                          <span className="text-green-700"> −{it.discountType === 'PERCENT' ? `${it.discountValue}%` : fmtMoney(poLineDiscount(it))}</span>
+                          <span className="line-through">{formatMoney(it.orderedQty * it.unitCost)}</span>
+                          <span className="text-success"> −{it.discountType === 'PERCENT' ? `${it.discountValue}%` : formatMoney(poLineDiscount(it))}</span>
                         </span>
                       )}
-                      {fmtMoney(poLineTotal(it))}
+                      {formatMoney(poLineTotal(it))}
                     </td>
                   </tr>
                 ))}
@@ -2180,27 +2179,27 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                       <>
                         <tr>
                           <td colSpan={4} className="px-5 py-2 text-sm text-muted-foreground text-right">Subtotal</td>
-                          <td className="px-5 py-2 text-right text-muted-foreground">{fmtMoney(itemsSubtotal)}</td>
+                          <td className="px-5 py-2 text-right text-muted-foreground">{formatMoney(itemsSubtotal)}</td>
                         </tr>
                         {discountAmount > 0 && (
                           <tr>
                             <td colSpan={4} className="px-5 py-2 text-sm text-muted-foreground text-right">
                               Discount{detail.discountType === 'PERCENT' ? ` (${detail.discountValue}%)` : ''}
                             </td>
-                            <td className="px-5 py-2 text-right text-muted-foreground">-{fmtMoney(discountAmount)}</td>
+                            <td className="px-5 py-2 text-right text-muted-foreground">-{formatMoney(discountAmount)}</td>
                           </tr>
                         )}
                         {detail.extraCharges?.map((c, i) => (
                           <tr key={i}>
                             <td colSpan={4} className="px-5 py-2 text-sm text-muted-foreground text-right">{c.label || 'Additional charge'}</td>
-                            <td className="px-5 py-2 text-right text-muted-foreground">{fmtMoney(c.amount)}</td>
+                            <td className="px-5 py-2 text-right text-muted-foreground">{formatMoney(c.amount)}</td>
                           </tr>
                         ))}
                       </>
                     )}
                     <tr>
                       <td colSpan={4} className="px-5 py-3 text-sm font-semibold text-right">Total</td>
-                      <td className="px-5 py-3 text-right font-bold">{fmtMoney(grandTotal)}</td>
+                      <td className="px-5 py-3 text-right font-bold">{formatMoney(grandTotal)}</td>
                     </tr>
                   </tfoot>
                 )
@@ -2213,8 +2212,8 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
             return (
               <div className="space-y-2">
                 {isOverdue && (
-                  <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-                    This PO is overdue — expected {fmtDate(detail.expectedAt!)}
+                  <div className="rounded-xl border border-warning/30 bg-warning/10 p-4 text-sm text-warning">
+                    This PO is overdue — expected {formatDate(detail.expectedAt!)}
                   </div>
                 )}
                 <div className="flex items-center justify-between">
@@ -2233,17 +2232,17 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                         <div key={f.id} className="rounded-lg border p-3 text-sm">
                           <div className="flex items-start justify-between gap-3">
                             <p className="flex-1">{f.note}</p>
-                            <button onClick={() => deleteFollowUp(f.id)} className="text-muted-foreground hover:text-red-600 transition-colors shrink-0" title="Delete">
+                            <button onClick={() => deleteFollowUp(f.id)} className="text-muted-foreground hover:text-destructive transition-colors shrink-0" title="Delete">
                               <Trash2 className="h-3.5 w-3.5" />
                             </button>
                           </div>
                           <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                             {f.isEscalation && (
-                              <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${late ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
+                              <StatusBadge tone={late ? 'destructive' : 'success'} size="sm">
                                 Escalated {late ? '(late)' : '(on time)'}{f.escalatedTo?.name && ` → ${f.escalatedTo.name}`}
-                              </span>
+                              </StatusBadge>
                             )}
-                            <span className="text-xs text-muted-foreground">by {f.createdBy.name ?? '—'} · {fmtDateTime(f.createdAt)}</span>
+                            <span className="text-xs text-muted-foreground">by {f.createdBy.name ?? '—'} · {formatDate(f.createdAt, 'datetime')}</span>
                           </div>
                         </div>
                       )
@@ -2263,22 +2262,22 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                     <p className="font-mono text-sm font-medium">{r.grNumber}</p>
                     <div className="flex items-center gap-3">
                       <div className="text-right">
-                        <p className="text-xs text-muted-foreground">{fmtDate(r.receivedAt)}</p>
+                        <p className="text-xs text-muted-foreground">{formatDate(r.receivedAt)}</p>
                         {r.receiverName && <p className="text-xs text-muted-foreground mt-0.5">by {r.receiverName}</p>}
                       </div>
                       <button
                         onClick={() => window.open(`/print/goods-receipt/${r.id}`, '_blank')}
-                        title="Print / download tanda terima"
+                        title="Print / download goods receipt"
                         className="flex items-center gap-1.5 text-xs border rounded-md px-2.5 py-1.5 hover:bg-muted transition-colors shrink-0"
                       >
-                        <FileDown className="h-3 w-3" /> Tanda Terima
+                        <FileDown className="h-3 w-3" /> Goods Receipt
                       </button>
                     </div>
                   </div>
                   <div className="space-y-1">
                     {r.items.map((it, i) => {
                       const outcomeLabel: Record<string, string> = { ACCEPTED: 'Accepted', DAMAGED: 'Damaged', WRONG_ITEM: 'Wrong Item', REJECTED: 'Rejected', BACKORDERED: 'Backordered' }
-                      const outcomeColor: Record<string, string> = { ACCEPTED: 'text-green-600', DAMAGED: 'text-red-500', WRONG_ITEM: 'text-red-500', REJECTED: 'text-red-600', BACKORDERED: 'text-amber-600' }
+                      const outcomeColor: Record<string, string> = { ACCEPTED: 'text-success', DAMAGED: 'text-destructive', WRONG_ITEM: 'text-destructive', REJECTED: 'text-destructive', BACKORDERED: 'text-warning' }
                       const outcome = it.outcome ?? it.condition
                       return (
                         <div key={i} className="flex items-center justify-between text-sm py-0.5">
@@ -2299,12 +2298,12 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
             </div>
           )}
           {detail.status === 'CANCELLED' && detail.cancellationReason && (
-            <div className="rounded-xl border border-red-200 bg-red-50 p-4">
-              <p className="text-sm font-semibold text-red-700 mb-1">PO Cancelled</p>
-              <p className="text-sm text-red-800">{detail.cancellationReason}</p>
+            <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-4">
+              <p className="text-sm font-semibold text-destructive mb-1">PO Cancelled</p>
+              <p className="text-sm text-destructive">{detail.cancellationReason}</p>
               {detail.cancelledAt && (
-                <p className="text-xs text-red-500 mt-1.5">
-                  {fmtDate(detail.cancelledAt)}
+                <p className="text-xs text-destructive mt-1.5">
+                  {formatDate(detail.cancelledAt)}
                   {detail.cancelledByName && ` · by ${detail.cancelledByName}`}
                 </p>
               )}
@@ -2320,47 +2319,47 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                 <div key={p.id} className="rounded-xl border overflow-hidden">
                   <div className="flex items-center justify-between px-4 py-3 bg-muted/30 border-b">
                     <div>
-                      <p className="font-semibold text-base">{fmtMoney(p.amount)}</p>
+                      <p className="font-semibold text-base">{formatMoney(p.amount)}</p>
                       <p className="text-xs text-muted-foreground mt-0.5">
-                        {isCard ? 'Paid' : 'Requested'} {fmtDate(p.createdAt)}{p.requestedBy?.name && ` · by ${p.requestedBy.name}`}
+                        {isCard ? 'Paid' : 'Requested'} {formatDate(p.createdAt)}{p.requestedBy?.name && ` · by ${p.requestedBy.name}`}
                       </p>
                     </div>
                     <div className="flex flex-col items-end gap-1">
-                      <span className={`shrink-0 px-2.5 py-1 rounded-full text-xs font-medium ${PAYMENT_STATUS_COLOR[p.status === 'PAID' ? 'PAID' : p.status === 'REJECTED' ? 'REJECTED' : 'PENDING']}`}>
+                      <StatusBadge tone={PAYMENT_STATUS_TONE[p.status === 'PAID' ? 'PAID' : p.status === 'REJECTED' ? 'REJECTED' : 'PENDING']} className="px-2.5 py-1">
                         {PAYMENT_STATUS_LABEL[p.status === 'PAID' ? 'PAID' : p.status === 'REJECTED' ? 'REJECTED' : 'PENDING']}
-                      </span>
+                      </StatusBadge>
                       {isCard && <span className="text-[10px] text-muted-foreground">Debit Paid</span>}
                     </div>
                   </div>
                   <div className="p-4 space-y-3">
                     {p.status === 'REJECTED' && p.rejectionReason && (
-                      <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+                      <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
                         <span className="font-semibold">Rejected: </span>{p.rejectionReason}
-                        {p.rejectedBy?.name && <span className="text-red-500"> · by {p.rejectedBy.name}</span>}
+                        {p.rejectedBy?.name && <span className="text-destructive"> · by {p.rejectedBy.name}</span>}
                       </div>
                     )}
                     {p.notes && <p className="text-sm text-muted-foreground">{p.notes}</p>}
                     <div className={p.status === 'PAID' && p.transferProofKeys.length > 0 ? 'grid grid-cols-2 gap-4' : ''}>
                       <div>
-                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Receipt / Nota{p.notePhotoKeys.length > 1 ? ` (${p.notePhotoKeys.length})` : ''}</p>
+                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Receipt{p.notePhotoKeys.length > 1 ? ` (${p.notePhotoKeys.length})` : ''}</p>
                         <div className="grid grid-cols-2 gap-2">
                           {p.notePhotoKeys.map((k, i) => (
-                            <FilePreview key={i} src={k} alt={`Nota ${i + 1}`} onClick={() => setPaymentPhotoView(k)}
+                            <FilePreview key={i} src={k} alt={`Receipt ${i + 1}`} onClick={() => setPaymentPhotoView(k)}
                               className="w-full h-28 rounded-lg object-contain bg-muted/20 border cursor-zoom-in hover:opacity-90 transition-opacity" />
                           ))}
                         </div>
                       </div>
                       {p.status === 'PAID' && p.transferProofKeys.length > 0 && (
                         <div>
-                          <p className="text-xs font-semibold text-green-700 uppercase tracking-wide mb-1.5">Transfer Proof{p.transferProofKeys.length > 1 ? ` (${p.transferProofKeys.length})` : ''}</p>
+                          <p className="text-xs font-semibold text-success uppercase tracking-wide mb-1.5">Transfer Proof{p.transferProofKeys.length > 1 ? ` (${p.transferProofKeys.length})` : ''}</p>
                           <div className="grid grid-cols-2 gap-2">
                             {p.transferProofKeys.map((k, i) => (
                               <FilePreview key={i} src={k} alt={`Transfer proof ${i + 1}`} onClick={() => setPaymentPhotoView(k)}
                                 className="w-full h-28 rounded-lg object-contain bg-muted/20 border cursor-zoom-in hover:opacity-90 transition-opacity" />
                             ))}
                           </div>
-                          <p className="text-xs text-green-700 mt-1.5">
-                            Paid {p.paidAt && fmtDate(p.paidAt)}{p.paidBy?.name && ` · by ${p.paidBy.name}`}
+                          <p className="text-xs text-success mt-1.5">
+                            Paid {p.paidAt && formatDate(p.paidAt)}{p.paidBy?.name && ` · by ${p.paidBy.name}`}
                           </p>
                           {p.paidNotes && (
                             <p className="text-xs text-muted-foreground mt-1.5 whitespace-pre-wrap">{p.paidNotes}</p>
@@ -2368,7 +2367,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                         </div>
                       )}
                       {isCard && p.status === 'PAID' && (
-                        <p className="text-xs text-green-700">
+                        <p className="text-xs text-success">
                           Debit Paid directly by {p.paidBy?.name ?? p.requestedBy?.name ?? 'purchasing'} — no bank transfer needed.
                         </p>
                       )}
@@ -2387,14 +2386,14 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                 <div key={r.id} className="rounded-xl border overflow-hidden">
                   <div className="flex items-center justify-between px-4 py-3 bg-muted/30 border-b">
                     <div>
-                      <p className="font-semibold text-base">{fmtMoney(r.amount)}</p>
+                      <p className="font-semibold text-base">{formatMoney(r.amount)}</p>
                       <p className="text-xs text-muted-foreground mt-0.5">
-                        Requested {fmtDate(r.createdAt)}{r.requestedBy?.name && ` · by ${r.requestedBy.name}`}
+                        Requested {formatDate(r.createdAt)}{r.requestedBy?.name && ` · by ${r.requestedBy.name}`}
                       </p>
                     </div>
-                    <span className={`shrink-0 px-2.5 py-1 rounded-full text-xs font-medium ${PAYMENT_STATUS_COLOR[r.status === 'PAID' ? 'PAID' : 'PENDING']}`}>
+                    <StatusBadge tone={PAYMENT_STATUS_TONE[r.status === 'PAID' ? 'PAID' : 'PENDING']} className="px-2.5 py-1">
                       {PAYMENT_STATUS_LABEL[r.status === 'PAID' ? 'PAID' : 'PENDING']}
-                    </span>
+                    </StatusBadge>
                   </div>
                   <div className="p-4 space-y-3">
                     <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
@@ -2406,25 +2405,25 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                     {r.notes && <p className="text-sm text-muted-foreground">{r.notes}</p>}
                     <div className={r.status === 'PAID' && r.transferProofKeys.length > 0 ? 'grid grid-cols-2 gap-4' : ''}>
                       <div>
-                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Receipt / Nota{r.notePhotoKeys.length > 1 ? ` (${r.notePhotoKeys.length})` : ''}</p>
+                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Receipt{r.notePhotoKeys.length > 1 ? ` (${r.notePhotoKeys.length})` : ''}</p>
                         <div className="grid grid-cols-2 gap-2">
                           {r.notePhotoKeys.map((k, i) => (
-                            <FilePreview key={i} src={k} alt={`Nota ${i + 1}`} onClick={() => setPaymentPhotoView(k)}
+                            <FilePreview key={i} src={k} alt={`Receipt ${i + 1}`} onClick={() => setPaymentPhotoView(k)}
                               className="w-full h-28 rounded-lg object-contain bg-muted/20 border cursor-zoom-in hover:opacity-90 transition-opacity" />
                           ))}
                         </div>
                       </div>
                       {r.status === 'PAID' && r.transferProofKeys.length > 0 && (
                         <div>
-                          <p className="text-xs font-semibold text-green-700 uppercase tracking-wide mb-1.5">Transfer Proof{r.transferProofKeys.length > 1 ? ` (${r.transferProofKeys.length})` : ''}</p>
+                          <p className="text-xs font-semibold text-success uppercase tracking-wide mb-1.5">Transfer Proof{r.transferProofKeys.length > 1 ? ` (${r.transferProofKeys.length})` : ''}</p>
                           <div className="grid grid-cols-2 gap-2">
                             {r.transferProofKeys.map((k, i) => (
                               <FilePreview key={i} src={k} alt={`Transfer proof ${i + 1}`} onClick={() => setPaymentPhotoView(k)}
                                 className="w-full h-28 rounded-lg object-contain bg-muted/20 border cursor-zoom-in hover:opacity-90 transition-opacity" />
                             ))}
                           </div>
-                          <p className="text-xs text-green-700 mt-1.5">
-                            Paid {r.paidAt && fmtDate(r.paidAt)}{r.paidBy?.name && ` · by ${r.paidBy.name}`}
+                          <p className="text-xs text-success mt-1.5">
+                            Paid {r.paidAt && formatDate(r.paidAt)}{r.paidBy?.name && ` · by ${r.paidBy.name}`}
                           </p>
                           {r.paidNotes && (
                             <p className="text-xs text-muted-foreground mt-1.5 whitespace-pre-wrap">{r.paidNotes}</p>
@@ -2449,7 +2448,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
         <>
           <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50" onClick={() => setTransitModal(false)} />
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
-            <div className="pointer-events-auto bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[92vh] flex flex-col overflow-hidden">
+            <div className="pointer-events-auto bg-card rounded-2xl shadow-2xl w-full max-w-md max-h-[92vh] flex flex-col overflow-hidden">
               <div className="flex items-center justify-between px-5 py-4 border-b shrink-0">
                 <div>
                   <h3 className="font-semibold">Mark as In Delivery</h3>
@@ -2458,7 +2457,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                 <button onClick={() => setTransitModal(false)} className="text-muted-foreground hover:text-foreground text-xl leading-none">×</button>
               </div>
               <div className="overflow-y-auto flex-1 min-h-0 p-5 space-y-4">
-                {transitError && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2">{transitError}</div>}
+                {transitError && <div className="rounded-lg bg-destructive/10 border border-destructive/30 text-destructive text-sm px-3 py-2">{transitError}</div>}
 
                 {transitPhoto ? (
                   <div className="relative space-y-3">
@@ -2473,10 +2472,10 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                   <div className="relative">
                     <button onClick={() => setTransitPhotoMenuOpen(o => !o)} {...transitPhotoDropProps}
                       className={`w-full border-2 border-dashed rounded-xl py-10 flex flex-col items-center gap-3 transition-colors ${
-                        isDraggingTransitPhoto ? 'border-amber-400 bg-amber-50 text-amber-700' : 'text-muted-foreground hover:border-amber-400 hover:text-amber-700'
+                        isDraggingTransitPhoto ? 'border-warning bg-warning/10 text-warning' : 'text-muted-foreground hover:border-warning hover:text-warning'
                       }`}>
-                      <div className="h-12 w-12 rounded-full bg-amber-50 flex items-center justify-center">
-                        <Camera className="h-6 w-6 text-amber-500" />
+                      <div className="h-12 w-12 rounded-full bg-warning/10 flex items-center justify-center">
+                        <Camera className="h-6 w-6 text-warning" />
                       </div>
                       <div className="text-center">
                         <p className="font-medium text-sm">{isDraggingTransitPhoto ? 'Drop to upload' : 'Take, upload, or drag photo (optional)'}</p>
@@ -2490,8 +2489,8 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
               <div className="flex justify-end gap-2 px-5 py-4 border-t shrink-0">
                 <button onClick={() => setTransitModal(false)} className="px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">Cancel</button>
                 <button onClick={confirmTransit} disabled={transitSaving}
-                  className="flex items-center gap-2 px-5 py-2 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-40 font-semibold transition-colors">
-                  {transitSaving ? <><div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Saving...</> : <><Upload className="h-3.5 w-3.5" />Confirm In Delivery</>}
+                  className="flex items-center gap-2 px-5 py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary-hover disabled:opacity-40 font-semibold transition-colors">
+                  {transitSaving ? <><div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Saving…</> : <><Upload className="h-3.5 w-3.5" />Confirm In Delivery</>}
                 </button>
               </div>
             </div>
@@ -2505,7 +2504,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
         <>
           <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50" onClick={() => setLegActionModal(null)} />
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
-            <div className="pointer-events-auto bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[92vh] flex flex-col overflow-hidden">
+            <div className="pointer-events-auto bg-card rounded-2xl shadow-2xl w-full max-w-md max-h-[92vh] flex flex-col overflow-hidden">
               <div className="flex items-center justify-between px-5 py-4 border-b shrink-0">
                 <div>
                   <h3 className="font-semibold">
@@ -2518,7 +2517,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                 <button onClick={() => setLegActionModal(null)} className="text-muted-foreground hover:text-foreground text-xl leading-none">×</button>
               </div>
               <div className="overflow-y-auto flex-1 min-h-0 p-5 space-y-4">
-                {legError && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2">{legError}</div>}
+                {legError && <div className="rounded-lg bg-destructive/10 border border-destructive/30 text-destructive text-sm px-3 py-2">{legError}</div>}
 
                 <div className="rounded-xl border divide-y">
                   {legActionModal.leg.items.map(it => (
@@ -2532,7 +2531,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                 {legActionModal.action === 'receive' && (
                   <div className="space-y-1.5">
                     <label className="text-sm font-medium">Received By</label>
-                    <input className="w-full border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                    <input className="w-full border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                       placeholder="Receiver name" value={legReceiverName} onChange={e => setLegReceiverName(e.target.value)} />
                   </div>
                 )}
@@ -2550,10 +2549,10 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                   <div className="relative">
                     <button onClick={() => setLegPhotoMenuOpen(o => !o)} {...legPhotoDropProps}
                       className={`w-full border-2 border-dashed rounded-xl py-10 flex flex-col items-center gap-3 transition-colors ${
-                        isDraggingLegPhoto ? 'border-green-400 bg-green-50 text-green-700' : 'text-muted-foreground hover:border-green-400 hover:text-green-700'
+                        isDraggingLegPhoto ? 'border-success bg-success/10 text-success' : 'text-muted-foreground hover:border-success hover:text-success'
                       }`}>
-                      <div className="h-12 w-12 rounded-full bg-green-50 flex items-center justify-center">
-                        <Camera className="h-6 w-6 text-green-500" />
+                      <div className="h-12 w-12 rounded-full bg-success/10 flex items-center justify-center">
+                        <Camera className="h-6 w-6 text-success" />
                       </div>
                       <div className="text-center">
                         <p className="font-medium text-sm">{isDraggingLegPhoto ? 'Drop to upload' : 'Take, upload, or drag photo'}</p>
@@ -2567,9 +2566,9 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
               <div className="flex justify-end gap-2 px-5 py-4 border-t shrink-0">
                 <button onClick={() => setLegActionModal(null)} className="px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">Cancel</button>
                 <button onClick={submitLegAction} disabled={!legPhoto || legSaving}
-                  className="flex items-center gap-2 px-5 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-40 font-semibold transition-colors">
+                  className="flex items-center gap-2 px-5 py-2 text-sm bg-success text-success-foreground rounded-lg hover:bg-success/90 disabled:opacity-40 font-semibold transition-colors">
                   {legSaving
-                    ? <><div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Saving...</>
+                    ? <><div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Saving…</>
                     : (legActionModal.action === 'dispatch' ? 'Confirm Dispatch' : 'Confirm Arrival')}
                 </button>
               </div>
@@ -2583,7 +2582,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
         <>
           <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50" onClick={() => setFollowUpModal(false)} />
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
-            <div className="pointer-events-auto bg-white rounded-2xl shadow-2xl w-full max-w-md">
+            <div className="pointer-events-auto bg-card rounded-2xl shadow-2xl w-full max-w-md">
               <div className="flex items-center justify-between px-5 py-4 border-b">
                 <div>
                   <h3 className="font-semibold">Log Follow-up</h3>
@@ -2592,14 +2591,14 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                 <button onClick={() => setFollowUpModal(false)} className="text-muted-foreground hover:text-foreground text-xl leading-none">×</button>
               </div>
               <div className="p-5 space-y-4">
-                {followUpError && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2">{followUpError}</div>}
+                {followUpError && <div className="rounded-lg bg-destructive/10 border border-destructive/30 text-destructive text-sm px-3 py-2">{followUpError}</div>}
                 <div className="space-y-1.5">
-                  <label className="text-sm font-medium">Note <span className="text-red-500">*</span></label>
+                  <label className="text-sm font-medium">Note <span className="text-destructive">*</span></label>
                   <textarea
                     autoFocus
                     rows={3}
-                    className="w-full border rounded-xl px-3 py-2.5 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-amber-400"
-                    placeholder="e.g. Called supplier, dispatch promised by Friday..."
+                    className="w-full border rounded-xl px-3 py-2.5 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring"
+                    placeholder="e.g. Called supplier, dispatch promised by Friday…"
                     value={followUpNote}
                     onChange={e => setFollowUpNote(e.target.value)}
                   />
@@ -2612,7 +2611,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                   <div className="space-y-1.5">
                     <label className="text-sm font-medium">Escalate to (optional)</label>
                     <select
-                      className="w-full h-10 border rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                      className="w-full h-10 border rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                       value={followUpEscalatedToId}
                       onChange={e => setFollowUpEscalatedToId(e.target.value)}
                     >
@@ -2625,8 +2624,8 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
               <div className="flex justify-end gap-2 px-5 py-4 border-t">
                 <button onClick={() => setFollowUpModal(false)} className="px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">Cancel</button>
                 <button onClick={saveFollowUp} disabled={!followUpNote.trim() || followUpSaving}
-                  className="flex items-center gap-2 px-5 py-2 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-40 font-semibold transition-colors">
-                  {followUpSaving ? <><div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Saving...</> : 'Save'}
+                  className="flex items-center gap-2 px-5 py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary-hover disabled:opacity-40 font-semibold transition-colors">
+                  {followUpSaving ? <><div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Saving…</> : 'Save'}
                 </button>
               </div>
             </div>
@@ -2639,7 +2638,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
         <>
           <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50" onClick={() => setCancelModal(false)} />
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
-            <div className="pointer-events-auto bg-white rounded-2xl shadow-2xl w-full max-w-md">
+            <div className="pointer-events-auto bg-card rounded-2xl shadow-2xl w-full max-w-md">
               <div className="flex items-center justify-between px-5 py-4 border-b">
                 <div>
                   <h3 className="font-semibold">Cancel Purchase Order</h3>
@@ -2648,17 +2647,17 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                 <button onClick={() => setCancelModal(false)} className="text-muted-foreground hover:text-foreground text-xl leading-none">×</button>
               </div>
               <div className="p-5 space-y-4">
-                {cancelError && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2">{cancelError}</div>}
-                <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-800">
+                {cancelError && <div className="rounded-lg bg-destructive/10 border border-destructive/30 text-destructive text-sm px-3 py-2">{cancelError}</div>}
+                <div className="rounded-lg bg-warning/10 border border-warning/30 px-4 py-3 text-sm text-warning">
                   This action cannot be undone. The PO will be permanently marked as cancelled.
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-sm font-medium">Reason for cancellation <span className="text-red-500">*</span></label>
+                  <label className="text-sm font-medium">Reason for cancellation <span className="text-destructive">*</span></label>
                   <textarea
                     autoFocus
                     rows={3}
-                    className="w-full border rounded-xl px-3 py-2.5 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-red-400"
-                    placeholder="e.g. Supplier unable to fulfil, budget reallocation, duplicate order..."
+                    className="w-full border rounded-xl px-3 py-2.5 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-destructive"
+                    placeholder="e.g. Supplier unable to fulfil, budget reallocation, duplicate order…"
                     value={cancelReason}
                     onChange={e => setCancelReason(e.target.value)}
                   />
@@ -2667,8 +2666,8 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
               <div className="flex justify-end gap-2 px-5 py-4 border-t">
                 <button onClick={() => setCancelModal(false)} className="px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">Go back</button>
                 <button onClick={cancelPO} disabled={!cancelReason.trim() || cancelSaving}
-                  className="flex items-center gap-2 px-5 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-40 font-semibold transition-colors">
-                  {cancelSaving ? <><div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Cancelling...</> : 'Cancel PO'}
+                  className="flex items-center gap-2 px-5 py-2 text-sm bg-destructive text-destructive-foreground rounded-lg hover:bg-destructive/90 disabled:opacity-40 font-semibold transition-colors">
+                  {cancelSaving ? <><div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Cancelling…</> : 'Cancel PO'}
                 </button>
               </div>
             </div>
@@ -2681,7 +2680,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
         <>
           <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50" onClick={() => setEditPOModal(false)} />
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
-            <div className="pointer-events-auto bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col">
+            <div className="pointer-events-auto bg-card rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col">
               <div className="flex items-center justify-between px-5 py-4 border-b shrink-0">
                 <div>
                   <h3 className="font-semibold">Edit PO</h3>
@@ -2690,14 +2689,14 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                 <button onClick={() => setEditPOModal(false)} className="text-muted-foreground hover:text-foreground text-xl leading-none">×</button>
               </div>
               <div className="p-5 space-y-4 overflow-y-auto">
-                {editPOError && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2">{editPOError}</div>}
+                {editPOError && <div className="rounded-lg bg-destructive/10 border border-destructive/30 text-destructive text-sm px-3 py-2">{editPOError}</div>}
                 {renderOrderFormFields(poFinancialsLocked(detail))}
               </div>
               <div className="flex justify-end gap-2 px-5 py-4 border-t shrink-0">
                 <button onClick={() => setEditPOModal(false)} className="px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">Cancel</button>
                 <button onClick={submitEditPO} disabled={editPOSaving}
-                  className="flex items-center gap-2 px-5 py-2 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-40 font-semibold transition-colors">
-                  {editPOSaving ? <><div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Saving...</> : 'Save Changes'}
+                  className="flex items-center gap-2 px-5 py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary-hover disabled:opacity-40 font-semibold transition-colors">
+                  {editPOSaving ? <><div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Saving…</> : 'Save Changes'}
                 </button>
               </div>
             </div>
@@ -2710,7 +2709,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
         <>
           <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50" onClick={() => setPaymentModal(false)} />
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
-            <div className="pointer-events-auto bg-white rounded-2xl shadow-2xl w-full max-w-md">
+            <div className="pointer-events-auto bg-card rounded-2xl shadow-2xl w-full max-w-md">
               <div className="flex items-center justify-between px-5 py-4 border-b">
                 <div>
                   <h3 className="font-semibold">{paymentEditId ? 'Edit ' : ''}{paymentMode === 'DIRECT' ? 'Debit Paid' : 'Request Payment'}</h3>
@@ -2720,18 +2719,18 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
               </div>
               <div className="p-5 space-y-4">
                 {paymentMode === 'DIRECT' && (
-                  <div className="rounded-lg bg-green-50 border border-green-200 px-3 py-2.5 text-sm text-green-800">
+                  <div className="rounded-lg bg-success/10 border border-success/30 px-3 py-2.5 text-sm text-success">
                     Use this when purchasing already paid via debit. This will be recorded as paid immediately — finance is just notified, no approval needed.
                   </div>
                 )}
-                {paymentError && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2">{paymentError}</div>}
+                {paymentError && <div className="rounded-lg bg-destructive/10 border border-destructive/30 text-destructive text-sm px-3 py-2">{paymentError}</div>}
 
                 <div className="space-y-1.5">
-                  <label className="text-sm font-medium">Amount <span className="text-red-500">*</span></label>
+                  <label className="text-sm font-medium">Amount <span className="text-destructive">*</span></label>
                   <div className="relative">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">Rp</span>
                     <input type="text" inputMode="numeric" autoFocus
-                      className="w-full h-10 border rounded-lg pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                      className="w-full h-10 border rounded-lg pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                       placeholder="e.g. 1.500.000"
                       value={paymentAmount ? new Intl.NumberFormat('id-ID').format(Number(paymentAmount)) : ''}
                       onChange={e => setPaymentAmount(e.target.value.replace(/\D/g, ''))} />
@@ -2739,22 +2738,22 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-sm font-medium">Receipt / Nota <span className="text-red-500">*</span></label>
+                  <label className="text-sm font-medium">Receipt <span className="text-destructive">*</span></label>
                   <p className="text-xs text-muted-foreground">JPG, PNG, or PDF — you can attach more than one file</p>
                   <MultiFilePicker files={paymentPhotos} onChange={setPaymentPhotos} />
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-sm font-medium">Nota Date</label>
+                  <label className="text-sm font-medium">Receipt Date</label>
                   <input type="date"
-                    className="w-full h-10 border rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    className="w-full h-10 border rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                     value={paymentNotaDate} onChange={e => setPaymentNotaDate(e.target.value)} />
                 </div>
 
                 <div className="space-y-1.5">
                   <label className="text-sm font-medium">Notes</label>
                   <textarea rows={2}
-                    className="w-full border rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    className="w-full border rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring"
                     placeholder="Payment terms, urgency, etc. (optional)"
                     value={paymentNotes} onChange={e => setPaymentNotes(e.target.value)} />
                 </div>
@@ -2766,9 +2765,9 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
               <div className="flex justify-end gap-2 px-5 py-4 border-t">
                 <button onClick={() => setPaymentModal(false)} className="px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">Cancel</button>
                 <button onClick={submitPaymentRequest} disabled={!paymentAmount || paymentPhotos.length === 0 || paymentSaving}
-                  className={`flex items-center gap-2 px-5 py-2 text-sm text-white rounded-lg disabled:opacity-40 font-semibold transition-colors ${paymentMode === 'DIRECT' ? 'bg-green-600 hover:bg-green-700' : 'bg-amber-600 hover:bg-amber-700'}`}>
+                  className={`flex items-center gap-2 px-5 py-2 text-sm rounded-lg disabled:opacity-40 font-semibold transition-colors ${paymentMode === 'DIRECT' ? 'bg-success hover:bg-success/90 text-success-foreground' : 'bg-primary hover:bg-primary-hover text-primary-foreground'}`}>
                   {paymentSaving
-                    ? <><div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Saving...</>
+                    ? <><div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Saving…</>
                     : paymentMode === 'DIRECT' ? <><CheckCircle2 className="h-3.5 w-3.5" />Mark as Paid</> : <><Wallet className="h-3.5 w-3.5" />Send to Finance</>}
                 </button>
               </div>
@@ -2786,7 +2785,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
         <>
           <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50" onClick={() => setReimburseModal(false)} />
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
-            <div className="pointer-events-auto bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[92vh] overflow-y-auto">
+            <div className="pointer-events-auto bg-card rounded-2xl shadow-2xl w-full max-w-md max-h-[92vh] overflow-y-auto">
               <div className="flex items-center justify-between px-5 py-4 border-b">
                 <div>
                   <h3 className="font-semibold">{reimburseEditId ? 'Edit Reimbursement' : 'Reimburse'}</h3>
@@ -2795,14 +2794,14 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                 <button onClick={() => setReimburseModal(false)} className="text-muted-foreground hover:text-foreground text-xl leading-none">×</button>
               </div>
               <div className="p-5 space-y-4">
-                {reimburseError && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2">{reimburseError}</div>}
+                {reimburseError && <div className="rounded-lg bg-destructive/10 border border-destructive/30 text-destructive text-sm px-3 py-2">{reimburseError}</div>}
 
                 <div className="space-y-1.5">
-                  <label className="text-sm font-medium">Amount <span className="text-red-500">*</span></label>
+                  <label className="text-sm font-medium">Amount <span className="text-destructive">*</span></label>
                   <div className="relative">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">Rp</span>
                     <input type="text" inputMode="numeric" autoFocus
-                      className="w-full h-10 border rounded-lg pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                      className="w-full h-10 border rounded-lg pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                       placeholder="e.g. 1.500.000"
                       value={reimburseAmount ? new Intl.NumberFormat('id-ID').format(Number(reimburseAmount)) : ''}
                       onChange={e => setReimburseAmount(e.target.value.replace(/\D/g, ''))} />
@@ -2810,9 +2809,9 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-sm font-medium">Name <span className="text-red-500">*</span></label>
+                  <label className="text-sm font-medium">Name <span className="text-destructive">*</span></label>
                   <input
-                    className="w-full h-10 border rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    className="w-full h-10 border rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                     placeholder="Requester's full name"
                     value={reimburseRequesterName} onChange={e => setReimburseRequesterName(e.target.value)} />
                 </div>
@@ -2829,25 +2828,25 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
 
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
-                    <label className="text-sm font-medium">Bank Name <span className="text-red-500">*</span></label>
+                    <label className="text-sm font-medium">Bank Name <span className="text-destructive">*</span></label>
                     <input
-                      className="w-full h-10 border rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                      className="w-full h-10 border rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                       placeholder="e.g. BCA, Mandiri"
                       value={reimburseBankName} onChange={e => setReimburseBankName(e.target.value)} />
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-sm font-medium">Account Number <span className="text-red-500">*</span></label>
+                    <label className="text-sm font-medium">Account Number <span className="text-destructive">*</span></label>
                     <input
-                      className="w-full h-10 border rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                      className="w-full h-10 border rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                       placeholder="e.g. 1234567890"
                       value={reimburseAccountNumber} onChange={e => setReimburseAccountNumber(e.target.value)} />
                   </div>
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-sm font-medium">Account Holder Name <span className="text-red-500">*</span></label>
+                  <label className="text-sm font-medium">Account Holder Name <span className="text-destructive">*</span></label>
                   <input
-                    className="w-full h-10 border rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    className="w-full h-10 border rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                     placeholder="Name on the bank account"
                     value={reimburseAccountHolderName} onChange={e => setReimburseAccountHolderName(e.target.value)} />
                 </div>
@@ -2858,22 +2857,22 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                 </label>
 
                 <div className="space-y-1.5">
-                  <label className="text-sm font-medium">Receipt / Nota <span className="text-red-500">*</span></label>
+                  <label className="text-sm font-medium">Receipt <span className="text-destructive">*</span></label>
                   <p className="text-xs text-muted-foreground">JPG, PNG, or PDF — you can attach more than one file</p>
                   <MultiFilePicker files={reimbursePhotos} onChange={setReimbursePhotos} />
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-sm font-medium">Nota Date</label>
+                  <label className="text-sm font-medium">Receipt Date</label>
                   <input type="date"
-                    className="w-full h-10 border rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    className="w-full h-10 border rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                     value={reimburseNotaDate} onChange={e => setReimburseNotaDate(e.target.value)} />
                 </div>
 
                 <div className="space-y-1.5">
                   <label className="text-sm font-medium">Notes</label>
                   <textarea rows={2}
-                    className="w-full border rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    className="w-full border rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring"
                     placeholder="What is this reimbursement for? (optional)"
                     value={reimburseNotes} onChange={e => setReimburseNotes(e.target.value)} />
                 </div>
@@ -2886,9 +2885,9 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                 <button onClick={() => setReimburseModal(false)} className="px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">Cancel</button>
                 <button onClick={submitReimbursement}
                   disabled={!reimburseAmount || reimbursePhotos.length === 0 || !reimburseRequesterName.trim() || !reimburseBankName.trim() || !reimburseAccountNumber.trim() || !reimburseAccountHolderName.trim() || reimburseSaving}
-                  className="flex items-center gap-2 px-5 py-2 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-40 font-semibold transition-colors">
+                  className="flex items-center gap-2 px-5 py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary-hover disabled:opacity-40 font-semibold transition-colors">
                   {reimburseSaving
-                    ? <><div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Saving...</>
+                    ? <><div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Saving…</>
                     : <><Banknote className="h-3.5 w-3.5" />Send to Finance</>}
                 </button>
               </div>
@@ -2902,7 +2901,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
         <>
           <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50" onClick={() => setReceiveModal(false)} />
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
-            <div className="pointer-events-auto bg-white rounded-2xl shadow-2xl w-full max-w-xl max-h-[92vh] flex flex-col overflow-hidden">
+            <div className="pointer-events-auto bg-card rounded-2xl shadow-2xl w-full max-w-xl max-h-[92vh] flex flex-col overflow-hidden">
 
               {/* Header */}
               <div className="flex items-start justify-between px-6 py-5 border-b shrink-0">
@@ -2918,7 +2917,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
               {/* Body */}
               <div className="overflow-y-auto flex-1 min-h-0 px-6 py-5 space-y-6">
                 {receiveError && (
-                  <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-2.5">{receiveError}</div>
+                  <div className="rounded-lg bg-destructive/10 border border-destructive/30 text-destructive text-sm px-4 py-2.5">{receiveError}</div>
                 )}
 
                 {/* Location + Receiver */}
@@ -2931,7 +2930,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-sm font-semibold">Received By</label>
-                    <input className="w-full border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                    <input className="w-full border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                       placeholder="Receiver name"
                       value={receiverName} onChange={e => setReceiverName(e.target.value)} />
                   </div>
@@ -2942,13 +2941,13 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                   <label className="text-sm font-semibold">Items Received</label>
                   <div className="space-y-3">
                     {receiveLines.map((line, i) => (
-                      <div key={i} className="rounded-xl border bg-gray-50 p-4 space-y-3">
+                      <div key={i} className="rounded-xl border bg-muted/50 p-4 space-y-3">
                         {/* Item name + qty */}
                         <div className="flex items-center justify-between">
                           <span className="font-medium text-sm">{line.itemName}</span>
                           <div className="flex items-center gap-1.5">
                             <input type="number" min={0}
-                              className="w-16 border rounded-lg px-2 py-1 text-sm text-center font-semibold focus:outline-none focus:ring-2 focus:ring-green-500"
+                              className="w-16 border rounded-lg px-2 py-1 text-sm text-center font-semibold focus:outline-none focus:ring-2 focus:ring-ring"
                               value={line.receivedQty}
                               onChange={e => setReceiveLines(l => l.map((li, idx) => idx !== i ? li : { ...li, receivedQty: Number(e.target.value) }))} />
                             {line.unit && <span className="text-xs font-medium text-muted-foreground">{line.unit}</span>}
@@ -2958,15 +2957,15 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                         {/* Actual unit cost + expiry */}
                         <div className="grid grid-cols-2 gap-3">
                           <div className="space-y-1">
-                            <label className="text-xs text-muted-foreground font-medium">Actual Price / {line.unit ?? 'unit'} <span className="text-[#bdac7e]">*</span></label>
+                            <label className="text-xs text-muted-foreground font-medium">Actual Price / {line.unit ?? 'unit'} <span className="text-primary">*</span></label>
                             <input type="number" min={0} step="any"
-                              className="w-full border rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-green-500 text-right"
+                              className="w-full border rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-ring text-right"
                               value={line.unitCost}
                               onChange={e => setReceiveLines(l => l.map((li, idx) => idx !== i ? li : { ...li, unitCost: Number(e.target.value) }))} />
                           </div>
                           <div className="space-y-1">
                             <label className="text-xs text-muted-foreground font-medium">Exp. Date</label>
-                            <input type="date" className="w-full border rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-green-500"
+                            <input type="date" className="w-full border rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-ring"
                               value={line.expiryDate}
                               onChange={e => setReceiveLines(l => l.map((li, idx) => idx !== i ? li : { ...li, expiryDate: e.target.value }))} />
                           </div>
@@ -2975,7 +2974,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                         <div className="grid grid-cols-2 gap-3">
                           <div className="space-y-1">
                             <label className="text-xs text-muted-foreground font-medium">Outcome</label>
-                            <select className="w-full border rounded-lg px-2.5 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-green-500"
+                            <select className="w-full border rounded-lg px-2.5 py-1.5 text-xs bg-card focus:outline-none focus:ring-2 focus:ring-ring"
                               value={line.outcome}
                               onChange={e => setReceiveLines(l => l.map((li, idx) => idx !== i ? li : { ...li, outcome: e.target.value }))}>
                               <option value="ACCEPTED">Accepted</option>
@@ -2988,7 +2987,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                           <div className="space-y-1">
                             <label className="text-xs text-muted-foreground font-medium">Batch / Lot No.</label>
                             <input type="text" placeholder="e.g. LOT-2025-001"
-                              className="w-full border rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-green-500"
+                              className="w-full border rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-ring"
                               value={line.batch}
                               onChange={e => setReceiveLines(l => l.map((li, idx) => idx !== i ? li : { ...li, batch: e.target.value }))} />
                           </div>
@@ -3000,7 +2999,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
 
                 {/* Receipt photo */}
                 <div className="space-y-2">
-                  <label className="text-sm font-semibold">Receipt Photo <span className="text-red-500">*</span></label>
+                  <label className="text-sm font-semibold">Receipt Photo <span className="text-destructive">*</span></label>
                   {receivePhoto ? (
                     <div className="relative space-y-2">
                       <img src={receivePhoto} alt="Receipt proof" className="w-full rounded-xl object-cover max-h-52 border" />
@@ -3014,10 +3013,10 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                     <div className="relative">
                       <button onClick={() => setReceivePhotoMenuOpen(o => !o)} {...receivePhotoDropProps}
                         className={`w-full border-2 border-dashed rounded-xl py-8 flex flex-col items-center gap-2.5 transition-colors ${
-                          isDraggingReceivePhoto ? 'border-green-400 bg-green-50 text-green-700' : 'text-muted-foreground hover:border-green-400 hover:text-green-700'
+                          isDraggingReceivePhoto ? 'border-success bg-success/10 text-success' : 'text-muted-foreground hover:border-success hover:text-success'
                         }`}>
-                        <div className="h-10 w-10 rounded-full bg-green-50 flex items-center justify-center">
-                          <Camera className="h-5 w-5 text-green-500" />
+                        <div className="h-10 w-10 rounded-full bg-success/10 flex items-center justify-center">
+                          <Camera className="h-5 w-5 text-success" />
                         </div>
                         <div className="text-center">
                           <p className="font-medium text-sm">{isDraggingReceivePhoto ? 'Drop to upload' : 'Take, upload, or drag photo'}</p>
@@ -3032,8 +3031,8 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                 {/* Notes */}
                 <div className="space-y-1.5">
                   <label className="text-sm font-semibold">Notes</label>
-                  <textarea className="w-full border rounded-xl px-3 py-2.5 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-green-500" rows={2}
-                    placeholder="Additional notes..."
+                  <textarea className="w-full border rounded-xl px-3 py-2.5 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring" rows={2}
+                    placeholder="Additional notes…"
                     value={receiveNotes} onChange={e => setReceiveNotes(e.target.value)} />
                 </div>
               </div>
@@ -3042,9 +3041,9 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
               <div className="flex justify-end gap-2 px-6 py-4 border-t shrink-0">
                 <button onClick={() => setReceiveModal(false)} className="px-4 py-2 text-sm border rounded-xl hover:bg-muted transition-colors">Cancel</button>
                 <button onClick={submitReceive} disabled={receiveSaving}
-                  className="flex items-center gap-2 px-5 py-2 text-sm bg-green-600 text-white rounded-xl hover:bg-green-700 disabled:opacity-40 font-semibold transition-colors">
+                  className="flex items-center gap-2 px-5 py-2 text-sm bg-success text-success-foreground rounded-xl hover:bg-success/90 disabled:opacity-40 font-semibold transition-colors">
                   {receiveSaving
-                    ? <><div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Saving...</>
+                    ? <><div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Saving…</>
                     : 'Confirm Receipt'}
                 </button>
               </div>
@@ -3058,18 +3057,18 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
         <>
           <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50" onClick={() => setReceiveLinkModal(false)} />
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
-            <div className="pointer-events-auto bg-white rounded-2xl shadow-2xl w-full max-w-md">
+            <div className="pointer-events-auto bg-card rounded-2xl shadow-2xl w-full max-w-md">
               <div className="flex items-center justify-between p-5 border-b">
                 <h3 className="font-bold text-lg">Crew Receive Link</h3>
                 <button onClick={() => setReceiveLinkModal(false)}><X className="h-5 w-5 text-muted-foreground" /></button>
               </div>
               <div className="p-5 space-y-4">
                 <p className="text-sm text-muted-foreground">
-                  Kirim link ini ke crew kapal (misal via WhatsApp) — mereka bisa konfirmasi penerimaan barang PO ini langsung tanpa login ke ERP. Berlaku 14 hari.
+                  Send this link to the vessel crew (e.g. via WhatsApp) — they can confirm receipt of the items on this PO directly without logging in to the ERP. Valid for 14 days.
                 </p>
                 {receiveLinkError && <div className="text-sm text-destructive bg-destructive/10 rounded px-3 py-2">{receiveLinkError}</div>}
                 {receiveLinkLoading ? (
-                  <div className="text-sm text-muted-foreground py-4 text-center">Membuat link...</div>
+                  <div className="text-sm text-muted-foreground py-4 text-center">Creating link…</div>
                 ) : receiveLink && (
                   <>
                     <div className="border rounded-md px-3 py-2.5 text-sm font-mono bg-muted/30 break-all">{receiveLink}</div>
@@ -3077,12 +3076,12 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                       <button
                         onClick={() => { navigator.clipboard.writeText(receiveLink); setReceiveLinkCopied(true); setTimeout(() => setReceiveLinkCopied(false), 2000) }}
                         className="flex-1 px-4 py-2 text-sm border rounded-md hover:bg-muted font-medium">
-                        {receiveLinkCopied ? 'Tersalin!' : 'Copy Link'}
+                        {receiveLinkCopied ? 'Copied!' : 'Copy Link'}
                       </button>
                       <a
                         href={`https://wa.me/?text=${encodeURIComponent(`Tolong konfirmasi penerimaan barang ${detail?.poNumber ?? ''} di sini: ${receiveLink}`)}`}
                         target="_blank" rel="noopener noreferrer"
-                        className="flex-1 px-4 py-2 text-sm bg-green-600 text-white rounded-md hover:bg-green-700 font-medium text-center">
+                        className="flex-1 px-4 py-2 text-sm bg-success text-success-foreground rounded-md hover:bg-success/90 font-medium text-center">
                         Share via WhatsApp
                       </a>
                     </div>

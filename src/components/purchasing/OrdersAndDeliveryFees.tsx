@@ -4,8 +4,8 @@ import { useState, useEffect } from 'react'
 import { useSession } from 'next-auth/react'
 import dynamic from 'next/dynamic'
 
-const OrdersPage   = dynamic(() => import('./orders/OrdersPage'),   { loading: () => <p className="text-sm text-muted-foreground py-8">Memuat...</p> })
-const DeliveryFeesPage = dynamic(() => import('./delivery-fees/DeliveryFeesPage'), { loading: () => <p className="text-sm text-muted-foreground py-8">Memuat...</p> })
+const OrdersPage   = dynamic(() => import('./orders/OrdersPage'),   { loading: () => <p className="text-sm text-muted-foreground py-8">Loading…</p> })
+const DeliveryFeesPage = dynamic(() => import('./delivery-fees/DeliveryFeesPage'), { loading: () => <p className="text-sm text-muted-foreground py-8">Loading…</p> })
 
 const TABS = [
   { key: 'orders',        label: 'Purchase Orders' },
@@ -38,14 +38,14 @@ export default function OrdersAndDeliveryFees({ openPoId, onOpenPoHandled }: { o
       <div>
         <h2 className="text-2xl font-bold tracking-tight">Purchase Orders</h2>
         <p className="text-muted-foreground text-sm mt-1">
-          {isWarehouse ? 'Daftar PO yang perlu diterima' : 'Purchase order dan delivery fee ke supplier'}
+          {isWarehouse ? 'POs awaiting receipt' : 'Purchase orders and delivery fees to suppliers'}
         </p>
       </div>
       {!isWarehouse && (
         <div className="flex gap-1 border-b">
           {visibleTabs.map(t => (
             <button key={t.key} onClick={() => setTab(t.key)}
-              className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${tab === t.key ? 'border-amber-500 text-amber-700' : 'border-transparent text-muted-foreground hover:text-foreground'}`}>
+              className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${tab === t.key ? 'border-primary text-primary-strong' : 'border-transparent text-muted-foreground hover:text-foreground'}`}>
               {t.label}
             </button>
           ))}

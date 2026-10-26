@@ -173,7 +173,7 @@ export default function FreshsalesImportModal({
 
         {phase === 'done' && result ? (
           <div className="space-y-4 py-2">
-            <div className="flex items-center gap-2 text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2.5 text-sm">
+            <div className="flex items-center gap-2 text-success bg-success/10 border border-success/30 rounded-lg px-3 py-2.5 text-sm">
               <CheckCircle2 className="h-4 w-4 shrink-0" />
               Imported as {result.target === 'lead' ? 'Leads' : 'Guests'}
             </div>
@@ -183,15 +183,15 @@ export default function FreshsalesImportModal({
                 <p className="text-xs text-muted-foreground mt-0.5">Fetched</p>
               </div>
               <div className="rounded-lg border p-3">
-                <p className="text-xl font-bold text-green-700">{result.created}</p>
+                <p className="text-xl font-bold text-success">{result.created}</p>
                 <p className="text-xs text-muted-foreground mt-0.5">New</p>
               </div>
               <div className="rounded-lg border p-3">
-                <p className="text-xl font-bold text-blue-700">{result.updated}</p>
+                <p className="text-xl font-bold text-info">{result.updated}</p>
                 <p className="text-xs text-muted-foreground mt-0.5">Updated</p>
               </div>
               <div className="rounded-lg border p-3">
-                <p className="text-xl font-bold text-amber-700">{result.merged}</p>
+                <p className="text-xl font-bold text-warning">{result.merged}</p>
                 <p className="text-xs text-muted-foreground mt-0.5">Merged</p>
               </div>
             </div>
@@ -202,8 +202,8 @@ export default function FreshsalesImportModal({
           </div>
         ) : phase === 'review' ? (
           <div className="space-y-3 py-2">
-            {error && <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</div>}
-            <div className="flex items-center gap-2 text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5 text-sm">
+            {error && <div className="text-sm text-destructive bg-destructive/10 border border-destructive/30 rounded-lg px-3 py-2">{error}</div>}
+            <div className="flex items-center gap-2 text-warning bg-warning/10 border border-warning/30 rounded-lg px-3 py-2.5 text-sm">
               <AlertTriangle className="h-4 w-4 shrink-0" />
               {matches.length} contact(s) share an email or WhatsApp number with an existing {target === 'lead' ? 'Lead' : 'Guest'}. Review before continuing.
             </div>
@@ -253,7 +253,7 @@ export default function FreshsalesImportModal({
           </div>
         ) : (
           <div className="space-y-4 py-2">
-            {error && <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</div>}
+            {error && <div className="text-sm text-destructive bg-destructive/10 border border-destructive/30 rounded-lg px-3 py-2">{error}</div>}
 
             <div className="space-y-1.5">
               <Label>Freshsales View ID</Label>

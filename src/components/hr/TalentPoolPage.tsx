@@ -4,7 +4,15 @@ import { useState, useEffect, useCallback } from 'react'
 import { Plus, X, Trash2, Pencil, Sparkles, Phone, Mail, Paperclip, Upload, UserPlus, Download, FileText, FileDown } from 'lucide-react'
 import { MultiFilePicker } from '@/components/ui/file-preview'
 import { PhotoLightbox } from '@/components/purchasing/PhotoLightbox'
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { useConfirm } from '@/components/ui/confirm-dialog'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import { NativeSelect } from '@/components/ui/native-select'
+import { Label } from '@/components/ui/label'
 import { readUploadFile, isPdfDataUrl, downloadDataUrl, extFromDataUrl } from '@/lib/fileUpload'
+import { formatDate, formatMoney } from '@/lib/format'
 
 interface EmployeeRole { id: string; title: string }
 interface AdditionalDocument { id: string; name: string; description: string; fileKey: string }
@@ -33,13 +41,13 @@ const STATUS_LABEL: Record<string, string> = {
   OFFER: 'Offer', HIRED: 'Hired', REJECTED: 'Rejected',
 }
 const STATUS_COLOR: Record<string, string> = {
-  TALENT_POOL: 'bg-slate-100 text-slate-700',
-  SHORTLISTED: 'bg-sky-100 text-sky-700',
-  ASSESSMENT: 'bg-blue-100 text-blue-700',
-  INTERVIEW: 'bg-purple-100 text-purple-700',
-  OFFER: 'bg-amber-100 text-amber-700',
-  HIRED: 'bg-green-100 text-green-700',
-  REJECTED: 'bg-red-100 text-red-700',
+  TALENT_POOL: 'bg-muted text-foreground/80',
+  SHORTLISTED: 'bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300',
+  ASSESSMENT: 'bg-info/15 text-info',
+  INTERVIEW: 'bg-purple-100 text-purple-700 dark:bg-purple-500/15 dark:text-purple-300',
+  OFFER: 'bg-warning/15 text-warning',
+  HIRED: 'bg-success/15 text-success',
+  REJECTED: 'bg-destructive/15 text-destructive',
 }
 
 // Real, computed from readyJoinDate rather than a free-text field — "how soon can they
@@ -50,6 +58,9 @@ function availabilityLabel(readyJoinDate: string | null): string {
   return days <= 0 ? 'Immediate' : `${days} day${days === 1 ? '' : 's'}`
 }
 
+// PhotoLightbox is a plain fixed overlay. Opened over a (modal) Radix Dialog it would sit
+// under the dialog's portal and inherit the `pointer-events: none` Radix puts on <body>,
+// so it is portaled to <body> and re-enables pointer events for itself.
 function SummaryCard({ label, value }: { label: string; value: string }) {
   return (
     <div className="bg-muted/40 border rounded-lg px-3 py-2.5">
@@ -59,7 +70,7 @@ function SummaryCard({ label, value }: { label: string; value: string }) {
   )
 }
 
-function TagInput({ values, onChange, placeholder }: { values: string[]; onChange: (v: string[]) => void; placeholder: string }) {
+function TagInput({ id, values, onChange, placeholder }: { id?: string; values: string[]; onChange: (v: string[]) => void; placeholder: string }) {
   const [input, setInput] = useState('')
   const add = () => {
     const v = input.trim()
@@ -67,18 +78,19 @@ function TagInput({ values, onChange, placeholder }: { values: string[]; onChang
     setInput('')
   }
   return (
-    <div className="min-h-10 border rounded-lg flex items-center gap-1.5 flex-wrap p-1.5 bg-background focus-within:ring-1 focus-within:ring-amber-500">
+    <div className="min-h-9 border border-input rounded-md flex items-center gap-1.5 flex-wrap p-1 bg-transparent dark:bg-input/30 shadow-xs transition-[color,box-shadow] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50">
       {values.map((v, i) => (
-        <span key={i} className="inline-flex items-center gap-1 text-xs bg-amber-50 text-amber-800 rounded-full px-2.5 py-1">
+        <span key={i} className="inline-flex items-center gap-1 text-xs bg-primary/10 text-primary-strong rounded-full px-2.5 py-1">
           {v}
-          <button type="button" onClick={() => onChange(values.filter((_, j) => j !== i))}><X className="h-3 w-3" /></button>
+          <button type="button" aria-label={`Remove ${v}`} onClick={() => onChange(values.filter((_, j) => j !== i))}><X className="h-3 w-3" /></button>
         </span>
       ))}
       <input
+        id={id}
         value={input} onChange={e => setInput(e.target.value)}
         onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); add() } }}
         onBlur={add} placeholder={values.length === 0 ? placeholder : ''}
-        className="flex-1 min-w-[120px] h-7 text-sm border-0 bg-transparent focus:outline-none px-1"
+        className="flex-1 min-w-[120px] h-7 text-sm border-0 bg-transparent focus:outline-none px-2 placeholder:text-muted-foreground"
       />
     </div>
   )
@@ -97,6 +109,7 @@ const BLANK = {
 }
 
 export default function TalentPoolPage() {
+  const confirm = useConfirm()
   const [candidates, setCandidates] = useState<Candidate[]>([])
   const [roles, setRoles] = useState<EmployeeRole[]>([])
   const [loading, setLoading] = useState(true)
@@ -108,7 +121,6 @@ export default function TalentPoolPage() {
   const [form, setForm] = useState({ ...BLANK })
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState('')
-  const [deleteConfirm, setDeleteConfirm] = useState<Candidate | null>(null)
   const [convertingId, setConvertingId] = useState<string | null>(null)
   const [convertError, setConvertError] = useState('')
 
@@ -251,8 +263,15 @@ export default function TalentPoolPage() {
   }
 
   async function doDelete(c: Candidate) {
+    const ok = await confirm({
+      title: 'Remove Candidate?',
+      description: <><span className="font-medium text-foreground">{c.fullName}</span> will be removed from the talent pool permanently.</>,
+      confirmLabel: 'Remove',
+      destructive: true,
+    })
+    if (!ok) return
     await fetch(`/api/hr/candidates/${c.id}`, { method: 'DELETE' })
-    setDeleteConfirm(null); load()
+    load()
   }
 
   async function convertToEmployee(c: Candidate) {
@@ -277,9 +296,9 @@ export default function TalentPoolPage() {
           <h2 className="text-2xl font-bold tracking-tight">Talent Pool</h2>
           <p className="text-muted-foreground text-sm mt-1">{activeCount} candidate{activeCount !== 1 ? 's' : ''} in the active pipeline</p>
         </div>
-        <button onClick={openAdd} className="flex items-center gap-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium px-4 py-2 rounded-md transition-colors">
-          <Plus className="h-4 w-4" /> Add Candidate
-        </button>
+        <Button onClick={openAdd}>
+          <Plus /> Add Candidate
+        </Button>
       </div>
 
       <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -289,11 +308,11 @@ export default function TalentPoolPage() {
             return (
               <button key={s} onClick={() => setStatusFilter(s)}
                 className={`shrink-0 whitespace-nowrap px-3 py-2 text-sm font-medium border-b-2 transition-colors -mb-px flex items-center gap-1.5 ${
-                  statusFilter === s ? 'border-amber-500 text-amber-700' : 'border-transparent text-muted-foreground hover:text-foreground'
+                  statusFilter === s ? 'border-primary text-primary-strong' : 'border-transparent text-muted-foreground hover:text-foreground'
                 }`}>
                 {s === 'All' ? 'All' : STATUS_LABEL[s]}
                 {count > 0 && (
-                  <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${statusFilter === s ? 'bg-amber-100 text-amber-700' : 'bg-muted text-muted-foreground'}`}>
+                  <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${statusFilter === s ? 'bg-primary/15 text-primary-strong' : 'bg-muted text-muted-foreground'}`}>
                     {count}
                   </span>
                 )}
@@ -301,15 +320,14 @@ export default function TalentPoolPage() {
             )
           })}
         </div>
-        <select value={roleFilter} onChange={e => setRoleFilter(e.target.value)}
-          className="h-9 border rounded-md px-2.5 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500 shrink-0">
+        <NativeSelect aria-label="Filter by applied role" value={roleFilter} onChange={e => setRoleFilter(e.target.value)} className="w-auto shrink-0">
           <option value="All">All applied roles</option>
           {roles.map(r => <option key={r.id} value={r.id}>{r.title}</option>)}
-        </select>
+        </NativeSelect>
       </div>
 
       {convertError && (
-        <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{convertError}</p>
+        <p className="text-xs text-destructive bg-destructive/10 border border-destructive/30 rounded-lg px-3 py-2">{convertError}</p>
       )}
 
       {loading ? (
@@ -349,8 +367,10 @@ export default function TalentPoolPage() {
                   </td>
                   <td className="px-4 py-3 text-muted-foreground text-xs">{c.source ?? '—'}</td>
                   <td className="px-4 py-3 text-center" onClick={e => e.stopPropagation()}>
-                    <select value={c.status} onChange={e => changeStatus(c, e.target.value)}
-                      className={`text-xs font-medium rounded-full px-2 py-1 border-0 focus:outline-none focus:ring-1 focus:ring-amber-500 ${STATUS_COLOR[c.status]}`}>
+                    {/* Status pill doubling as a quick-change select — kept as a styled native
+                        select so the row keeps its colour-coded pill look. */}
+                    <select value={c.status} onChange={e => changeStatus(c, e.target.value)} aria-label={`Status for ${c.fullName}`}
+                      className={`text-xs font-medium rounded-full px-2 py-1 border-0 focus:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 ${STATUS_COLOR[c.status]}`}>
                       {STATUSES.map(s => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
                     </select>
                   </td>
@@ -358,22 +378,24 @@ export default function TalentPoolPage() {
                     <div className="flex items-center justify-end gap-1">
                       {c.status === 'HIRED' && (
                         c.convertedEmployeeId ? (
-                          <span className="flex items-center gap-1 text-xs font-medium text-green-700 bg-green-50 border border-green-200 rounded-full px-2 py-1">
+                          <span className="flex items-center gap-1 text-xs font-medium text-success bg-success/10 border border-success/30 rounded-full px-2 py-1">
                             <UserPlus className="h-3 w-3" /> Employee
                           </span>
                         ) : (
                           <button onClick={() => convertToEmployee(c)} disabled={convertingId === c.id}
-                            className="flex items-center gap-1 text-xs font-medium text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-full px-2 py-1 disabled:opacity-50 transition-colors">
-                            <UserPlus className="h-3 w-3" /> {convertingId === c.id ? 'Converting...' : 'Convert to Employee'}
+                            className="flex items-center gap-1 text-xs font-medium text-primary-strong bg-primary/10 hover:bg-primary/15 border border-primary/30 rounded-full px-2 py-1 disabled:opacity-50 transition-colors">
+                            <UserPlus className="h-3 w-3" /> {convertingId === c.id ? 'Converting…' : 'Convert to Employee'}
                           </button>
                         )
                       )}
-                      <button onClick={() => openEdit(c)} className="p-1.5 text-muted-foreground hover:text-amber-700 hover:bg-amber-50 rounded-lg transition-colors">
-                        <Pencil className="h-3.5 w-3.5" />
-                      </button>
-                      <button onClick={() => setDeleteConfirm(c)} className="p-1.5 text-muted-foreground hover:text-destructive hover:bg-red-50 rounded-lg transition-colors">
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
+                      <Button variant="ghost" size="icon" onClick={() => openEdit(c)} aria-label={`Edit ${c.fullName}`}
+                        className="size-8 text-muted-foreground hover:text-primary-strong hover:bg-primary/10">
+                        <Pencil className="size-3.5" />
+                      </Button>
+                      <Button variant="ghost" size="icon" onClick={() => doDelete(c)} aria-label={`Remove ${c.fullName}`}
+                        className="size-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10">
+                        <Trash2 className="size-3.5" />
+                      </Button>
                     </div>
                   </td>
                 </tr>
@@ -384,152 +406,153 @@ export default function TalentPoolPage() {
       )}
 
       {/* ── Add Candidate Modal ── */}
-      {modal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
-            <div className="flex items-center justify-between px-6 py-4 border-b">
-              <div className="flex items-center gap-2">
-                <Sparkles className="h-4 w-4 text-amber-600" />
-                <h3 className="font-bold text-sm">{editingId ? 'Edit Candidate' : 'Add Candidate'}</h3>
-              </div>
-              <button onClick={() => setModal(false)} className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors">
-                <X className="h-4 w-4" />
-              </button>
+      <Dialog open={modal} onOpenChange={o => { if (!o) setModal(false) }}>
+        <DialogContent
+          className="sm:max-w-md p-0 gap-0 overflow-hidden"
+          aria-describedby={undefined}
+          onInteractOutside={e => e.preventDefault()}
+          onEscapeKeyDown={e => { if (docPreview) { e.preventDefault(); setDocPreview(null) } }}
+        >
+          <DialogHeader className="flex-row items-center gap-2 px-6 py-4 pr-12 border-b text-left">
+            <Sparkles className="h-4 w-4 text-primary-strong" />
+            <DialogTitle className="text-sm font-bold">{editingId ? 'Edit Candidate' : 'Add Candidate'}</DialogTitle>
+          </DialogHeader>
+          <div className="px-6 py-5 space-y-4 max-h-[70vh] overflow-y-auto">
+            {formError && <p className="text-xs text-destructive bg-destructive/10 border border-destructive/30 rounded-lg px-3 py-2">{formError}</p>}
+            <div className="space-y-1.5">
+              <Label htmlFor="cand-full-name" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Full Name</Label>
+              <Input id="cand-full-name" autoFocus
+                value={form.fullName} onChange={e => setForm(f => ({ ...f, fullName: e.target.value }))} />
             </div>
-            <div className="px-6 py-5 space-y-4 max-h-[70vh] overflow-y-auto">
-              {formError && <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{formError}</p>}
+            <div className="space-y-1.5">
+              <Label htmlFor="cand-applied-role" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Applied Role</Label>
+              <NativeSelect id="cand-applied-role"
+                value={form.appliedRoleId} onChange={e => setForm(f => ({ ...f, appliedRoleId: e.target.value }))}>
+                <option value="">—</option>
+                {roles.map(r => <option key={r.id} value={r.id}>{r.title}</option>)}
+              </NativeSelect>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Full Name</label>
-                <input autoFocus className="w-full h-10 border rounded-lg px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
-                  value={form.fullName} onChange={e => setForm(f => ({ ...f, fullName: e.target.value }))} />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Applied Role</label>
-                <select className="w-full h-10 border rounded-lg px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
-                  value={form.appliedRoleId} onChange={e => setForm(f => ({ ...f, appliedRoleId: e.target.value }))}>
-                  <option value="">—</option>
-                  {roles.map(r => <option key={r.id} value={r.id}>{r.title}</option>)}
-                </select>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Phone</label>
-                  <input className="w-full h-10 border rounded-lg px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
-                    value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Email</label>
-                  <input className="w-full h-10 border rounded-lg px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
-                    value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} />
-                </div>
+                <Label htmlFor="cand-phone" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Phone</Label>
+                <Input id="cand-phone"
+                  value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} />
               </div>
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Source</label>
-                <input placeholder="e.g. Referral, LinkedIn, Walk-in" className="w-full h-10 border rounded-lg px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
-                  value={form.source} onChange={e => setForm(f => ({ ...f, source: e.target.value }))} />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Location</label>
-                <input placeholder="e.g. Jakarta, Bali" className="w-full h-10 border rounded-lg px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
-                  value={form.location} onChange={e => setForm(f => ({ ...f, location: e.target.value }))} />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Expected Salary</label>
-                  <input type="number" min={0} placeholder="Rp" className="w-full h-10 border rounded-lg px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
-                    value={form.expectedSalary} onChange={e => setForm(f => ({ ...f, expectedSalary: e.target.value }))} />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Ready to Join</label>
-                  <input type="date" className="w-full h-10 border rounded-lg px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
-                    value={form.readyJoinDate} onChange={e => setForm(f => ({ ...f, readyJoinDate: e.target.value }))} />
-                </div>
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Assessment Score (0-100)</label>
-                <input type="number" min={0} max={100} className="w-full h-10 border rounded-lg px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
-                  value={form.assessmentScore} onChange={e => setForm(f => ({ ...f, assessmentScore: e.target.value }))} />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Skills</label>
-                <TagInput values={form.skills} onChange={skills => setForm(f => ({ ...f, skills }))} placeholder="Add a skill and press Enter" />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Languages</label>
-                <TagInput values={form.languages} onChange={languages => setForm(f => ({ ...f, languages }))} placeholder="Add a language and press Enter" />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">CV</label>
-                <MultiFilePicker files={form.resumeFiles} onChange={files => setForm(f => ({ ...f, resumeFiles: files }))} />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Additional Documents</label>
-                <div className="space-y-2">
-                  {form.additionalDocuments.map(doc => (
-                    <div key={doc.id} className="flex items-center gap-2 border rounded-lg px-3 py-2">
-                      <button type="button" onClick={() => openEditDoc(doc)} className="flex-1 min-w-0 text-left">
-                        <p className="text-sm font-medium truncate">{doc.name}</p>
-                        {doc.description && <p className="text-xs text-muted-foreground truncate">{doc.description}</p>}
-                      </button>
-                      <button type="button" onClick={() => setDocPreview(doc.fileKey)} className="p-1.5 text-muted-foreground hover:text-amber-700 shrink-0">
-                        <Paperclip className="h-3.5 w-3.5" />
-                      </button>
-                      <button type="button" onClick={() => downloadDataUrl(doc.fileKey, `${doc.name.replace(/[^a-z0-9]+/gi, '-') || 'document'}.${extFromDataUrl(doc.fileKey)}`)}
-                        className="p-1.5 text-muted-foreground hover:text-amber-700 shrink-0">
-                        <Download className="h-3.5 w-3.5" />
-                      </button>
-                      <button type="button" onClick={() => removeDoc(doc.id)} className="p-1.5 text-muted-foreground hover:text-destructive shrink-0">
-                        <X className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  ))}
-                  <button type="button" onClick={openAddDoc}
-                    className="w-full flex items-center justify-center gap-1.5 border-2 border-dashed rounded-lg py-2.5 text-sm text-muted-foreground hover:border-amber-400 hover:text-amber-700 transition-colors">
-                    <Plus className="h-3.5 w-3.5" /> Add Document
-                  </button>
-                </div>
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Assessment Notes</label>
-                <textarea rows={2} className="w-full border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500 resize-none"
-                  value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} />
+                <Label htmlFor="cand-email" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Email</Label>
+                <Input id="cand-email"
+                  value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} />
               </div>
             </div>
-            <div className="flex items-center justify-end gap-2 px-6 py-4 border-t bg-gray-50/80">
-              <button onClick={() => setModal(false)} className="px-4 py-2 text-sm border rounded-lg hover:bg-white transition-colors">Cancel</button>
-              <button onClick={save} disabled={saving} className="px-5 py-2 text-sm text-white rounded-lg font-semibold bg-amber-600 hover:bg-amber-700 disabled:opacity-50 transition-colors">
-                {saving ? 'Saving...' : editingId ? 'Save Changes' : 'Add Candidate'}
-              </button>
+            <div className="space-y-1.5">
+              <Label htmlFor="cand-source" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Source</Label>
+              <Input id="cand-source" placeholder="e.g. Referral, LinkedIn, Walk-in"
+                value={form.source} onChange={e => setForm(f => ({ ...f, source: e.target.value }))} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="cand-location" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Location</Label>
+              <Input id="cand-location" placeholder="e.g. Jakarta, Bali"
+                value={form.location} onChange={e => setForm(f => ({ ...f, location: e.target.value }))} />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="cand-expected-salary" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Expected Salary</Label>
+                <Input id="cand-expected-salary" type="number" min={0} placeholder="Rp"
+                  value={form.expectedSalary} onChange={e => setForm(f => ({ ...f, expectedSalary: e.target.value }))} />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="cand-ready-join" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Ready to Join</Label>
+                <Input id="cand-ready-join" type="date"
+                  value={form.readyJoinDate} onChange={e => setForm(f => ({ ...f, readyJoinDate: e.target.value }))} />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="cand-assessment-score" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Assessment Score (0-100)</Label>
+              <Input id="cand-assessment-score" type="number" min={0} max={100}
+                value={form.assessmentScore} onChange={e => setForm(f => ({ ...f, assessmentScore: e.target.value }))} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="cand-skills" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Skills</Label>
+              <TagInput id="cand-skills" values={form.skills} onChange={skills => setForm(f => ({ ...f, skills }))} placeholder="Add a skill and press Enter" />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="cand-languages" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Languages</Label>
+              <TagInput id="cand-languages" values={form.languages} onChange={languages => setForm(f => ({ ...f, languages }))} placeholder="Add a language and press Enter" />
+            </div>
+            <div className="space-y-1.5">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">CV</p>
+              <MultiFilePicker files={form.resumeFiles} onChange={files => setForm(f => ({ ...f, resumeFiles: files }))} />
+            </div>
+            <div className="space-y-1.5">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Additional Documents</p>
+              <div className="space-y-2">
+                {form.additionalDocuments.map(doc => (
+                  <div key={doc.id} className="flex items-center gap-2 border rounded-lg px-3 py-2">
+                    <button type="button" onClick={() => openEditDoc(doc)} className="flex-1 min-w-0 text-left">
+                      <p className="text-sm font-medium truncate">{doc.name}</p>
+                      {doc.description && <p className="text-xs text-muted-foreground truncate">{doc.description}</p>}
+                    </button>
+                    <Button type="button" variant="ghost" size="icon" onClick={() => setDocPreview(doc.fileKey)} aria-label={`View ${doc.name}`}
+                      className="size-7 text-muted-foreground hover:text-primary-strong">
+                      <Paperclip className="size-3.5" />
+                    </Button>
+                    <Button type="button" variant="ghost" size="icon" aria-label={`Download ${doc.name}`}
+                      onClick={() => downloadDataUrl(doc.fileKey, `${doc.name.replace(/[^a-z0-9]+/gi, '-') || 'document'}.${extFromDataUrl(doc.fileKey)}`)}
+                      className="size-7 text-muted-foreground hover:text-primary-strong">
+                      <Download className="size-3.5" />
+                    </Button>
+                    <Button type="button" variant="ghost" size="icon" onClick={() => removeDoc(doc.id)} aria-label={`Remove ${doc.name}`}
+                      className="size-7 text-muted-foreground hover:text-destructive">
+                      <X className="size-3.5" />
+                    </Button>
+                  </div>
+                ))}
+                <button type="button" onClick={openAddDoc}
+                  className="w-full flex items-center justify-center gap-1.5 border-2 border-dashed rounded-lg py-2.5 text-sm text-muted-foreground hover:border-primary hover:text-primary-strong transition-colors">
+                  <Plus className="h-3.5 w-3.5" /> Add Document
+                </button>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="cand-notes" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Assessment Notes</Label>
+              <Textarea id="cand-notes" rows={2} className="resize-none"
+                value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} />
             </div>
           </div>
-        </div>
-      )}
+          <DialogFooter className="px-6 py-4 border-t bg-muted/50">
+            <Button variant="outline" onClick={() => setModal(false)}>Cancel</Button>
+            <Button onClick={save} loading={saving}>
+              {saving ? 'Saving…' : editingId ? 'Save Changes' : 'Add Candidate'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* ── Candidate Detail ── */}
-      {detailCandidate && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xl overflow-hidden">
-            <div className="flex items-center justify-between px-6 py-4 border-b">
-              <div className="flex items-center gap-3 min-w-0">
-                <span className="h-11 w-11 rounded-full bg-amber-100 text-amber-800 font-bold text-sm flex items-center justify-center shrink-0">
-                  {detailCandidate.fullName.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase()}
-                </span>
-                <div className="min-w-0">
-                  <h3 className="font-bold text-base truncate">{detailCandidate.fullName}</h3>
-                  <p className="text-xs text-muted-foreground mt-0.5 truncate">
-                    {detailCandidate.appliedRole?.title ?? 'No role specified'}{detailCandidate.location ? ` · ${detailCandidate.location}` : ''}
-                  </p>
-                </div>
+      <Dialog open={!!detailCandidate} onOpenChange={o => { if (!o) setDetailId(null) }}>
+        {detailCandidate && (
+          <DialogContent
+            className="sm:max-w-xl p-0 gap-0 overflow-hidden"
+            aria-describedby={undefined}
+            onInteractOutside={e => e.preventDefault()}
+            onEscapeKeyDown={e => { if (detailPreview) { e.preventDefault(); setDetailPreview(null) } }}
+          >
+            <DialogHeader className="flex-row items-center gap-3 px-6 py-4 pr-12 border-b text-left">
+              <span className="h-11 w-11 rounded-full bg-primary/15 text-primary-strong font-bold text-sm flex items-center justify-center shrink-0">
+                {detailCandidate.fullName.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase()}
+              </span>
+              <div className="min-w-0">
+                <DialogTitle className="font-bold text-base leading-normal truncate">{detailCandidate.fullName}</DialogTitle>
+                <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                  {detailCandidate.appliedRole?.title ?? 'No role specified'}{detailCandidate.location ? ` · ${detailCandidate.location}` : ''}
+                </p>
               </div>
-              <button onClick={() => setDetailId(null)} className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors shrink-0">
-                <X className="h-4 w-4" />
-              </button>
-            </div>
+            </DialogHeader>
             <div className="px-6 py-5 space-y-5 max-h-[70vh] overflow-y-auto">
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
                 <SummaryCard label="Assessment score" value={detailCandidate.assessmentScore != null ? `${detailCandidate.assessmentScore}/100` : '—'} />
                 <SummaryCard label="Availability" value={availabilityLabel(detailCandidate.readyJoinDate)} />
-                <SummaryCard label="Expected salary" value={detailCandidate.expectedSalary != null ? `Rp ${detailCandidate.expectedSalary.toLocaleString('id-ID')}` : '—'} />
+                <SummaryCard label="Expected salary" value={formatMoney(detailCandidate.expectedSalary)} />
                 <SummaryCard label="Current stage" value={STATUS_LABEL[detailCandidate.status]} />
               </div>
 
@@ -538,7 +561,7 @@ export default function TalentPoolPage() {
                   <h4 className="text-sm font-semibold mb-2">Skills and languages</h4>
                   <div className="flex flex-wrap gap-1.5">
                     {[...detailCandidate.skills, ...detailCandidate.languages].map((item, i) => (
-                      <span key={i} className="text-xs font-medium bg-blue-50 text-blue-700 rounded-full px-2.5 py-1">{item}</span>
+                      <span key={i} className="text-xs font-medium bg-info/10 text-info rounded-full px-2.5 py-1">{item}</span>
                     ))}
                   </div>
                 </div>
@@ -559,22 +582,24 @@ export default function TalentPoolPage() {
                   <div className="space-y-2">
                     {detailCandidate.resumeFiles.map((f, i) => (
                       <div key={i} className="flex items-center gap-3 border rounded-lg px-3 py-2.5">
-                        <span className="h-9 w-9 rounded-lg bg-amber-50 text-amber-700 flex items-center justify-center shrink-0">
+                        <span className="h-9 w-9 rounded-lg bg-primary/10 text-primary-strong flex items-center justify-center shrink-0">
                           <FileText className="h-4 w-4" />
                         </span>
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-semibold truncate">CV{detailCandidate.resumeFiles.length > 1 ? ` — file ${i + 1}` : ''}</p>
                           <p className="text-xs text-muted-foreground">Candidate CV</p>
                         </div>
-                        <button type="button" onClick={() => setDetailPreview(f)} className="p-1.5 text-muted-foreground hover:text-amber-700 shrink-0">
-                          <Paperclip className="h-3.5 w-3.5" />
-                        </button>
-                        <button
-                          type="button" onClick={() => downloadDataUrl(f, `${detailCandidate.fullName.replace(/[^a-z0-9]+/gi, '-')}-cv-${i + 1}.${extFromDataUrl(f)}`)}
-                          className="p-1.5 text-muted-foreground hover:text-amber-700 shrink-0"
+                        <Button type="button" variant="ghost" size="icon" onClick={() => setDetailPreview(f)} aria-label="View CV"
+                          className="size-7 text-muted-foreground hover:text-primary-strong">
+                          <Paperclip className="size-3.5" />
+                        </Button>
+                        <Button
+                          type="button" variant="ghost" size="icon" aria-label="Download CV"
+                          onClick={() => downloadDataUrl(f, `${detailCandidate.fullName.replace(/[^a-z0-9]+/gi, '-')}-cv-${i + 1}.${extFromDataUrl(f)}`)}
+                          className="size-7 text-muted-foreground hover:text-primary-strong"
                         >
-                          <Download className="h-3.5 w-3.5" />
-                        </button>
+                          <Download className="size-3.5" />
+                        </Button>
                       </div>
                     ))}
                   </div>
@@ -587,22 +612,24 @@ export default function TalentPoolPage() {
                   <div className="space-y-2">
                     {detailCandidate.additionalDocuments.map(doc => (
                       <div key={doc.id} className="flex items-center gap-3 border rounded-lg px-3 py-2.5">
-                        <span className="h-9 w-9 rounded-lg bg-amber-50 text-amber-700 flex items-center justify-center shrink-0">
+                        <span className="h-9 w-9 rounded-lg bg-primary/10 text-primary-strong flex items-center justify-center shrink-0">
                           <FileText className="h-4 w-4" />
                         </span>
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-semibold truncate">{doc.name}</p>
                           {doc.description ? <p className="text-xs text-muted-foreground truncate">{doc.description}</p> : <p className="text-xs text-muted-foreground">Document</p>}
                         </div>
-                        <button type="button" onClick={() => setDetailPreview(doc.fileKey)} className="p-1.5 text-muted-foreground hover:text-amber-700 shrink-0">
-                          <Paperclip className="h-3.5 w-3.5" />
-                        </button>
-                        <button
-                          type="button" onClick={() => downloadDataUrl(doc.fileKey, `${doc.name.replace(/[^a-z0-9]+/gi, '-') || 'document'}.${extFromDataUrl(doc.fileKey)}`)}
-                          className="p-1.5 text-muted-foreground hover:text-amber-700 shrink-0"
+                        <Button type="button" variant="ghost" size="icon" onClick={() => setDetailPreview(doc.fileKey)} aria-label={`View ${doc.name}`}
+                          className="size-7 text-muted-foreground hover:text-primary-strong">
+                          <Paperclip className="size-3.5" />
+                        </Button>
+                        <Button
+                          type="button" variant="ghost" size="icon" aria-label={`Download ${doc.name}`}
+                          onClick={() => downloadDataUrl(doc.fileKey, `${doc.name.replace(/[^a-z0-9]+/gi, '-') || 'document'}.${extFromDataUrl(doc.fileKey)}`)}
+                          className="size-7 text-muted-foreground hover:text-primary-strong"
                         >
-                          <Download className="h-3.5 w-3.5" />
-                        </button>
+                          <Download className="size-3.5" />
+                        </Button>
                       </div>
                     ))}
                   </div>
@@ -610,19 +637,20 @@ export default function TalentPoolPage() {
               )}
 
               {detailCandidate.interviewScheduledAt && (
-                <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+                <div className="rounded-lg border border-primary/30 bg-primary/10 px-4 py-3">
                   <div className="flex items-center justify-between gap-2">
                     <div>
-                      <p className="text-xs font-semibold text-amber-800 uppercase tracking-wide">Interview Scheduled</p>
+                      <p className="text-xs font-semibold text-primary-strong uppercase tracking-wide">Interview Scheduled</p>
                       <p className="text-sm font-medium mt-0.5">
-                        {new Date(detailCandidate.interviewScheduledAt).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                        {formatDate(detailCandidate.interviewScheduledAt, 'datetime')}
                       </p>
                     </div>
-                    <button onClick={() => openSchedule(detailCandidate)} className="text-xs font-medium text-amber-700 hover:underline shrink-0">Edit</button>
+                    <Button variant="link" size="sm" onClick={() => openSchedule(detailCandidate)}
+                      className="h-auto p-0 has-[>svg]:px-0 text-xs text-primary-strong shrink-0">Edit</Button>
                   </div>
                   {detailCandidate.interviewMeetingLink && (
                     <a href={detailCandidate.interviewMeetingLink} target="_blank" rel="noreferrer"
-                      className="inline-flex items-center gap-1 text-xs font-medium text-amber-700 hover:underline mt-2">
+                      className="inline-flex items-center gap-1 text-xs font-medium text-primary-strong hover:underline mt-2">
                       Join Meeting Link →
                     </a>
                   )}
@@ -630,13 +658,13 @@ export default function TalentPoolPage() {
               )}
 
               <div>
-                <h4 className="text-sm font-semibold mb-2">Move candidate</h4>
-                <div className="flex flex-wrap gap-1.5">
+                <h4 id="cand-move-label" className="text-sm font-semibold mb-2">Move candidate</h4>
+                <div role="group" aria-labelledby="cand-move-label" className="flex flex-wrap gap-1.5">
                   {STATUSES.map(s => (
                     <button
-                      key={s} onClick={() => changeStatus(detailCandidate, s)}
+                      key={s} onClick={() => changeStatus(detailCandidate, s)} aria-pressed={detailCandidate.status === s}
                       className={`text-xs font-medium border rounded-md px-3 py-1.5 transition-colors ${
-                        detailCandidate.status === s ? 'bg-amber-600 text-white border-amber-600' : 'bg-white text-foreground hover:bg-muted/50'
+                        detailCandidate.status === s ? 'bg-primary text-primary-foreground border-primary' : 'bg-card text-foreground hover:bg-muted/50'
                       }`}
                     >
                       {STATUS_LABEL[s]}
@@ -645,137 +673,110 @@ export default function TalentPoolPage() {
                 </div>
               </div>
             </div>
-            <div className="flex items-center justify-end gap-2 px-6 py-4 border-t bg-gray-50/80">
-              <button onClick={() => setDetailId(null)} className="px-4 py-2 text-sm border rounded-lg hover:bg-white transition-colors">Close</button>
+            <DialogFooter className="px-6 py-4 border-t bg-muted/50">
+              <Button variant="outline" onClick={() => setDetailId(null)}>Close</Button>
               {detailCandidate.status === 'OFFER' ? (
-                <button
-                  onClick={() => window.open(`/print/offering-letter/${detailCandidate.id}`, '_blank', 'noopener,noreferrer')}
-                  className="flex items-center gap-1.5 px-5 py-2 text-sm text-white rounded-lg font-semibold bg-amber-600 hover:bg-amber-700 transition-colors"
-                >
-                  <FileDown className="h-3.5 w-3.5" /> Generate Offering Letter
-                </button>
+                <Button onClick={() => window.open(`/print/offering-letter/${detailCandidate.id}`, '_blank', 'noopener,noreferrer')}>
+                  <FileDown /> Generate Offering Letter
+                </Button>
               ) : (
-                <button
-                  onClick={() => openSchedule(detailCandidate)}
-                  className="px-5 py-2 text-sm text-white rounded-lg font-semibold bg-amber-600 hover:bg-amber-700 transition-colors"
-                >
+                <Button onClick={() => openSchedule(detailCandidate)}>
                   {detailCandidate.interviewScheduledAt ? 'Reschedule Interview' : 'Schedule Interview'}
-                </button>
+                </Button>
               )}
-            </div>
-          </div>
-        </div>
-      )}
+            </DialogFooter>
+          </DialogContent>
+        )}
+      </Dialog>
 
       {/* ── Schedule Interview ── */}
-      {scheduleTarget && (
-        <div className="fixed inset-0 bg-black/50 z-60 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
-            <div className="flex items-center justify-between px-6 py-4 border-b">
-              <h3 className="font-bold text-sm">Schedule Interview</h3>
-              <button onClick={() => setScheduleTarget(null)} className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors">
-                <X className="h-4 w-4" />
-              </button>
+      <Dialog open={!!scheduleTarget} onOpenChange={o => { if (!o) setScheduleTarget(null) }}>
+        <DialogContent className="sm:max-w-sm p-0 gap-0 overflow-hidden" aria-describedby={undefined} onInteractOutside={e => e.preventDefault()}>
+          <DialogHeader className="px-6 py-4 pr-12 border-b text-left">
+            <DialogTitle className="text-sm font-bold">Schedule Interview</DialogTitle>
+          </DialogHeader>
+          <div className="px-6 py-5 space-y-4">
+            {scheduleError && <p className="text-xs text-destructive bg-destructive/10 border border-destructive/30 rounded-lg px-3 py-2">{scheduleError}</p>}
+            <div className="space-y-1.5">
+              <Label htmlFor="cand-interview-datetime" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Date & Time</Label>
+              <Input
+                id="cand-interview-datetime" type="datetime-local" autoFocus
+                value={scheduleForm.datetime} onChange={e => setScheduleForm(f => ({ ...f, datetime: e.target.value }))}
+              />
             </div>
-            <div className="px-6 py-5 space-y-4">
-              {scheduleError && <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{scheduleError}</p>}
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Date & Time</label>
-                <input
-                  type="datetime-local" autoFocus
-                  className="w-full h-10 border rounded-lg px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
-                  value={scheduleForm.datetime} onChange={e => setScheduleForm(f => ({ ...f, datetime: e.target.value }))}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Zoom Meeting Link</label>
-                <input
-                  type="url" placeholder="https://zoom.us/j/..."
-                  className="w-full h-10 border rounded-lg px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
-                  value={scheduleForm.link} onChange={e => setScheduleForm(f => ({ ...f, link: e.target.value }))}
-                />
-              </div>
-            </div>
-            <div className="flex items-center justify-end gap-2 px-6 py-4 border-t bg-gray-50/80">
-              <button onClick={() => setScheduleTarget(null)} className="px-4 py-2 text-sm border rounded-lg hover:bg-white transition-colors">Cancel</button>
-              <button onClick={saveSchedule} disabled={scheduleSaving} className="px-5 py-2 text-sm text-white rounded-lg font-semibold bg-amber-600 hover:bg-amber-700 disabled:opacity-50 transition-colors">
-                {scheduleSaving ? 'Saving...' : 'Save & Move to Interview'}
-              </button>
+            <div className="space-y-1.5">
+              <Label htmlFor="cand-interview-link" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Zoom Meeting Link</Label>
+              <Input
+                id="cand-interview-link" type="url" placeholder="https://zoom.us/j/..."
+                value={scheduleForm.link} onChange={e => setScheduleForm(f => ({ ...f, link: e.target.value }))}
+              />
             </div>
           </div>
-        </div>
-      )}
+          <DialogFooter className="px-6 py-4 border-t bg-muted/50">
+            <Button variant="outline" onClick={() => setScheduleTarget(null)}>Cancel</Button>
+            <Button onClick={saveSchedule} loading={scheduleSaving}>
+              {scheduleSaving ? 'Saving…' : 'Save & Move to Interview'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {detailPreview && <PhotoLightbox photoKey={detailPreview} onClose={() => setDetailPreview(null)} zIndexClass="z-60" />}
 
       {/* ── Add/Edit Document Modal ── */}
-      {docModal && (
-        <div className="fixed inset-0 bg-black/50 z-60 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
-            <div className="flex items-center justify-between px-6 py-4 border-b">
-              <h3 className="font-bold text-sm">{docEditId ? 'Edit Document' : 'Add Document'}</h3>
-              <button onClick={() => setDocModal(false)} className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors">
-                <X className="h-4 w-4" />
-              </button>
+      <Dialog open={docModal} onOpenChange={o => { if (!o) setDocModal(false) }}>
+        <DialogContent
+          className="sm:max-w-sm p-0 gap-0 overflow-hidden"
+          aria-describedby={undefined}
+          onInteractOutside={e => e.preventDefault()}
+          onEscapeKeyDown={e => { if (docPreview) { e.preventDefault(); setDocPreview(null) } }}
+        >
+          <DialogHeader className="px-6 py-4 pr-12 border-b text-left">
+            <DialogTitle className="text-sm font-bold">{docEditId ? 'Edit Document' : 'Add Document'}</DialogTitle>
+          </DialogHeader>
+          <div className="px-6 py-5 space-y-4">
+            {docError && <p className="text-xs text-destructive bg-destructive/10 border border-destructive/30 rounded-lg px-3 py-2">{docError}</p>}
+            <div className="space-y-1.5">
+              <Label htmlFor="cand-doc-name" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Document Name</Label>
+              <Input id="cand-doc-name" autoFocus
+                value={docForm.name} onChange={e => setDocForm(f => ({ ...f, name: e.target.value }))} />
             </div>
-            <div className="px-6 py-5 space-y-4">
-              {docError && <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{docError}</p>}
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Document Name</label>
-                <input autoFocus className="w-full h-10 border rounded-lg px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
-                  value={docForm.name} onChange={e => setDocForm(f => ({ ...f, name: e.target.value }))} />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Description</label>
-                <textarea rows={2} className="w-full border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500 resize-none"
-                  value={docForm.description} onChange={e => setDocForm(f => ({ ...f, description: e.target.value }))} />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">File</label>
-                {docForm.fileKey ? (
-                  <div className="flex items-center gap-2">
-                    <button type="button" onClick={() => setDocPreview(docForm.fileKey)} className="flex items-center gap-1.5 text-sm text-amber-700 hover:underline">
-                      <Paperclip className="h-3.5 w-3.5" /> {isPdfDataUrl(docForm.fileKey) ? 'View PDF' : 'View file'}
-                    </button>
-                    <button type="button" onClick={() => setDocForm(f => ({ ...f, fileKey: '' }))} className="text-xs text-muted-foreground hover:text-destructive">Remove</button>
-                  </div>
-                ) : (
-                  <label className={`flex items-center justify-center gap-1.5 border-2 border-dashed rounded-lg py-2.5 text-sm cursor-pointer transition-colors ${
-                    docUploading ? 'opacity-50 pointer-events-none' : 'text-muted-foreground hover:border-amber-400 hover:text-amber-700'
-                  }`}>
-                    <Upload className="h-3.5 w-3.5" /> {docUploading ? 'Uploading...' : 'Upload file'}
-                    <input type="file" accept="image/*,application/pdf" className="hidden" onChange={handleDocFile} disabled={docUploading} />
-                  </label>
-                )}
-              </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="cand-doc-description" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Description</Label>
+              <Textarea id="cand-doc-description" rows={2} className="resize-none"
+                value={docForm.description} onChange={e => setDocForm(f => ({ ...f, description: e.target.value }))} />
             </div>
-            <div className="flex items-center justify-end gap-2 px-6 py-4 border-t bg-gray-50/80">
-              <button onClick={() => setDocModal(false)} className="px-4 py-2 text-sm border rounded-lg hover:bg-white transition-colors">Cancel</button>
-              <button onClick={saveDoc} className="px-5 py-2 text-sm text-white rounded-lg font-semibold bg-amber-600 hover:bg-amber-700 transition-colors">
-                {docEditId ? 'Save Changes' : 'Add Document'}
-              </button>
+            <div className="space-y-1.5">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">File</p>
+              {docForm.fileKey ? (
+                <div className="flex items-center gap-2">
+                  <Button type="button" variant="link" size="sm" onClick={() => setDocPreview(docForm.fileKey)}
+                    className="h-auto p-0 has-[>svg]:px-0 gap-1.5 text-primary-strong">
+                    <Paperclip className="size-3.5" /> {isPdfDataUrl(docForm.fileKey) ? 'View PDF' : 'View file'}
+                  </Button>
+                  <Button type="button" variant="link" size="sm" onClick={() => setDocForm(f => ({ ...f, fileKey: '' }))}
+                    className="h-auto p-0 text-xs font-normal text-muted-foreground hover:text-destructive hover:no-underline">Remove</Button>
+                </div>
+              ) : (
+                <label className={`flex items-center justify-center gap-1.5 border-2 border-dashed rounded-lg py-2.5 text-sm cursor-pointer transition-colors ${
+                  docUploading ? 'opacity-50 pointer-events-none' : 'text-muted-foreground hover:border-primary hover:text-primary-strong'
+                }`}>
+                  <Upload className="h-3.5 w-3.5" /> {docUploading ? 'Uploading…' : 'Upload file'}
+                  <input type="file" accept="image/*,application/pdf" className="hidden" onChange={handleDocFile} disabled={docUploading} />
+                </label>
+              )}
             </div>
           </div>
-        </div>
-      )}
+          <DialogFooter className="px-6 py-4 border-t bg-muted/50">
+            <Button variant="outline" onClick={() => setDocModal(false)}>Cancel</Button>
+            <Button onClick={saveDoc}>
+              {docEditId ? 'Save Changes' : 'Add Document'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {docPreview && <PhotoLightbox photoKey={docPreview} onClose={() => setDocPreview(null)} zIndexClass="z-70" />}
-
-      {/* ── Delete Confirm ── */}
-      {deleteConfirm && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6">
-            <h3 className="font-semibold mb-2">Remove Candidate?</h3>
-            <p className="text-sm text-muted-foreground mb-4">
-              <span className="font-medium text-foreground">{deleteConfirm.fullName}</span> will be removed from the talent pool permanently.
-            </p>
-            <div className="flex gap-3 justify-end">
-              <button onClick={() => setDeleteConfirm(null)} className="px-4 py-2 text-sm border rounded-md hover:bg-muted">Cancel</button>
-              <button onClick={() => doDelete(deleteConfirm)} className="px-4 py-2 text-sm bg-destructive text-white rounded-md hover:bg-destructive/90">Remove</button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

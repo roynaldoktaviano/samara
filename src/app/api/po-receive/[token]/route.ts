@@ -64,10 +64,10 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ toke
     return NextResponse.json({ error: 'This link has expired' }, { status: 410 })
   }
   if (!['IN_TRANSIT', 'PARTIALLY_RECEIVED'].includes(order.status)) {
-    return NextResponse.json({ error: 'PO ini sudah selesai diterima' }, { status: 409 })
+    return NextResponse.json({ error: 'This PO has already been fully received' }, { status: 409 })
   }
-  if (!order.createdById) return NextResponse.json({ error: 'PO ini belum punya catatan pembuat yang valid' }, { status: 400 })
-  if (!order.deliveryLocationId) return NextResponse.json({ error: 'PO ini belum punya lokasi tujuan' }, { status: 400 })
+  if (!order.createdById) return NextResponse.json({ error: 'This PO has no valid creator record' }, { status: 400 })
+  if (!order.deliveryLocationId) return NextResponse.json({ error: 'This PO has no delivery location' }, { status: 400 })
 
   const body = await req.json()
   const { receivedByEmployeeId, receivePhotoKey, notes, items } = body as {
@@ -76,11 +76,11 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ toke
     notes?: string
     items?: { poItemId?: string; itemId?: string | null; itemName: string; unit?: string; receivedQty: number }[]
   }
-  if (!receivedByEmployeeId) return NextResponse.json({ error: 'Nama penerima wajib diisi' }, { status: 400 })
-  if (!items || !Array.isArray(items) || items.length === 0) return NextResponse.json({ error: 'Minimal 1 item dibutuhkan' }, { status: 400 })
+  if (!receivedByEmployeeId) return NextResponse.json({ error: 'Receiver name is required' }, { status: 400 })
+  if (!items || !Array.isArray(items) || items.length === 0) return NextResponse.json({ error: 'At least 1 item is required' }, { status: 400 })
 
   const employee = await db.employee.findUnique({ where: { id: receivedByEmployeeId }, select: { id: true, fullName: true } })
-  if (!employee) return NextResponse.json({ error: 'Karyawan tidak ditemukan' }, { status: 400 })
+  if (!employee) return NextResponse.json({ error: 'Employee not found' }, { status: 400 })
 
   const result = await receiveGoods(db, {
     orderId: order.id,

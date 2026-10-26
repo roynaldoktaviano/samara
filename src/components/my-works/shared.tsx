@@ -43,17 +43,17 @@ export interface Todo {
 }
 
 export const STATUSES: { key: Status; label: string; bar: string; dot: string; soft: string }[] = [
-  { key: 'TODO',        label: 'To-do',       bar: 'bg-slate-400',   dot: 'bg-slate-400',   soft: 'bg-slate-100 text-slate-700' },
-  { key: 'IN_PROGRESS', label: 'On Progress', bar: 'bg-blue-500',    dot: 'bg-blue-500',    soft: 'bg-blue-50 text-blue-700' },
-  { key: 'IN_REVIEW',   label: 'In Review',   bar: 'bg-orange-400',  dot: 'bg-orange-400',  soft: 'bg-orange-50 text-orange-700' },
-  { key: 'DONE',        label: 'Done',        bar: 'bg-emerald-500', dot: 'bg-emerald-500', soft: 'bg-emerald-50 text-emerald-700' },
+  { key: 'TODO',        label: 'To-do',       bar: 'bg-muted-foreground/70', dot: 'bg-muted-foreground/70', soft: 'bg-muted text-foreground/80' },
+  { key: 'IN_PROGRESS', label: 'On Progress', bar: 'bg-info',    dot: 'bg-info',    soft: 'bg-info/10 text-info' },
+  { key: 'IN_REVIEW',   label: 'In Review',   bar: 'bg-warning',  dot: 'bg-warning',  soft: 'bg-warning/10 text-warning' },
+  { key: 'DONE',        label: 'Done',        bar: 'bg-success', dot: 'bg-success', soft: 'bg-success/10 text-success' },
 ]
 export const STATUS_META = Object.fromEntries(STATUSES.map(s => [s.key, s])) as Record<Status, typeof STATUSES[number]>
 
 export const PRIORITIES: { key: Priority; label: string; cls: string; dot: string }[] = [
-  { key: 'HIGH',   label: 'High',   cls: 'bg-red-50 text-red-600 border-red-200',       dot: 'bg-red-500' },
-  { key: 'MEDIUM', label: 'Medium', cls: 'bg-amber-50 text-amber-700 border-amber-200', dot: 'bg-amber-500' },
-  { key: 'LOW',    label: 'Low',    cls: 'bg-sky-50 text-sky-600 border-sky-200',       dot: 'bg-sky-500' },
+  { key: 'HIGH',   label: 'High',   cls: 'bg-destructive/10 text-destructive border-destructive/30', dot: 'bg-destructive' },
+  { key: 'MEDIUM', label: 'Medium', cls: 'bg-warning/10 text-warning border-warning/30', dot: 'bg-warning' },
+  { key: 'LOW',    label: 'Low',    cls: 'bg-info/10 text-info border-info/30', dot: 'bg-info' },
 ]
 export const RECURRENCES: { key: Recurrence; label: string }[] = [
   { key: 'WEEKLY', label: 'Weekly' },
@@ -67,7 +67,7 @@ export function RecurrenceTag({ todo }: { todo: Pick<Todo, 'recurrence' | 'recur
   const label = RECURRENCES.find(r => r.key === todo.recurrence)?.label ?? todo.recurrence
   return (
     <span title={todo.recurrenceNextAt ? `Repeats ${label.toLowerCase()} — next task on ${fmtDay(todo.recurrenceNextAt)}` : `Repeats ${label.toLowerCase()}`}
-      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-xs font-medium whitespace-nowrap bg-violet-50 text-violet-700 border-violet-200">
+      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-xs font-medium whitespace-nowrap bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-500/10 dark:text-violet-300 dark:border-violet-500/30">
       <Repeat className="h-3 w-3" />{label}
     </span>
   )
@@ -95,13 +95,13 @@ export function fmtRange(t: Pick<Todo, 'startDate' | 'dueDate'>): string | null 
 export const isOverdue = (t: Todo, today = todayKey()) => t.status !== 'DONE' && !!t.dueDate && dayKey(t.dueDate) < today
 
 const TYPE_PALETTE = [
-  'bg-violet-50 text-violet-700 border-violet-200',
-  'bg-orange-50 text-orange-700 border-orange-200',
-  'bg-teal-50 text-teal-700 border-teal-200',
-  'bg-pink-50 text-pink-700 border-pink-200',
-  'bg-indigo-50 text-indigo-700 border-indigo-200',
-  'bg-lime-50 text-lime-700 border-lime-200',
-  'bg-cyan-50 text-cyan-700 border-cyan-200',
+  'bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-500/10 dark:text-violet-300 dark:border-violet-500/30',
+  'bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-500/10 dark:text-orange-300 dark:border-orange-500/30',
+  'bg-teal-50 text-teal-700 border-teal-200 dark:bg-teal-500/10 dark:text-teal-300 dark:border-teal-500/30',
+  'bg-pink-50 text-pink-700 border-pink-200 dark:bg-pink-500/10 dark:text-pink-300 dark:border-pink-500/30',
+  'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-500/10 dark:text-indigo-300 dark:border-indigo-500/30',
+  'bg-lime-50 text-lime-700 border-lime-200 dark:bg-lime-500/10 dark:text-lime-300 dark:border-lime-500/30',
+  'bg-cyan-50 text-cyan-700 border-cyan-200 dark:bg-cyan-500/10 dark:text-cyan-300 dark:border-cyan-500/30',
 ]
 export function typeClass(type: string) {
   let h = 0
@@ -215,7 +215,7 @@ export function SubtaskCount({ subtasks, className = '' }: { subtasks: Subtask[]
   const done = flat.filter(s => s.done).length
   const all = done === flat.length
   return (
-    <span className={`inline-flex items-center gap-0.5 text-xs ${all ? 'text-emerald-600' : 'text-muted-foreground'} ${className}`}
+    <span className={`inline-flex items-center gap-0.5 text-xs ${all ? 'text-success' : 'text-muted-foreground'} ${className}`}
       title={`${done} of ${flat.length} sub tasks done`}>
       <ListChecks className="h-3 w-3" />{done}/{flat.length}
     </span>

@@ -1,7 +1,13 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Plus, X, Trash2, CalendarOff, Loader2 } from 'lucide-react'
+import { Plus, Trash2, CalendarOff } from 'lucide-react'
+import { formatDate } from '@/lib/format'
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { useConfirm } from '@/components/ui/confirm-dialog'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 
 interface Holiday {
   id: string
@@ -11,8 +17,6 @@ interface Holiday {
   createdBy: { id: string; name: string | null } | null
 }
 interface LocationLite { id: string; name: string }
-
-const fmtDate = (s: string) => new Date(s).toLocaleDateString('en-GB', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })
 
 export default function NationalHolidaysPage() {
   const [holidays, setHolidays] = useState<Holiday[]>([])
@@ -26,8 +30,7 @@ export default function NationalHolidaysPage() {
   const [formError, setFormError] = useState('')
   const [formNote, setFormNote] = useState('')
 
-  const [deleteTarget, setDeleteTarget] = useState<Holiday | null>(null)
-  const [deleting, setDeleting] = useState(false)
+  const confirm = useConfirm()
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -71,11 +74,15 @@ export default function NationalHolidaysPage() {
     }
   }
 
-  async function confirmDelete() {
-    if (!deleteTarget) return
-    setDeleting(true)
-    await fetch(`/api/hr/national-holidays/${deleteTarget.id}`, { method: 'DELETE' })
-    setDeleting(false); setDeleteTarget(null); load()
+  async function removeHoliday(holiday: Holiday) {
+    if (!(await confirm({
+      title: `Remove ${holiday.name}?`,
+      description: 'This date will go back to being a normal working day in Attendance Recap and Payroll.',
+      confirmLabel: 'Remove',
+      destructive: true,
+    }))) return
+    await fetch(`/api/hr/national-holidays/${holiday.id}`, { method: 'DELETE' })
+    load()
   }
 
   return (
@@ -85,9 +92,9 @@ export default function NationalHolidaysPage() {
           <h2 className="text-2xl font-bold tracking-tight">National Holidays</h2>
           <p className="text-muted-foreground text-sm mt-1">Marked automatically as Day Off in Attendance Recap, excluded from Payroll&apos;s Meal Allowance working-days count, and opens up Overtime — for every work location, unless you exclude some below.</p>
         </div>
-        <button onClick={openAdd} className="flex items-center gap-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium px-4 py-2 rounded-md transition-colors">
-          <Plus className="h-4 w-4" /> Add Holiday
-        </button>
+        <Button onClick={openAdd}>
+          <Plus /> Add Holiday
+        </Button>
       </div>
 
       {loading ? (
@@ -114,20 +121,21 @@ export default function NationalHolidaysPage() {
             <tbody className="divide-y">
               {holidays.map(h => (
                 <tr key={h.id} className="hover:bg-muted/20 transition-colors">
-                  <td className="px-5 py-3 font-medium">{fmtDate(h.date)}</td>
+                  <td className="px-5 py-3 font-medium">{formatDate(h.date, 'long')}</td>
                   <td className="px-5 py-3">
                     {h.name}
                     {h.excludedLocationIds.length > 0 && (
-                      <div className="text-[11px] text-amber-700 mt-0.5">
+                      <div className="text-[11px] text-warning mt-0.5">
                         Working as usual: {h.excludedLocationIds.map(locationName).join(', ')}
                       </div>
                     )}
                   </td>
                   <td className="px-5 py-3 text-muted-foreground">{h.createdBy?.name ?? '—'}</td>
                   <td className="px-5 py-3 text-right">
-                    <button onClick={() => setDeleteTarget(h)} className="p-1.5 rounded hover:bg-red-50 text-red-500 transition-colors" title="Remove">
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
+                    <Button variant="ghost" size="icon" onClick={() => removeHoliday(h)} title="Remove" aria-label={`Remove ${h.name}`}
+                      className="size-7 text-destructive hover:bg-destructive/10 hover:text-destructive">
+                      <Trash2 className="size-3.5" />
+                    </Button>
                   </td>
                 </tr>
               ))}
@@ -137,102 +145,76 @@ export default function NationalHolidaysPage() {
       )}
 
       {/* Add modal */}
-      {modal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
-            <div className="flex items-center justify-between px-6 py-4 border-b">
-              <h3 className="font-bold text-sm">Add National Holiday</h3>
-              <button onClick={() => setModal(false)} className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors">
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <div className="px-6 py-5 space-y-4">
-              {formError && <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{formError}</p>}
-              {formNote && <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">{formNote}</p>}
+      <Dialog open={modal} onOpenChange={o => { if (!o) setModal(false) }}>
+        <DialogContent aria-describedby={undefined} className="sm:max-w-sm p-0 gap-0 overflow-hidden" onInteractOutside={e => e.preventDefault()}>
+          <DialogHeader className="px-6 py-4 border-b">
+            <DialogTitle className="font-bold text-sm pr-6">Add National Holiday</DialogTitle>
+          </DialogHeader>
+          <div className="px-6 py-5 space-y-4">
+            {formError && <p className="text-xs text-destructive bg-destructive/10 border border-destructive/30 rounded-lg px-3 py-2">{formError}</p>}
+            {formNote && <p className="text-xs text-warning bg-warning/10 border border-warning/30 rounded-lg px-3 py-2">{formNote}</p>}
 
-              <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
-                <input type="checkbox" checked={isRange} onChange={e => setIsRange(e.target.checked)}
-                  className="h-4 w-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500" />
-                Multiple days (range) — e.g. Idul Fitri
-              </label>
+            <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+              <input type="checkbox" checked={isRange} onChange={e => setIsRange(e.target.checked)}
+                className="h-4 w-4 accent-primary" />
+              Multiple days (range) — e.g. Idul Fitri
+            </label>
 
-              {isRange ? (
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Start Date</label>
-                    <input type="date" value={form.startDate} onChange={e => setForm(f => ({ ...f, startDate: e.target.value, endDate: f.endDate && f.endDate >= e.target.value ? f.endDate : e.target.value }))}
-                      className="w-full h-10 border rounded-lg px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500" />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">End Date</label>
-                    <input type="date" value={form.endDate} min={form.startDate || undefined} onChange={e => setForm(f => ({ ...f, endDate: e.target.value }))}
-                      className="w-full h-10 border rounded-lg px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500" />
-                  </div>
-                </div>
-              ) : (
+            {isRange ? (
+              <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Date</label>
-                  <input type="date" value={form.startDate} onChange={e => setForm(f => ({ ...f, startDate: e.target.value, endDate: e.target.value }))}
-                    className="w-full h-10 border rounded-lg px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500" />
+                  <Label htmlFor="holiday-start" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Start Date</Label>
+                  <Input id="holiday-start" type="date" value={form.startDate} onChange={e => setForm(f => ({ ...f, startDate: e.target.value, endDate: f.endDate && f.endDate >= e.target.value ? f.endDate : e.target.value }))}
+                    className="h-10" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="holiday-end" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">End Date</Label>
+                  <Input id="holiday-end" type="date" value={form.endDate} min={form.startDate || undefined} onChange={e => setForm(f => ({ ...f, endDate: e.target.value }))}
+                    className="h-10" />
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                <Label htmlFor="holiday-date" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Date</Label>
+                <Input id="holiday-date" type="date" value={form.startDate} onChange={e => setForm(f => ({ ...f, startDate: e.target.value, endDate: e.target.value }))}
+                  className="h-10" />
+              </div>
+            )}
+            <div className="space-y-1.5">
+              <Label htmlFor="holiday-name" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Name</Label>
+              <Input id="holiday-name" type="text" placeholder="e.g. Independence Day" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+                className="h-10" />
+            </div>
+            <div role="group" aria-labelledby="holiday-working-label" className="space-y-1.5">
+              <p id="holiday-working-label" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide leading-none">Working as usual (optional)</p>
+              <p className="text-[11px] text-muted-foreground">Pick any work locations that stay on a normal working day through this holiday — everyone else gets the day off.</p>
+              {locations.length === 0 ? (
+                <p className="text-xs text-muted-foreground">No work locations set up yet.</p>
+              ) : (
+                <div className="flex flex-wrap gap-1.5">
+                  {locations.map(l => {
+                    const active = form.excludedLocationIds.includes(l.id)
+                    return (
+                      <button key={l.id} type="button" onClick={() => toggleExcludedLocation(l.id)} aria-pressed={active}
+                        className={`px-2.5 py-1 rounded-full text-xs border transition-colors ${
+                          active ? 'border-primary bg-primary/10 text-primary-strong' : 'border-muted text-muted-foreground hover:border-foreground/30'
+                        }`}>
+                        {l.name.trim()}
+                      </button>
+                    )
+                  })}
                 </div>
               )}
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Name</label>
-                <input type="text" placeholder="e.g. Independence Day" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-                  className="w-full h-10 border rounded-lg px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500" />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Working as usual (optional)</label>
-                <p className="text-[11px] text-muted-foreground">Pick any work locations that stay on a normal working day through this holiday — everyone else gets the day off.</p>
-                {locations.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">No work locations set up yet.</p>
-                ) : (
-                  <div className="flex flex-wrap gap-1.5">
-                    {locations.map(l => {
-                      const active = form.excludedLocationIds.includes(l.id)
-                      return (
-                        <button key={l.id} type="button" onClick={() => toggleExcludedLocation(l.id)}
-                          className={`px-2.5 py-1 rounded-full text-xs border transition-colors ${
-                            active ? 'border-amber-500 bg-amber-50 text-amber-700' : 'border-muted text-muted-foreground hover:border-foreground/30'
-                          }`}>
-                          {l.name.trim()}
-                        </button>
-                      )
-                    })}
-                  </div>
-                )}
-              </div>
-            </div>
-            <div className="flex items-center justify-end gap-2 px-6 py-4 border-t bg-gray-50/80">
-              <button onClick={() => setModal(false)} className="px-4 py-2 text-sm border rounded-lg hover:bg-white transition-colors">Cancel</button>
-              <button onClick={save} disabled={saving} className="px-5 py-2 text-sm text-white rounded-lg font-semibold bg-amber-600 hover:bg-amber-700 disabled:opacity-50 transition-colors flex items-center gap-2">
-                {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                {saving ? 'Saving...' : 'Save'}
-              </button>
             </div>
           </div>
-        </div>
-      )}
-
-      {/* Delete confirm */}
-      {deleteTarget && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
-            <div className="px-6 py-5">
-              <h3 className="font-bold text-sm">Remove {deleteTarget.name}?</h3>
-              <p className="text-xs text-muted-foreground mt-1">This date will go back to being a normal working day in Attendance Recap and Payroll.</p>
-            </div>
-            <div className="flex items-center justify-end gap-2 px-6 py-4 border-t bg-gray-50/80">
-              <button onClick={() => setDeleteTarget(null)} className="px-4 py-2 text-sm border rounded-lg hover:bg-white transition-colors">Cancel</button>
-              <button onClick={confirmDelete} disabled={deleting}
-                className="px-5 py-2 text-sm text-white rounded-lg font-semibold bg-destructive hover:bg-destructive/90 disabled:opacity-50 transition-colors flex items-center gap-2">
-                {deleting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                Remove
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+          <DialogFooter className="px-6 py-4 border-t bg-muted/50">
+            <Button variant="outline" onClick={() => setModal(false)}>Cancel</Button>
+            <Button onClick={save} loading={saving} className="font-semibold">
+              {saving ? 'Saving…' : 'Save'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

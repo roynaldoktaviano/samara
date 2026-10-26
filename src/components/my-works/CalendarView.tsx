@@ -4,6 +4,8 @@ import { useMemo, useState } from 'react'
 import { ChevronLeft, ChevronRight, ChevronDown, CornerDownRight } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { STATUS_META, PRIORITY_META, dayKey, todayKey, isOverdue, isSubOverdue, fmtRange, flattenWithDepth, mapSubtaskTree, useWorks, canProgressTask, editableSubIds, type Todo, type Subtask, type Priority } from './shared'
+import { formatDate, formatDateRange } from '@/lib/format'
+import { Button } from '@/components/ui/button'
 
 const DAY_MS = 86400000
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
@@ -116,30 +118,30 @@ export default function CalendarView({ todos, onEdit, onCreateOn, onMove, onSubt
   }
 
   const title = mode === 'month'
-    ? cur.toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' })
-    : `${new Date(gridStart).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })} – ${new Date(gridStart + 6 * DAY_MS).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })}`
+    ? formatDate(cur, 'monthYear', { utc: true })
+    : formatDateRange(gridStart, gridStart + 6 * DAY_MS, { utc: true })
 
   const rowMinH = mode === 'month' ? 140 : 480
 
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
-        <button onClick={() => setCursor(todayMs)} className="px-3 py-1.5 rounded-lg border hover:bg-muted text-sm font-medium">Today</button>
+        <Button variant="outline" size="sm" onClick={() => setCursor(todayMs)}>Today</Button>
         <Popover>
           <PopoverTrigger asChild>
-            <button className="flex items-center gap-1 px-3 py-1.5 rounded-lg border hover:bg-muted text-sm font-medium">
-              {mode === 'month' ? 'Month' : 'Week'}<ChevronDown className="h-3.5 w-3.5" />
-            </button>
+            <Button variant="outline" size="sm" className="gap-1">
+              {mode === 'month' ? 'Month' : 'Week'}<ChevronDown className="size-3.5" />
+            </Button>
           </PopoverTrigger>
           <PopoverContent align="start" className="w-32 p-1">
             {(['month', 'week'] as Mode[]).map(m => (
-              <button key={m} onClick={() => setMode(m)}
+              <button key={m} onClick={() => setMode(m)} aria-pressed={mode === m}
                 className={`w-full text-left px-3 py-1.5 rounded-md text-sm hover:bg-muted ${mode === m ? 'font-semibold' : ''}`}>{m === 'month' ? 'Month' : 'Week'}</button>
             ))}
           </PopoverContent>
         </Popover>
-        <button onClick={() => shift(-1)} className="p-1.5 rounded-lg hover:bg-muted"><ChevronLeft className="h-4 w-4" /></button>
-        <button onClick={() => shift(1)} className="p-1.5 rounded-lg hover:bg-muted"><ChevronRight className="h-4 w-4" /></button>
+        <Button variant="ghost" size="icon" onClick={() => shift(-1)} className="size-8" aria-label={mode === 'month' ? 'Previous month' : 'Previous week'}><ChevronLeft /></Button>
+        <Button variant="ghost" size="icon" onClick={() => shift(1)} className="size-8" aria-label={mode === 'month' ? 'Next month' : 'Next week'}><ChevronRight /></Button>
         <span className="text-lg font-medium">{title}</span>
         {unscheduled > 0 && <span className="ml-auto text-xs text-muted-foreground">{unscheduled} task{unscheduled !== 1 ? 's' : ''} without dates not shown</span>}
       </div>
@@ -167,10 +169,10 @@ export default function CalendarView({ todos, onEdit, onCreateOn, onMove, onSubt
                       onDragLeave={() => setDropDay(k => k === d.key ? null : k)}
                       onDrop={e => { e.preventDefault(); drop(d.key) }}
                       className={`relative border-l first:border-l-0 transition-colors
-                        ${weekend || !d.inMonth ? 'bg-muted/40' : 'bg-background'} cursor-pointer hover:bg-amber-50/40
-                        ${dropDay === d.key ? 'bg-amber-100/60' : ''}
-                        ${isToday ? 'outline outline-2 -outline-offset-2 outline-amber-500' : ''}`}>
-                      <span className={`absolute bottom-2 right-3 text-sm ${isToday ? 'text-amber-600 font-semibold' : d.inMonth ? 'text-foreground/70' : 'text-muted-foreground/50'}`}>{d.date}</span>
+                        ${weekend || !d.inMonth ? 'bg-muted/40' : 'bg-background'} cursor-pointer hover:bg-primary/5
+                        ${dropDay === d.key ? 'bg-primary/15' : ''}
+                        ${isToday ? 'outline outline-2 -outline-offset-2 outline-primary' : ''}`}>
+                      <span className={`absolute bottom-2 right-3 text-sm ${isToday ? 'text-primary-strong font-semibold' : d.inMonth ? 'text-foreground/70' : 'text-muted-foreground/50'}`}>{d.date}</span>
                       {d.hidden.length > 0 && (
                         <Popover>
                           <PopoverTrigger asChild>
@@ -179,7 +181,7 @@ export default function CalendarView({ todos, onEdit, onCreateOn, onMove, onSubt
                           </PopoverTrigger>
                           <PopoverContent align="start" className="w-64 p-2 space-y-1" onClick={e => e.stopPropagation()}>
                             <p className="text-xs font-semibold text-muted-foreground px-1 pb-1">
-                              {new Date(d.ms).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', timeZone: 'UTC' })}
+                              {formatDate(d.ms, 'long', { utc: true })}
                             </p>
                             {d.all.map(p => (
                               <button key={p.todo.id} onClick={() => onEdit(p.todo.todo)} className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-muted text-left text-sm">
@@ -214,7 +216,7 @@ export default function CalendarView({ todos, onEdit, onCreateOn, onMove, onSubt
                         onClick={e => { e.stopPropagation(); onEdit(t.todo) }}
                         title={`${t.sub ? `${t.todo.title} › ` : ''}${t.title}${fmtRange(t) ? ` · ${fmtRange(t)}` : ''}`}
                         className={`${dragId ? 'pointer-events-none' : 'pointer-events-auto'} absolute h-[20px] flex items-center gap-1.5 px-2 text-xs font-medium border truncate cursor-grab active:cursor-grabbing transition-opacity
-                          ${t.sub ? 'bg-background text-foreground/80' : STATUS_META[t.todo.status].soft} ${overdue ? 'border-red-300' : t.sub ? 'border-dashed border-muted-foreground/40' : 'border-transparent'} ${dragId === t.id ? 'opacity-40' : 'hover:brightness-95'}
+                          ${t.sub ? 'bg-background text-foreground/80' : STATUS_META[t.todo.status].soft} ${overdue ? 'border-destructive/50' : t.sub ? 'border-dashed border-muted-foreground/40' : 'border-transparent'} ${dragId === t.id ? 'opacity-40' : 'hover:brightness-95'}
                           ${p.clipLeft ? 'rounded-l-none' : 'rounded-l-md'} ${p.clipRight ? 'rounded-r-none' : 'rounded-r-md'}`}
                         style={{
                           top: p.lane * LANE_H,

@@ -301,7 +301,7 @@ export default function EmailFontsPage() {
           </div>
         </CardHeader>
         <CardContent className="pt-0 space-y-3">
-          <div className="flex gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+          <div className="flex gap-2 rounded-md border border-warning/30 bg-warning/10 p-3 text-xs text-warning">
             <Info className="h-4 w-4 shrink-0 mt-0.5" />
             <p>
               Custom fonts show in Apple Mail, iOS Mail, Outlook for Mac and most mobile apps. Gmail and Outlook for
@@ -311,7 +311,7 @@ export default function EmailFontsPage() {
           </div>
 
           {fonts.length > 0 && (
-            <Input value={previewText} onChange={e => setPreviewText(e.target.value)} placeholder="Type to preview..." className="h-8 text-sm" />
+            <Input value={previewText} onChange={e => setPreviewText(e.target.value)} placeholder="Type to preview…" className="h-8 text-sm" />
           )}
 
           {loading ? (
@@ -357,7 +357,7 @@ export default function EmailFontsPage() {
                         >
                           {previewText || family}
                         </div>
-                        <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0 text-red-500 hover:text-red-600 hover:bg-red-50" onClick={() => setConfirmDelete(f)}>
+                        <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0 text-destructive hover:text-destructive hover:bg-destructive/10" onClick={() => setConfirmDelete(f)}>
                           <Trash2 className="h-3.5 w-3.5" />
                         </Button>
                       </div>
@@ -407,7 +407,7 @@ export default function EmailFontsPage() {
                     <Checkbox checked={r.include} onCheckedChange={v => updateItem(r.key, { include: v === true })} />
                     <div className="w-full sm:w-40 min-w-0 order-last sm:order-none">
                       <div className="text-xs font-medium truncate" title={r.file.name}>{r.file.name}</div>
-                      {r.note && <div className="text-[10px] text-amber-600">{r.note}</div>}
+                      {r.note && <div className="text-[10px] text-warning">{r.note}</div>}
                     </div>
                     <Input
                       value={r.family} placeholder="Family name" className="h-8 text-sm flex-1 min-w-[120px]"

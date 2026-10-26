@@ -5,15 +5,17 @@
 // cards) but keeps this app's own gold accent instead of the mockup's blue, so it stays
 // consistent with the marketing pages already shipped (Campaigns, Templates, Media Kit).
 
-export const ACCENT = '#bdac7e'
+import { StatusBadge } from '@/components/ui/status-badge'
+
+export const ACCENT = 'var(--primary)'
 
 // Same rotating icon-square palette used by the Audiences/Automations card grids —
 // centralized here so every marketing page cycles through identical colors.
 export const CARD_THEMES = [
-  { bg: '#eef2ff', fg: '#4f46e5' },
-  { bg: '#ecfdf5', fg: '#059669' },
-  { bg: '#fff7ed', fg: '#d97706' },
-  { bg: '#faf5ff', fg: '#9333ea' },
+  { bg: 'color-mix(in srgb, #4f46e5 12%, transparent)', fg: '#4f46e5' },
+  { bg: 'color-mix(in srgb, var(--success) 12%, transparent)', fg: 'var(--success)' },
+  { bg: 'color-mix(in srgb, var(--warning) 12%, transparent)', fg: 'var(--warning)' },
+  { bg: 'color-mix(in srgb, #9333ea 12%, transparent)', fg: '#9333ea' },
 ]
 
 export function PageHeader({ eyebrow, title, subtitle, action }: {
@@ -46,7 +48,7 @@ export function Sparkline({ data, color = ACCENT, height = 32 }: { data: number[
   }).join(' ')
   return (
     <svg viewBox={`0 0 100 ${height}`} preserveAspectRatio="none" className="w-full" style={{ height }}>
-      <polyline points={points} fill="none" stroke={color} strokeWidth="2" vectorEffect="non-scaling-stroke" strokeLinecap="round" strokeLinejoin="round" />
+      <polyline points={points} fill="none" style={{ stroke: color }} strokeWidth="2" vectorEffect="non-scaling-stroke" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   )
 }
@@ -60,7 +62,7 @@ export function KpiCard({ icon: Icon, label, value, sub, trend, trendColor }: {
   trendColor?: string
 }) {
   return (
-    <div className="border rounded-xl bg-white p-4 hover:shadow-md transition-shadow">
+    <div className="border rounded-xl bg-card p-4 hover:shadow-md transition-shadow">
       <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
         <Icon className="h-3.5 w-3.5" style={{ color: ACCENT }} /> {label}
       </div>
@@ -82,7 +84,7 @@ export function SectionCard({ title, subtitle, action, children }: {
   children: React.ReactNode
 }) {
   return (
-    <div className="border rounded-xl bg-white p-5">
+    <div className="border rounded-xl bg-card p-5">
       <div className="flex items-center justify-between gap-3 mb-4">
         <div>
           <h2 className="font-semibold text-sm">{title}</h2>
@@ -102,7 +104,7 @@ export function ModuleHero({ icon: Icon, title, description, badge }: {
   badge?: string
 }) {
   return (
-    <div className="border rounded-xl bg-white p-5 flex items-center gap-4">
+    <div className="border rounded-xl bg-card p-5 flex items-center gap-4">
       <span className="h-11 w-11 rounded-lg flex items-center justify-center shrink-0" style={{ background: CARD_THEMES[0].bg, color: CARD_THEMES[0].fg }}>
         <Icon className="h-5 w-5" />
       </span>
@@ -110,7 +112,7 @@ export function ModuleHero({ icon: Icon, title, description, badge }: {
         <h2 className="font-semibold">{title}</h2>
         <p className="text-sm text-muted-foreground">{description}</p>
       </div>
-      {badge && <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-blue-100 text-blue-700 shrink-0">{badge}</span>}
+      {badge && <StatusBadge tone="info" className="px-2.5 py-1">{badge}</StatusBadge>}
     </div>
   )
 }

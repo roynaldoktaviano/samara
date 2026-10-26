@@ -27,14 +27,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (!(await canUseInitialOpname(db, role, id))) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
   const count = await db.stockCount.findUnique({ where: { id } })
-  if (!count || count.type !== 'INITIAL') return NextResponse.json({ error: 'Tidak ditemukan' }, { status: 404 })
+  if (!count || count.type !== 'INITIAL') return NextResponse.json({ error: 'Not found' }, { status: 404 })
   if (count.status === 'COMPLETED' && count.countedById !== session.user.id) {
-    return NextResponse.json({ error: 'Hanya orang yang melakukan opname ini yang bisa mengoreksi' }, { status: 403 })
+    return NextResponse.json({ error: 'Only the person who did this opname can correct it' }, { status: 403 })
   }
 
   const row = await db.stockCountItem.findUnique({ where: { id: itemId }, include: { item: { select: { id: true, name: true, isStockTracked: true } } } })
-  if (!row || row.countId !== id) return NextResponse.json({ error: 'Tidak ditemukan' }, { status: 404 })
-  if (row.item?.isStockTracked) return NextResponse.json({ error: 'Produk ini sudah Stock Item' }, { status: 409 })
+  if (!row || row.countId !== id) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  if (row.item?.isStockTracked) return NextResponse.json({ error: 'This product is already a Stock Item' }, { status: 409 })
 
   const body = await req.json()
   const parsed = await parseOpnameItemForm(db, body, row.itemId ?? undefined)

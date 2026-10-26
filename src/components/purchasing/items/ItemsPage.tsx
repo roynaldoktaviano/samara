@@ -7,6 +7,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { renderLocationOptions } from '@/components/purchasing/LocationOptions'
 import { ItemFormFields, EMPTY_ITEM_FORM, newItemForm, getTypeIcon, type ItemForm, type ItemTypeConfig } from './ItemFormFields'
 import type { Treatment } from '@/lib/purchasing/treatment'
+import { formatMoney, formatNumber, formatDate } from '@/lib/format'
+import { StatusBadge } from '@/components/ui/status-badge'
 
 type PurchaseItemType = string
 
@@ -58,10 +60,6 @@ interface StockEntry { locationId: string; locationName: string; locationType: s
 interface LotEntry { id: string; locationId: string; locationName: string; quantity: number; costPerUnit: number; batch: string | null; expiresAt: string | null; createdAt: string }
 
 const CSV_HEADERS = ['SKU', 'Name', 'Type', 'Category', 'Base Unit', 'Purchase Unit', 'Conversion', 'Standard Cost', 'Selling Price', 'Valuation Method', 'Min Stock', 'Reorder Qty', 'Stock', 'Location']
-
-function fmt(n: number) {
-  return new Intl.NumberFormat('id-ID').format(n)
-}
 
 function buildCSV(rows: string[][]): string {
   return rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n')
@@ -431,14 +429,14 @@ export default function ItemsPage() {
             className="flex items-center gap-2 text-sm border rounded-md px-3 py-2 text-muted-foreground hover:bg-muted disabled:opacity-40 transition-colors"
             title="Import CSV — Stock/Location columns reconcile stock at that location to match the CSV value, for both new and existing items"
           >
-            <Upload className="h-4 w-4" /> {importing ? 'Importing...' : 'Import CSV'}
+            <Upload className="h-4 w-4" /> {importing ? 'Importing…' : 'Import CSV'}
           </button>
           <input ref={importRef} type="file" accept=".csv,text/csv" className="hidden" onChange={handleImportFile} />
           {/* Non-Stock Item is a read-only legacy view now — see Inventory module for
               creating/managing per-location items going forward. */}
           {trackedFilter === 'stock' && <button
             onClick={openAdd}
-            className="flex items-center gap-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium px-4 py-2 rounded-md transition-colors"
+            className="flex items-center gap-2 bg-primary hover:bg-primary-hover text-primary-foreground text-sm font-medium px-4 py-2 rounded-md transition-colors"
           >
             <Plus className="h-4 w-4" /> Add
           </button>}
@@ -450,8 +448,8 @@ export default function ItemsPage() {
         <div className="relative flex-1 min-w-[180px] max-w-xs">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
           <input
-            className="w-full h-9 pl-9 pr-3 text-sm border rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
-            placeholder="Search name or SKU..."
+            className="w-full h-9 pl-9 pr-3 text-sm border rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+            placeholder="Search name or SKU…"
             value={search}
             onChange={e => setSearch(e.target.value)}
           />
@@ -461,7 +459,7 @@ export default function ItemsPage() {
         <div className="flex rounded-md border overflow-hidden h-9">
           {(['stock', 'non-stock'] as const).map(k => (
             <button key={k} onClick={() => setTrackedFilter(k)}
-              className={`px-3 text-xs font-medium transition-colors ${trackedFilter === k ? 'bg-[#bdac7e] text-white' : 'text-muted-foreground hover:bg-muted'}`}>
+              className={`px-3 text-xs font-medium transition-colors ${trackedFilter === k ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}>
               {k === 'stock' ? 'Stock Item' : 'Non-Stock Item (Legacy)'}
             </button>
           ))}
@@ -475,7 +473,7 @@ export default function ItemsPage() {
           <div className="flex gap-1 bg-muted rounded-md p-1">
             <button
               onClick={() => { setTypeFilter('All'); setCatFilter('All') }}
-              className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${typeFilter === 'All' ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+              className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${typeFilter === 'All' ? 'bg-card shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
             >
               All
             </button>
@@ -485,7 +483,7 @@ export default function ItemsPage() {
                 <button
                   key={t.code}
                   onClick={() => { setTypeFilter(t.code); setCatFilter('All') }}
-                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-colors whitespace-nowrap ${typeFilter === t.code ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-colors whitespace-nowrap ${typeFilter === t.code ? 'bg-card shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
                 >
                   <Icon className="h-3.5 w-3.5" /> {t.label}
                 </button>
@@ -559,7 +557,7 @@ export default function ItemsPage() {
               const avgCost = item.avgPrice > 0 ? item.avgPrice : item.standardCost
               const margin = calcMargin(avgCost, item.sellingPrice)
               return (
-                <tr key={item.id} onClick={() => openHistory(item)} className={`hover:bg-amber-50/40 cursor-pointer transition-colors ${!item.isActive ? 'opacity-50' : ''}`}>
+                <tr key={item.id} onClick={() => openHistory(item)} className={`hover:bg-warning/5 cursor-pointer transition-colors ${!item.isActive ? 'opacity-50' : ''}`}>
                   <td className="px-4 py-3 font-mono text-xs text-muted-foreground whitespace-nowrap">{item.sku}</td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2.5 min-w-0">
@@ -573,7 +571,7 @@ export default function ItemsPage() {
                       <div className="min-w-0">
                         <p className="font-medium truncate">{item.name}</p>
                         <div className="flex items-center gap-1">
-                          <span className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700">
+                          <span className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full bg-warning/10 text-warning">
                             {(() => { const Icon = getTypeIcon(item.type); return <Icon className="h-2.5 w-2.5" /> })()} {typeLabelByCode[item.type] ?? item.type}
                           </span>
                           <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground">{item.category}</span>
@@ -588,44 +586,44 @@ export default function ItemsPage() {
                     )}
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <p className="text-sm font-medium" title="Moving average cost">{avgCost > 0 ? `Rp ${fmt(Math.round(avgCost))}` : <span className="text-muted-foreground font-normal">—</span>}</p>
+                    <p className="text-sm font-medium" title="Moving average cost">{avgCost > 0 ? formatMoney(avgCost) : <span className="text-muted-foreground font-normal">—</span>}</p>
                     {item.avgPrice > 0 && item.standardCost > 0 && Math.round(item.standardCost) !== Math.round(item.avgPrice) && (
-                      <p className="text-[10px] text-muted-foreground">last {fmt(Math.round(item.standardCost))}</p>
+                      <p className="text-[10px] text-muted-foreground">last {formatNumber(item.standardCost)}</p>
                     )}
-                    {item.sellingPrice > 0 && <p className="text-xs text-muted-foreground">sell {fmt(Math.round(item.sellingPrice))}</p>}
+                    {item.sellingPrice > 0 && <p className="text-xs text-muted-foreground">sell {formatNumber(item.sellingPrice)}</p>}
                   </td>
                   {trackedFilter === 'stock' && (
                     <td className="px-4 py-3 text-right">
                       {item.sellingPrice > 0
-                        ? <span className={`text-xs font-semibold ${margin >= 40 ? 'text-green-600' : margin >= 20 ? 'text-amber-600' : 'text-red-500'}`}>{margin.toFixed(1)}%</span>
+                        ? <span className={`text-xs font-semibold ${margin >= 40 ? 'text-success' : margin >= 20 ? 'text-warning' : 'text-destructive'}`}>{margin.toFixed(1)}%</span>
                         : <span className="text-muted-foreground text-xs">—</span>}
                     </td>
                   )}
                   <td className="px-4 py-3 text-right">
                     {item.isStockTracked ? (
                       item.totalQty > 0
-                        ? <span className="font-medium text-sm">{fmt(item.totalQty)} <span className="text-muted-foreground font-normal text-xs">{item.baseUnit}</span></span>
+                        ? <span className="font-medium text-sm">{formatNumber(item.totalQty, { decimals: 3 })} <span className="text-muted-foreground font-normal text-xs">{item.baseUnit}</span></span>
                         : <span className="text-muted-foreground text-xs">—</span>
                     ) : (
                       <div className="flex items-center justify-end gap-1.5" onClick={e => e.stopPropagation()}>
                         {item.currentLocation ? (
                           <p className="text-xs whitespace-nowrap">
-                            {item.currentLocationQty > 0 && <span className="font-medium">{fmt(item.currentLocationQty)} {item.baseUnit} · </span>}
+                            {item.currentLocationQty > 0 && <span className="font-medium">{formatNumber(item.currentLocationQty, { decimals: 3 })} {item.baseUnit} · </span>}
                             <span className={item.currentLocationQty > 0 ? 'text-muted-foreground' : 'font-medium'}>{item.currentLocation.name}</span>
                           </p>
                         ) : item.currentLocations.length > 0 ? (
                           <div>
                             {item.currentLocations.map(l => (
-                              <p key={l.name} className="text-xs whitespace-nowrap"><span className="font-medium">{fmt(l.qty)} {item.baseUnit}</span> <span className="text-muted-foreground">· {l.name}</span></p>
+                              <p key={l.name} className="text-xs whitespace-nowrap"><span className="font-medium">{formatNumber(l.qty, { decimals: 3 })} {item.baseUnit}</span> <span className="text-muted-foreground">· {l.name}</span></p>
                             ))}
                           </div>
                         ) : <span className="text-muted-foreground text-xs">—</span>}
                         {item.migratedInventoryItem ? (
-                          <span className="text-xs px-2 py-0.5 rounded-full bg-green-50 text-green-700 font-medium whitespace-nowrap shrink-0">
+                          <StatusBadge tone="success">
                             Migrated → {item.migratedInventoryItem.itemNumber}
-                          </span>
+                          </StatusBadge>
                         ) : (
-                          <button onClick={() => openChangeLocation(item)} className="text-muted-foreground hover:text-amber-600 transition-colors shrink-0" title="Change location">
+                          <button onClick={() => openChangeLocation(item)} className="text-muted-foreground hover:text-warning transition-colors shrink-0" title="Change location">
                             <MapPin className="h-3.5 w-3.5" />
                           </button>
                         )}
@@ -636,7 +634,7 @@ export default function ItemsPage() {
                     <td className="px-4 py-3 text-center">
                       <button onClick={e => { e.stopPropagation(); toggleActive(item) }} className="text-muted-foreground hover:text-foreground transition-colors" title={item.isActive ? 'Deactivate' : 'Activate'}>
                         {item.isActive
-                          ? <ToggleRight className="h-5 w-5 text-green-600" />
+                          ? <ToggleRight className="h-5 w-5 text-success" />
                           : <ToggleLeft className="h-5 w-5" />}
                       </button>
                     </td>
@@ -659,11 +657,11 @@ export default function ItemsPage() {
                       ) : !item.migratedInventoryItem && (
                         <>
                           <button onClick={() => openConvertStock(item)}
-                            className="flex items-center gap-1 text-xs font-medium text-blue-700 hover:text-blue-900 border border-blue-200 hover:bg-blue-50 rounded-md px-2 py-1 transition-colors whitespace-nowrap">
+                            className="flex items-center gap-1 text-xs font-medium text-info hover:text-info border border-info/30 hover:bg-info/10 rounded-md px-2 py-1 transition-colors whitespace-nowrap">
                             <Boxes className="h-3.5 w-3.5" /> Convert to Stock
                           </button>
                           <button onClick={() => openConvert(item)}
-                            className="flex items-center gap-1 text-xs font-medium text-amber-700 hover:text-amber-900 border border-amber-200 hover:bg-amber-50 rounded-md px-2 py-1 transition-colors whitespace-nowrap">
+                            className="flex items-center gap-1 text-xs font-medium text-warning hover:text-warning border border-warning/30 hover:bg-warning/10 rounded-md px-2 py-1 transition-colors whitespace-nowrap">
                             <PackagePlus className="h-3.5 w-3.5" /> Convert to Inventory
                           </button>
                         </>
@@ -738,7 +736,7 @@ export default function ItemsPage() {
       {/* Add/Edit Modal */}
       {modal.open && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+          <div className="bg-card rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between p-6 border-b">
               <h3 className="font-semibold text-lg">{modal.editing ? 'Edit Item' : 'Add Item'}</h3>
               <button onClick={() => setModal({ open: false, editing: null })} className="text-muted-foreground hover:text-foreground">
@@ -759,8 +757,8 @@ export default function ItemsPage() {
             </div>
             <div className="flex justify-end gap-3 px-6 py-4 border-t bg-muted/30">
               <button onClick={() => setModal({ open: false, editing: null })} className="px-4 py-2 text-sm border rounded-md hover:bg-muted transition-colors">Cancel</button>
-              <button onClick={save} disabled={saving} className="px-4 py-2 text-sm bg-amber-600 text-white rounded-md hover:bg-amber-700 disabled:opacity-50 transition-colors font-medium">
-                {saving ? 'Saving...' : modal.editing ? 'Save Changes' : 'Add Item'}
+              <button onClick={save} disabled={saving} className="px-4 py-2 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary-hover disabled:opacity-50 transition-colors font-medium">
+                {saving ? 'Saving…' : modal.editing ? 'Save Changes' : 'Add Item'}
               </button>
             </div>
           </div>
@@ -770,14 +768,14 @@ export default function ItemsPage() {
       {/* Delete Confirm */}
       {deleteConfirm && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6">
+          <div className="bg-card rounded-xl shadow-xl w-full max-w-sm p-6">
             <h3 className="font-semibold mb-2">Delete Item?</h3>
             <p className="text-sm text-muted-foreground mb-4">
               <span className="font-medium text-foreground">{deleteConfirm.name}</span> ({deleteConfirm.sku}) will be permanently deleted. This cannot be undone.
             </p>
             <div className="flex gap-3 justify-end">
               <button onClick={() => setDeleteConfirm(null)} className="px-4 py-2 text-sm border rounded-md hover:bg-muted transition-colors">Cancel</button>
-              <button onClick={() => doDelete(deleteConfirm)} className="px-4 py-2 text-sm bg-destructive text-white rounded-md hover:bg-destructive/90 transition-colors">Delete</button>
+              <button onClick={() => doDelete(deleteConfirm)} className="px-4 py-2 text-sm bg-destructive text-destructive-foreground rounded-md hover:bg-destructive/90 transition-colors">Delete</button>
             </div>
           </div>
         </div>
@@ -787,13 +785,13 @@ export default function ItemsPage() {
           so this is just a manual pointer for "where is it right now". */}
       {changeLocationItem && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6">
+          <div className="bg-card rounded-xl shadow-xl w-full max-w-sm p-6">
             <h3 className="font-semibold mb-1">Change Location</h3>
             <p className="text-sm text-muted-foreground mb-4">{changeLocationItem.name}</p>
             <div className="space-y-1.5">
               <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Current Location</label>
               <select
-                className="w-full h-9 border rounded-md px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
+                className="w-full h-9 border rounded-md px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-ring"
                 value={changeLocationValue} onChange={e => setChangeLocationValue(e.target.value)}
               >
                 <option value="">— Unknown —</option>
@@ -802,8 +800,8 @@ export default function ItemsPage() {
             </div>
             <div className="flex gap-3 justify-end mt-5">
               <button onClick={() => setChangeLocationItem(null)} className="px-4 py-2 text-sm border rounded-md hover:bg-muted transition-colors">Cancel</button>
-              <button onClick={saveChangeLocation} disabled={changeLocationSaving} className="px-4 py-2 text-sm bg-amber-600 text-white rounded-md hover:bg-amber-700 disabled:opacity-50 transition-colors font-medium">
-                {changeLocationSaving ? 'Saving...' : 'Save'}
+              <button onClick={saveChangeLocation} disabled={changeLocationSaving} className="px-4 py-2 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary-hover disabled:opacity-50 transition-colors font-medium">
+                {changeLocationSaving ? 'Saving…' : 'Save'}
               </button>
             </div>
           </div>
@@ -815,12 +813,12 @@ export default function ItemsPage() {
           isn't lost in the switch. */}
       {convertStockItem && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6">
+          <div className="bg-card rounded-xl shadow-xl w-full max-w-sm p-6">
             <h3 className="font-semibold mb-1">Convert to Stock Item</h3>
             <p className="text-sm text-muted-foreground mb-4">{convertStockItem.name}</p>
 
             {convertStockError && (
-              <div className="flex items-center gap-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">
+              <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 border border-destructive/30 rounded-lg px-3 py-2 mb-3">
                 <AlertCircle className="h-4 w-4 shrink-0" /> {convertStockError}
               </div>
             )}
@@ -828,7 +826,7 @@ export default function ItemsPage() {
             <div className="space-y-3">
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Opening Location</label>
-                <select className="w-full h-9 border rounded-md px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
+                <select className="w-full h-9 border rounded-md px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-ring"
                   value={convertStockLocationId} onChange={e => setConvertStockLocationId(e.target.value)}>
                   <option value="">— None —</option>
                   {renderLocationOptions(locations)}
@@ -837,12 +835,12 @@ export default function ItemsPage() {
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Opening Qty</label>
-                  <input type="number" min={0} className="w-full h-9 border rounded-md px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  <input type="number" min={0} className="w-full h-9 border rounded-md px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-ring"
                     value={convertStockQuantity} onChange={e => setConvertStockQuantity(e.target.value)} />
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Unit Cost</label>
-                  <input type="number" min={0} className="w-full h-9 border rounded-md px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  <input type="number" min={0} className="w-full h-9 border rounded-md px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-ring"
                     value={convertStockUnitCost} onChange={e => setConvertStockUnitCost(e.target.value)} />
                 </div>
               </div>
@@ -853,8 +851,8 @@ export default function ItemsPage() {
 
             <div className="flex gap-3 justify-end mt-5">
               <button onClick={() => setConvertStockItem(null)} className="px-4 py-2 text-sm border rounded-md hover:bg-muted transition-colors">Cancel</button>
-              <button onClick={saveConvertStock} disabled={convertStockSaving} className="px-4 py-2 text-sm bg-amber-600 text-white rounded-md hover:bg-amber-700 disabled:opacity-50 transition-colors font-medium">
-                {convertStockSaving ? 'Converting...' : 'Convert'}
+              <button onClick={saveConvertStock} disabled={convertStockSaving} className="px-4 py-2 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary-hover disabled:opacity-50 transition-colors font-medium">
+                {convertStockSaving ? 'Converting…' : 'Convert'}
               </button>
             </div>
           </div>
@@ -866,12 +864,12 @@ export default function ItemsPage() {
           sourcePurchaseItemId so it shows a "Migrated" badge afterward. */}
       {convertItem && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6">
+          <div className="bg-card rounded-xl shadow-xl w-full max-w-sm p-6">
             <h3 className="font-semibold mb-1">Convert to Inventory</h3>
             <p className="text-sm text-muted-foreground mb-4">{convertItem.name}</p>
 
             {convertError && (
-              <div className="flex items-center gap-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">
+              <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 border border-destructive/30 rounded-lg px-3 py-2 mb-3">
                 <AlertCircle className="h-4 w-4 shrink-0" /> {convertError}
               </div>
             )}
@@ -879,7 +877,7 @@ export default function ItemsPage() {
             <div className="space-y-3">
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Place</label>
-                <select className="w-full h-9 border rounded-md px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
+                <select className="w-full h-9 border rounded-md px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-ring"
                   value={convertLocationId} onChange={e => setConvertLocationId(e.target.value)}>
                   <option value="">— Select —</option>
                   {renderLocationOptions(locations, { topLevelOnly: true })}
@@ -887,7 +885,7 @@ export default function ItemsPage() {
               </div>
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Room</label>
-                <select className="w-full h-9 border rounded-md px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500 disabled:opacity-50"
+                <select className="w-full h-9 border rounded-md px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
                   value={convertRoomId} onChange={e => setConvertRoomId(e.target.value)} disabled={!convertLocationId}>
                   <option value="">— Select —</option>
                   {convertRooms.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
@@ -895,7 +893,7 @@ export default function ItemsPage() {
               </div>
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Category</label>
-                <select className="w-full h-9 border rounded-md px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500 disabled:opacity-50"
+                <select className="w-full h-9 border rounded-md px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
                   value={convertCategoryId} onChange={e => setConvertCategoryId(e.target.value)} disabled={!convertRoomId}>
                   <option value="">— Select —</option>
                   {convertCategories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -904,12 +902,12 @@ export default function ItemsPage() {
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Quantity</label>
-                  <input type="number" min={1} className="w-full h-9 border rounded-md px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  <input type="number" min={1} className="w-full h-9 border rounded-md px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-ring"
                     value={convertQuantity} onChange={e => setConvertQuantity(e.target.value)} />
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Price</label>
-                  <input type="number" min={0} className="w-full h-9 border rounded-md px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  <input type="number" min={0} className="w-full h-9 border rounded-md px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-ring"
                     value={convertUnitPrice} onChange={e => setConvertUnitPrice(e.target.value)} />
                 </div>
               </div>
@@ -918,8 +916,8 @@ export default function ItemsPage() {
 
             <div className="flex gap-3 justify-end mt-5">
               <button onClick={() => setConvertItem(null)} className="px-4 py-2 text-sm border rounded-md hover:bg-muted transition-colors">Cancel</button>
-              <button onClick={saveConvert} disabled={convertSaving || !convertCategoryId} className="px-4 py-2 text-sm bg-amber-600 text-white rounded-md hover:bg-amber-700 disabled:opacity-50 transition-colors font-medium">
-                {convertSaving ? 'Converting...' : 'Convert'}
+              <button onClick={saveConvert} disabled={convertSaving || !convertCategoryId} className="px-4 py-2 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary-hover disabled:opacity-50 transition-colors font-medium">
+                {convertSaving ? 'Converting…' : 'Convert'}
               </button>
             </div>
           </div>
@@ -929,8 +927,8 @@ export default function ItemsPage() {
       {/* Import Loading Modal */}
       {importing && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-8 flex flex-col items-center text-center gap-4">
-            <div className="h-10 w-10 border-[3px] border-amber-200 border-t-amber-600 rounded-full animate-spin" />
+          <div className="bg-card rounded-xl shadow-xl w-full max-w-sm p-8 flex flex-col items-center text-center gap-4">
+            <div className="h-10 w-10 border-[3px] border-warning/30 border-t-warning rounded-full animate-spin" />
             <div>
               <p className="font-semibold">Importing CSV…</p>
               <p className="text-sm text-muted-foreground mt-1">Processing rows and reconciling stock — this can take a moment for large files. Please don&apos;t close this tab.</p>
@@ -942,35 +940,35 @@ export default function ItemsPage() {
       {/* Import Result Modal */}
       {importResult && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
+          <div className="bg-card rounded-xl shadow-xl w-full max-w-md">
             <div className="flex items-center justify-between p-6 border-b">
               <h3 className="font-semibold text-lg">CSV Import Results</h3>
               <button onClick={() => setImportResult(null)}><X className="h-5 w-5 text-muted-foreground" /></button>
             </div>
             <div className="p-6 space-y-4">
               <div className="grid grid-cols-3 gap-3">
-                <div className="rounded-lg bg-green-50 border border-green-200 p-3 text-center">
-                  <p className="text-2xl font-bold text-green-700">{importResult.imported}</p>
-                  <p className="text-xs text-green-600 mt-0.5">New items</p>
+                <div className="rounded-lg bg-success/10 border border-success/30 p-3 text-center">
+                  <p className="text-2xl font-bold text-success">{importResult.imported}</p>
+                  <p className="text-xs text-success mt-0.5">New items</p>
                 </div>
-                <div className="rounded-lg bg-blue-50 border border-blue-200 p-3 text-center">
-                  <p className="text-2xl font-bold text-blue-700">{importResult.updated}</p>
-                  <p className="text-xs text-blue-600 mt-0.5">Updated</p>
+                <div className="rounded-lg bg-info/10 border border-info/30 p-3 text-center">
+                  <p className="text-2xl font-bold text-info">{importResult.updated}</p>
+                  <p className="text-xs text-info mt-0.5">Updated</p>
                 </div>
-                <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-center">
-                  <p className="text-2xl font-bold text-red-700">{importResult.errors.length}</p>
-                  <p className="text-xs text-red-600 mt-0.5">Issues</p>
+                <div className="rounded-lg bg-destructive/10 border border-destructive/30 p-3 text-center">
+                  <p className="text-2xl font-bold text-destructive">{importResult.errors.length}</p>
+                  <p className="text-xs text-destructive mt-0.5">Issues</p>
                 </div>
               </div>
 
               {importResult.errors.length === 0 ? (
-                <div className="flex items-center gap-2 text-green-700 bg-green-50 rounded-lg px-4 py-3">
+                <div className="flex items-center gap-2 text-success bg-success/10 rounded-lg px-4 py-3">
                   <CheckCircle2 className="h-4 w-4 shrink-0" />
                   <p className="text-sm font-medium">All {importResult.total} rows processed successfully</p>
                 </div>
               ) : (
                 <div className="space-y-2">
-                  <div className="flex items-center gap-2 text-amber-700 bg-amber-50 rounded-lg px-4 py-3">
+                  <div className="flex items-center gap-2 text-warning bg-warning/10 rounded-lg px-4 py-3">
                     <AlertCircle className="h-4 w-4 shrink-0" />
                     <p className="text-sm">{importResult.total} succeeded, {importResult.errors.length} row(s) had issues (see below — row may have still been imported):</p>
                   </div>
@@ -978,7 +976,7 @@ export default function ItemsPage() {
                     {importResult.errors.map((e, i) => (
                       <div key={i} className="px-3 py-2 flex gap-3">
                         <span className="text-muted-foreground shrink-0">Row {e.row}</span>
-                        <span className="font-mono text-xs shrink-0 text-amber-700">{e.sku}</span>
+                        <span className="font-mono text-xs shrink-0 text-warning">{e.sku}</span>
                         <span className="text-destructive text-xs">{e.error}</span>
                       </div>
                     ))}
@@ -987,7 +985,7 @@ export default function ItemsPage() {
               )}
             </div>
             <div className="flex justify-end px-6 py-4 border-t bg-muted/30">
-              <button onClick={() => setImportResult(null)} className="px-4 py-2 text-sm bg-amber-600 text-white rounded-md hover:bg-amber-700 font-medium transition-colors">
+              <button onClick={() => setImportResult(null)} className="px-4 py-2 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary-hover font-medium transition-colors">
                 Done
               </button>
             </div>
@@ -998,7 +996,7 @@ export default function ItemsPage() {
       {/* ── Item History Modal ── */}
       {historyItem && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[88vh] flex flex-col">
+          <div className="bg-card rounded-2xl shadow-2xl w-full max-w-4xl max-h-[88vh] flex flex-col">
 
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-5 border-b shrink-0">
@@ -1006,8 +1004,8 @@ export default function ItemsPage() {
                 {historyItem.imageKey ? (
                   <img src={historyItem.imageKey} alt={historyItem.name} className="w-12 h-12 rounded-xl object-cover border shrink-0" />
                 ) : (
-                  <div className="p-2 rounded-xl bg-amber-50 shrink-0">
-                    <History className="h-5 w-5 text-amber-600" />
+                  <div className="p-2 rounded-xl bg-warning/10 shrink-0">
+                    <History className="h-5 w-5 text-warning" />
                   </div>
                 )}
                 <div>
@@ -1049,7 +1047,7 @@ export default function ItemsPage() {
                             </div>
                             <div className="text-right">
                               <p className="text-sm font-bold">{s.qty} <span className="font-normal text-muted-foreground text-xs">{historyItem.baseUnit}</span></p>
-                              {s.costPerUnit > 0 && <p className="text-xs text-muted-foreground">avg @ Rp {new Intl.NumberFormat('id-ID').format(s.costPerUnit)}</p>}
+                              {s.costPerUnit > 0 && <p className="text-xs text-muted-foreground">avg @ {formatMoney(s.costPerUnit)}</p>}
                             </div>
                           </div>
                         ))}
@@ -1072,18 +1070,18 @@ export default function ItemsPage() {
                     const totalQty = lotsAsValuation.reduce((s, l) => s + l.quantity, 0)
                     const totalValue = computeStockValue(lotsAsValuation, method)
                     return (
-                      <div className="px-6 py-4 bg-slate-50/60">
+                      <div className="px-6 py-4 bg-muted/30">
                         <div className="flex items-center justify-between mb-3">
                           <div className="flex items-center gap-2">
                             <Layers className="h-3.5 w-3.5 text-muted-foreground" />
                             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Lot Register</p>
                           </div>
                           <div className="flex items-center gap-2">
-                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-semibold">MOVING AVERAGE</span>
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-info/15 text-info font-semibold">MOVING AVERAGE</span>
                             <span className="text-xs text-muted-foreground">Average cost per location, re-blended on every receipt</span>
                           </div>
                         </div>
-                        <div className="rounded-lg border bg-white overflow-hidden">
+                        <div className="rounded-lg border bg-card overflow-hidden">
                           <div className="overflow-x-auto"><table className="w-full text-xs">
                             <thead className="bg-muted/40 text-muted-foreground">
                               <tr>
@@ -1109,20 +1107,20 @@ export default function ItemsPage() {
                                     <td className="px-3 py-2 text-muted-foreground">{i + 1}</td>
                                     <td className="px-3 py-2 font-medium">{lotInfoMap.get(lot.id)?.locationName ?? '—'}</td>
                                     <td className="px-3 py-2 text-muted-foreground">
-                                      {new Date(lot.createdAt).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: '2-digit' })}
+                                      {formatDate(lot.createdAt)}
                                     </td>
                                     <td className="px-3 py-2">
                                       <div className="flex items-center gap-1">
-                                        {lot.batch && <span className="font-mono text-[10px] bg-gray-100 px-1 rounded">{lot.batch}</span>}
+                                        {lot.batch && <span className="font-mono text-[10px] bg-muted px-1 rounded">{lot.batch}</span>}
                                         {lot.expiresAt && (
-                                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${isExpired ? 'bg-red-100 text-red-600' : isNearExpiry ? 'bg-orange-100 text-orange-600' : 'bg-green-50 text-green-600'}`}>
-                                            {isExpired ? 'Expired' : new Date(lot.expiresAt).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: '2-digit' })}
-                                          </span>
+                                          <StatusBadge size="sm" tone={isExpired ? 'destructive' : isNearExpiry ? 'warning' : 'success'}>
+                                            {isExpired ? 'Expired' : formatDate(lot.expiresAt)}
+                                          </StatusBadge>
                                         )}
                                         {!lot.batch && !lot.expiresAt && <span className="text-muted-foreground">—</span>}
                                         <button
                                           onClick={() => { const full = lotInfoMap.get(lot.id); if (full) openEditLot(full) }}
-                                          className="ml-auto text-muted-foreground/50 hover:text-amber-600 transition-colors shrink-0"
+                                          className="ml-auto text-muted-foreground/50 hover:text-warning transition-colors shrink-0"
                                           title="Set batch / expiry"
                                         >
                                           <Pencil className="h-3 w-3" />
@@ -1130,8 +1128,8 @@ export default function ItemsPage() {
                                       </div>
                                     </td>
                                     <td className="px-3 py-2 text-right font-medium">{lot.quantity} <span className="text-muted-foreground font-normal">{historyItem?.baseUnit}</span></td>
-                                    <td className="px-3 py-2 text-right text-muted-foreground">Rp {fmt(Math.round(effectiveCost))}</td>
-                                    <td className="px-3 py-2 text-right font-medium">Rp {fmt(Math.round(lotValue))}</td>
+                                    <td className="px-3 py-2 text-right text-muted-foreground">{formatMoney(effectiveCost)}</td>
+                                    <td className="px-3 py-2 text-right font-medium">{formatMoney(lotValue)}</td>
                                   </tr>
                                 )
                               })}
@@ -1141,11 +1139,11 @@ export default function ItemsPage() {
                                 <td colSpan={4} className="px-3 py-2 text-xs font-semibold text-muted-foreground">
                                   Total · {sorted.length} lot{sorted.length !== 1 ? 's' : ''}
                                 </td>
-                                <td className="px-3 py-2 text-right font-bold text-xs">{fmt(totalQty)} <span className="font-normal text-muted-foreground">{historyItem?.baseUnit}</span></td>
+                                <td className="px-3 py-2 text-right font-bold text-xs">{formatNumber(totalQty, { decimals: 3 })} <span className="font-normal text-muted-foreground">{historyItem?.baseUnit}</span></td>
                                 <td className="px-3 py-2 text-right text-xs text-muted-foreground">
-                                  {totalQty > 0 ? `Avg: Rp ${fmt(Math.round(totalValue / totalQty))}` : ''}
+                                  {totalQty > 0 ? `Avg: ${formatMoney(totalValue / totalQty)}` : ''}
                                 </td>
-                                <td className="px-3 py-2 text-right font-bold text-xs">Rp {fmt(Math.round(totalValue))}</td>
+                                <td className="px-3 py-2 text-right font-bold text-xs">{formatMoney(totalValue)}</td>
                               </tr>
                             </tfoot>
                           </table></div>
@@ -1186,7 +1184,7 @@ export default function ItemsPage() {
       {/* Edit Lot expiry modal */}
       {editLot && (
         <div className="fixed inset-0 bg-black/40 z-[60] flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm overflow-hidden">
+          <div className="bg-card rounded-xl shadow-xl w-full max-w-sm overflow-hidden">
             <div className="flex items-center justify-between px-5 py-4 border-b">
               <h3 className="font-semibold text-base">Set Expiry</h3>
               <button onClick={() => setEditLot(null)} className="text-muted-foreground hover:text-foreground">
@@ -1195,16 +1193,16 @@ export default function ItemsPage() {
             </div>
             <div className="px-5 py-4 space-y-4">
               <p className="text-xs text-muted-foreground">
-                {editLot.locationName} · {editLot.quantity} in this lot{editLot.batch ? ` · ${editLot.batch}` : ''} · received {new Date(editLot.createdAt).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}
+                {editLot.locationName} · {editLot.quantity} in this lot{editLot.batch ? ` · ${editLot.batch}` : ''} · received {formatDate(editLot.createdAt)}
               </p>
               {editLotError && (
-                <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{editLotError}</div>
+                <div className="text-sm text-destructive bg-destructive/10 border border-destructive/30 rounded-lg px-3 py-2">{editLotError}</div>
               )}
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Expiry date</label>
                 <input
                   type="date"
-                  className="w-full h-9 border rounded-md px-3 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  className="w-full h-9 border rounded-md px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
                   value={editLotExpiry} onChange={e => setEditLotExpiry(e.target.value)}
                   autoFocus
                 />
@@ -1212,8 +1210,8 @@ export default function ItemsPage() {
             </div>
             <div className="flex justify-end gap-3 px-5 py-4 border-t bg-muted/20">
               <button onClick={() => setEditLot(null)} className="px-4 py-2 text-sm border rounded-md hover:bg-muted">Cancel</button>
-              <button onClick={saveEditLot} disabled={editLotSaving} className="px-4 py-2 text-sm bg-amber-600 text-white rounded-md hover:bg-amber-700 disabled:opacity-50 font-medium">
-                {editLotSaving ? 'Saving...' : 'Save'}
+              <button onClick={saveEditLot} disabled={editLotSaving} className="px-4 py-2 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary-hover disabled:opacity-50 font-medium">
+                {editLotSaving ? 'Saving…' : 'Save'}
               </button>
             </div>
           </div>
@@ -1224,14 +1222,14 @@ export default function ItemsPage() {
 }
 
 const TYPE_META: Record<string, { label: string; color: string; bg: string }> = {
-  RECEIVE:    { label: 'Received',   color: 'text-green-700',  bg: 'bg-green-100'  },
-  TRANSFER:   { label: 'Transfer',   color: 'text-blue-700',   bg: 'bg-blue-100'   },
-  ADJUSTMENT: { label: 'Adjustment', color: 'text-amber-700',  bg: 'bg-amber-100'  },
-  CONSUME:    { label: 'Consumed',   color: 'text-red-700',    bg: 'bg-red-100'    },
-  INITIAL:      { label: 'Initial Stock', color: 'text-green-700', bg: 'bg-green-100' },
-  RECEIPT:      { label: 'Received',      color: 'text-green-700', bg: 'bg-green-100' },
-  TRANSFER_OUT: { label: 'Transfer Out',  color: 'text-red-700',   bg: 'bg-red-100'   },
-  TRANSFER_IN:  { label: 'Transfer In',   color: 'text-blue-700',  bg: 'bg-blue-100'  },
+  RECEIVE:    { label: 'Received',   color: 'text-success',  bg: 'bg-success/15'  },
+  TRANSFER:   { label: 'Transfer',   color: 'text-info',   bg: 'bg-info/15'   },
+  ADJUSTMENT: { label: 'Adjustment', color: 'text-warning',  bg: 'bg-warning/15'  },
+  CONSUME:    { label: 'Consumed',   color: 'text-destructive',    bg: 'bg-destructive/15'    },
+  INITIAL:      { label: 'Initial Stock', color: 'text-success', bg: 'bg-success/15' },
+  RECEIPT:      { label: 'Received',      color: 'text-success', bg: 'bg-success/15' },
+  TRANSFER_OUT: { label: 'Transfer Out',  color: 'text-destructive',   bg: 'bg-destructive/15'   },
+  TRANSFER_IN:  { label: 'Transfer In',   color: 'text-info',  bg: 'bg-info/15'  },
 }
 
 // Stock movements store a positive quantity; the direction comes from the type, or for
@@ -1245,9 +1243,6 @@ function isOutflow(entry: HistoryEntry) {
 
 function TimelineRow({ entry }: { entry: HistoryEntry }) {
   const meta = TYPE_META[entry.type] ?? { label: entry.type, color: 'text-muted-foreground', bg: 'bg-muted' }
-  const date = new Date(entry.date)
-  const fmtD = date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
-  const fmtT = date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
 
   return (
     <div className="flex gap-3 py-2.5 group">
@@ -1273,13 +1268,13 @@ function TimelineRow({ entry }: { entry: HistoryEntry }) {
             </div>
           </div>
           <div className="text-right shrink-0">
-            <p className={`text-sm font-bold ${isOutflow(entry) ? 'text-red-700' : 'text-green-700'}`}>
+            <p className={`text-sm font-bold ${isOutflow(entry) ? 'text-destructive' : 'text-success'}`}>
               {isOutflow(entry) ? '-' : '+'}{entry.qty} {entry.unit}
             </p>
             {entry.unitCost != null && entry.unitCost > 0 && (
-              <p className="text-xs text-muted-foreground">@ Rp {new Intl.NumberFormat('id-ID').format(entry.unitCost)}</p>
+              <p className="text-xs text-muted-foreground">@ {formatMoney(entry.unitCost)}</p>
             )}
-            <p className="text-xs text-muted-foreground mt-0.5">{fmtD} {fmtT}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">{formatDate(entry.date, 'datetime')}</p>
           </div>
         </div>
       </div>

@@ -247,8 +247,8 @@ export async function autoAssignWebsiteLead(db: PrismaClient, leadId: string, ho
   if (count === 0) return null
   await db.leadAssignmentLog.create({ data: { leadId, toUserId: ownerId, reason: 'AUTO_DISTRIBUTION' } })
 
-  const title = `Lead baru dari website: ${leadName}`
-  const body = hostname ? `via ${hostname}` : 'via form website'
+  const title = `New website lead: ${leadName}`
+  const body = hostname ? `via ${hostname}` : 'via website form'
   db.notification.create({ data: { userId: ownerId, type: 'LEAD_ASSIGNED', title, body } }).catch(() => {})
   sendPushToUser(db, ownerId, { title, body, url: '/' }).catch(() => {})
   return ownerId

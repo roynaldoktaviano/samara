@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { useSession } from 'next-auth/react'
 import { roleMatches } from '@/lib/role-utils'
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle,
+  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -30,6 +30,9 @@ import {
 import type { DateRange } from 'react-day-picker'
 import { NATIONALITIES } from '@/lib/nationalities'
 import { getAgentCommissionPct } from '@/lib/agent-commission'
+import { formatDate, formatMoney, formatNumber } from '@/lib/format'
+import { StatusBadge } from '@/components/ui/status-badge'
+import { toast } from 'sonner'
 
 /* ─── Types ─────────────────────────────────────────────────────────────── */
 type Source  = 'AGENT' | 'DIRECT'
@@ -94,10 +97,9 @@ const STEPS = [
 ]
 
 /* ─── Helpers ────────────────────────────────────────────────────────────── */
-const fmtDate = (d: string) =>
-  new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
-
-const ACCENT = '#bdac7e'
+const ACCENT = 'var(--primary)'
+/** Input-like styling for raw combobox / date-picker trigger buttons (matches <Input>). */
+const TRIGGER_CLS = 'w-full h-9 flex items-center rounded-md border border-input bg-transparent dark:bg-input/30 px-3 text-sm text-left shadow-xs outline-none transition-[color,box-shadow] hover:bg-accent/30 focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50'
 
 /* ─── Currency ───────────────────────────────────────────────────────────── */
 type CurrencyCode = 'USD' | 'EUR' | 'IDR'
@@ -107,9 +109,6 @@ const CURRENCIES: Record<CurrencyCode, { symbol: string; label: string; rateToUS
   EUR: { symbol: '€',  label: 'EUR — Euro',                rateToUSD: 1.09,     step: 100,    decimals: 2 },
   IDR: { symbol: 'Rp', label: 'IDR — Indonesian Rupiah',   rateToUSD: 0.000063, step: 100000, decimals: 0 },
 }
-
-const fmtAmt   = (n: number, c: CurrencyCode) =>
-  `${CURRENCIES[c].symbol}${n.toLocaleString('en-US', { maximumFractionDigits: CURRENCIES[c].decimals })}`
 
 const TODAY = new Date().toISOString().split('T')[0]
 
@@ -853,7 +852,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
 
       if (!res.ok) {
         const d = await res.json().catch(() => ({}))
-        alert(d.error || 'Failed to save on-hold booking')
+        toast.error(d.error || 'Failed to save on-hold booking')
         return
       }
 
@@ -862,7 +861,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
       onOpenChange(false)
     } catch (err) {
       console.error(err)
-      alert('Failed to save on-hold booking')
+      toast.error('Failed to save on-hold booking')
     } finally {
       setSubmitting(false)
     }
@@ -925,7 +924,7 @@ notes:         resolvedNotes,
         })
         if (!res.ok) {
           const err = await res.json().catch(() => ({}))
-          alert(err.error || 'Failed to complete booking')
+          toast.error(err.error || 'Failed to complete booking')
           return
         }
         window.dispatchEvent(new CustomEvent('booking-created'))
@@ -980,7 +979,7 @@ notes:         resolvedNotes,
           return
         }
         console.error('Booking failed:', err)
-        alert(err.error ?? 'Failed to save booking. Please try again.')
+        toast.error(err.error ?? 'Failed to save booking. Please try again.')
         return
       }
 
@@ -1003,20 +1002,20 @@ notes:         resolvedNotes,
             <div
               className={cn('w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0')}
               style={step >= s.num
-                ? { backgroundColor: ACCENT, color: 'white' }
+                ? { backgroundColor: ACCENT, color: 'var(--primary-foreground)' }
                 : { backgroundColor: 'var(--muted)', color: 'var(--muted-foreground)' }}
             >
               {step > s.num ? <Check className="w-2.5 h-2.5" /> : s.num}
             </div>
             <span
-              className="text-[11px] whitespace-nowrap font-medium"
+              className={cn('text-[11px] whitespace-nowrap font-medium', step !== s.num && 'hidden sm:inline')}
               style={{ color: step === s.num ? ACCENT : 'var(--muted-foreground)' }}
             >
               {s.label}
             </span>
           </div>
           {i < STEPS.length - 1 && (
-            <div className="h-px w-8 mx-2 transition-colors"
+            <div className="h-px w-4 mx-1 sm:w-8 sm:mx-2 transition-colors"
               style={{ backgroundColor: step > s.num ? ACCENT : 'var(--border)' }} />
           )}
         </div>
@@ -1031,7 +1030,7 @@ notes:         resolvedNotes,
     <div className="py-4 space-y-8">
       {/* Header */}
       <div className="text-center space-y-1">
-        <div className="inline-flex items-center justify-center w-10 h-10 rounded-full mb-2" style={{ backgroundColor: `${ACCENT}18` }}>
+        <div className="inline-flex items-center justify-center w-10 h-10 rounded-full mb-2" style={{ backgroundColor: 'color-mix(in srgb, var(--primary) 9%, transparent)' }}>
           <BookOpen className="w-5 h-5" style={{ color: ACCENT }} />
         </div>
         <h3 className="text-lg font-semibold tracking-tight">New Booking</h3>
@@ -1056,6 +1055,7 @@ notes:         resolvedNotes,
         ] as const).map(({ val, icon: Icon, label, desc }) => (
           <button
             key={val}
+            type="button"
             onClick={() => {
               setSource(val)
               if (preselectedOpenTripId) {
@@ -1069,7 +1069,7 @@ notes:         resolvedNotes,
             onMouseEnter={e => { e.currentTarget.style.borderColor = ACCENT; e.currentTarget.style.boxShadow = `0 0 0 1px ${ACCENT}` }}
             onMouseLeave={e => { e.currentTarget.style.borderColor = ''; e.currentTarget.style.boxShadow = '' }}
           >
-            <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ backgroundColor: `${ACCENT}18` }}>
+            <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ backgroundColor: 'color-mix(in srgb, var(--primary) 9%, transparent)' }}>
               <Icon className="w-6 h-6" style={{ color: ACCENT }} />
             </div>
             <div>
@@ -1090,16 +1090,19 @@ notes:         resolvedNotes,
 
   const phaseAgentInfo = () => (
     <div className="space-y-5 py-2">
-      <button
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
         onClick={() => { setPhase('source'); setSource(null) }}
-        className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
+        className="-ml-2.5 gap-1 text-muted-foreground hover:text-foreground"
       >
         <ChevronLeft className="w-4 h-4" /> Back
-      </button>
+      </Button>
 
       <div className="text-center">
         <div className="flex justify-center mb-3">
-          <Badge style={{ backgroundColor: ACCENT, color: 'white' }} className="px-3 py-1">Via Agent</Badge>
+          <Badge style={{ backgroundColor: ACCENT, color: 'var(--primary-foreground)' }} className="px-3 py-1">Via Agent</Badge>
         </div>
         <h3 className="text-xl font-semibold">Agent Information</h3>
         <p className="text-sm text-muted-foreground mt-1">Select a travel agent for this booking</p>
@@ -1107,17 +1110,22 @@ notes:         resolvedNotes,
 
       {/* Agent Company combobox */}
       <div className="space-y-1.5">
-        <Label>Agent Company <span className="text-destructive">*</span></Label>
+        <Label id="bw-agent-label" htmlFor="bw-agent">Agent Company <span className="text-destructive">*</span></Label>
         <Popover open={agentOpen} onOpenChange={setAgentOpen}>
           <PopoverTrigger asChild>
             <button
-              className="w-full flex items-center justify-between px-3 py-2 h-10 rounded-md border border-input bg-background text-sm hover:bg-accent/30 transition-colors"
+              type="button"
+              id="bw-agent"
+              aria-labelledby="bw-agent-label bw-agent"
+              aria-haspopup="listbox"
+              aria-expanded={agentOpen}
+              className={cn(TRIGGER_CLS, 'justify-between')}
             >
               {selectedAgent ? (
                 <div className="flex items-center gap-2 min-w-0">
                   <span className="font-medium truncate">{selectedAgent.name}</span>
                   <span className="text-xs px-2 py-0.5 rounded-full shrink-0 font-medium"
-                    style={{ backgroundColor: `${ACCENT}18`, color: ACCENT }}>
+                    style={{ backgroundColor: 'color-mix(in srgb, var(--primary) 9%, transparent)', color: ACCENT }}>
                     {getAgentCommissionPct(selectedAgent, tripType, useB2BCommission)}%
                   </span>
                 </div>
@@ -1146,7 +1154,7 @@ notes:         resolvedNotes,
                         style={{ color: ACCENT }} />
                       <span className="flex-1 truncate">{a.name}</span>
                       <span className="text-xs px-1.5 py-0.5 rounded-full font-medium shrink-0"
-                        style={{ backgroundColor: `${ACCENT}18`, color: ACCENT }}>
+                        style={{ backgroundColor: 'color-mix(in srgb, var(--primary) 9%, transparent)', color: ACCENT }}>
                         {tripType === 'OPEN_TRIP' ? a.commissionOpenTrip : a.commissionPrivateCharter}%
                       </span>
                     </CommandItem>
@@ -1157,7 +1165,7 @@ notes:         resolvedNotes,
           </PopoverContent>
         </Popover>
         {agents.length === 0 && (
-          <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-1">
+          <p className="text-xs text-warning bg-warning/10 border border-warning/30 rounded-lg px-3 py-2 mt-1">
             No agents registered yet. Please add an agent first via the <strong>Agents</strong> menu.
           </p>
         )}
@@ -1166,14 +1174,15 @@ notes:         resolvedNotes,
       {/* Commission type — shown only when this agent has a B2B rate configured */}
       {selectedAgent && selectedAgent.commissionB2B > 0 && (
         <div className="space-y-1.5">
-          <Label>Commission Type</Label>
-          <div className="grid grid-cols-2 gap-2">
+          <Label id="bw-commission-type-label">Commission Type</Label>
+          <div role="group" aria-labelledby="bw-commission-type-label" className="grid grid-cols-2 gap-2">
             <button
               type="button"
+              aria-pressed={!useB2BCommission}
               onClick={() => setUseB2BCommission(false)}
               className="flex flex-col items-start px-3 py-2 rounded-md border text-sm transition-colors"
               style={!useB2BCommission
-                ? { borderColor: ACCENT, backgroundColor: `${ACCENT}18` }
+                ? { borderColor: ACCENT, backgroundColor: 'color-mix(in srgb, var(--primary) 9%, transparent)' }
                 : { borderColor: 'var(--border)' }}
             >
               <span className="font-medium">{tripType === 'OPEN_TRIP' ? 'Open Trip' : 'Private Charter'} Rate</span>
@@ -1183,10 +1192,11 @@ notes:         resolvedNotes,
             </button>
             <button
               type="button"
+              aria-pressed={useB2BCommission}
               onClick={() => setUseB2BCommission(true)}
               className="flex flex-col items-start px-3 py-2 rounded-md border text-sm transition-colors"
               style={useB2BCommission
-                ? { borderColor: ACCENT, backgroundColor: `${ACCENT}18` }
+                ? { borderColor: ACCENT, backgroundColor: 'color-mix(in srgb, var(--primary) 9%, transparent)' }
                 : { borderColor: 'var(--border)' }}
             >
               <span className="font-medium">B2B Rate</span>
@@ -1199,14 +1209,19 @@ notes:         resolvedNotes,
       {/* Contact Person combobox — shown after agent selected */}
       {agentId && (
         <div className="space-y-1.5">
-          <Label>
+          <Label id="bw-agent-contact-label" htmlFor="bw-agent-contact">
             Contact Person
             <span className="ml-1.5 text-muted-foreground font-normal text-xs">(optional)</span>
           </Label>
           <Popover open={contactOpen} onOpenChange={v => { setContactOpen(v); if (!v) setAddingContact(false) }}>
             <PopoverTrigger asChild>
               <button
-                className="w-full flex items-center justify-between px-3 py-2 h-10 rounded-md border border-input bg-background text-sm hover:bg-accent/30 transition-colors"
+                type="button"
+                id="bw-agent-contact"
+                aria-labelledby="bw-agent-contact-label bw-agent-contact"
+                aria-haspopup="listbox"
+                aria-expanded={contactOpen}
+                className={cn(TRIGGER_CLS, 'justify-between')}
               >
                 {selectedContact ? (
                   <div className="flex items-center gap-2 min-w-0">
@@ -1231,18 +1246,21 @@ notes:         resolvedNotes,
                     <Plus className="w-3.5 h-3.5" style={{ color: ACCENT }} /> Add Contact Person
                   </p>
                   <Input
+                    aria-label="Contact name"
                     placeholder="Name *"
                     value={newCName}
                     onChange={e => setNewCName(e.target.value)}
                     className="h-8 text-sm"
                   />
                   <Input
+                    aria-label="Contact WhatsApp"
                     placeholder="WhatsApp"
                     value={newCPhone}
                     onChange={e => setNewCPhone(e.target.value)}
                     className="h-8 text-sm"
                   />
                   <Input
+                    aria-label="Contact email"
                     placeholder="Email"
                     value={newCEmail}
                     onChange={e => setNewCEmail(e.target.value)}
@@ -1250,18 +1268,20 @@ notes:         resolvedNotes,
                   />
                   <div className="flex gap-2">
                     <Button
+                      type="button"
                       size="sm"
-                      className="flex-1 h-8 text-xs"
-                      style={{ backgroundColor: ACCENT }}
+                      className="flex-1 text-xs"
                       onClick={handleAddContact}
-                      disabled={!newCName.trim() || savingContact}
+                      loading={savingContact}
+                      disabled={!newCName.trim()}
                     >
-                      {savingContact ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Save'}
+                      Save
                     </Button>
                     <Button
+                      type="button"
                       size="sm"
                       variant="outline"
-                      className="h-8 text-xs"
+                      className="text-xs"
                       onClick={() => { setAddingContact(false); setNewCName(''); setNewCPhone(''); setNewCEmail('') }}
                     >
                       Cancel
@@ -1307,6 +1327,7 @@ notes:         resolvedNotes,
                   </CommandList>
                   <div className="border-t p-1">
                     <button
+                      type="button"
                       className="w-full flex items-center gap-2 px-2 py-1.5 text-sm rounded-sm hover:bg-accent transition-colors"
                       style={{ color: ACCENT }}
                       onClick={() => setAddingContact(true)}
@@ -1328,15 +1349,18 @@ notes:         resolvedNotes,
   ════════════════════════════════════════════ */
   const phaseTripType = () => (
     <div className="py-4 space-y-8">
-      <button
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
         onClick={() => setPhase(source === 'AGENT' ? 'agentInfo' : 'source')}
-        className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
+        className="-ml-2.5 gap-1 text-muted-foreground hover:text-foreground"
       >
         <ChevronLeft className="w-4 h-4" /> Back
-      </button>
+      </Button>
 
       <div className="text-center space-y-1">
-        <div className="inline-flex items-center justify-center w-10 h-10 rounded-full mb-2" style={{ backgroundColor: `${ACCENT}18` }}>
+        <div className="inline-flex items-center justify-center w-10 h-10 rounded-full mb-2" style={{ backgroundColor: 'color-mix(in srgb, var(--primary) 9%, transparent)' }}>
           <Ship className="w-5 h-5" style={{ color: ACCENT }} />
         </div>
         <h3 className="text-lg font-semibold tracking-tight">Trip Type</h3>
@@ -1360,12 +1384,13 @@ notes:         resolvedNotes,
         ] as const).map(({ val, icon: Icon, label, desc }) => (
           <button
             key={val}
+            type="button"
             onClick={() => { setTrip(val); setPhase('steps'); setStep(1) }}
             className="flex flex-col items-center justify-center gap-3 p-6 rounded-xl border bg-card text-center cursor-pointer transition-all hover:shadow-sm"
             onMouseEnter={e => { e.currentTarget.style.borderColor = ACCENT; e.currentTarget.style.boxShadow = `0 0 0 1px ${ACCENT}` }}
             onMouseLeave={e => { e.currentTarget.style.borderColor = ''; e.currentTarget.style.boxShadow = '' }}
           >
-            <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ backgroundColor: `${ACCENT}18` }}>
+            <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ backgroundColor: 'color-mix(in srgb, var(--primary) 9%, transparent)' }}>
               <Icon className="w-6 h-6" style={{ color: ACCENT }} />
             </div>
             <div>
@@ -1384,24 +1409,25 @@ notes:         resolvedNotes,
   const step1PC = () => (
     <div className="space-y-4">
       <div className="space-y-1.5">
-        <Label>Yacht <span className="text-destructive">*</span></Label>
-        <div className="flex gap-2">
+        <Label id="bw-yacht-label">Yacht <span className="text-destructive">*</span></Label>
+        <div role="group" aria-labelledby="bw-yacht-label" className="flex flex-wrap gap-2">
           {yachts.filter(y => y.status === 'available').map(y => (
             <button
               key={y.id}
               type="button"
+              aria-pressed={yachtId === y.id}
               onClick={() => setYachtId(y.id)}
-              className={`flex-1 flex flex-col items-start gap-0.5 rounded-lg border p-3 text-left transition-all ${
+              className={`flex-1 min-w-[9rem] flex flex-col items-start gap-0.5 rounded-lg border p-3 text-left transition-all ${
                 yachtId === y.id
-                  ? 'border-[#bdac7e] bg-[#bdac7e]/8 ring-1 ring-[#bdac7e]'
-                  : 'border-border hover:border-[#bdac7e]/50 hover:bg-muted/40'
+                  ? 'border-primary bg-primary/8 ring-1 ring-ring'
+                  : 'border-border hover:border-primary/50 hover:bg-muted/40'
               }`}
             >
               <span className="font-semibold text-sm">{y.name}</span>
               {y.model && <span className="text-xs text-muted-foreground">{y.model}</span>}
               <div className="flex gap-3 mt-0.5">
                 <span className="text-xs text-muted-foreground">Cap. {y.capacity}</span>
-                <span className="text-xs font-medium" style={{ color: '#bdac7e' }}>${y.dailyRate.toLocaleString()}/night</span>
+                <span className="text-xs font-medium" style={{ color: 'var(--primary)' }}>{formatMoney(y.dailyRate, { currency: 'USD', decimals: 0 })}/night</span>
               </div>
             </button>
           ))}
@@ -1413,18 +1439,20 @@ notes:         resolvedNotes,
         const toDateStr = (d: Date) =>
           `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
         const displayDate = (s: string) =>
-          s ? new Date(s + 'T00:00:00').toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : null
+          s ? formatDate(s + 'T00:00:00') : null
         const disabledStart = [{ before: todayMidnight }, ...blockedRanges]
         const endMin = startDate ? (() => { const d = new Date(startDate + 'T00:00:00'); d.setDate(d.getDate() + 1); return d })() : todayMidnight
         const disabledEnd = [{ before: endMin }, ...blockedRanges]
 
-        const DateBtn = ({ value, placeholder, open, onOpenChange }: { value: string; placeholder: string; open: boolean; onOpenChange: (v: boolean) => void }) => (
+        const DateBtn = ({ id, value, placeholder, open, onOpenChange }: { id: string; value: string; placeholder: string; open: boolean; onOpenChange: (v: boolean) => void }) => (
           <Popover open={open} onOpenChange={onOpenChange}>
             <PopoverTrigger asChild>
               <button
                 type="button"
+                id={id}
+                aria-labelledby={`${id}-label ${id}`}
                 className={cn(
-                  'w-full flex items-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm text-left transition-colors hover:bg-accent focus:outline-none focus:ring-2 focus:ring-ring',
+                  TRIGGER_CLS, 'gap-2',
                   !value && 'text-muted-foreground'
                 )}
               >
@@ -1440,13 +1468,13 @@ notes:         resolvedNotes,
                 <div className="px-3 pt-2.5 pb-0.5 flex flex-col gap-1">
                   {blockedRanges.length > 0 && (
                     <p className="text-xs text-muted-foreground flex items-center gap-1.5">
-                      <span className="inline-block w-2 h-2 rounded-sm bg-red-200 border border-red-300" />
+                      <span className="inline-block w-2 h-2 rounded-sm bg-destructive/25 border border-destructive/30" />
                       Slot occupied by booking / open trip
                     </p>
                   )}
                   {openTripFreeRanges.length > 0 && (
                     <p className="text-xs text-muted-foreground flex items-center gap-1.5">
-                      <span className="inline-block w-2 h-2 rounded-sm bg-blue-200 border border-blue-300" />
+                      <span className="inline-block w-2 h-2 rounded-sm bg-info/25 border border-info/30" />
                       Open trip scheduled (available)
                     </p>
                   )}
@@ -1460,7 +1488,7 @@ notes:         resolvedNotes,
                   disabled={disabledStart}
                   defaultMonth={startDate ? new Date(startDate + 'T00:00:00') : todayMidnight}
                   modifiers={{ booked: blockedRanges, openFree: openTripFreeRanges }}
-                  modifiersClassNames={{ booked: 'bg-red-100 text-red-500 line-through', openFree: 'bg-blue-100 text-blue-600' }}
+                  modifiersClassNames={{ booked: 'bg-destructive/15 text-destructive line-through', openFree: 'bg-info/15 text-info' }}
                   className="p-3"
                 />
               ) : (
@@ -1471,7 +1499,7 @@ notes:         resolvedNotes,
                   disabled={disabledEnd}
                   defaultMonth={endDate ? new Date(endDate + 'T00:00:00') : (startDate ? new Date(startDate + 'T00:00:00') : todayMidnight)}
                   modifiers={{ booked: blockedRanges, openFree: openTripFreeRanges }}
-                  modifiersClassNames={{ booked: 'bg-red-100 text-red-500 line-through', openFree: 'bg-blue-100 text-blue-600' }}
+                  modifiersClassNames={{ booked: 'bg-destructive/15 text-destructive line-through', openFree: 'bg-info/15 text-info' }}
                   className="p-3"
                 />
               )}
@@ -1480,14 +1508,14 @@ notes:         resolvedNotes,
         )
 
         return (
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>Start Date <span className="text-destructive">*</span></Label>
-              <DateBtn value={startDate} placeholder="Start date" open={startPickerOpen} onOpenChange={setStartPickerOpen} />
+              <Label id="bw-start-date-label" htmlFor="bw-start-date">Start Date <span className="text-destructive">*</span></Label>
+              <DateBtn id="bw-start-date" value={startDate} placeholder="Start date" open={startPickerOpen} onOpenChange={setStartPickerOpen} />
             </div>
             <div className="space-y-1.5">
-              <Label>End Date <span className="text-destructive">*</span></Label>
-              <DateBtn value={endDate} placeholder="End date" open={endPickerOpen} onOpenChange={setEndPickerOpen} />
+              <Label id="bw-end-date-label" htmlFor="bw-end-date">End Date <span className="text-destructive">*</span></Label>
+              <DateBtn id="bw-end-date" value={endDate} placeholder="End date" open={endPickerOpen} onOpenChange={setEndPickerOpen} />
             </div>
           </div>
         )
@@ -1500,17 +1528,17 @@ notes:         resolvedNotes,
       )}
 
       {yachtConflict && (
-        <div className={`flex items-start gap-2.5 rounded-lg border px-3 py-2.5 text-sm ${yachtConflict.isOpenTrip ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-red-200 bg-red-50 text-red-700'}`}>
+        <div className={`flex items-start gap-2.5 rounded-lg border px-3 py-2.5 text-sm ${yachtConflict.isOpenTrip ? 'border-warning/30 bg-warning/10 text-warning' : 'border-destructive/30 bg-destructive/10 text-destructive'}`}>
           <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
           <div>
             <p className="font-semibold">
               {yachtConflict.isOpenTrip ? 'Open trip scheduled on these dates' : 'Yacht unavailable on these dates'}
             </p>
-            <p className={`text-xs mt-0.5 ${yachtConflict.isOpenTrip ? 'text-amber-600' : 'text-red-600'}`}>
+            <p className={`text-xs mt-0.5 ${yachtConflict.isOpenTrip ? 'text-warning' : 'text-destructive'}`}>
               There is already a schedule for <span className="font-medium">{yachtConflict.name}</span> on{' '}
-              {new Date(yachtConflict.start).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+              {formatDate(yachtConflict.start)}
               {' – '}
-              {new Date(yachtConflict.end).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+              {formatDate(yachtConflict.end)}
               {yachtConflict.isOpenTrip && ' — the open trip will be closed automatically when the booking is confirmed.'}
             </p>
           </div>
@@ -1518,7 +1546,7 @@ notes:         resolvedNotes,
       )}
 
       <div className="space-y-1.5">
-        <Label>Destination</Label>
+        <Label htmlFor="bw-destination">Destination</Label>
         <Select
           value={destinationId}
           onValueChange={v => {
@@ -1526,7 +1554,7 @@ notes:         resolvedNotes,
             setDest(destinations.find(d => d.id === v)?.name ?? '')
           }}
         >
-          <SelectTrigger><SelectValue placeholder="Select destination..." /></SelectTrigger>
+          <SelectTrigger id="bw-destination"><SelectValue placeholder="Select destination…" /></SelectTrigger>
           <SelectContent>
             {destinations.map(d => (
               <SelectItem key={d.id} value={d.id}>{d.name}{d.region ? ` — ${d.region}` : ''}</SelectItem>
@@ -1536,8 +1564,8 @@ notes:         resolvedNotes,
       </div>
 
       <div className="space-y-1.5">
-        <Label>Notes</Label>
-        <Input placeholder="Special requests, remarks..." value={notes} onChange={e => setNotes(e.target.value)} />
+        <Label htmlFor="bw-notes">Notes</Label>
+        <Input id="bw-notes" placeholder="Special requests, remarks…" value={notes} onChange={e => setNotes(e.target.value)} />
       </div>
 
     </div>
@@ -1586,10 +1614,10 @@ notes:         resolvedNotes,
     const statusBadge = (t: OpenTripOpt) => (
       <span className="inline-flex items-center gap-1">
         {t.status === 'full'
-          ? <Badge className="text-[10px] px-1.5 py-0 bg-red-100 text-red-700 border border-red-200 hover:bg-red-100">Full</Badge>
-          : <Badge variant="outline" className="text-[10px] px-1.5 py-0" style={{ borderColor: '#4a9f6e', color: '#4a9f6e' }}>Open</Badge>}
+          ? <StatusBadge tone="destructive" size="sm">Full</StatusBadge>
+          : <StatusBadge tone="success" size="sm">Open</StatusBadge>}
         {isAdmin && isPastTrip(t) && (
-          <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-amber-300 text-amber-700">Past</Badge>
+          <StatusBadge tone="warning" size="sm">Past</StatusBadge>
         )}
       </span>
     )
@@ -1604,13 +1632,14 @@ notes:         resolvedNotes,
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
           <Input
-            className="pl-8 pr-8 h-9 text-sm"
+            className="pl-8 pr-8"
+            aria-label="Search open trips"
             placeholder="Search by trip name, destination, or yacht…"
             value={tripSearch}
             onChange={e => { setTripSearch(e.target.value); setTripPage(1) }}
           />
           {tripSearch && (
-            <button className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            <button type="button" aria-label="Clear search" className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
               onClick={() => { setTripSearch(''); setTripPage(1) }}>
               <X className="w-3.5 h-3.5" />
             </button>
@@ -1622,11 +1651,12 @@ notes:         resolvedNotes,
           {/* From date */}
           <div className="relative flex items-center">
             <CalendarIcon className="absolute left-2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
-            <input
+            <Input
               type="date"
+              aria-label="Trips from date"
               value={tripDateFrom}
               onChange={e => { setTripDateFrom(e.target.value); setTripPage(1) }}
-              className="h-8 pl-7 pr-2 text-xs rounded-md border border-input bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+              className="h-8 w-auto pl-7 pr-2 text-xs md:text-xs"
               style={{ colorScheme: 'light' }}
               placeholder="From"
             />
@@ -1635,19 +1665,20 @@ notes:         resolvedNotes,
           {/* To date */}
           <div className="relative flex items-center">
             <CalendarIcon className="absolute left-2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
-            <input
+            <Input
               type="date"
+              aria-label="Trips to date"
               value={tripDateTo}
               onChange={e => { setTripDateTo(e.target.value); setTripPage(1) }}
               min={tripDateFrom || undefined}
-              className="h-8 pl-7 pr-2 text-xs rounded-md border border-input bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+              className="h-8 w-auto pl-7 pr-2 text-xs md:text-xs"
               style={{ colorScheme: 'light' }}
             />
           </div>
 
           {/* Sort */}
           <Select value={tripSort} onValueChange={v => { setTripSort(v as typeof tripSort); setTripPage(1) }}>
-            <SelectTrigger className="h-8 text-xs w-36 gap-1">
+            <SelectTrigger aria-label="Sort trips" className="h-8 text-xs w-36 gap-1">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -1660,19 +1691,22 @@ notes:         resolvedNotes,
 
           {/* Clear all */}
           {hasActiveFilter && (
-            <button
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
               onClick={resetFilters}
-              className="flex items-center gap-1 h-8 px-2.5 text-xs rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+              className="gap-1 px-2.5 text-xs text-muted-foreground hover:text-foreground"
             >
               <X className="w-3 h-3" /> Reset
-            </button>
+            </Button>
           )}
 
           <span className="ml-auto text-xs text-muted-foreground whitespace-nowrap shrink-0">
             {result.length} trip{result.length !== 1 ? 's' : ''}
             {hasActiveFilter && tripSort !== 'nearest' && (
               <span className="ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium"
-                style={{ backgroundColor: `${ACCENT}18`, color: ACCENT }}>
+                style={{ backgroundColor: 'color-mix(in srgb, var(--primary) 9%, transparent)', color: ACCENT }}>
                 {SORT_LABELS[tripSort]}
               </span>
             )}
@@ -1681,7 +1715,7 @@ notes:         resolvedNotes,
 
         {/* Loading */}
         {openTripsLoading ? (
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             {[...Array(6)].map((_, i) => (
               <div key={i} className="rounded-xl border p-4 space-y-2.5">
                 <div className="flex items-center gap-2">
@@ -1696,12 +1730,12 @@ notes:         resolvedNotes,
             <Search className="w-8 h-8 opacity-30" />
             <p className="text-sm">{hasActiveFilter ? 'No trips match your filters.' : 'No open trips available.'}</p>
             {hasActiveFilter && (
-              <button onClick={resetFilters} className="text-xs underline" style={{ color: ACCENT }}>Clear filters</button>
+              <Button type="button" variant="link" size="sm" onClick={resetFilters} className="h-auto p-0 text-xs underline">Clear filters</Button>
             )}
           </div>
         ) : (
           <>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {paged.map(t => {
                 const selected = openTripId === t.id
                 const isFull   = t.status === 'full'
@@ -1709,6 +1743,8 @@ notes:         resolvedNotes,
                 return (
                   <button
                     key={t.id}
+                    type="button"
+                    aria-pressed={selected}
                     onClick={() => !isFull && setOTId(t.id)}
                     disabled={isFull}
                     className={cn(
@@ -1717,13 +1753,13 @@ notes:         resolvedNotes,
                         : selected ? 'shadow-sm'
                         : 'border-border bg-card hover:border-foreground/20 hover:shadow-sm'
                     )}
-                    style={!isFull && selected ? { borderColor: ACCENT, backgroundColor: `${ACCENT}06` } : {}}
+                    style={!isFull && selected ? { borderColor: ACCENT, backgroundColor: 'color-mix(in srgb, var(--primary) 2%, transparent)' } : {}}
                   >
                     <div className="flex items-start justify-between px-3.5 pt-3 pb-1.5 gap-2">
                       <div className="flex items-start gap-2 min-w-0">
                         {selected && !isFull && (
                           <div className="w-4 h-4 rounded-full flex items-center justify-center shrink-0 mt-0.5" style={{ backgroundColor: ACCENT }}>
-                            <Check className="w-2.5 h-2.5 text-white" />
+                            <Check className="w-2.5 h-2.5 text-primary-foreground" />
                           </div>
                         )}
                         <div className="min-w-0">
@@ -1732,7 +1768,7 @@ notes:         resolvedNotes,
                         </div>
                       </div>
                       {isFull ? (
-                        <span className="text-[10px] font-semibold bg-red-100 text-red-600 rounded-full px-2 py-0.5 shrink-0 whitespace-nowrap">Sold Out</span>
+                        <StatusBadge tone="destructive" size="sm" className="px-2 font-semibold">Sold Out</StatusBadge>
                       ) : (
                         <span className="text-[10px] font-medium bg-muted text-muted-foreground rounded-full px-2 py-0.5 shrink-0 whitespace-nowrap">
                           {t.spotsAvailable}/{t.maxCapacity} cabin(s)
@@ -1746,7 +1782,7 @@ notes:         resolvedNotes,
                       </div>
                       <div className="flex items-center gap-1.5">
                         <CalendarIcon className="w-3 h-3 shrink-0 opacity-50" />
-                        <span>{fmtDate(t.startDate)} → {fmtDate(t.endDate)}</span>
+                        <span>{formatDate(t.startDate)} → {formatDate(t.endDate)}</span>
                         <span className="text-[10px] bg-muted rounded px-1 py-px shrink-0">{nights + 1}D</span>
                       </div>
                       <div className="flex items-center gap-1.5">
@@ -1766,21 +1802,27 @@ notes:         resolvedNotes,
                   {(safePage - 1) * PAGE_SIZE + 1}–{Math.min(safePage * PAGE_SIZE, result.length)} of {result.length}
                 </span>
                 <div className="flex items-center gap-1">
-                  <button
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
                     onClick={() => setTripPage(p => Math.max(1, p - 1))}
                     disabled={safePage === 1}
-                    className="flex items-center gap-1 px-2.5 py-1 text-xs rounded-md border border-border bg-background hover:bg-accent disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                    className="h-7 gap-1 px-2.5 text-xs"
                   >
                     <ChevronLeft className="w-3 h-3" /> Prev
-                  </button>
+                  </Button>
                   <span className="px-2 text-xs text-muted-foreground">{safePage} / {totalPages}</span>
-                  <button
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
                     onClick={() => setTripPage(p => Math.min(totalPages, p + 1))}
                     disabled={safePage === totalPages}
-                    className="flex items-center gap-1 px-2.5 py-1 text-xs rounded-md border border-border bg-background hover:bg-accent disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                    className="h-7 gap-1 px-2.5 text-xs"
                   >
                     Next <ChevronRight className="w-3 h-3" />
-                  </button>
+                  </Button>
                 </div>
               </div>
             )}
@@ -1850,15 +1892,16 @@ notes:         resolvedNotes,
         className={cn(
           'flex items-center gap-1 px-2 py-1 rounded-lg border text-xs font-medium cursor-grab active:cursor-grabbing select-none',
           dragGuest === g.customerId ? 'opacity-40' : 'opacity-100',
-          g.isLead ? 'border-[#bdac7e] bg-[#bdac7e]/10 text-foreground' : 'bg-muted/60 border-border',
+          g.isLead ? 'border-primary bg-primary/10 text-foreground' : 'bg-muted/60 border-border',
         )}
       >
         {g.isLead && <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: ACCENT }} />}
-        {g.isInfant && <span className="text-[9px] font-bold text-rose-500 shrink-0 bg-rose-50 px-1 rounded">Infant</span>}
-        {g.isChild && !g.isInfant && <span className="text-[9px] font-bold text-blue-600 shrink-0 bg-blue-50 px-1 rounded">Child</span>}
-        {g.isPlaceholder && <span className="text-[9px] font-bold text-orange-600 shrink-0 bg-orange-50 px-1 rounded">TBD</span>}
+        {g.isInfant && <span className="text-[9px] font-bold text-destructive shrink-0 bg-destructive/10 px-1 rounded">Infant</span>}
+        {g.isChild && !g.isInfant && <span className="text-[9px] font-bold text-info shrink-0 bg-info/10 px-1 rounded">Child</span>}
+        {g.isPlaceholder && <span className="text-[9px] font-bold text-warning shrink-0 bg-warning/10 px-1 rounded">TBD</span>}
         <span className="truncate max-w-24">{g.isPlaceholder ? 'Pending guest' : g.name}</span>
-        <button onClick={e => { e.stopPropagation(); removeGuest(g.customerId) }}
+        <button type="button" onClick={e => { e.stopPropagation(); removeGuest(g.customerId) }}
+          aria-label={`Remove ${g.isPlaceholder ? 'pending guest' : g.name}`}
           className="ml-0.5 text-muted-foreground hover:text-destructive shrink-0">
           <X className="w-2.5 h-2.5" />
         </button>
@@ -1870,7 +1913,7 @@ notes:         resolvedNotes,
         {/* On Hold checkbox — hidden in complete-booking mode */}
         {completeBookingId ? null : <label className={cn(
           'flex items-center gap-3 rounded-lg border px-3 py-2.5 cursor-pointer select-none transition-colors',
-          isOnHold ? 'border-amber-300 bg-amber-50' : 'border-border hover:bg-muted/30',
+          isOnHold ? 'border-warning/30 bg-warning/10' : 'border-border hover:bg-muted/30',
         )}>
           <input
             type="checkbox"
@@ -1881,7 +1924,7 @@ notes:         resolvedNotes,
                 setHoldCustomerId(null); setHoldGuestName(''); setHoldGuestPhone(''); setHoldSearch(''); setHoldIsNew(false); setHoldCabinId(null); setHoldUntil('')
               }
             }}
-            className="h-4 w-4 rounded border-border accent-amber-500 cursor-pointer"
+            className="h-4 w-4 rounded border-border accent-warning cursor-pointer"
           />
           <div>
             <span className="text-sm font-medium text-foreground">On Hold</span>
@@ -1891,13 +1934,13 @@ notes:         resolvedNotes,
 
         {/* On Hold simplified form */}
         {isOnHold && (
-          <div className="rounded-xl border border-amber-200 bg-amber-50/50 overflow-hidden">
+          <div className="rounded-xl border border-warning/30 bg-warning/5 overflow-hidden">
             {/* selected customer pill */}
             {holdCustomerId && !holdIsNew && (
-              <div className="flex items-center justify-between px-4 py-3 bg-white border-b border-amber-100">
+              <div className="flex items-center justify-between px-4 py-3 bg-card border-b border-warning/30">
                 <div className="flex items-center gap-3 min-w-0">
-                  <div className="h-8 w-8 rounded-full bg-amber-100 flex items-center justify-center shrink-0">
-                    <span className="text-xs font-semibold text-amber-700">{holdGuestName.charAt(0).toUpperCase()}</span>
+                  <div className="h-8 w-8 rounded-full bg-warning/15 flex items-center justify-center shrink-0">
+                    <span className="text-xs font-semibold text-warning">{holdGuestName.charAt(0).toUpperCase()}</span>
                   </div>
                   <div className="min-w-0">
                     <p className="text-sm font-semibold truncate">{holdGuestName}</p>
@@ -1907,7 +1950,8 @@ notes:         resolvedNotes,
                 <button
                   type="button"
                   onClick={() => { setHoldCustomerId(null); setHoldGuestName(''); setHoldGuestPhone(''); setHoldSearch('') }}
-                  className="ml-3 h-6 w-6 rounded-full flex items-center justify-center text-muted-foreground hover:bg-red-50 hover:text-red-500 transition-colors shrink-0 text-xs"
+                  aria-label="Clear selected guest"
+                  className="ml-3 size-7 rounded-full flex items-center justify-center text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors shrink-0 text-xs"
                 >✕</button>
               </div>
             )}
@@ -1918,8 +1962,9 @@ notes:         resolvedNotes,
                 <div className="relative">
                   <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                   <Input
-                    className="pl-8 bg-white border-amber-200 focus-visible:ring-amber-300"
-                    placeholder="Search by name or phone number..."
+                    className="pl-8 bg-card border-warning/30 focus-visible:ring-warning/50"
+                    aria-label="Search guest to hold"
+                    placeholder="Search by name or phone number…"
                     value={holdSearch}
                     onChange={e => setHoldSearch(e.target.value)}
                     autoFocus
@@ -1936,10 +1981,11 @@ notes:         resolvedNotes,
                 (c.phone ?? '').includes(holdSearch)
               )
               return (
-                <div className="border-t border-amber-100 flex flex-col">
-                  <div className="overflow-y-auto max-h-52 divide-y divide-amber-50">
+                <div className="border-t border-warning/30 flex flex-col">
+                  <div className="overflow-y-auto max-h-52 divide-y divide-warning/20">
                     {matches.map(c => (
                       <button key={c.id}
+                        type="button"
                         onMouseDown={e => {
                           e.preventDefault()
                           setHoldCustomerId(c.id)
@@ -1947,9 +1993,9 @@ notes:         resolvedNotes,
                           setHoldGuestPhone(c.phone ?? '')
                           setHoldSearch('')
                         }}
-                        className="w-full text-left px-4 py-2.5 text-sm hover:bg-amber-50 transition-colors flex items-center justify-between gap-2 group">
+                        className="w-full text-left px-4 py-2.5 text-sm hover:bg-warning/10 transition-colors flex items-center justify-between gap-2 group">
                         <div className="flex items-center gap-2.5 min-w-0">
-                          <div className="h-7 w-7 rounded-full bg-muted flex items-center justify-center shrink-0 text-[11px] font-semibold text-muted-foreground group-hover:bg-amber-100 group-hover:text-amber-700 transition-colors">
+                          <div className="h-7 w-7 rounded-full bg-muted flex items-center justify-center shrink-0 text-[11px] font-semibold text-muted-foreground group-hover:bg-warning/15 group-hover:text-warning transition-colors">
                             {c.name.charAt(0).toUpperCase()}
                           </div>
                           <span className="truncate font-medium">{c.name}</span>
@@ -1962,9 +2008,10 @@ notes:         resolvedNotes,
                     )}
                   </div>
                   <button
+                    type="button"
                     onMouseDown={e => { e.preventDefault(); setHoldIsNew(true); setHoldGuestName(holdSearch); setHoldSearch('') }}
-                    className="w-full text-left px-4 py-2.5 text-sm font-medium text-[#bdac7e] hover:bg-amber-50 transition-colors flex items-center gap-2 border-t border-amber-100 shrink-0">
-                    <span className="h-5 w-5 rounded-full border-2 border-[#bdac7e] flex items-center justify-center text-[11px] leading-none shrink-0">+</span>
+                    className="w-full text-left px-4 py-2.5 text-sm font-medium text-primary hover:bg-warning/10 transition-colors flex items-center gap-2 border-t border-warning/30 shrink-0">
+                    <span className="h-5 w-5 rounded-full border-2 border-primary flex items-center justify-center text-[11px] leading-none shrink-0">+</span>
                     Add new guest
                   </button>
                 </div>
@@ -1983,39 +2030,43 @@ notes:         resolvedNotes,
               return (
                 <div className="p-4 space-y-3">
                   <div className="flex items-center justify-between">
-                    <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide">New Guest</p>
-                    <button type="button"
+                    <p className="text-xs font-semibold text-warning uppercase tracking-wide">New Guest</p>
+                    <Button type="button" variant="ghost" size="sm"
                       onClick={() => { setHoldIsNew(false); setHoldGuestName(''); setHoldGuestPhone('') }}
-                      className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1">
+                      className="h-7 -mr-2 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground">
                       ← Search guest
-                    </button>
+                    </Button>
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="text-xs text-muted-foreground">Name <span className="text-destructive">*</span></Label>
+                    <Label htmlFor="bw-hold-name" className="text-xs text-muted-foreground">Name <span className="text-destructive">*</span></Label>
                     <Input
-                      className="bg-white border-amber-200 focus-visible:ring-amber-300"
-                      placeholder="Full name..."
+                      id="bw-hold-name"
+                      className="bg-card border-warning/30 focus-visible:ring-warning/50"
+                      placeholder="Full name…"
                       value={holdGuestName}
                       onChange={e => setHoldGuestName(e.target.value)}
                       autoFocus
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="text-xs text-muted-foreground">No. HP / Email</Label>
+                    <Label htmlFor="bw-hold-phone" className="text-xs text-muted-foreground">Phone / Email</Label>
                     <Input
-                      className={cn('bg-white border-amber-200 focus-visible:ring-amber-300', dupMatch && 'border-orange-400')}
-                      placeholder="0812345678 atau email@..."
+                      id="bw-hold-phone"
+                      className={cn('bg-card border-warning/30 focus-visible:ring-warning/50', dupMatch && 'border-warning')}
+                      placeholder="0812345678 or email@..."
                       value={holdGuestPhone}
                       onChange={e => setHoldGuestPhone(e.target.value)}
                     />
                     {dupMatch && (
-                      <div className="flex items-center justify-between rounded-md bg-orange-50 border border-orange-200 px-3 py-2 gap-2">
+                      <div className="flex items-center justify-between rounded-md bg-warning/10 border border-warning/30 px-3 py-2 gap-2">
                         <div className="min-w-0">
-                          <p className="text-xs font-medium text-orange-800">Already registered as <span className="font-bold">{dupMatch.name}</span></p>
-                          <p className="text-[11px] text-orange-600 mt-0.5">Select this guest or use a different name</p>
+                          <p className="text-xs font-medium text-warning">Already registered as <span className="font-bold">{dupMatch.name}</span></p>
+                          <p className="text-[11px] text-warning mt-0.5">Select this guest or use a different name</p>
                         </div>
-                        <button
+                        <Button
                           type="button"
+                          variant="link"
+                          size="sm"
                           onMouseDown={e => {
                             e.preventDefault()
                             setHoldCustomerId(dupMatch.id)
@@ -2023,9 +2074,9 @@ notes:         resolvedNotes,
                             setHoldGuestPhone(dupMatch.phone ?? '')
                             setHoldIsNew(false)
                           }}
-                          className="text-xs font-semibold text-orange-700 hover:text-orange-900 shrink-0 underline underline-offset-2">
+                          className="h-auto p-0 text-xs font-semibold text-warning hover:text-warning/80 shrink-0 underline underline-offset-2">
                           Select
-                        </button>
+                        </Button>
                       </div>
                     )}
                   </div>
@@ -2037,14 +2088,15 @@ notes:         resolvedNotes,
 
         {/* Hold deadline + due dates */}
         {isOnHold && (
-          <div className="rounded-xl border border-amber-200 bg-amber-50/30 px-4 py-3 space-y-3">
+          <div className="rounded-xl border border-warning/30 bg-warning/5 px-4 py-3 space-y-3">
             <div className="space-y-1.5">
-              <Label className="text-xs font-semibold text-amber-700 uppercase tracking-wide flex items-center gap-1.5">
-                Hold Until <span className="text-red-500">*</span>
+              <Label htmlFor="bw-hold-until" className="text-xs font-semibold text-warning uppercase tracking-wide flex items-center gap-1.5">
+                Hold Until <span className="text-destructive">*</span>
               </Label>
-              <input
+              <Input
+                id="bw-hold-until"
                 type="datetime-local"
-                className="w-full rounded-md border border-amber-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-amber-400"
+                className="bg-card border-warning/30 focus-visible:ring-warning/50"
                 min={new Date().toISOString().slice(0, 16)}
                 value={holdUntil}
                 onChange={e => setHoldUntil(e.target.value)}
@@ -2056,11 +2108,11 @@ notes:         resolvedNotes,
 
         {/* Cabin picker for Open Trip on-hold */}
         {isOnHold && tripType === 'OPEN_TRIP' && cabins.length > 0 && (
-          <div className="rounded-xl border border-amber-200 bg-amber-50/30 overflow-hidden">
-            <div className="px-4 py-2.5 border-b border-amber-100 flex items-center justify-between">
-              <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide">Select Cabin</p>
+          <div className="rounded-xl border border-warning/30 bg-warning/5 overflow-hidden">
+            <div className="px-4 py-2.5 border-b border-warning/30 flex items-center justify-between">
+              <p className="text-xs font-semibold text-warning uppercase tracking-wide">Select Cabin</p>
               {holdCabinId && (
-                <span className="text-[11px] text-green-700 font-medium">
+                <span className="text-[11px] text-success font-medium">
                   ✓ {cabins.find(c => c.id === holdCabinId)?.name}
                 </span>
               )}
@@ -2074,22 +2126,23 @@ notes:         resolvedNotes,
                   <button
                     key={c.id}
                     type="button"
+                    aria-pressed={isSelected}
                     disabled={isOccupied}
                     onClick={() => setHoldCabinId(isSelected ? null : c.id)}
                     className={cn(
                       'rounded-xl border-2 p-3 text-left transition-all',
                       isOccupied
-                        ? 'border-red-200 bg-red-50/60 opacity-60 cursor-not-allowed'
+                        ? 'border-destructive/30 bg-destructive/5 opacity-60 cursor-not-allowed'
                         : isSelected
-                          ? 'border-green-500 bg-green-50 shadow-sm'
-                          : 'border-border hover:border-green-400 hover:bg-green-50/40 cursor-pointer',
+                          ? 'border-success bg-success/10 shadow-sm'
+                          : 'border-border hover:border-success hover:bg-success/5 cursor-pointer',
                     )}
                   >
                     <p className="text-xs font-semibold truncate">{c.name}</p>
                     {c.deck && <p className="text-[10px] text-muted-foreground">{c.deck}</p>}
                     <p className={cn(
                       'text-[10px] font-semibold mt-1',
-                      isOccupied ? 'text-red-600' : isSelected ? 'text-green-700' : 'text-muted-foreground',
+                      isOccupied ? 'text-destructive' : isSelected ? 'text-success' : 'text-muted-foreground',
                     )}>
                       {isOccupied ? 'Occupied' : isSelected ? '● On Hold' : 'Available'}
                     </p>
@@ -2103,10 +2156,11 @@ notes:         resolvedNotes,
         {/* Normal guest search + cabin grid — hidden when on hold */}
         {!isOnHold && (<>
         <div className="space-y-1.5">
-          <Label>Add Guests <span className="text-destructive">*</span></Label>
+          <Label htmlFor="bw-guest-search">Add Guests <span className="text-destructive">*</span></Label>
           <div className="relative">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
+              id="bw-guest-search"
               className="pl-8"
               placeholder="Search customer by name or phone…"
               value={custSearch}
@@ -2131,12 +2185,13 @@ notes:         resolvedNotes,
                     const cIsChild  = !cIsInfant && (c.isChild === true || (cAge !== null && cAge < 12))
                     return (
                       <button key={c.id}
+                        type="button"
                         onMouseDown={e => { e.preventDefault(); addGuest(c); setCustFocused(false) }}
                         className="w-full text-left px-3 py-2 text-sm hover:bg-accent transition-colors flex items-center justify-between gap-2">
                         <span className="flex items-center gap-1.5 min-w-0">
                           <span className="truncate">{c.name}</span>
-                          {cIsInfant && <span className="text-[9px] font-bold text-rose-500 bg-rose-50 border border-rose-200 px-1 rounded shrink-0">Infant</span>}
-                          {cIsChild  && <span className="text-[9px] font-bold text-blue-600 bg-blue-50 border border-blue-200 px-1 rounded shrink-0">Child</span>}
+                          {cIsInfant && <span className="text-[9px] font-bold text-destructive bg-destructive/10 border border-destructive/30 px-1 rounded shrink-0">Infant</span>}
+                          {cIsChild  && <span className="text-[9px] font-bold text-info bg-info/10 border border-info/30 px-1 rounded shrink-0">Child</span>}
                         </span>
                         {c.phone && <span className="text-muted-foreground text-xs shrink-0">{c.phone}</span>}
                       </button>
@@ -2144,11 +2199,12 @@ notes:         resolvedNotes,
                   })}
                   {filteredLeads.slice(0, 10).map(l => (
                     <button key={`lead-${l.id}`}
+                      type="button"
                       onMouseDown={e => { e.preventDefault(); addLeadGuest(l); setCustFocused(false) }}
                       className="w-full text-left px-3 py-2 text-sm hover:bg-accent transition-colors flex items-center justify-between gap-2">
                       <span className="flex items-center gap-1.5 min-w-0">
                         <span className="truncate">{l.name}</span>
-                        <span className="text-[9px] font-bold text-amber-600 bg-amber-50 border border-amber-200 px-1 rounded shrink-0">Lead</span>
+                        <span className="text-[9px] font-bold text-warning bg-warning/10 border border-warning/30 px-1 rounded shrink-0">Lead</span>
                       </span>
                       {l.phone && <span className="text-muted-foreground text-xs shrink-0">{l.phone}</span>}
                     </button>
@@ -2156,8 +2212,9 @@ notes:         resolvedNotes,
                 </div>
               )}
               <button
+                type="button"
                 onMouseDown={e => { e.preventDefault(); setShowQuickAdd(true); setQuickFirstName(custSearch); setCSearch(''); setCustFocused(false) }}
-                className="w-full text-left px-3 py-2.5 text-sm font-medium text-[#bdac7e] hover:bg-accent transition-colors flex items-center gap-2 border-t shrink-0">
+                className="w-full text-left px-3 py-2.5 text-sm font-medium text-primary hover:bg-accent transition-colors flex items-center gap-2 border-t shrink-0">
                 <Plus className="h-3.5 w-3.5" /> {custSearch ? `Add "${custSearch}" as new guest` : 'Add new guest'}
               </button>
             </div>
@@ -2168,15 +2225,17 @@ notes:         resolvedNotes,
             const hasLead = guests.some(g => g.isLead)
             return (
               <div className="mt-1">
-                <button
+                <Button
                   type="button"
+                  variant="ghost"
+                  size="sm"
                   disabled={!hasLead}
                   onMouseDown={e => { e.preventDefault(); addPlaceholderGuest() }}
-                  className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1.5 px-1 py-1 rounded transition-colors disabled:opacity-50 disabled:hover:text-muted-foreground"
+                  className="h-7 gap-1.5 px-1 has-[>svg]:px-1 text-xs text-muted-foreground hover:text-foreground"
                 >
                   <Plus className="h-3 w-3" />
                   Add guest (name unknown)
-                </button>
+                </Button>
                 {!hasLead && (
                   <p className="text-[11px] text-muted-foreground px-1">Add a lead guest first</p>
                 )}
@@ -2196,23 +2255,24 @@ notes:         resolvedNotes,
             <div className="border rounded-lg bg-muted/30 p-3 space-y-2">
               <div className="flex items-center justify-between mb-1">
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">New Guest</p>
-                <button onClick={() => { setShowQuickAdd(false); setQuickIsChild(false); setQuickNationality(''); setQuickNatQuery('') }}><X className="h-3.5 w-3.5 text-muted-foreground" /></button>
+                <Button type="button" variant="ghost" size="icon" aria-label="Close new guest form" className="size-7 -my-1.5 -mr-1.5 text-muted-foreground"
+                  onClick={() => { setShowQuickAdd(false); setQuickIsChild(false); setQuickNationality(''); setQuickNatQuery('') }}><X className="h-3.5 w-3.5" /></Button>
               </div>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <div>
-                  <Label className="text-xs">First Name *</Label>
-                  <Input className="h-8 text-sm mt-1" value={quickFirstName} onChange={e => setQuickFirstName(e.target.value)} placeholder="First name" />
+                  <Label htmlFor="bw-quick-first-name" className="text-xs">First Name *</Label>
+                  <Input id="bw-quick-first-name" className="h-8 mt-1" value={quickFirstName} onChange={e => setQuickFirstName(e.target.value)} placeholder="First name" />
                 </div>
                 <div>
-                  <Label className="text-xs">Last Name</Label>
-                  <Input className="h-8 text-sm mt-1" value={quickLastName} onChange={e => setQuickLastName(e.target.value)} placeholder="Last name" />
+                  <Label htmlFor="bw-quick-last-name" className="text-xs">Last Name</Label>
+                  <Input id="bw-quick-last-name" className="h-8 mt-1" value={quickLastName} onChange={e => setQuickLastName(e.target.value)} placeholder="Last name" />
                 </div>
-                <div className="col-span-2">
+                <div className="sm:col-span-2">
                   <div className="flex items-center justify-between">
-                    <Label className="text-xs">Date of Birth <span className="text-muted-foreground font-normal">(optional)</span></Label>
+                    <Label htmlFor="bw-quick-dob" className="text-xs">Date of Birth <span className="text-muted-foreground font-normal">(optional)</span></Label>
                     {!quickDob && (
                       <label className="flex items-center gap-1.5 cursor-pointer">
-                        <input type="checkbox" className="h-3 w-3 accent-[#bdac7e]"
+                        <input type="checkbox" className="h-3 w-3 accent-primary"
                           checked={quickIsChild}
                           onChange={e => setQuickIsChild(e.target.checked)} />
                         <span className="text-[10px] text-muted-foreground">Is Child</span>
@@ -2220,16 +2280,16 @@ notes:         resolvedNotes,
                     )}
                   </div>
                   <div className="flex items-center gap-2 mt-1">
-                    <Input type="date" className="h-8 text-sm flex-1" value={quickDob}
+                    <Input id="bw-quick-dob" type="date" className="h-8 flex-1" value={quickDob}
                       onChange={e => { setQuickDob(e.target.value); if (e.target.value) setQuickIsChild(false) }}
                       max={new Date().toISOString().split('T')[0]} />
                     {isInfantPreview && (
-                      <span className="text-[10px] font-semibold bg-rose-100 text-rose-600 px-2 py-0.5 rounded-full whitespace-nowrap">
+                      <span className="text-[10px] font-semibold bg-destructive/15 text-destructive px-2 py-0.5 rounded-full whitespace-nowrap">
                         Infant · {ageYears} yr
                       </span>
                     )}
                     {isChildPreview && (
-                      <span className="text-[10px] font-semibold bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full whitespace-nowrap">
+                      <span className="text-[10px] font-semibold bg-info/15 text-info px-2 py-0.5 rounded-full whitespace-nowrap">
                         Child · {ageYears} yr
                       </span>
                     )}
@@ -2237,43 +2297,45 @@ notes:         resolvedNotes,
                       <span className="text-[10px] text-muted-foreground whitespace-nowrap">{ageYears} yr</span>
                     )}
                     {!quickDob && quickIsChild && (
-                      <span className="text-[10px] font-semibold bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full whitespace-nowrap">
+                      <span className="text-[10px] font-semibold bg-info/15 text-info px-2 py-0.5 rounded-full whitespace-nowrap">
                         Child
                       </span>
                     )}
                   </div>
                 </div>
                 <div>
-                  <Label className="text-xs">Phone</Label>
+                  <Label htmlFor="bw-quick-phone" className="text-xs">Phone</Label>
                   {hasLead && (
                     <label className="flex items-center gap-1 mt-0.5 mb-1 cursor-pointer">
-                      <input type="checkbox" className="h-3 w-3 accent-[#bdac7e]" checked={quickPhoneSameAsLead}
+                      <input type="checkbox" className="h-3 w-3 accent-primary" checked={quickPhoneSameAsLead}
                         onChange={e => { setQuickPhoneSameAsLead(e.target.checked); if (e.target.checked) setQuickPhone('') }} />
                       <span className="text-[10px] text-muted-foreground">Same as {leadCustomer?.name ?? 'lead'}</span>
                     </label>
                   )}
-                  <Input className="h-8 text-sm" value={quickPhoneSameAsLead ? (leadCustomer?.phone ?? '') : quickPhone}
+                  <Input id="bw-quick-phone" className="h-8" value={quickPhoneSameAsLead ? (leadCustomer?.phone ?? '') : quickPhone}
                     onChange={e => { if (!quickPhoneSameAsLead) setQuickPhone(e.target.value) }}
-                    disabled={quickPhoneSameAsLead} placeholder="+62 812..." />
+                    disabled={quickPhoneSameAsLead} placeholder="+62 812…" />
                 </div>
                 <div>
-                  <Label className="text-xs">Email</Label>
+                  <Label htmlFor="bw-quick-email" className="text-xs">Email</Label>
                   {hasLead && (
                     <label className="flex items-center gap-1 mt-0.5 mb-1 cursor-pointer">
-                      <input type="checkbox" className="h-3 w-3 accent-[#bdac7e]" checked={quickEmailSameAsLead}
+                      <input type="checkbox" className="h-3 w-3 accent-primary" checked={quickEmailSameAsLead}
                         onChange={e => { setQuickEmailSameAsLead(e.target.checked); if (e.target.checked) setQuickEmail('') }} />
                       <span className="text-[10px] text-muted-foreground">Same as {leadCustomer?.name ?? 'lead'}</span>
                     </label>
                   )}
-                  <Input className="h-8 text-sm" value={quickEmailSameAsLead ? (leadCustomer?.email ?? '') : quickEmail}
+                  <Input id="bw-quick-email" className="h-8" value={quickEmailSameAsLead ? (leadCustomer?.email ?? '') : quickEmail}
                     onChange={e => { if (!quickEmailSameAsLead) setQuickEmail(e.target.value) }}
                     disabled={quickEmailSameAsLead} placeholder="email@..." />
                 </div>
-                <div className="col-span-2">
-                  <Label className="text-xs">Nationality</Label>
+                <div className="sm:col-span-2">
+                  <Label id="bw-quick-nationality-label" htmlFor="bw-quick-nationality" className="text-xs">Nationality</Label>
                   <Popover open={quickNatOpen} onOpenChange={v => { setQuickNatOpen(v); if (!v) setQuickNatQuery('') }}>
                     <PopoverTrigger asChild>
-                      <Button variant="outline" className="h-8 w-full justify-between text-sm font-normal px-3 mt-1">
+                      <Button type="button" id="bw-quick-nationality" aria-labelledby="bw-quick-nationality-label bw-quick-nationality"
+                        aria-haspopup="listbox" aria-expanded={quickNatOpen}
+                        variant="outline" className="h-8 w-full justify-between font-normal px-3 mt-1">
                         <span className={quickNationality ? '' : 'text-muted-foreground'}>
                           {quickNationality || 'Select nationality'}
                         </span>
@@ -2286,6 +2348,7 @@ notes:         resolvedNotes,
                           <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                           <input
                             autoFocus
+                            aria-label="Search nationality"
                             className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
                             placeholder="Search nationality…"
                             value={quickNatQuery}
@@ -2318,15 +2381,15 @@ notes:         resolvedNotes,
               <div className="flex items-center justify-between pt-1">
                 {hasLead && ageYears !== null && !isChildPreview ? (
                   <label className="flex items-center gap-1.5 cursor-pointer">
-                    <input type="checkbox" className="h-3 w-3 accent-[#bdac7e]" checked={quickSetAsLead}
+                    <input type="checkbox" className="h-3 w-3 accent-primary" checked={quickSetAsLead}
                       onChange={e => setQuickSetAsLead(e.target.checked)} />
                     <span className="text-[10px] text-muted-foreground">Set as group lead</span>
                   </label>
                 ) : <span />}
                 <div className="flex gap-2">
-                <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setShowQuickAdd(false)}>Cancel</Button>
-                <Button size="sm" className="h-7 text-xs" disabled={!quickFirstName.trim() || quickSaving} onClick={createAndAddGuest}>
-                  {quickSaving ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Plus className="h-3 w-3 mr-1" />}
+                <Button type="button" size="sm" variant="outline" className="h-7 text-xs" onClick={() => setShowQuickAdd(false)}>Cancel</Button>
+                <Button type="button" size="sm" className="h-7 gap-1 text-xs" loading={quickSaving} disabled={!quickFirstName.trim()} onClick={createAndAddGuest}>
+                  {!quickSaving && <Plus className="h-3 w-3" />}
                   Add Guest
                 </Button>
                 </div>
@@ -2338,14 +2401,14 @@ notes:         resolvedNotes,
 
         {/* Lead Guest selector — booking level */}
         {guests.length > 0 && (
-          <div className="flex items-center gap-3 rounded-lg border border-[#bdac7e]/40 bg-[#bdac7e]/5 px-3 py-2">
-            <Crown className="h-4 w-4 text-[#bdac7e] shrink-0" />
-            <Label className="text-sm shrink-0">Lead Guest</Label>
+          <div className="flex items-center gap-3 rounded-lg border border-primary/40 bg-primary/5 px-3 py-2">
+            <Crown className="h-4 w-4 text-primary shrink-0" />
+            <Label htmlFor="bw-lead-guest" className="text-sm shrink-0">Lead Guest</Label>
             <Select
               value={guests.find(g => g.isLead)?.customerId ?? ''}
               onValueChange={id => setLead(id)}
             >
-              <SelectTrigger className="h-8 text-sm flex-1 border-[#bdac7e]/30 bg-background">
+              <SelectTrigger id="bw-lead-guest" className="h-8 text-sm flex-1 border-primary/30 bg-background">
                 <SelectValue placeholder="Select lead guest…" />
               </SelectTrigger>
               <SelectContent>
@@ -2361,15 +2424,15 @@ notes:         resolvedNotes,
           <p className="text-xs text-destructive bg-destructive/8 rounded-lg px-3 py-2 border border-destructive/20">{dropError}</p>
         )}
 
-        <div className="flex gap-3" style={{ minHeight: 200 }}>
+        <div className="flex flex-col sm:flex-row gap-3" style={{ minHeight: 200 }}>
           {/* Unassigned pool */}
           <div
             onDragOver={e => { e.preventDefault(); setDropTarget('unassigned') }}
             onDragLeave={() => setDropTarget(null)}
             onDrop={e => dndDrop(e, 'unassigned')}
             className={cn(
-              'w-44 shrink-0 rounded-xl border-2 border-dashed p-3 flex flex-col gap-1.5 transition-colors',
-              dropTarget === 'unassigned' ? 'border-[#bdac7e] bg-[#bdac7e]/5' : 'border-muted-foreground/25',
+              'w-full sm:w-44 shrink-0 rounded-xl border-2 border-dashed p-3 flex flex-col gap-1.5 transition-colors',
+              dropTarget === 'unassigned' ? 'border-primary bg-primary/5' : 'border-muted-foreground/25',
             )}
           >
             <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-0.5">
@@ -2460,11 +2523,11 @@ notes:         resolvedNotes,
                       className={cn(
                         'rounded-xl border-2 p-3 transition-all min-h-28',
                         isBlockedByOther
-                          ? 'border-red-300 bg-red-50/60 opacity-75 cursor-not-allowed'
+                          ? 'border-destructive/30 bg-destructive/5 opacity-75 cursor-not-allowed'
                           : isOver && (draggingIsInfant || !isFull)
-                          ? 'border-[#bdac7e] bg-[#bdac7e]/8 shadow-md scale-[1.01]'
+                          ? 'border-primary bg-primary/8 shadow-md scale-[1.01]'
                           : isFull
-                          ? 'border-orange-300 bg-orange-50/40'
+                          ? 'border-warning/30 bg-warning/5'
                           : 'border-border hover:border-muted-foreground/40',
                       )}
                     >
@@ -2476,14 +2539,14 @@ notes:         resolvedNotes,
                         </div>
                         <div className="flex items-center gap-1 shrink-0 ml-1">
                           {isFull && !isBlockedByOther && infantsInCabin > 0 && (
-                            <span className="text-[10px] font-bold rounded-full px-1.5 py-0.5 text-rose-600 bg-rose-50 border border-rose-200">
+                            <span className="text-[10px] font-bold rounded-full px-1.5 py-0.5 text-destructive bg-destructive/10 border border-destructive/30">
                               +{infantsInCabin} 👶
                             </span>
                           )}
                           <span className={cn(
                             'text-[10px] font-bold rounded-full px-1.5 py-0.5',
-                            isBlockedByOther ? 'text-red-600 bg-red-100'
-                            : isFull         ? 'text-orange-600 bg-orange-100'
+                            isBlockedByOther ? 'text-destructive bg-destructive/15'
+                            : isFull         ? 'text-warning bg-warning/15'
                             :                  'text-muted-foreground bg-muted',
                           )}>
                             {isBlockedByOther ? 'Full' : isFull ? 'Full' : sharingCabin && adjustedExtOcc > 0 ? `${available} left (shared)` : `${available} left`}
@@ -2498,12 +2561,12 @@ notes:         resolvedNotes,
                           if (!display) return null
                           return (
                             <p className="text-[10px] font-semibold" style={{ color: ACCENT }}>
-                              ${display.toLocaleString()} ({tripNights + 1}D{tier ? '' : ' est.'})
+                              {formatMoney(display, { currency: 'USD', decimals: 0 })} ({tripNights + 1}D{tier ? '' : ' est.'})
                             </p>
                           )
                         }
                         return c.price > 0
-                          ? <p className="text-[10px] font-semibold" style={{ color: ACCENT }}>${c.price.toLocaleString()}/night</p>
+                          ? <p className="text-[10px] font-semibold" style={{ color: ACCENT }}>{formatMoney(c.price, { currency: 'USD', decimals: 0 })}/night</p>
                           : null
                       })()}
                       {/* occupancy bar */}
@@ -2512,13 +2575,13 @@ notes:         resolvedNotes,
                           className="h-full rounded-full transition-all"
                           style={{
                             width: isBlockedByOther ? '100%' : `${Math.min(100, (totalOcc / effectiveCap) * 100)}%`,
-                            backgroundColor: isBlockedByOther ? '#ef4444' : isFull ? '#f97316' : ACCENT,
+                            backgroundColor: isBlockedByOther ? 'var(--destructive)' : isFull ? 'var(--warning)' : ACCENT,
                           }}
                         />
                       </div>
                       <div className="flex flex-wrap gap-1 mt-1 items-center">
                         {isBlockedByOther && (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-100 text-red-700 font-medium">
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-destructive/15 text-destructive font-medium">
                             Reserved by {cabinSalesperson[c.id] || 'another booking'}
                           </span>
                         )}
@@ -2551,17 +2614,17 @@ notes:         resolvedNotes,
                         )}
                       </div>
                       {!isBlockedByOther && myOcc > effectiveCap && (
-                        <p className="text-[10px] text-red-600 font-medium mt-1">
+                        <p className="text-[10px] text-destructive font-medium mt-1">
                           ⚠ Over capacity — {myOcc - effectiveCap} guest(s) need to be moved
                         </p>
                       )}
                       {/* Extra beds stepper — only when cabin has guests and extraBeds available */}
                       {!isBlockedByOther && cabinGuests.length > 0 && c.extraBeds > 0 && (
-                        <div className="flex items-center justify-between mt-2 pt-2 border-t border-dashed border-border">
+                        <div className="flex flex-wrap items-center justify-between gap-1 mt-2 pt-2 border-t border-dashed border-border">
                           <div>
                             <span className="text-[10px] text-muted-foreground font-medium">Extra bed</span>
                             {extraBedTierPrice > 0 && (
-                              <span className="text-[10px] ml-1" style={{ color: ACCENT }}>(+${extraBedTierPrice.toLocaleString()}/bed)</span>
+                              <span className="text-[10px] ml-1" style={{ color: ACCENT }}>(+{formatMoney(extraBedTierPrice, { currency: 'USD', decimals: 0 })}/bed)</span>
                             )}
                           </div>
                           <div className="flex items-center gap-1.5">
@@ -2584,13 +2647,15 @@ notes:         resolvedNotes,
                                   }).reverse()
                                 })
                               }}
-                              className="w-5 h-5 rounded-full border border-border flex items-center justify-center text-muted-foreground hover:bg-muted text-xs font-bold leading-none"
+                              aria-label={`Remove extra bed from ${c.name}`}
+                              className="size-7 rounded-full border border-border flex items-center justify-center text-muted-foreground hover:bg-muted text-xs font-bold leading-none"
                             >−</button>
                             <span className="text-[11px] font-semibold w-4 text-center">{cabinExtraBeds[c.id] ?? 0}</span>
                             <button
                               type="button"
                               onClick={e => { e.stopPropagation(); setCabinExtraBeds(prev => ({ ...prev, [c.id]: Math.min(c.extraBeds, (prev[c.id] ?? 0) + 1) })) }}
-                              className="w-5 h-5 rounded-full border border-border flex items-center justify-center text-muted-foreground hover:bg-muted text-xs font-bold leading-none"
+                              aria-label={`Add extra bed to ${c.name}`}
+                              className="size-7 rounded-full border border-border flex items-center justify-center text-muted-foreground hover:bg-muted text-xs font-bold leading-none"
                             >+</button>
                             <span className="text-[10px] text-muted-foreground">/ {c.extraBeds}</span>
                           </div>
@@ -2613,10 +2678,10 @@ notes:         resolvedNotes,
             <Separator />
             <div className="flex items-center justify-between">
               <div>
-                <Label>Diving</Label>
+                <Label htmlFor="bw-diving">Diving</Label>
                 <p className="text-xs text-muted-foreground">Guests will be participating in diving activities</p>
               </div>
-              <Switch checked={hasDiving} onCheckedChange={setHasDiving} />
+              <Switch id="bw-diving" checked={hasDiving} onCheckedChange={setHasDiving} />
             </div>
           </>
         )}
@@ -2625,10 +2690,10 @@ notes:         resolvedNotes,
             <Separator />
             <div className="flex items-center justify-between">
               <div>
-                <Label>Surfing</Label>
+                <Label htmlFor="bw-surfing">Surfing</Label>
                 <p className="text-xs text-muted-foreground">Guests will be participating in surfing activities</p>
               </div>
-              <Switch checked={hasSurfing} onCheckedChange={setHasSurfing} />
+              <Switch id="bw-surfing" checked={hasSurfing} onCheckedChange={setHasSurfing} />
             </div>
           </>
         )}
@@ -2636,10 +2701,10 @@ notes:         resolvedNotes,
           <Separator />
           <div className="flex items-center justify-between">
             <div>
-              <Label>Photo &amp; Video Package</Label>
+              <Label htmlFor="bw-photo-package">Photo &amp; Video Package</Label>
               <p className="text-xs text-muted-foreground">Trip photography &amp; videography included</p>
             </div>
-            <Switch checked={hasPhotoPackage} onCheckedChange={setHasPhotoPackage} />
+            <Switch id="bw-photo-package" checked={hasPhotoPackage} onCheckedChange={setHasPhotoPackage} />
           </div>
         </>
       </div>
@@ -2686,7 +2751,7 @@ notes:         resolvedNotes,
     const localHint = (usd: number) =>
       currency === 'USD' ? null : (
         <p className="text-xs text-muted-foreground mt-1">
-          ≈ {CURRENCIES[currency].symbol}{toLocal(usd).toLocaleString('en-US', { maximumFractionDigits: CURRENCIES[currency].decimals })} {currency}
+          ≈ {formatMoney(toLocal(usd), { currency })} {currency}
         </p>
       )
 
@@ -2694,7 +2759,7 @@ notes:         resolvedNotes,
       <div className="space-y-4">
 
         {/* Currency selector — full width */}
-        <div className="rounded-xl border px-4 py-3 space-y-2" style={{ borderColor: `${ACCENT}40`, backgroundColor: `${ACCENT}06` }}>
+        <div className="rounded-xl border px-4 py-3 space-y-2" style={{ borderColor: 'color-mix(in srgb, var(--primary) 25%, transparent)', backgroundColor: 'color-mix(in srgb, var(--primary) 2%, transparent)' }}>
           <div className="flex flex-wrap items-center gap-3">
             <div className="shrink-0 mr-1">
               <span className="text-sm font-medium text-muted-foreground">Invoice Currency</span>
@@ -2705,6 +2770,7 @@ notes:         resolvedNotes,
                 <button
                   key={c}
                   type="button"
+                  aria-pressed={currency === c}
                   onClick={() => {
                     const newRateFromUSD = c === 'USD' ? 1 : parseFloat((1 / CURRENCIES[c].rateToUSD).toFixed(c === 'IDR' ? 0 : 4))
                     setManualRate(newRateFromUSD)
@@ -2712,7 +2778,7 @@ notes:         resolvedNotes,
                   }}
                   className={cn(
                     'px-3 py-1 rounded-full text-xs font-semibold border transition-colors',
-                    currency === c ? 'text-white' : 'border-border text-muted-foreground hover:bg-muted'
+                    currency === c ? 'text-primary-foreground' : 'border-border text-muted-foreground hover:bg-muted'
                   )}
                   style={currency === c ? { backgroundColor: ACCENT, borderColor: ACCENT } : {}}
                 >
@@ -2724,8 +2790,9 @@ notes:         resolvedNotes,
           {currency !== 'USD' && (
             <div className="flex items-center gap-1.5">
               <span className="text-xs text-muted-foreground">1 USD =</span>
-              <input
+              <Input
                 type="number"
+                aria-label={`Exchange rate: ${currency} per 1 USD`}
                 min="0.000001"
                 step={currency === 'IDR' ? 100 : 0.0001}
                 value={manualRate}
@@ -2733,8 +2800,8 @@ notes:         resolvedNotes,
                   const r = parseFloat(e.target.value)
                   if (r > 0) setManualRate(r)
                 }}
-                className="w-28 text-xs border rounded px-2 py-0.5 text-center font-mono bg-background focus:outline-none focus:ring-1"
-                style={{ borderColor: `${ACCENT}60` }}
+                className="h-7 w-28 px-2 py-0.5 text-xs md:text-xs text-center font-mono"
+                style={{ borderColor: 'color-mix(in srgb, var(--primary) 38%, transparent)' }}
               />
               <span className="text-xs text-muted-foreground font-medium">{currency}</span>
             </div>
@@ -2750,10 +2817,11 @@ notes:         resolvedNotes,
 
             {/* Base Price */}
             <div className="space-y-1.5">
-              <Label>Base Price <span className="text-red-500">*</span> <span className="text-muted-foreground font-normal">(USD)</span></Label>
+              <Label htmlFor="bw-base-price">Base Price <span className="text-destructive">*</span> <span className="text-muted-foreground font-normal">(USD)</span></Label>
               <div className="relative">
                 <span className="absolute left-3 top-2.5 text-sm text-muted-foreground select-none">$</span>
                 <Input
+                  id="bw-base-price"
                   type="text"
                   inputMode="decimal"
                   className="pl-7"
@@ -2772,14 +2840,14 @@ notes:         resolvedNotes,
                 <p className="text-xs text-muted-foreground">
                   {tripType === 'OPEN_TRIP'
                     ? `Cabin price × ${tripNights + 1} day${tripNights + 1 !== 1 ? 's' : ''} per assigned cabin`
-                    : `$${selectedYacht!.dailyRate.toLocaleString('en-US', { maximumFractionDigits: 0 })}/night × trip duration`}
+                    : `${formatMoney(selectedYacht!.dailyRate, { currency: 'USD', decimals: 0 })}/night × trip duration`}
                 </p>
               )}
             </div>
 
             {/* Voucher */}
             <div className="space-y-1.5">
-              <Label>Voucher / Discount</Label>
+              <Label htmlFor="bw-voucher">Voucher / Discount</Label>
               <Select
                 value={voucherApplied?.id ?? '__none'}
                 onValueChange={val => {
@@ -2789,7 +2857,7 @@ notes:         resolvedNotes,
                   if (!v) return
                   const basePriceUSD = parseFloat(basePrice) || 0
                   if (v.minBooking != null && basePriceUSD < v.minBooking) {
-                    setVoucherError(`Minimum booking $${v.minBooking.toLocaleString()} — current base is $${basePriceUSD.toLocaleString('en-US', { maximumFractionDigits: 0 })}`)
+                    setVoucherError(`Minimum booking ${formatMoney(v.minBooking, { currency: 'USD', decimals: 0 })} — current base is ${formatMoney(basePriceUSD, { currency: 'USD', decimals: 0 })}`)
                     return
                   }
                   if (v.maxUses != null && v.usedCount >= v.maxUses) {
@@ -2801,7 +2869,7 @@ notes:         resolvedNotes,
                   else setDisc('0')
                 }}
               >
-                <SelectTrigger>
+                <SelectTrigger id="bw-voucher">
                   <SelectValue placeholder="No voucher" />
                 </SelectTrigger>
                 <SelectContent>
@@ -2825,9 +2893,9 @@ notes:         resolvedNotes,
                 </SelectContent>
               </Select>
               {voucherApplied && (
-                <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-50 border border-emerald-200">
-                  <Tag className="h-3 w-3 text-emerald-600 shrink-0" />
-                  <span className="text-xs text-emerald-700 font-medium">
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-success/10 border border-success/30">
+                  <Tag className="h-3 w-3 text-success shrink-0" />
+                  <span className="text-xs text-success font-medium">
                     {voucherApplied.type === 'PERCENTAGE' ? `${voucherApplied.value}% off` : `$${voucherApplied.value} off`} applied — {voucherApplied.name}
                   </span>
                 </div>
@@ -2839,15 +2907,17 @@ notes:         resolvedNotes,
             {!voucherApplied && (
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <Label>Discount</Label>
-                <div className="flex rounded-lg border overflow-hidden text-xs">
+                <Label htmlFor="bw-discount">Discount</Label>
+                <div role="group" aria-label="Discount type" className="flex rounded-lg border overflow-hidden text-xs">
                   {(['percent', 'amount'] as const).map(m => (
                     <button
                       key={m}
                       type="button"
+                      aria-pressed={discMode === m}
+                      aria-label={m === 'percent' ? 'Discount as percentage' : 'Discount as amount'}
                       onClick={() => { setDiscMode(m); setDisc('0'); setDiscFixed('') }}
                       className="px-3 py-1 font-medium transition-colors"
-                      style={discMode === m ? { backgroundColor: 'var(--brand-primary)', color: 'white' } : { color: 'var(--muted-foreground)' }}
+                      style={discMode === m ? { backgroundColor: 'var(--brand)', color: 'var(--brand-foreground)' } : { color: 'var(--muted-foreground)' }}
                     >
                       {m === 'percent' ? '%' : '$'}
                     </button>
@@ -2857,6 +2927,7 @@ notes:         resolvedNotes,
               {discMode === 'percent' ? (
                 <div className="relative">
                   <Input
+                    id="bw-discount"
                     type="number" min="0" max="100" step="1"
                     placeholder="0"
                     value={discPct}
@@ -2869,6 +2940,7 @@ notes:         resolvedNotes,
                 <div className="relative">
                   <span className="absolute left-3 top-2.5 text-sm text-muted-foreground">$</span>
                   <Input
+                    id="bw-discount"
                     type="text" inputMode="decimal"
                     placeholder="0.00"
                     value={discFixed}
@@ -2878,8 +2950,8 @@ notes:         resolvedNotes,
                 </div>
               )}
               {discountAmt > 0 && (
-                <p className="text-xs text-emerald-600">
-                  Saves ${discountAmt.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                <p className="text-xs text-success">
+                  Saves {formatMoney(discountAmt, { currency: 'USD' })}
                   {discMode === 'percent' && (parseFloat(discPct) || 0) > 0 && ` (${discPct}% of base)`}
                 </p>
               )}
@@ -2889,15 +2961,17 @@ notes:         resolvedNotes,
             {/* VAT */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <Label>VAT</Label>
-                <div className="flex rounded-lg border overflow-hidden text-xs">
+                <Label htmlFor="bw-vat">VAT</Label>
+                <div role="group" aria-label="VAT type" className="flex rounded-lg border overflow-hidden text-xs">
                   {(['percent', 'amount'] as const).map(m => (
                     <button
                       key={m}
                       type="button"
+                      aria-pressed={vatMode === m}
+                      aria-label={m === 'percent' ? 'VAT as percentage' : 'VAT as amount'}
                       onClick={() => { setVatMode(m); setVatPct('0'); setVatFixed('') }}
                       className="px-3 py-1 font-medium transition-colors"
-                      style={vatMode === m ? { backgroundColor: 'var(--brand-primary)', color: 'white' } : { color: 'var(--muted-foreground)' }}
+                      style={vatMode === m ? { backgroundColor: 'var(--brand)', color: 'var(--brand-foreground)' } : { color: 'var(--muted-foreground)' }}
                     >
                       {m === 'percent' ? '%' : '$'}
                     </button>
@@ -2907,6 +2981,7 @@ notes:         resolvedNotes,
               {vatMode === 'percent' ? (
                 <div className="relative">
                   <Input
+                    id="bw-vat"
                     type="number" min="0" max="100" step="1"
                     placeholder="0"
                     value={vatPct}
@@ -2919,6 +2994,7 @@ notes:         resolvedNotes,
                 <div className="relative">
                   <span className="absolute left-3 top-2.5 text-sm text-muted-foreground">$</span>
                   <Input
+                    id="bw-vat"
                     type="text" inputMode="decimal"
                     placeholder="0.00"
                     value={vatFixed}
@@ -2929,7 +3005,7 @@ notes:         resolvedNotes,
               )}
               {vatAmt > 0 && (
                 <p className="text-xs text-muted-foreground">
-                  Adds ${vatAmt.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  Adds {formatMoney(vatAmt, { currency: 'USD' })}
                   {vatMode === 'percent' && (parseFloat(vatPct) || 0) > 0 && ` (${vatPct}% of subtotal)`}
                 </p>
               )}
@@ -2947,13 +3023,14 @@ notes:         resolvedNotes,
                 <p className="text-xs text-muted-foreground italic">No additional services</p>
               )}
               {services.map(sv => (
-                <div key={sv.tempId} className="flex gap-2 items-center">
-                  <Input placeholder="Service name" value={sv.name}
+                <div key={sv.tempId} className="flex flex-wrap sm:flex-nowrap gap-2 items-center">
+                  <Input aria-label="Service name" className="sm:flex-1" placeholder="Service name" value={sv.name}
                     onChange={e => updateSvc(sv.tempId, { name: e.target.value })} />
                   {/* Qty */}
                   <div className="relative w-16 shrink-0">
                     <span className="absolute left-2 top-2.5 text-xs text-muted-foreground select-none">×</span>
                     <Input
+                      aria-label="Quantity"
                       type="number" min="1" step="1"
                       placeholder="1"
                       className="pl-5 text-center"
@@ -2965,6 +3042,7 @@ notes:         resolvedNotes,
                   <div className="relative w-28 shrink-0">
                     <span className="absolute left-2.5 top-2.5 text-sm text-muted-foreground select-none">$</span>
                     <Input
+                      aria-label="Unit price (USD)"
                       type="text"
                       inputMode="decimal"
                       placeholder="0"
@@ -2982,10 +3060,10 @@ notes:         resolvedNotes,
                   {/* Subtotal hint */}
                   {sv.price && parseInt(sv.qty) > 1 && (
                     <span className="text-xs text-muted-foreground shrink-0 w-16 text-right">
-                      = ${((parseFloat(sv.price) || 0) * (parseInt(sv.qty) || 1)).toLocaleString('en-US', { maximumFractionDigits: 2 })}
+                      = {formatMoney((parseFloat(sv.price) || 0) * (parseInt(sv.qty) || 1), { currency: 'USD' })}
                     </span>
                   )}
-                  <Button type="button" variant="ghost" size="icon" className="shrink-0 ml-auto" onClick={() => removeSvc(sv.tempId)}>
+                  <Button type="button" variant="ghost" size="icon" aria-label="Remove service" className="shrink-0 ml-auto" onClick={() => removeSvc(sv.tempId)}>
                     <Trash2 className="w-3.5 h-3.5" />
                   </Button>
                 </div>
@@ -2997,20 +3075,20 @@ notes:         resolvedNotes,
           <div className="space-y-4">
 
             {/* Price Breakdown */}
-            <div className="rounded-xl border p-4 space-y-2 text-sm" style={{ backgroundColor: `${ACCENT}08`, borderColor: `${ACCENT}30` }}>
+            <div className="rounded-xl border p-4 space-y-2 text-sm" style={{ backgroundColor: 'color-mix(in srgb, var(--primary) 3%, transparent)', borderColor: 'color-mix(in srgb, var(--primary) 19%, transparent)' }}>
               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">Price Breakdown</p>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Base Price</span>
-                <span className="font-medium">{fmtAmt(b - extraBedCost, 'USD')}</span>
+                <span className="font-medium">{formatMoney(b - extraBedCost, { currency: 'USD' })}</span>
               </div>
               {extraBedCost > 0 && (
                 <div className="flex justify-between text-xs pl-2 text-muted-foreground">
                   <span>↳ Extra Bed ×{totalExtraBeds}</span>
-                  <span>{fmtAmt(extraBedCost, 'USD')}</span>
+                  <span>{formatMoney(extraBedCost, { currency: 'USD' })}</span>
                 </div>
               )}
               {da > 0 && (
-                <div className="flex justify-between text-emerald-600">
+                <div className="flex justify-between text-success">
                   <span>
                     {voucherApplied
                       ? `Voucher ${voucherApplied.code} (${voucherApplied.type === 'PERCENTAGE' ? `${voucherApplied.value}%` : `$${voucherApplied.value}`})`
@@ -3018,7 +3096,7 @@ notes:         resolvedNotes,
                         ? `Discount (${discPct}%)`
                         : 'Discount'}
                   </span>
-                  <span>−{fmtAmt(da, 'USD')}</span>
+                  <span>−{formatMoney(da, { currency: 'USD' })}</span>
                 </div>
               )}
               {services.filter(x => x.name.trim()).map(sv => {
@@ -3029,7 +3107,7 @@ notes:         resolvedNotes,
                     <span className="text-muted-foreground truncate max-w-[140px]">
                       {sv.name}{qty > 1 ? ` ×${qty}` : ''}
                     </span>
-                    <span>{fmtAmt(unitPrice * qty, 'USD')}</span>
+                    <span>{formatMoney(unitPrice * qty, { currency: 'USD' })}</span>
                   </div>
                 )
               })}
@@ -3038,23 +3116,23 @@ notes:         resolvedNotes,
                   <span className="text-muted-foreground">
                     VAT{vatMode === 'percent' ? ` (${vatPct}%)` : ''}
                   </span>
-                  <span>{fmtAmt(va, 'USD')}</span>
+                  <span>{formatMoney(va, { currency: 'USD' })}</span>
                 </div>
               )}
               {commPct > 0 && (
-                <div className="flex justify-between" style={{ color: '#6b7280', fontStyle: 'italic' }}>
+                <div className="flex justify-between" style={{ color: 'var(--muted-foreground)', fontStyle: 'italic' }}>
                   <span className="text-xs">Agent Commission ({commPct}%)</span>
-                  <span className="text-xs">({fmtAmt(commAmt, 'USD')})</span>
+                  <span className="text-xs">({formatMoney(commAmt, { currency: 'USD' })})</span>
                 </div>
               )}
               <Separator className="my-1" />
               <div className="flex justify-between items-end">
                 <span className="font-semibold">Total</span>
                 <div className="text-right">
-                  <div className="text-lg font-bold" style={{ color: ACCENT }}>{fmtAmt(netTot, 'USD')}</div>
+                  <div className="text-lg font-bold" style={{ color: ACCENT }}>{formatMoney(netTot, { currency: 'USD' })}</div>
                   {currency !== 'USD' && (
                     <div className="text-xs text-muted-foreground">
-                      ≈ {CURRENCIES[currency].symbol}{toLocal(netTot).toLocaleString('en-US', { maximumFractionDigits: CURRENCIES[currency].decimals })} {currency}
+                      ≈ {formatMoney(toLocal(netTot), { currency })} {currency}
                     </div>
                   )}
                 </div>
@@ -3085,10 +3163,10 @@ notes:         resolvedNotes,
             <div className="space-y-3">
               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Payment</p>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <Label className="text-xs">Deposit Due Date <span className="text-red-500">*</span></Label>
-                  <Input type="date" value={depositDueDate}
+                  <Label htmlFor="bw-deposit-due" className="text-xs">Deposit Due Date <span className="text-destructive">*</span></Label>
+                  <Input id="bw-deposit-due" type="date" value={depositDueDate}
                     min={today}
                     max={tripMaxDate || undefined}
                     onChange={e => {
@@ -3098,15 +3176,15 @@ notes:         resolvedNotes,
                     }} />
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs">Final Balance Due <span className="text-red-500">*</span></Label>
-                  <Input type="date" value={finalDueDate}
+                  <Label htmlFor="bw-final-due" className="text-xs">Final Balance Due <span className="text-destructive">*</span></Label>
+                  <Input id="bw-final-due" type="date" value={finalDueDate}
                     min={depositDueDate || today}
                     max={tripMaxDate || undefined}
                     onChange={e => setFinalDue(clampFinal(e.target.value, depositDueDate))} />
                 </div>
               </div>
 
-              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 leading-relaxed">
+              <p className="text-xs text-warning bg-warning/10 border border-warning/30 rounded-lg px-3 py-2 leading-relaxed">
                 ⚠ Booking is auto-cancelled if deposit is unpaid by the due date.
               </p>
             </div>
@@ -3137,7 +3215,7 @@ notes:         resolvedNotes,
                   <><span>Yacht</span><span className="text-foreground font-medium">{selectedYacht.name}</span></>
                 )}
                 {tripType === 'PRIVATE_CHARTER' && startDate && endDate && (
-                  <><span>Dates</span><span className="text-foreground font-medium">{fmtDate(startDate)} → {fmtDate(endDate)}</span></>
+                  <><span>Dates</span><span className="text-foreground font-medium">{formatDate(startDate)} → {formatDate(endDate)}</span></>
                 )}
                 {destination && (
                   <><span>Destination</span><span className="text-foreground font-medium">{destination}</span></>
@@ -3148,7 +3226,7 @@ notes:         resolvedNotes,
                   {currency}
                   {currency !== 'USD' && (
                     <span className="text-muted-foreground font-normal ml-1">
-                      (1 USD = {manualRate.toLocaleString('en-US', { maximumFractionDigits: currency === 'IDR' ? 0 : 4 })} {currency})
+                      (1 USD = {formatNumber(manualRate, { decimals: currency === 'IDR' ? 0 : 4 })} {currency})
                     </span>
                   )}
                 </span>
@@ -3172,12 +3250,13 @@ notes:         resolvedNotes,
   return (
     <>
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex flex-col overflow-hidden gap-0 p-0" style={{ width: 'min(96vw, 64rem)', maxHeight: 'calc(100dvh - 4rem)' }}>
+      <DialogContent className="flex flex-col overflow-hidden gap-0 p-0" style={{ width: 'min(96vw, 64rem)', maxHeight: 'calc(100dvh - 4rem)' }}
+        aria-describedby={undefined} onInteractOutside={e => e.preventDefault()}>
         <DialogHeader className="shrink-0 px-6 pt-3 pb-3 border-b">
           {phase === 'steps' && (
             <div className="flex items-center gap-2 mb-1">
               {completeBookingId && (
-                <Badge className="text-xs bg-orange-100 text-orange-700 border-orange-300 border">Complete Booking</Badge>
+                <Badge className="text-xs bg-warning/15 text-warning border-warning/30 border">Complete Booking</Badge>
               )}
               <Badge variant="outline" className="text-xs">{source === 'AGENT' ? 'Via Agent' : 'Direct'}</Badge>
               <Badge variant="outline" className="text-xs">
@@ -3208,12 +3287,12 @@ notes:         resolvedNotes,
                 {/* lead guest row */}
                 <Skeleton className="h-10 w-full rounded-lg" />
                 {/* cabin grid */}
-                <div className="flex gap-3" style={{ minHeight: 200 }}>
-                  <div className="w-44 shrink-0 space-y-2">
+                <div className="flex flex-col sm:flex-row gap-3" style={{ minHeight: 200 }}>
+                  <div className="w-full sm:w-44 shrink-0 space-y-2">
                     <Skeleton className="h-4 w-20" />
                     <Skeleton className="h-4 w-28" />
                   </div>
-                  <div className="flex-1 grid grid-cols-3 gap-2">
+                  <div className="flex-1 grid grid-cols-2 sm:grid-cols-3 gap-2">
                     {[...Array(6)].map((_, i) => (
                       <div key={i} className="rounded-xl border-2 border-border p-3 space-y-2">
                         <Skeleton className="h-3 w-20" />
@@ -3249,6 +3328,7 @@ notes:         resolvedNotes,
             {/* In complete-booking mode, hide back on step 2; on step 3 allow going back */}
             {(!completeBookingId || step > 2) ? (
               <Button
+                type="button"
                 variant="outline"
                 onClick={() => {
                   if (completeBookingId) { setStep(step - 1); return }
@@ -3265,39 +3345,39 @@ notes:         resolvedNotes,
 
             {phase === 'agentInfo' ? (
               <Button
+                type="button"
                 disabled={!canNext()}
                 onClick={() => { setPhase(preselectedOpenTripId ? 'steps' : 'tripType'); if (preselectedOpenTripId) setStep(1) }}
-                style={{ backgroundColor: ACCENT, color: 'white' }}
-                className="hover:opacity-90"
               >
                 Continue <ChevronRight className="w-4 h-4 ml-1" />
               </Button>
             ) : step === 2 && isOnHold ? (
               <Button
-                disabled={submitting || !canNext()}
+                type="button"
+                loading={submitting}
+                disabled={!canNext()}
                 onClick={handleOnHoldSubmit}
-                style={{ backgroundColor: '#f59e0b', color: 'white' }}
+                style={{ backgroundColor: 'var(--warning)', color: 'var(--warning-foreground)' }}
                 className="hover:opacity-90"
               >
-                {submitting ? 'Saving...' : 'Save as On Hold'}
+                {submitting ? 'Saving…' : 'Save as On Hold'}
               </Button>
             ) : step < 3 ? (
               <Button
+                type="button"
                 disabled={!canNext()}
                 onClick={() => setStep(step + 1)}
-                style={{ backgroundColor: ACCENT, color: 'white' }}
-                className="hover:opacity-90"
               >
                 Next <ChevronRight className="w-4 h-4 ml-1" />
               </Button>
             ) : (
               <Button
-                disabled={submitting || !canNext()}
+                type="button"
+                loading={submitting}
+                disabled={!canNext()}
                 onClick={() => handleSubmit()}
-                style={{ backgroundColor: ACCENT, color: 'white' }}
-                className="hover:opacity-90"
               >
-                {submitting ? 'Saving...' : completeBookingId ? 'Confirm & Complete' : 'Confirm Booking'}
+                {submitting ? 'Saving…' : completeBookingId ? 'Confirm & Complete' : 'Confirm Booking'}
               </Button>
             )}
           </div>
@@ -3307,9 +3387,9 @@ notes:         resolvedNotes,
 
     {/* Open Trip conflict confirmation dialog */}
     <Dialog open={showOpenTripConflictDialog} onOpenChange={setShowOpenTripConflictDialog}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="sm:max-w-md" aria-describedby={undefined}>
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-amber-600">
+          <DialogTitle className="flex items-center gap-2 text-warning">
             <AlertCircle className="w-5 h-5" />
             Open Trip Conflict
           </DialogTitle>
@@ -3323,9 +3403,9 @@ notes:         resolvedNotes,
               <div key={ot.id} className="px-3 py-2">
                 <p className="font-medium">{ot.title}</p>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  {new Date(ot.startDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                  {formatDate(ot.startDate)}
                   {' – '}
-                  {new Date(ot.endDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                  {formatDate(ot.endDate)}
                 </p>
               </div>
             ))}
@@ -3334,13 +3414,12 @@ notes:         resolvedNotes,
             The open trips above will be automatically closed with the note <span className="font-medium text-foreground">"Redirected to Private Charter"</span>. Proceed?
           </p>
         </div>
-        <div className="flex justify-end gap-2 mt-2">
-          <Button variant="outline" onClick={() => setShowOpenTripConflictDialog(false)}>
+        <DialogFooter className="mt-2">
+          <Button type="button" variant="outline" onClick={() => setShowOpenTripConflictDialog(false)}>
             Cancel
           </Button>
           <Button
-            style={{ backgroundColor: ACCENT, color: 'white' }}
-            className="hover:opacity-90"
+            type="button"
             onClick={() => {
               setShowOpenTripConflictDialog(false)
               handleSubmit(true)
@@ -3348,7 +3427,7 @@ notes:         resolvedNotes,
           >
             Yes, Close & Create Booking
           </Button>
-        </div>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
     </>

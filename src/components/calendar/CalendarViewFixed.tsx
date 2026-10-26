@@ -18,7 +18,9 @@ import { BookingWizard } from '@/components/bookings/BookingWizard'
 import GuestEditSheet from '@/components/customers/GuestEditSheet'
 import WaitingListManager from '@/components/bookings/WaitingListManager'
 import { cn } from '@/lib/utils'
-import { getEffectiveBookingStatus } from '@/lib/booking-status'
+import { getEffectiveBookingStatus, bookingStatusStyle } from '@/lib/booking-status'
+import { formatDate, formatDateRange, formatMoney } from '@/lib/format'
+import { StatusBadge, BookingStatusBadge } from '@/components/ui/status-badge'
 
 interface BookingEvent {
   id: string
@@ -84,14 +86,9 @@ const INTERNAL_EVENT_COLOR: Record<InternalEventType, string> = {
   COMPANY_NEED: '#78350f',  // brown
 }
 
-const STATUS_CONFIG = {
-  on_hold:    { label: 'On Hold',    color: '#f97316' },
-  confirmed:  { label: 'Confirmed',  color: '#22c55e' },
-  pending:    { label: 'Pending',    color: '#f59e0b' },
-  on_trip:    { label: 'On Trip',    color: '#94a3b8' },
-  completed:  { label: 'Completed', color: '#94a3b8' },
-  cancelled:  { label: 'Cancelled', color: '#ef4444' },
-} as const
+/* Status chip drawn on a booking bar — a deeper shade of the booking-status colour
+   (the bar itself already uses that colour), so the chip still reads against it. */
+const barBadgeBg = (status: string) => `color-mix(in srgb, ${bookingStatusStyle(status).color} 70%, black)`
 
 /* One stable color per yacht (sorted alphabetically) */
 const YACHT_PALETTE = ['#3b82f6','#f97316','#8b5cf6','#10b981','#ec4899','#06b6d4','#eab308','#ef4444']
@@ -105,7 +102,7 @@ function buildYachtColorMap(yachts: DbYacht[]): Record<string, string> {
 
 /* diagonal stripe CSS for Open Trip bars */
 function stripeStyle(color: string, full = false): React.CSSProperties {
-  const gap = full ? `${color}99` : `${color}28`
+  const gap = full ? `color-mix(in srgb, ${color} 60%, transparent)` : `color-mix(in srgb, ${color} 16%, transparent)`
   return { background: `repeating-linear-gradient(45deg,${color} 0px,${color} 3px,${gap} 3px,${gap} 8px)` }
 }
 
@@ -189,13 +186,8 @@ function MonthGrid({
       })
     }
 
-    const bookingBarColor = (status: string) => {
-      if (status === 'on_hold')                                       return '#22c55e'  // green  — hold
-      if (status === 'pending')                                       return '#eab308'  // yellow — waiting payment
-      if (status === 'on_trip' || status === 'completed')              return '#94a3b8'  // grey   — trip underway / finished
-      if (['confirmed','partially_paid','fully_paid'].includes(status)) return '#ef4444' // red    — booked/paid
-      return '#94a3b8'  // grey — cancelled / unknown
-    }
+    // green = hold, orange = waiting payment, red = booked/paid, grey = underway / finished / cancelled
+    const bookingBarColor = (status: string) => bookingStatusStyle(status).bar
 
     bookings.forEach(b => {
       const effStatus = getEffectiveBookingStatus(b.status, b.startDate, b.endDate)
@@ -214,7 +206,7 @@ function MonthGrid({
       const isPrivatePC = isClosed && t.closedReason?.includes('Private Charter')
       if (isPrivatePC) return
       const isFull      = t.status === 'full' || (t.status !== 'closed' && t.spotsAvailable === 0)
-      const otColor     = isClosed ? '#94a3b8' : isFull ? '#ef4444' : '#22c55e'
+      const otColor     = isClosed ? 'var(--muted-foreground)' : isFull ? 'var(--destructive)' : 'var(--success)'
       const tooltip     = isClosed ? 'CLOSED' : isFull ? 'SOLD OUT' : `${t.spotsAvailable}/${t.maxCapacity} spots`
       addSegs(
         t.id, t.title, otColor, true, isFull,
@@ -283,24 +275,24 @@ function MonthGrid({
       {!fillHeight && (
         <div className="flex items-center justify-center gap-2 mb-3">
           {onPrev && (
-            <button onClick={onPrev} className="p-1.5 rounded-full hover:bg-muted text-muted-foreground transition-colors">
+            <Button type="button" variant="ghost" size="icon" onClick={onPrev} aria-label="Previous month" className="size-8 rounded-full text-muted-foreground">
               <ChevronLeft className="w-4 h-4" />
-            </button>
+            </Button>
           )}
           <div className="text-center">
             <p className="text-sm font-semibold text-foreground">
               {MONTH_FULL[month]} {year}
             </p>
             {yachtFilter && (
-              <p className="text-xs font-medium mt-0.5" style={{ color: yachtColorMap[yachtFilter] ?? '#64748b' }}>
+              <p className="text-xs font-medium mt-0.5" style={{ color: yachtColorMap[yachtFilter] ?? 'var(--muted-foreground)' }}>
                 {yachtFilter}
               </p>
             )}
           </div>
           {onNext && (
-            <button onClick={onNext} className="p-1.5 rounded-full hover:bg-muted text-muted-foreground transition-colors">
+            <Button type="button" variant="ghost" size="icon" onClick={onNext} aria-label="Next month" className="size-8 rounded-full text-muted-foreground">
               <ChevronRight className="w-4 h-4" />
-            </button>
+            </Button>
           )}
         </div>
       )}
@@ -344,19 +336,19 @@ function MonthGrid({
                       className={cn(
                         'border-r border-b border-border p-1.5 transition-colors',
                         day === 0    ? 'bg-muted/20' :
-                        isOccupied  ? 'bg-red-50 dark:bg-red-950/20 cursor-not-allowed' :
-                        inRange     ? 'bg-[#bdac7e]/10 cursor-pointer hover:bg-[#bdac7e]/20' :
+                        isOccupied  ? 'bg-destructive/10 cursor-not-allowed' :
+                        inRange     ? 'bg-primary/10 cursor-pointer hover:bg-primary/20' :
                         isPast      ? 'bg-muted/10 cursor-not-allowed' :
                                       'cursor-pointer hover:bg-muted/40',
-                        todayCell   ? 'ring-2 ring-inset ring-[#bdac7e]' : '',
+                        todayCell   ? 'ring-2 ring-inset ring-ring' : '',
                       )}
                     >
                       {day > 0 && (
                         <span className={cn(
                           'text-xs font-semibold leading-none',
-                          todayCell  ? 'text-[#bdac7e]' :
-                          isOccupied ? 'text-red-400' :
-                          inRange    ? 'text-[#8a7a55]' :
+                          todayCell  ? 'text-primary' :
+                          isOccupied ? 'text-destructive/70' :
+                          inRange    ? 'text-primary-strong' :
                           isPast     ? 'text-muted-foreground/40' :
                                        'text-foreground'
                         )}>
@@ -395,7 +387,7 @@ function MonthGrid({
                 }
 
                 if (seg.isStripe) {
-                  const gap = `${seg.color}44`
+                  const gap = `color-mix(in srgb, ${seg.color} 27%, transparent)`
                   style.background    = `repeating-linear-gradient(45deg,${seg.color} 0px,${seg.color} 3px,${gap} 3px,${gap} 8px)`
                   style.outline       = `1.5px solid ${seg.color}`
                   style.outlineOffset = '-1px'
@@ -452,8 +444,8 @@ function MonthGrid({
                           </span>
                         </div>
                       ) : seg.openTripRef ? (
-                        <div style={{ margin: '2px 4px', backgroundColor: 'rgba(255,255,255,0.85)', borderRadius: 4, padding: '2px 6px', display: 'flex', alignItems: 'center', gap: 4, maxWidth: 'calc(100% - 8px)', overflow: 'hidden', alignSelf: 'flex-start' }}>
-                          <span style={{ fontSize: 10, fontWeight: 700, color: '#111827', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <div style={{ margin: '2px 4px', backgroundColor: 'color-mix(in srgb, var(--card) 85%, transparent)', borderRadius: 4, padding: '2px 6px', display: 'flex', alignItems: 'center', gap: 4, maxWidth: 'calc(100% - 8px)', overflow: 'hidden', alignSelf: 'flex-start' }}>
+                          <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--foreground)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             ↳ {seg.openTripRef.title}
                           </span>
                         </div>
@@ -462,14 +454,14 @@ function MonthGrid({
                     {seg.showDetails && isOthersSalesBooking && (() => {
                       const bk = seg.bookingRef!
                       const STATUS_BADGE: Record<string, { bg: string; label: string }> = {
-                        on_hold:        { bg: 'rgba(249,115,22,0.85)', label: 'ON HOLD'   },
-                        pending:        { bg: 'rgba(234,179,8,0.85)',  label: 'PENDING'   },
-                        confirmed:      { bg: 'rgba(34,197,94,0.85)',  label: 'CONFIRMED' },
-                        partially_paid: { bg: 'rgba(59,130,246,0.85)', label: 'PARTIAL'   },
-                        fully_paid:     { bg: 'rgba(16,185,129,0.85)', label: 'PAID'      },
-                        on_trip:        { bg: 'rgba(148,163,184,0.85)',label: 'ON TRIP'   },
-                        completed:      { bg: 'rgba(148,163,184,0.85)',label: 'COMPLETED' },
-                        cancelled:      { bg: 'rgba(239,68,68,0.85)',  label: 'CANCELLED' },
+                        on_hold:        { bg: barBadgeBg('on_hold'), label: 'ON HOLD'   },
+                        pending:        { bg: barBadgeBg('pending'),  label: 'PENDING'   },
+                        confirmed:      { bg: barBadgeBg('confirmed'),  label: 'CONFIRMED' },
+                        partially_paid: { bg: barBadgeBg('partially_paid'), label: 'PARTIAL'   },
+                        fully_paid:     { bg: barBadgeBg('fully_paid'), label: 'PAID'      },
+                        on_trip:        { bg: barBadgeBg('on_trip'),label: 'ON TRIP'   },
+                        completed:      { bg: barBadgeBg('completed'),label: 'COMPLETED' },
+                        cancelled:      { bg: barBadgeBg('cancelled'),  label: 'CANCELLED' },
                       }
                       const effStatus = getEffectiveBookingStatus(bk.status, bk.startDate, bk.endDate)
                       const sbadge = STATUS_BADGE[effStatus] ?? { bg: 'rgba(0,0,0,0.25)', label: effStatus.toUpperCase() }
@@ -509,7 +501,7 @@ function MonthGrid({
                         /* Open trip pill — 2-row white overlay */
                         <div style={{
                           margin: '2px 4px',
-                          backgroundColor: 'rgba(255,255,255,0.93)',
+                          backgroundColor: 'color-mix(in srgb, var(--card) 93%, transparent)',
                           borderRadius: 4,
                           padding: '3px 6px',
                           display: 'flex',
@@ -522,25 +514,25 @@ function MonthGrid({
                           {/* Row 1: Title + Yacht + Days + Status badge */}
                           <div style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
                             <span style={{
-                              color: '#111827', fontSize: 11, fontWeight: 700,
+                              color: 'var(--foreground)', fontSize: 11, fontWeight: 700,
                               overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                               flexShrink: 1, minWidth: 0,
                             }}>
                               {ot.title}
                             </span>
-                            <span style={{ color: '#475569', fontSize: 10, fontWeight: 600, whiteSpace: 'nowrap', flexShrink: 0 }}>
+                            <span style={{ color: 'var(--muted-foreground)', fontSize: 10, fontWeight: 600, whiteSpace: 'nowrap', flexShrink: 0 }}>
                               {ot.yacht.name}
                             </span>
-                            <span style={{ color: '#94a3b8', fontSize: 10, fontWeight: 500, whiteSpace: 'nowrap', flexShrink: 0 }}>
+                            <span style={{ color: 'color-mix(in srgb, var(--muted-foreground) 70%, transparent)', fontSize: 10, fontWeight: 500, whiteSpace: 'nowrap', flexShrink: 0 }}>
                               {days}D/{nights}N
                             </span>
                             {ot.status === 'closed' && !ot.closedReason?.includes('Private Charter') && (
-                              <span style={{ fontSize: 9, fontWeight: 700, color: '#fff', backgroundColor: '#64748b', borderRadius: 3, padding: '1px 4px', whiteSpace: 'nowrap', flexShrink: 0, letterSpacing: 0.5 }}>
+                              <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--background)', backgroundColor: 'var(--muted-foreground)', borderRadius: 3, padding: '1px 4px', whiteSpace: 'nowrap', flexShrink: 0, letterSpacing: 0.5 }}>
                                 CLOSED
                               </span>
                             )}
                             {ot.status === 'full' && (
-                              <span style={{ fontSize: 9, fontWeight: 700, color: '#fff', backgroundColor: '#ef4444', borderRadius: 3, padding: '1px 4px', whiteSpace: 'nowrap', flexShrink: 0, letterSpacing: 0.5 }}>
+                              <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--destructive-foreground)', backgroundColor: 'var(--destructive)', borderRadius: 3, padding: '1px 4px', whiteSpace: 'nowrap', flexShrink: 0, letterSpacing: 0.5 }}>
                                 FULL
                               </span>
                             )}
@@ -552,17 +544,17 @@ function MonthGrid({
                               // Dot color follows booking status legend
                               const bs = c.bookingStatus
                               const dotColor = bs === null
-                                ? (isTripClosed ? '#94a3b8' : '#ffffff')                                         // empty: grey if closed, white if open
+                                ? (isTripClosed ? 'var(--muted-foreground)' : 'var(--card)')                                         // empty: grey if closed, white if open
                                 : bs === 'on_hold'
-                                  ? '#22c55e'                                                                     // hold → green
+                                  ? 'var(--success)'                                                                     // hold → green
                                   : bs === 'pending'
-                                    ? '#eab308'                                                                   // waiting payment → yellow
-                                    : '#ef4444'                                                                   // confirmed/paid → red
-                              const dotBorder = dotColor === '#ffffff' ? '1.5px solid #475569' : 'none'
+                                    ? 'var(--warning)'                                                                   // waiting payment → yellow
+                                    : 'var(--destructive)'                                                                   // confirmed/paid → red
+                              const dotBorder = dotColor === 'var(--card)' ? '1.5px solid var(--muted-foreground)' : 'none'
                               return (
                                 <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 3, flexShrink: 0 }}>
                                   <span style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: dotColor, border: dotBorder, flexShrink: 0, boxSizing: 'border-box' }} />
-                                  <span style={{ fontSize: 9, color: '#334155', whiteSpace: 'nowrap', fontWeight: 600 }}>{c.name.replace(/\s*cabin\s*$/i, '')}</span>
+                                  <span style={{ fontSize: 9, color: 'color-mix(in srgb, var(--foreground) 80%, transparent)', whiteSpace: 'nowrap', fontWeight: 600 }}>{c.name.replace(/\s*cabin\s*$/i, '')}</span>
                                 </div>
                               )
                             })}
@@ -578,13 +570,13 @@ function MonthGrid({
                             </span>
                           )
                           const STATUS_BADGE: Record<string, { bg: string; label: string }> = {
-                            pending:         { bg: 'rgba(234,179,8,0.85)',   label: 'PENDING'   },
-                            confirmed:       { bg: 'rgba(34,197,94,0.85)',   label: 'CONFIRMED' },
-                            partially_paid:  { bg: 'rgba(59,130,246,0.85)',  label: 'PARTIAL'   },
-                            fully_paid:      { bg: 'rgba(16,185,129,0.85)',  label: 'PAID'      },
-                            on_trip:         { bg: 'rgba(148,163,184,0.85)', label: 'ON TRIP'   },
-                            completed:       { bg: 'rgba(148,163,184,0.85)', label: 'COMPLETED' },
-                            cancelled:       { bg: 'rgba(239,68,68,0.85)',   label: 'CANCELLED' },
+                            pending:         { bg: barBadgeBg('pending'),   label: 'PENDING'   },
+                            confirmed:       { bg: barBadgeBg('confirmed'),   label: 'CONFIRMED' },
+                            partially_paid:  { bg: barBadgeBg('partially_paid'),  label: 'PARTIAL'   },
+                            fully_paid:      { bg: barBadgeBg('fully_paid'),  label: 'PAID'      },
+                            on_trip:         { bg: barBadgeBg('on_trip'), label: 'ON TRIP'   },
+                            completed:       { bg: barBadgeBg('completed'), label: 'COMPLETED' },
+                            cancelled:       { bg: barBadgeBg('cancelled'),   label: 'CANCELLED' },
                           }
                           const effStatus = getEffectiveBookingStatus(bk.status, bk.startDate, bk.endDate)
                           const sbadge = STATUS_BADGE[effStatus] ?? { bg: 'rgba(0,0,0,0.25)', label: effStatus.toUpperCase() }
@@ -655,14 +647,10 @@ function MonthGrid({
 // year overview: one color-coded dot per day (booking status / open-trip
 // availability), no event bars. Click a day to jump the main calendar there. ──
 // Same legend as the month grid's event bars (bookingBarColor, above) and the
-// Open Trip cabin dots: green = on hold, yellow = waiting for payment, red =
+// Open Trip cabin dots: green = on hold, orange = waiting for payment, red =
 // booked/paid, grey = trip already underway or finished.
 function bookingDayColor(status: string): string {
-  if (status === 'on_hold') return '#22c55e'
-  if (status === 'pending') return '#eab308'
-  if (status === 'on_trip' || status === 'completed') return '#94a3b8'
-  if (['confirmed', 'partially_paid', 'fully_paid'].includes(status)) return '#ef4444'
-  return '#94a3b8'
+  return bookingStatusStyle(status).bar
 }
 
 // Samara I is charter-only in practice, so its owners just want a plain
@@ -684,12 +672,12 @@ function dayStatusColor(dateStr: string, bookings: BookingEvent[], openTrips: Op
       return !isPrivatePC && dateStr >= t.startDate && dateStr <= t.endDate
     })
     if (!bookingHit && !otHit && !internalHit) return null
-    if (isPast) return '#94a3b8'
-    if (bookingHit) return '#ef4444' // booked
+    if (isPast) return 'var(--muted-foreground)'
+    if (bookingHit) return 'var(--destructive)' // booked
     if (!otHit && internalHit) return INTERNAL_EVENT_COLOR[internalHit.type]
     const isClosed = otHit!.status === 'closed'
     const isFull   = otHit!.status === 'full' || (!isClosed && otHit!.spotsAvailable === 0)
-    return isClosed || isFull ? '#ef4444' : '#22c55e'
+    return isClosed || isFull ? 'var(--destructive)' : 'var(--success)'
   }
 
   const charterHit = bookings.find(b =>
@@ -700,7 +688,7 @@ function dayStatusColor(dateStr: string, bookings: BookingEvent[], openTrips: Op
     return !isPrivatePC && dateStr >= t.startDate && dateStr <= t.endDate
   })
   if (!charterHit && !otHit && !internalHit) return null
-  if (isPast) return '#94a3b8'
+  if (isPast) return 'var(--muted-foreground)'
   if (charterHit) {
     const eff = getEffectiveBookingStatus(charterHit.status, charterHit.startDate, charterHit.endDate)
     return bookingDayColor(eff)
@@ -708,7 +696,7 @@ function dayStatusColor(dateStr: string, bookings: BookingEvent[], openTrips: Op
   if (!otHit && internalHit) return INTERNAL_EVENT_COLOR[internalHit.type]
   const isClosed = otHit!.status === 'closed'
   const isFull   = otHit!.status === 'full' || (!isClosed && otHit!.spotsAvailable === 0)
-  return isClosed ? '#94a3b8' : isFull ? '#ef4444' : '#22c55e'
+  return isClosed ? 'var(--muted-foreground)' : isFull ? 'var(--destructive)' : 'var(--success)'
 }
 
 function YearMiniMonth({
@@ -733,8 +721,8 @@ function YearMiniMonth({
   })
 
   return (
-    <button onClick={() => onDayClick(year, month)}
-      className="rounded-xl border p-3 text-left hover:border-[#bdac7e] hover:shadow-sm transition-all bg-white">
+    <button type="button" onClick={() => onDayClick(year, month)}
+      className="rounded-xl border p-3 text-left hover:border-primary hover:shadow-sm transition-all bg-card">
       <p className="text-xs font-bold text-center mb-2">{MONTH_FULL[month]}</p>
       <div className="grid grid-cols-7 gap-y-0.5">
         {DAY_NAMES.map(d => (
@@ -756,7 +744,7 @@ function YearMiniMonth({
                   !leftConnected && !rightConnected && 'rounded-full',
                   !leftConnected && rightConnected && 'rounded-l-full',
                   leftConnected && !rightConnected && 'rounded-r-full',
-                  isToday && !color && 'ring-1 ring-[#bdac7e] rounded-full'
+                  isToday && !color && 'ring-1 ring-ring rounded-full'
                 )}
                 style={color ? { backgroundColor: color, color: 'white', fontWeight: 700 } : { color: 'var(--muted-foreground)' }}
               >
@@ -789,15 +777,15 @@ function YearGrid({
       <div className="flex items-center gap-4 mt-4 text-[11px] text-muted-foreground flex-wrap">
         {(yachtFilter === SIMPLE_AVAILABILITY_YACHT
           ? [
-              { label: 'Available', color: '#22c55e' },
-              { label: 'Booked',    color: '#ef4444' },
-              { label: 'Past',      color: '#94a3b8' },
+              { label: 'Available', color: 'var(--success)' },
+              { label: 'Booked',    color: 'var(--destructive)' },
+              { label: 'Past',      color: 'var(--muted-foreground)' },
             ]
           : [
-              { label: 'On Hold',             color: '#22c55e' },
-              { label: 'Waiting Payment',     color: '#eab308' },
-              { label: 'Booked',              color: '#ef4444' },
-              { label: 'On Trip / Completed', color: '#94a3b8' },
+              { label: 'On Hold',             color: 'var(--success)' },
+              { label: 'Waiting Payment',     color: 'var(--warning)' },
+              { label: 'Booked',              color: 'var(--destructive)' },
+              { label: 'On Trip / Completed', color: 'var(--muted-foreground)' },
             ]
         ).concat(
           (Object.keys(INTERNAL_EVENT_LABEL) as InternalEventType[])
@@ -1658,13 +1646,13 @@ export default function CalendarView() {
     <div className="space-y-5 w-full">
 
       {/* Page header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h3 className="text-2xl font-bold tracking-tight">Trip Calendar</h3>
           <p className="text-sm text-muted-foreground mt-0.5">Manage your yacht bookings and schedule</p>
         </div>
         {isAdmin && (
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Button
               variant="outline"
               onClick={openAddInternalEvent}
@@ -1674,7 +1662,7 @@ export default function CalendarView() {
             </Button>
             <Button
               onClick={() => { setSelectedDate(''); setWizardOpen(true) }}
-              className="bg-[#bdac7e] hover:bg-[#a89660] text-white shadow-sm"
+              className="shadow-sm"
             >
               <Plus className="mr-2 h-4 w-4" /> New Booking
             </Button>
@@ -1689,27 +1677,27 @@ export default function CalendarView() {
 
           {/* Year selector */}
           <div className="flex items-center gap-0.5 shrink-0">
-            <button onClick={() => jumpYear('prev')}
-              className="p-1 rounded hover:bg-muted text-muted-foreground transition-colors">
-              <ChevronLeft className="w-3.5 h-3.5" />
-            </button>
-            <span className="bg-[#bdac7e] text-white text-xs font-semibold px-3 py-1 rounded-full min-w-[52px] text-center select-none">
+            <Button type="button" variant="ghost" size="icon" onClick={() => jumpYear('prev')} aria-label="Previous year"
+              className="size-7 text-muted-foreground">
+              <ChevronLeft className="size-3.5" />
+            </Button>
+            <span className="bg-primary text-primary-foreground text-xs font-semibold px-3 py-1 rounded-full min-w-[52px] text-center select-none">
               {currentDate.getFullYear()}
             </span>
-            <button onClick={() => jumpYear('next')}
-              className="p-1 rounded hover:bg-muted text-muted-foreground transition-colors">
-              <ChevronRight className="w-3.5 h-3.5" />
-            </button>
+            <Button type="button" variant="ghost" size="icon" onClick={() => jumpYear('next')} aria-label="Next year"
+              className="size-7 text-muted-foreground">
+              <ChevronRight className="size-3.5" />
+            </Button>
           </div>
 
           {/* Month tabs — centered (not relevant once the whole year is on screen) */}
           {viewMode !== 'year' && (
-            <div className="flex flex-1 justify-center gap-0.5 overflow-x-auto min-w-0">
+            <div className="flex flex-1 justify-center-safe gap-0.5 overflow-x-auto min-w-0">
               {MONTH_SHORT.map((m, i) => (
-                <button key={m} onClick={() => jumpToMonth(i)}
+                <button key={m} type="button" onClick={() => jumpToMonth(i)} aria-pressed={leftMonth === i}
                   className={[
                     'px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-colors',
-                    leftMonth === i ? 'bg-[#bdac7e] text-white' : 'text-muted-foreground hover:bg-muted',
+                    leftMonth === i ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted',
                   ].join(' ')}>
                   {m}
                 </button>
@@ -1721,30 +1709,32 @@ export default function CalendarView() {
           {/* View toggle + fullscreen */}
           <div className="flex items-center gap-1 shrink-0">
             {([['calendar', CalendarIcon], ['list', List], ['year', CalendarRange]] as const).map(([mode, Icon]) => (
-              <button key={mode} onClick={() => setViewMode(mode)} title={mode === 'year' ? 'Full year view' : undefined}
+              <button key={mode} type="button" onClick={() => setViewMode(mode)} title={mode === 'year' ? 'Full year view' : undefined}
+                aria-label={mode === 'year' ? 'Full year view' : mode === 'list' ? 'List view' : 'Calendar view'}
+                aria-pressed={viewMode === mode}
                 className={[
                   'p-1.5 rounded-full border transition-colors',
                   viewMode === mode
-                    ? 'bg-[#bdac7e] text-white border-[#bdac7e]'
+                    ? 'bg-primary text-primary-foreground border-primary'
                     : 'border-border text-muted-foreground hover:bg-muted',
                 ].join(' ')}>
                 <Icon className="w-3.5 h-3.5" />
               </button>
             ))}
-            <button onClick={() => setIsFullscreen(true)} title="Full screen"
-              className="p-1.5 rounded-full border border-border text-muted-foreground hover:bg-muted transition-colors">
-              <Maximize2 className="w-3.5 h-3.5" />
-            </button>
-            <button onClick={() => setPrintModalOpen(true)} title="Print calendar"
-              className="p-1.5 rounded-full border border-border text-muted-foreground hover:bg-muted transition-colors">
-              <Printer className="w-3.5 h-3.5" />
-            </button>
+            <Button type="button" variant="outline" size="icon" onClick={() => setIsFullscreen(true)} title="Full screen" aria-label="Full screen"
+              className="size-7 rounded-full shadow-none text-muted-foreground">
+              <Maximize2 className="size-3.5" />
+            </Button>
+            <Button type="button" variant="outline" size="icon" onClick={() => setPrintModalOpen(true)} title="Print calendar" aria-label="Print calendar"
+              className="size-7 rounded-full shadow-none text-muted-foreground">
+              <Printer className="size-3.5" />
+            </Button>
           </div>
 
         </div>
 
         {/* Toolbar — single compact bar */}
-        <div className="border-b bg-white">
+        <div className="border-b bg-card">
           <div className="flex items-center gap-0 px-3 sm:px-5 py-0 overflow-x-auto scrollbar-none divide-x divide-border">
 
             {/* Group: Yacht */}
@@ -1756,12 +1746,12 @@ export default function CalendarView() {
                   const ai = ORDER.indexOf(a.name), bi = ORDER.indexOf(b.name)
                   return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi)
                 }).map(y => {
-                  const color  = yachtColorMap[y.name] ?? '#64748b'
+                  const color  = yachtColorMap[y.name] ?? 'var(--muted-foreground)'
                   const active = yachtFilter === y.name
                   return (
-                    <button key={y.id} onClick={() => setYachtFilter(y.name)}
+                    <button key={y.id} type="button" onClick={() => setYachtFilter(y.name)} aria-pressed={active}
                       className={['h-6 flex items-center gap-1 px-2.5 rounded-full text-[11px] font-medium transition-all shrink-0 whitespace-nowrap',
-                        active ? 'text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100'].join(' ')}
+                        active ? 'text-white shadow-sm' : 'text-muted-foreground hover:bg-accent'].join(' ')}
                       style={active ? { backgroundColor: color } : {}}>
                       <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: active ? 'rgba(255,255,255,0.7)' : color }} />
                       {y.name}
@@ -1779,10 +1769,9 @@ export default function CalendarView() {
                 { val: 'PRIVATE_CHARTER', label: 'Private Charter' },
                 { val: 'OPEN_TRIP',       label: 'Open Trip' },
               ] as const).map(f => (
-                <button key={f.val} onClick={() => setTripFilter(f.val)}
+                <button key={f.val} type="button" onClick={() => setTripFilter(f.val)} aria-pressed={tripFilter === f.val}
                   className={['h-6 px-2.5 rounded-full text-[11px] font-medium transition-all shrink-0 whitespace-nowrap',
-                    tripFilter === f.val ? 'text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100'].join(' ')}
-                  style={tripFilter === f.val ? { backgroundColor: '#bdac7e' } : {}}>
+                    tripFilter === f.val ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:bg-accent'].join(' ')}>
                   {f.label}
                 </button>
               ))}
@@ -1792,18 +1781,20 @@ export default function CalendarView() {
             <div className="relative flex items-center px-4 py-2.5 shrink-0">
               <span className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-widest mr-2 shrink-0">Date</span>
               <button
+                type="button"
+                aria-haspopup="dialog"
+                aria-expanded={dateDropdownOpen}
                 onClick={e => { setDateBtnRect((e.currentTarget as HTMLButtonElement).getBoundingClientRect()); setDateDropdownOpen(v => !v) }}
                 className={[
                   'h-6 flex items-center gap-1.5 px-2.5 rounded-full text-[11px] font-medium transition-all shrink-0 whitespace-nowrap',
-                  filterActive ? 'text-white' : 'text-slate-500 hover:bg-slate-100',
+                  filterActive ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-accent',
                 ].join(' ')}
-                style={filterActive ? { backgroundColor: '#bdac7e' } : {}}
               >
                 <CalendarIcon className="h-3 w-3" />
                 {filterActive
                   ? (filterFrom === filterTo
-                    ? new Date(filterFrom+'T00:00:00').toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})
-                    : `${new Date(filterFrom+'T00:00:00').toLocaleDateString('en-GB',{day:'2-digit',month:'short'})} – ${new Date(filterTo+'T00:00:00').toLocaleDateString('en-GB',{day:'2-digit',month:'short'})}`)
+                    ? formatDate(filterFrom+'T00:00:00')
+                    : `${formatDate(filterFrom+'T00:00:00', 'short')} – ${formatDate(filterTo+'T00:00:00', 'short')}`)
                   : 'Filter'}
                 {filterActive
                   ? <span onClickCapture={e => { e.stopPropagation(); clearDateFilter() }} className="hover:opacity-70 flex items-center"><X className="h-3 w-3" /></span>
@@ -1815,48 +1806,49 @@ export default function CalendarView() {
                   {/* Backdrop */}
                   <div className="fixed inset-0 z-40" onClick={() => setDateDropdownOpen(false)} />
                   {/* Dropdown panel — fixed so overflow-x-auto on parent doesn't clip it */}
-                  <div className="fixed z-50 bg-white border border-border rounded-xl shadow-xl p-3 space-y-2.5 w-64"
-                    style={{ top: dateBtnRect.bottom + 4, left: dateBtnRect.left }}
+                  <div className="fixed z-50 bg-popover border border-border rounded-xl shadow-xl p-3 space-y-2.5 w-64"
+                    style={{ top: dateBtnRect.bottom + 4, left: Math.max(8, Math.min(dateBtnRect.left, window.innerWidth - 264)) }}
                   >
                     {/* Presets */}
                     <div className="flex gap-1.5 flex-wrap">
                       {(['today','week','month'] as const).map(p => (
-                        <button key={p} onClick={() => { handlePreset(p); setDateDropdownOpen(false) }}
-                          className="h-6 px-2.5 text-[11px] font-medium rounded-full bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors whitespace-nowrap">
+                        <button key={p} type="button" onClick={() => { handlePreset(p); setDateDropdownOpen(false) }}
+                          className="h-6 px-2.5 text-[11px] font-medium rounded-full bg-muted text-muted-foreground hover:bg-accent transition-colors whitespace-nowrap">
                           {p === 'today' ? 'Today' : p === 'week' ? 'This Week' : 'This Month'}
                         </button>
                       ))}
                     </div>
                     {/* Mode toggle */}
-                    <div className="flex rounded-full bg-slate-100 overflow-hidden text-[11px] w-fit">
+                    <div role="group" aria-label="Date filter mode" className="flex rounded-full bg-muted overflow-hidden text-[11px] w-fit">
                       {(['single','range'] as const).map(m => (
-                        <button key={m} onClick={() => { setFilterMode(m); if (m === 'single') setFilterTo(filterFrom) }}
+                        <button key={m} type="button" aria-pressed={filterMode === m} onClick={() => { setFilterMode(m); if (m === 'single') setFilterTo(filterFrom) }}
                           className="h-6 px-3 transition-all font-medium"
-                          style={filterMode === m ? { backgroundColor: '#bdac7e', color: 'white', borderRadius: '9999px' } : { color: '#94a3b8' }}>
+                          style={filterMode === m ? { backgroundColor: 'var(--primary)', color: 'var(--primary-foreground)', borderRadius: '9999px' } : { color: 'color-mix(in srgb, var(--muted-foreground) 70%, transparent)' }}>
                           {m === 'single' ? 'Single' : 'Range'}
                         </button>
                       ))}
                     </div>
                     {/* Date inputs */}
                     <div className="flex items-center gap-2">
-                      <input type="date" value={filterFrom}
+                      <Input type="date" value={filterFrom} aria-label={filterMode === 'range' ? 'From date' : 'Date'}
                         onChange={e => { setFilterFrom(e.target.value); if (filterMode === 'single') setFilterTo(e.target.value) }}
-                        className="h-7 text-[11px] border rounded-lg px-2 bg-slate-50 flex-1 min-w-0" />
+                        className="h-7 text-[11px] md:text-[11px] rounded-lg px-2 bg-muted/50 flex-1 min-w-0" />
                       {filterMode === 'range' && (<>
-                        <span className="text-slate-400 text-[11px] shrink-0">–</span>
-                        <input type="date" value={filterTo} min={filterFrom}
+                        <span className="text-muted-foreground/70 text-[11px] shrink-0">–</span>
+                        <Input type="date" value={filterTo} min={filterFrom} aria-label="To date"
                           onChange={e => setFilterTo(e.target.value)}
-                          className="h-7 text-[11px] border rounded-lg px-2 bg-slate-50 flex-1 min-w-0" />
+                          className="h-7 text-[11px] md:text-[11px] rounded-lg px-2 bg-muted/50 flex-1 min-w-0" />
                       </>)}
                     </div>
                     {/* Apply */}
-                    <button
+                    <Button
+                      type="button"
+                      size="sm"
                       onClick={() => { handleFilterApply(); setDateDropdownOpen(false) }}
-                      className="w-full h-7 text-[11px] font-semibold rounded-lg text-white hover:opacity-90 transition-opacity"
-                      style={{ backgroundColor: '#bdac7e' }}
+                      className="w-full h-7 text-[11px] font-semibold rounded-lg"
                     >
                       Apply
-                    </button>
+                    </Button>
                   </div>
                 </>
               )}
@@ -1865,20 +1857,20 @@ export default function CalendarView() {
             {/* Legend — flush right */}
             <div className="hidden sm:flex items-center gap-3 ml-auto pl-4 py-2.5 shrink-0">
               {[
-                { color: '#22c55e', label: 'Open' },
-                { color: '#ef4444', label: 'Full' },
-                { color: '#94a3b8', label: 'Closed' },
+                { color: 'var(--success)', label: 'Open' },
+                { color: 'var(--destructive)', label: 'Full' },
+                { color: 'var(--muted-foreground)', label: 'Closed' },
               ].map(l => (
                 <div key={l.label} className="flex items-center gap-1.5">
                   <span className="w-4 h-2.5 rounded-sm shrink-0" style={{ ...stripeStyle(l.color), outline: `1px solid ${l.color}`, outlineOffset: -1 }} />
-                  <span className="text-[10px] text-slate-400 whitespace-nowrap">{l.label}</span>
+                  <span className="text-[10px] text-muted-foreground/70 whitespace-nowrap">{l.label}</span>
                 </div>
               ))}
               <span className="w-px h-3.5 bg-border shrink-0" />
               {(Object.keys(INTERNAL_EVENT_LABEL) as InternalEventType[]).map(t => (
                 <div key={t} className="flex items-center gap-1.5">
                   <span className="w-4 h-2.5 rounded-sm shrink-0" style={{ backgroundColor: INTERNAL_EVENT_COLOR[t] }} />
-                  <span className="text-[10px] text-slate-400 whitespace-nowrap">{INTERNAL_EVENT_LABEL[t]}</span>
+                  <span className="text-[10px] text-muted-foreground/70 whitespace-nowrap">{INTERNAL_EVENT_LABEL[t]}</span>
                 </div>
               ))}
             </div>
@@ -1888,25 +1880,25 @@ export default function CalendarView() {
 
         {/* Fullscreen calendar overlay */}
         {isFullscreen && (
-          <div className="fixed inset-0 z-50 bg-white flex flex-col overflow-hidden">
+          <div className="fixed inset-0 z-50 bg-background flex flex-col overflow-hidden">
             {/* Minimal header: prev · Month Year · next · close */}
             <div className="flex items-center justify-between px-6 py-2.5 border-b shrink-0">
-              <button onClick={() => navigate('prev')}
-                className="p-1.5 rounded-full hover:bg-muted text-muted-foreground transition-colors">
-                <ChevronLeft className="w-5 h-5" />
-              </button>
+              <Button type="button" variant="ghost" size="icon" onClick={() => navigate('prev')} aria-label="Previous month"
+                className="size-8 rounded-full text-muted-foreground">
+                <ChevronLeft className="size-5" />
+              </Button>
               <span className="text-sm font-semibold text-foreground select-none">
                 {MONTH_FULL[leftMonth]} {leftYear}
               </span>
               <div className="flex items-center gap-2">
-                <button onClick={() => navigate('next')}
-                  className="p-1.5 rounded-full hover:bg-muted text-muted-foreground transition-colors">
-                  <ChevronRight className="w-5 h-5" />
-                </button>
-                <button onClick={() => setIsFullscreen(false)} title="Exit fullscreen"
-                  className="p-1.5 rounded-full border border-border text-muted-foreground hover:bg-muted transition-colors">
+                <Button type="button" variant="ghost" size="icon" onClick={() => navigate('next')} aria-label="Next month"
+                  className="size-8 rounded-full text-muted-foreground">
+                  <ChevronRight className="size-5" />
+                </Button>
+                <Button type="button" variant="outline" size="icon" onClick={() => setIsFullscreen(false)} title="Exit fullscreen" aria-label="Exit fullscreen"
+                  className="size-8 rounded-full shadow-none text-muted-foreground">
                   <Minimize2 className="w-4 h-4" />
-                </button>
+                </Button>
               </div>
             </div>
             {/* Calendar grid — fills remaining height, no scroll */}
@@ -2012,10 +2004,10 @@ export default function CalendarView() {
                   <p className="text-xs text-muted-foreground">
                     <span className="font-semibold text-foreground">{upcomingBookings.length + upcomingOpenTrips.length} trip{upcomingBookings.length + upcomingOpenTrips.length !== 1 ? 's' : ''}</span> found
                     {' · '}
-                    <span style={{ color: '#bdac7e' }} className="font-semibold">
+                    <span className="font-semibold text-primary">
                       {filterFrom === filterTo
-                        ? new Date(filterFrom + 'T00:00:00').toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })
-                        : `${new Date(filterFrom+'T00:00:00').toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})} – ${new Date(filterTo+'T00:00:00').toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})}`}
+                        ? formatDate(filterFrom + 'T00:00:00')
+                        : `${formatDate(filterFrom+'T00:00:00')} – ${formatDate(filterTo+'T00:00:00')}`}
                     </span>
                     {' · all yachts'}
                   </p>
@@ -2039,35 +2031,31 @@ export default function CalendarView() {
                     const t = item.data
                     const isClosed = t.status === 'closed'
                     const isFull   = t.status === 'full' || (!isClosed && t.spotsAvailable === 0)
-                    const otColor  = isClosed ? '#94a3b8' : isFull ? '#ef4444' : '#22c55e'
+                    const otColor  = isClosed ? 'var(--muted-foreground)' : isFull ? 'var(--destructive)' : 'var(--success)'
                     const otLabel  = isClosed ? 'Closed' : isFull ? 'Sold Out' : `${t.spotsAvailable}/${t.maxCapacity} spots`
+                    const otTone   = isClosed ? 'neutral' : isFull ? 'destructive' : 'success'
                     return (
                       <div key={`ot-${t.id}`}
                         className="w-full rounded-lg border border-dashed px-3 sm:px-4 py-3 space-y-2.5"
-                        style={{ borderColor: otColor + '55' }}
+                        style={{ borderColor: `color-mix(in srgb, ${otColor} 33%, transparent)` }}
                       >
-                        <button onClick={() => handleOpenTripClick(t)} className="w-full flex items-center gap-3 text-left">
-                          <span className="w-3.5 h-3.5 rounded-full shrink-0" style={{ backgroundColor: otColor, boxShadow: `0 0 0 3px ${otColor}33` }} />
+                        <button type="button" onClick={() => handleOpenTripClick(t)} className="w-full flex items-center gap-3 text-left">
+                          <span className="w-3.5 h-3.5 rounded-full shrink-0" style={{ backgroundColor: otColor, boxShadow: `0 0 0 3px color-mix(in srgb, ${otColor} 20%, transparent)` }} />
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 flex-wrap">
-                              <span className="text-[9px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 shrink-0">Open Trip</span>
+                              <span className="text-[9px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded bg-muted text-muted-foreground shrink-0">Open Trip</span>
                               <span className="text-sm font-semibold truncate">{t.title}</span>
                               <span className="text-xs text-muted-foreground truncate">{t.yacht.name}{t.destination ? ` · ${t.destination}` : ''}</span>
                             </div>
                             <div className="text-xs text-muted-foreground">
-                              {new Date(t.startDate).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' })}
-                              {' – '}
-                              {new Date(t.endDate).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' })}
+                              {formatDateRange(t.startDate, t.endDate, { utc: true })}
                               {' · '}{getDays(t.startDate, t.endDate)} days
                             </div>
                           </div>
                           <div className="text-right shrink-0">
-                            <span
-                              className="text-[10px] font-semibold rounded-full px-2 py-0.5 inline-block"
-                              style={{ backgroundColor: otColor + '22', color: otColor }}
-                            >
+                            <StatusBadge tone={otTone} size="sm" className="font-semibold px-2 py-0.5">
                               {otLabel}
-                            </span>
+                            </StatusBadge>
                           </div>
                         </button>
                         {/* Cabin-by-cabin status — same legend as the calendar bar/detail dialog */}
@@ -2076,11 +2064,11 @@ export default function CalendarView() {
                             {t.cabinStatuses.map(c => {
                               const bs = c.bookingStatus
                               const dotColor = bs === null
-                                ? (isClosed ? '#94a3b8' : '#ffffff')
-                                : bs === 'on_hold' ? '#22c55e'
-                                : bs === 'pending' ? '#eab308'
-                                : '#ef4444'
-                              const dotBorder = dotColor === '#ffffff' ? '1.5px solid #94a3b8' : 'none'
+                                ? (isClosed ? 'var(--muted-foreground)' : 'var(--card)')
+                                : bs === 'on_hold' ? 'var(--success)'
+                                : bs === 'pending' ? 'var(--warning)'
+                                : 'var(--destructive)'
+                              const dotBorder = dotColor === 'var(--card)' ? '1.5px solid var(--muted-foreground)' : 'none'
                               return (
                                 <span key={c.id} className="flex items-center gap-1.5">
                                   <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: dotColor, border: dotBorder }} />
@@ -2109,7 +2097,7 @@ export default function CalendarView() {
                     }}
                     className="w-full flex items-center gap-3 rounded-lg border border-border px-3 sm:px-4 py-3 hover:bg-muted/40 transition-colors text-left"
                   >
-                    <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: STATUS_CONFIG[effStatus]?.color ?? '#e8547a' }} />
+                    <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: bookingStatusStyle(effStatus).color }} />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-sm font-semibold truncate">{b.yachtName || b.customerName}</span>
@@ -2117,20 +2105,13 @@ export default function CalendarView() {
                         {b.customerName && b.yachtName && <span className="text-xs text-muted-foreground truncate">{b.customerName}</span>}
                       </div>
                       <div className="text-xs text-muted-foreground">
-                        {new Date(b.startDate).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' })}
-                        {' – '}
-                        {new Date(b.endDate).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' })}
+                        {formatDateRange(b.startDate, b.endDate, { utc: true })}
                         {' · '}{getDays(b.startDate, b.endDate)} days
                       </div>
                     </div>
                     <div className="text-right shrink-0">
-                      <div className="text-sm font-bold">USD {b.totalPrice?.toLocaleString() ?? '–'}</div>
-                      <span
-                        className="text-[10px] font-semibold rounded-full px-2 py-0.5 mt-0.5 inline-block"
-                        style={{ backgroundColor: STATUS_CONFIG[effStatus]?.color + '22', color: STATUS_CONFIG[effStatus]?.color }}
-                      >
-                        {STATUS_CONFIG[effStatus]?.label}
-                      </span>
+                      <div className="text-sm font-bold">{formatMoney(b.totalPrice, { currency: 'USD', decimals: 0, empty: 'USD –' })}</div>
+                      <BookingStatusBadge status={effStatus} size="sm" className="font-semibold px-2 py-0.5 mt-0.5" />
                     </div>
                   </button>
                   )
@@ -2144,7 +2125,7 @@ export default function CalendarView() {
 
       {/* ── Booking Detail Dialog ── */}
       <Dialog open={isDetailOpen} onOpenChange={v => { setIsDetailOpen(v); if (!v) { setIsBookingEditing(false); setBookingFullDetail(null); setSelectedCabinCtx(null); setDetailAddingGuest(false); setOtAddQ(''); setOtAddResults([]); setReplacingGuestId(null); setReplaceQ(''); setReplaceResults([]) } }}>
-        <DialogContent className="w-[calc(100vw-1rem)] sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto" onInteractOutside={e => { if (isBookingEditing || detailAddingGuest || replacingGuestId) e.preventDefault() }}>
           <DialogTitle className="sr-only">{selectedBooking?.yachtName ?? 'Booking Detail'}</DialogTitle>
           {selectedBooking && (
             <>
@@ -2157,10 +2138,7 @@ export default function CalendarView() {
                   {!isBookingEditing && (() => {
                     const effStatus = getEffectiveBookingStatus(selectedBooking.status, selectedBooking.startDate, selectedBooking.endDate)
                     return (
-                      <span className="text-xs font-semibold rounded-full px-3 py-1 shrink-0"
-                        style={{ backgroundColor: STATUS_CONFIG[effStatus]?.color + '22', color: STATUS_CONFIG[effStatus]?.color }}>
-                        {STATUS_CONFIG[effStatus]?.label}
-                      </span>
+                      <BookingStatusBadge status={effStatus} className="font-semibold px-3 py-1" />
                     )
                   })()}
                 </div>
@@ -2171,8 +2149,8 @@ export default function CalendarView() {
                 <div className="space-y-3 py-2">
                   <div className="grid grid-cols-2 gap-3">
                     {[
-                      { label: 'Check-in',  val: new Date(selectedBooking.startDate).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' }) },
-                      { label: 'Check-out', val: new Date(selectedBooking.endDate).toLocaleDateString('en-GB',   { day:'numeric', month:'short', year:'numeric' }) },
+                      { label: 'Check-in',  val: formatDate(selectedBooking.startDate, 'medium', { utc: true }) },
+                      { label: 'Check-out', val: formatDate(selectedBooking.endDate, 'medium', { utc: true }) },
                     ].map(r => (
                       <div key={r.label} className="rounded-lg border p-3">
                         <div className="text-[11px] text-muted-foreground mb-1">{r.label}</div>
@@ -2187,21 +2165,19 @@ export default function CalendarView() {
                     </div>
                     <div className="rounded-lg border p-3">
                       <div className="flex items-center gap-1 text-[11px] text-muted-foreground mb-1"><DollarSign className="w-3 h-3" /> Total Price</div>
-                      <div className="text-sm font-semibold">USD {selectedBooking.totalPrice?.toLocaleString() ?? '–'}</div>
+                      <div className="text-sm font-semibold">{formatMoney(selectedBooking.totalPrice, { currency: 'USD', decimals: 0, empty: 'USD –' })}</div>
                     </div>
                   </div>
                   {selectedBooking.status === 'on_hold' && bookingFullDetail?.holdUntil && (() => {
                     const exp     = new Date(bookingFullDetail.holdUntil)
                     const expired = exp < new Date()
                     return (
-                      <div className={`rounded-lg border p-3 ${expired ? 'border-red-200 bg-red-50' : 'border-amber-200 bg-amber-50'}`}>
-                        <div className={`text-[11px] mb-1 font-medium ${expired ? 'text-red-600' : 'text-amber-700'}`}>
+                      <div className={`rounded-lg border p-3 ${expired ? 'border-destructive/30 bg-destructive/10' : 'border-warning/30 bg-warning/10'}`}>
+                        <div className={`text-[11px] mb-1 font-medium ${expired ? 'text-destructive' : 'text-warning'}`}>
                           {expired ? '⚠ Hold Expired' : 'Hold Until'}
                         </div>
-                        <p className={`text-sm font-semibold ${expired ? 'text-red-700' : 'text-amber-800'}`}>
-                          {exp.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
-                          {' '}
-                          {exp.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+                        <p className={`text-sm font-semibold ${expired ? 'text-destructive' : 'text-warning'}`}>
+                          {formatDate(exp, 'datetime')}
                         </p>
                       </div>
                     )
@@ -2228,13 +2204,16 @@ export default function CalendarView() {
                     <div className="bg-muted/40 px-4 py-2 border-b flex items-center justify-between">
                       <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Guests</p>
                       {selectedCabinCtx?.isOwnCabin && !selectedCabinCtx.isFull && !bookingDetailLoading && (
-                        <button
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
                           onClick={() => { setDetailAddingGuest(v => !v); setOtAddQ(''); setOtAddResults([]) }}
-                          className="text-[10px] font-semibold text-[#bdac7e] hover:text-[#a89660] flex items-center gap-1"
+                          className="h-6 gap-1 px-1.5 text-[10px] font-semibold text-primary hover:text-primary-hover"
                         >
-                          <Plus className="h-3 w-3" />
+                          <Plus className="size-3" />
                           {detailAddingGuest ? 'Cancel' : 'Add Guest'}
-                        </button>
+                        </Button>
                       )}
                     </div>
                     {bookingDetailLoading ? (
@@ -2256,7 +2235,7 @@ export default function CalendarView() {
                                     <div className="flex items-center gap-1.5 flex-wrap">
                                       <span className="text-sm font-medium">{g.customer?.name ?? '—'}</span>
                                       {g.isLead && (
-                                        <span className="text-[9px] font-bold bg-amber-100 text-amber-700 rounded px-1.5 py-px">LEAD</span>
+                                        <span className="text-[9px] font-bold bg-warning/15 text-warning rounded px-1.5 py-px">LEAD</span>
                                       )}
                                     </div>
                                     {g.cabin && (
@@ -2266,25 +2245,36 @@ export default function CalendarView() {
                                       </div>
                                     )}
                                   </div>
-                                  <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                  <div className="flex items-center gap-0.5 sm:opacity-0 sm:group-hover:opacity-100 sm:focus-within:opacity-100 transition-opacity">
                                     {g.id && (
-                                      <button
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
                                         onClick={() => window.open(`/print/guest-sheet/${g.id}`, '_blank')}
-                                        className="p-1.5 rounded hover:bg-sky-50 text-sky-500"
+                                        className="size-7 text-info hover:bg-info/10 hover:text-info"
                                         title="Guest Sheet"
+                                        aria-label="Guest Sheet"
                                       >
-                                        <BookOpen className="h-3.5 w-3.5" />
-                                      </button>
+                                        <BookOpen className="size-3.5" />
+                                      </Button>
                                     )}
-                                    <button
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="icon"
                                       onClick={() => { setGuestEditTarget(g); setGuestSheetOpen(true) }}
-                                      className="p-1.5 rounded hover:bg-muted text-muted-foreground"
+                                      className="size-7 text-muted-foreground"
                                       title="Edit guest info"
+                                      aria-label="Edit guest info"
                                     >
-                                      <Pencil className="h-3.5 w-3.5" />
-                                    </button>
+                                      <Pencil className="size-3.5" />
+                                    </Button>
                                     {selectedCabinCtx?.isOwnCabin && (
-                                      <button
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
                                         onClick={() => {
                                           if (replacingGuestId === g.id) {
                                             setReplacingGuestId(null); setReplaceQ(''); setReplaceResults([])
@@ -2292,45 +2282,56 @@ export default function CalendarView() {
                                             setReplacingGuestId(g.id); setReplaceQ(''); setReplaceResults([])
                                           }
                                         }}
-                                        className={`p-1.5 rounded transition-colors ${replacingGuestId === g.id ? 'bg-amber-50 text-amber-600' : 'hover:bg-amber-50 text-muted-foreground hover:text-amber-600'}`}
+                                        className={`size-7 ${replacingGuestId === g.id ? 'bg-warning/10 text-warning hover:bg-warning/10 hover:text-warning' : 'hover:bg-warning/10 text-muted-foreground hover:text-warning'}`}
                                         title="Replace guest"
+                                        aria-label="Replace guest"
+                                        aria-pressed={replacingGuestId === g.id}
                                       >
-                                        <ArrowRightLeft className="h-3.5 w-3.5" />
-                                      </button>
+                                        <ArrowRightLeft className="size-3.5" />
+                                      </Button>
                                     )}
                                     {selectedCabinCtx?.isOwnCabin && !g.isLead && bookingFullDetail.guests.length > 1 && (
-                                      <button
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
                                         disabled={deletingGuestId === g.id}
                                         onClick={() => handleDeleteGuest(g.id, selectedCabinCtx.bookingId)}
-                                        className="p-1.5 rounded hover:bg-red-50 text-muted-foreground hover:text-red-500 transition-colors"
+                                        className="size-7 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                                         title="Remove guest"
+                                        aria-label="Remove guest"
                                       >
                                         {deletingGuestId === g.id
-                                          ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                          : <Trash2 className="h-3.5 w-3.5" />}
-                                      </button>
+                                          ? <Loader2 className="size-3.5 animate-spin" />
+                                          : <Trash2 className="size-3.5" />}
+                                      </Button>
                                     )}
                                   </div>
                                 </div>
                                 {/* Inline replace search */}
                                 {replacingGuestId === g.id && selectedCabinCtx && (
-                                  <div className="bg-amber-50/60 border-t px-4 py-2.5 space-y-1.5">
-                                    <p className="text-[10px] font-semibold text-amber-700 uppercase tracking-wide">Replace "{g.customer?.name}"</p>
+                                  <div className="bg-warning/5 border-t px-4 py-2.5 space-y-1.5">
+                                    <p className="text-[10px] font-semibold text-warning uppercase tracking-wide">Replace "{g.customer?.name}"</p>
                                     <div className="flex items-center gap-2">
-                                      <input
+                                      <Input
                                         autoFocus
-                                        className="flex-1 h-7 text-xs border rounded px-2 bg-background outline-none focus:ring-1 focus:ring-amber-400"
-                                        placeholder="Search new guest by name..."
+                                        aria-label="Search new guest by name"
+                                        className="flex-1 h-7 text-xs md:text-xs rounded px-2 bg-background"
+                                        placeholder="Search new guest by name…"
                                         value={replaceQ}
                                         onChange={e => searchReplaceGuest(e.target.value)}
                                       />
                                       {replaceSearching && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground shrink-0" />}
-                                      <button
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
                                         onClick={() => { setReplacingGuestId(null); setReplaceQ(''); setReplaceResults([]) }}
-                                        className="text-muted-foreground hover:text-foreground p-0.5"
+                                        className="size-7 shrink-0 text-muted-foreground hover:text-foreground"
+                                        aria-label="Cancel replace"
                                       >
-                                        <X className="h-3.5 w-3.5" />
-                                      </button>
+                                        <X className="size-3.5" />
+                                      </Button>
                                     </div>
                                     {replaceResults.length > 0 && (
                                       <div className="border rounded-md bg-background divide-y max-h-40 overflow-y-auto">
@@ -2362,10 +2363,11 @@ export default function CalendarView() {
                         {detailAddingGuest && selectedCabinCtx && (
                           <div className="border-t p-3 space-y-1.5">
                             <div className="flex items-center gap-2">
-                              <input
+                              <Input
                                 autoFocus
-                                className="flex-1 h-7 text-xs border rounded px-2 bg-background outline-none focus:ring-1 focus:ring-[#bdac7e]"
-                                placeholder="Search guest by name..."
+                                aria-label="Search guest by name"
+                                className="flex-1 h-7 text-xs md:text-xs rounded px-2 bg-background"
+                                placeholder="Search guest by name…"
                                 value={otAddQ}
                                 onChange={e => { setOtAddCabinId(selectedCabinCtx.cabinId); setOtAddBookingId(selectedCabinCtx.bookingId); searchOtGuest(e.target.value) }}
                               />
@@ -2405,7 +2407,7 @@ export default function CalendarView() {
                     {canEdit && selectedBooking.status !== 'cancelled' && (
                       <Button
                         variant="outline"
-                        className="border-amber-300 text-amber-700 hover:bg-amber-50 gap-1.5"
+                        className="border-warning/30 text-warning hover:bg-warning/10 gap-1.5"
                         onClick={() => {
                           setIsDetailOpen(false)
                           setWlBooking({
@@ -2427,7 +2429,7 @@ export default function CalendarView() {
                           setCompleteBookingId(selectedBooking.id)
                           setWizardOpen(true)
                         }}
-                        className="bg-orange-500 hover:bg-orange-600 text-white"
+                        className="bg-warning hover:bg-warning/90 text-warning-foreground"
                       >
                         <ChevronRight className="w-3.5 h-3.5 mr-2" /> Complete Booking
                       </Button>
@@ -2435,13 +2437,13 @@ export default function CalendarView() {
                       <>
                         <Button
                           variant="outline"
-                          className="border-sky-300 text-sky-700 hover:bg-sky-50"
+                          className="border-info/30 text-info hover:bg-info/10"
                           onClick={() => window.open(`/print/crew-sheet/booking/${selectedBooking.id}`, '_blank')}
                         >
                           <BookOpen className="w-3.5 h-3.5 mr-2" /> Crew Sheet
                         </Button>
                         {canEdit && selectedBooking.isOwnBooking !== false && new Date(selectedBooking.endDate) >= new Date(new Date().toDateString()) && (
-                          <Button onClick={startBookingEdit} className="bg-[#1a5f6e] hover:bg-[#145260] text-white">
+                          <Button variant="brand" onClick={startBookingEdit}>
                             <Pencil className="w-3.5 h-3.5 mr-2" /> Edit Booking
                           </Button>
                         )}
@@ -2461,18 +2463,18 @@ export default function CalendarView() {
                   {/* Trip Info */}
                   <div>
                     <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Trip Details</p>
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div className="space-y-1.5">
-                        <Label className="text-xs text-muted-foreground">Check-in</Label>
-                        <Input className="h-9" type="date" value={bookingEditForm.startDate} min={new Date().toISOString().split('T')[0]} onChange={e => setBookingEditForm(p => ({ ...p, startDate: e.target.value }))} />
+                        <Label htmlFor="bk-edit-start-date" className="text-xs text-muted-foreground">Check-in</Label>
+                        <Input id="bk-edit-start-date" className="h-9" type="date" value={bookingEditForm.startDate} min={new Date().toISOString().split('T')[0]} onChange={e => setBookingEditForm(p => ({ ...p, startDate: e.target.value }))} />
                       </div>
                       <div className="space-y-1.5">
-                        <Label className="text-xs text-muted-foreground">Check-out</Label>
-                        <Input className="h-9" type="date" value={bookingEditForm.endDate} min={bookingEditForm.startDate || new Date().toISOString().split('T')[0]} onChange={e => setBookingEditForm(p => ({ ...p, endDate: e.target.value }))} />
+                        <Label htmlFor="bk-edit-end-date" className="text-xs text-muted-foreground">Check-out</Label>
+                        <Input id="bk-edit-end-date" className="h-9" type="date" value={bookingEditForm.endDate} min={bookingEditForm.startDate || new Date().toISOString().split('T')[0]} onChange={e => setBookingEditForm(p => ({ ...p, endDate: e.target.value }))} />
                       </div>
                       <div className="space-y-1.5">
-                        <Label className="text-xs text-muted-foreground">Destination</Label>
-                        <Input className="h-9" value={bookingEditForm.destination} onChange={e => setBookingEditForm(p => ({ ...p, destination: e.target.value }))} />
+                        <Label htmlFor="bk-edit-destination" className="text-xs text-muted-foreground">Destination</Label>
+                        <Input id="bk-edit-destination" className="h-9" value={bookingEditForm.destination} onChange={e => setBookingEditForm(p => ({ ...p, destination: e.target.value }))} />
                       </div>
                       <div className="space-y-1.5">
                         <Label className="text-xs text-muted-foreground">Guest Count</Label>
@@ -2481,7 +2483,7 @@ export default function CalendarView() {
                           <span className="text-[10px] text-muted-foreground">— based on guest list</span>
                         </div>
                       </div>
-                      <div className="space-y-1.5 col-span-2">
+                      <div className="space-y-1.5 sm:col-span-2">
                         <Label className="text-xs text-muted-foreground">Salesperson</Label>
                         <div className="h-9 flex items-center rounded-md border bg-muted/40 px-3 text-sm gap-2">
                           <span className="font-medium text-foreground">{bookingEditForm.salesperson || '—'}</span>
@@ -2494,11 +2496,11 @@ export default function CalendarView() {
                   {/* Payment */}
                   <div>
                     <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Payment</p>
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div className="space-y-1.5">
-                        <Label className="text-xs text-muted-foreground">Status</Label>
+                        <Label htmlFor="bk-edit-status" className="text-xs text-muted-foreground">Status</Label>
                         <Select value={bookingEditForm.status} onValueChange={v => setBookingEditForm(p => ({ ...p, status: v }))}>
-                          <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                          <SelectTrigger id="bk-edit-status" className="h-9 w-full"><SelectValue /></SelectTrigger>
                           <SelectContent>
                             <SelectItem value="pending">Pending</SelectItem>
                             <SelectItem value="partially_paid">Partially Paid</SelectItem>
@@ -2509,23 +2511,23 @@ export default function CalendarView() {
                         </Select>
                       </div>
                       <div className="space-y-1.5">
-                        <Label className="text-xs text-muted-foreground">Total Price (USD)</Label>
-                        <Input className="h-9" type="number" value={bookingEditForm.totalPrice} onChange={e => setBookingEditForm(p => ({ ...p, totalPrice: e.target.value }))} />
+                        <Label htmlFor="bk-edit-total-price" className="text-xs text-muted-foreground">Total Price (USD)</Label>
+                        <Input id="bk-edit-total-price" className="h-9" type="number" value={bookingEditForm.totalPrice} onChange={e => setBookingEditForm(p => ({ ...p, totalPrice: e.target.value }))} />
                       </div>
                       <div className="space-y-1.5">
                         <Label className="text-xs text-muted-foreground">Deposit Paid (USD)</Label>
                         <div className="h-9 flex items-center rounded-md border bg-muted/40 px-3 text-sm text-muted-foreground gap-2">
-                          <span className="font-medium text-foreground">${Number(bookingEditForm.depositPaid).toLocaleString()}</span>
+                          <span className="font-medium text-foreground">{formatMoney(Number(bookingEditForm.depositPaid), { currency: 'USD', decimals: 0 })}</span>
                           <span className="text-[10px]">— via Finance approval only</span>
                         </div>
                       </div>
                       <div className="space-y-1.5">
-                        <Label className="text-xs text-muted-foreground">Discount (%)</Label>
-                        <Input className="h-9" type="number" min="0" max="100" value={bookingEditForm.discount} onChange={e => setBookingEditForm(p => ({ ...p, discount: e.target.value }))} />
+                        <Label htmlFor="bk-edit-discount" className="text-xs text-muted-foreground">Discount (%)</Label>
+                        <Input id="bk-edit-discount" className="h-9" type="number" min="0" max="100" value={bookingEditForm.discount} onChange={e => setBookingEditForm(p => ({ ...p, discount: e.target.value }))} />
                       </div>
                       <div className="space-y-1.5">
-                        <Label className="text-xs text-muted-foreground">Deposit Due Date</Label>
-                        <Input className="h-9" type="date" value={bookingEditForm.depositDueDate}
+                        <Label htmlFor="bk-edit-deposit-due" className="text-xs text-muted-foreground">Deposit Due Date</Label>
+                        <Input id="bk-edit-deposit-due" className="h-9" type="date" value={bookingEditForm.depositDueDate}
                           min={new Date().toISOString().split('T')[0]}
                           max={bookingEditForm.startDate || undefined}
                           onChange={e => {
@@ -2541,8 +2543,8 @@ export default function CalendarView() {
                           }} />
                       </div>
                       <div className="space-y-1.5">
-                        <Label className="text-xs text-muted-foreground">Final Due Date</Label>
-                        <Input className="h-9" type="date" value={bookingEditForm.finalDueDate}
+                        <Label htmlFor="bk-edit-final-due" className="text-xs text-muted-foreground">Final Due Date</Label>
+                        <Input id="bk-edit-final-due" className="h-9" type="date" value={bookingEditForm.finalDueDate}
                           min={bookingEditForm.depositDueDate || new Date().toISOString().split('T')[0]}
                           max={bookingEditForm.startDate || undefined}
                           onChange={e => {
@@ -2561,28 +2563,29 @@ export default function CalendarView() {
                     <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Guests</p>
                     <div className="space-y-2">
                       {(bookingFullDetail?.guests ?? []).map((g: any) => (
-                        <div key={g.id} className={`flex items-center gap-2 rounded-lg border px-3 py-2 ${g.isLead ? 'border-amber-300 bg-amber-50/50' : ''}`}>
+                        <div key={g.id} className={`flex flex-wrap items-center gap-2 rounded-lg border px-3 py-2 ${g.isLead ? 'border-warning/30 bg-warning/5' : ''}`}>
                           {/* Lead badge */}
                           <div className="shrink-0">
                             {g.isLead
-                              ? <div className="flex items-center gap-1 rounded-full bg-amber-100 border border-amber-200 px-2 py-0.5">
-                                  <Crown className="h-3 w-3 text-amber-500" />
-                                  <span className="text-[10px] font-bold text-amber-600">Lead</span>
+                              ? <div className="flex items-center gap-1 rounded-full bg-warning/15 border border-warning/30 px-2 py-0.5">
+                                  <Crown className="h-3 w-3 text-warning" />
+                                  <span className="text-[10px] font-bold text-warning">Lead</span>
                                 </div>
                               : <button
+                                  type="button"
                                   onClick={() => handleSetLead(g.id)}
                                   title="Set as lead guest"
-                                  className="flex items-center gap-1 rounded-full border border-dashed border-muted-foreground/30 px-2 py-0.5 hover:border-amber-400 hover:bg-amber-50 transition-colors"
+                                  className="flex items-center gap-1 rounded-full border border-dashed border-muted-foreground/30 px-2 py-0.5 hover:border-warning hover:bg-warning/10 transition-colors"
                                 >
                                   <Crown className="h-3 w-3 text-muted-foreground/40" />
                                   <span className="text-[10px] text-muted-foreground/50">Set lead</span>
                                 </button>}
                           </div>
                           {/* Name */}
-                          <div className="flex-1 min-w-0">
+                          <div className="flex-1 min-w-[8rem]">
                             <p className="text-sm font-medium truncate">
                               {g.customer?.name}
-                              {g.isLead && <span className="ml-1.5 text-[10px] text-amber-600 font-semibold">LEAD</span>}
+                              {g.isLead && <span className="ml-1.5 text-[10px] text-warning font-semibold">LEAD</span>}
                             </p>
                             <p className="text-[11px] text-muted-foreground">{g.customer?.email ?? g.customer?.phone ?? '—'}</p>
                           </div>
@@ -2591,7 +2594,7 @@ export default function CalendarView() {
                             value={g.cabinId ?? 'none'}
                             onValueChange={v => handleCabinChange(g.id, v === 'none' ? '' : v)}
                           >
-                            <SelectTrigger className="h-7 text-xs w-32 shrink-0">
+                            <SelectTrigger aria-label={`Cabin for ${g.customer?.name ?? 'guest'}`} className="h-7 text-xs w-32 shrink-0">
                               <SelectValue placeholder="No cabin" />
                             </SelectTrigger>
                             <SelectContent>
@@ -2602,21 +2605,29 @@ export default function CalendarView() {
                             </SelectContent>
                           </Select>
                           {/* Edit + Remove */}
-                          <button
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
                             onClick={() => { setGuestEditTarget(g); setGuestSheetOpen(true) }}
-                            className="p-1.5 rounded hover:bg-muted text-muted-foreground"
+                            className="size-7 text-muted-foreground"
                             title="Edit guest details"
+                            aria-label="Edit guest details"
                           >
-                            <Pencil className="h-3.5 w-3.5" />
-                          </button>
+                            <Pencil className="size-3.5" />
+                          </Button>
                           {!g.isLead && (
-                            <button
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
                               onClick={() => handleRemoveGuest(g.id)}
-                              className="p-1.5 rounded hover:bg-red-50 text-muted-foreground hover:text-red-500"
+                              className="size-7 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                               title="Remove guest"
+                              aria-label="Remove guest"
                             >
-                              <UserMinus className="h-3.5 w-3.5" />
-                            </button>
+                              <UserMinus className="size-3.5" />
+                            </Button>
                           )}
                         </div>
                       ))}
@@ -2626,8 +2637,9 @@ export default function CalendarView() {
                         <div className="relative flex items-center gap-2">
                           <SearchIcon className="absolute left-2.5 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
                           <Input
-                            className="h-8 text-xs pl-7"
-                            placeholder="Search customer to add..."
+                            aria-label="Search customer to add"
+                            className="h-8 text-xs md:text-xs pl-7"
+                            placeholder="Search customer to add…"
                             value={guestSearchQ}
                             disabled={addingGuest}
                             onChange={e => { setGuestSearchQ(e.target.value); searchGuests(e.target.value) }}
@@ -2652,7 +2664,7 @@ export default function CalendarView() {
                                   <span className="font-medium">{c.name}</span>
                                   {c.email && <span className="text-muted-foreground">{c.email}</span>}
                                   {alreadyAdded && <span className="ml-auto text-muted-foreground italic">already added</span>}
-                                  {isBeingAdded && !alreadyAdded && <span className="ml-auto text-muted-foreground italic">Adding...</span>}
+                                  {isBeingAdded && !alreadyAdded && <span className="ml-auto text-muted-foreground italic">Adding…</span>}
                                 </button>
                               )
                             })}
@@ -2664,16 +2676,16 @@ export default function CalendarView() {
 
                   {/* Notes */}
                   <div className="space-y-1.5">
-                    <Label className="text-xs text-muted-foreground">Notes</Label>
-                    <Textarea rows={3} className="resize-none text-sm" value={bookingEditForm.notes} onChange={e => setBookingEditForm(p => ({ ...p, notes: e.target.value }))} />
+                    <Label htmlFor="bk-edit-notes" className="text-xs text-muted-foreground">Notes</Label>
+                    <Textarea id="bk-edit-notes" rows={3} className="resize-none text-sm" value={bookingEditForm.notes} onChange={e => setBookingEditForm(p => ({ ...p, notes: e.target.value }))} />
                   </div>
 
-                  <DialogFooter className="gap-2 pt-1 sticky bottom-0 bg-background pb-1">
+                  <DialogFooter className="gap-2 pt-1 sticky bottom-0 bg-card pb-1">
                     <Button variant="outline" onClick={() => setIsBookingEditing(false)} disabled={bookingSaving}>
                       <X className="w-3.5 h-3.5 mr-2" /> Cancel
                     </Button>
-                    <Button onClick={saveBooking} disabled={bookingSaving} className="bg-[#1a5f6e] hover:bg-[#145260] text-white">
-                      {bookingSaving ? <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" /> : <Check className="w-3.5 h-3.5 mr-2" />}
+                    <Button variant="brand" onClick={saveBooking} loading={bookingSaving}>
+                      {!bookingSaving && <Check className="w-3.5 h-3.5 mr-2" />}
                       Save Changes
                     </Button>
                   </DialogFooter>
@@ -2687,7 +2699,7 @@ export default function CalendarView() {
 
       {/* ── Open Trip Detail Dialog ── */}
       <Dialog open={otDetailOpen} onOpenChange={v => { setOtDetailOpen(v); if (!v) setIsOtEditing(false) }}>
-        <DialogContent className="w-[calc(100vw-1rem)] sm:max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto" onInteractOutside={e => { if (isOtEditing) e.preventDefault() }}>
           {otDetailLoading || !otDetail ? (
             <>
               <DialogHeader><DialogTitle>Open Trip</DialogTitle></DialogHeader>
@@ -2703,19 +2715,17 @@ export default function CalendarView() {
                     <DialogTitle className="text-lg">{otDetail.title}</DialogTitle>
                     <DialogDescription>
                       {otDetail.yacht?.name} · {otDetail.destination} ·{' '}
-                      {new Date(otDetail.startDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
-                      {' – '}
-                      {new Date(otDetail.endDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                      {formatDateRange(otDetail.startDate, otDetail.endDate, { utc: true })}
                     </DialogDescription>
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
                     {isAdmin && otDetail.startDate && new Date(otDetail.startDate) < new Date(new Date().toDateString()) && (
-                      <span className="text-[10px] font-semibold rounded-full px-2.5 py-1 bg-amber-100 text-amber-700">PAST</span>
+                      <StatusBadge tone="warning" size="sm" className="font-semibold px-2.5 py-1">PAST</StatusBadge>
                     )}
-                    <span className={cn('text-[10px] font-semibold rounded-full px-2.5 py-1',
-                      otDetail.status === 'open' ? 'bg-green-100 text-green-700' :
-                      otDetail.status === 'full' ? 'bg-red-100 text-red-700' : 'bg-muted text-muted-foreground'
-                    )}>{otDetail.status?.toUpperCase()}</span>
+                    <StatusBadge
+                      tone={otDetail.status === 'open' ? 'success' : otDetail.status === 'full' ? 'destructive' : 'neutral'}
+                      size="sm" className="font-semibold px-2.5 py-1"
+                    >{otDetail.status?.toUpperCase()}</StatusBadge>
                   </div>
                 </div>
               </DialogHeader>
@@ -2742,10 +2752,10 @@ export default function CalendarView() {
                         <div className="grid grid-cols-5 divide-x text-center">
                           {[
                             { label: 'Total',               val: total,   color: 'text-foreground'  },
-                            { label: 'Available',           val: avail,   color: 'text-slate-500'   },
-                            { label: 'On Hold',             val: onHold,  color: 'text-green-600'   },
-                            { label: 'Waiting Payment',     val: pending, color: 'text-amber-500'   },
-                            { label: 'Booked',              val: paid,    color: 'text-red-500'     },
+                            { label: 'Available',           val: avail,   color: 'text-muted-foreground'   },
+                            { label: 'On Hold',             val: onHold,  color: 'text-success'   },
+                            { label: 'Waiting Payment',     val: pending, color: 'text-warning'   },
+                            { label: 'Booked',              val: paid,    color: 'text-destructive'     },
                           ].map(s => (
                             <div key={s.label} className="px-2">
                               <div className={`text-2xl font-bold ${s.color}`}>{s.val}</div>
@@ -2755,18 +2765,18 @@ export default function CalendarView() {
                         </div>
                         {/* Progress bar */}
                         <div className="h-2.5 rounded-full overflow-hidden bg-muted flex">
-                          {paid    > 0 && <div className="h-full bg-red-400 transition-all"   style={{ width: `${paidPct}%` }} />}
-                          {pending > 0 && <div className="h-full bg-amber-400 transition-all" style={{ width: `${pendPct}%` }} />}
-                          {onHold  > 0 && <div className="h-full bg-green-400 transition-all" style={{ width: `${holdPct}%` }} />}
-                          {avail   > 0 && <div className="h-full bg-slate-200 transition-all" style={{ width: `${availPct}%` }} />}
+                          {paid    > 0 && <div className="h-full bg-destructive transition-all"   style={{ width: `${paidPct}%` }} />}
+                          {pending > 0 && <div className="h-full bg-warning transition-all" style={{ width: `${pendPct}%` }} />}
+                          {onHold  > 0 && <div className="h-full bg-success transition-all" style={{ width: `${holdPct}%` }} />}
+                          {avail   > 0 && <div className="h-full bg-muted-foreground/25 transition-all" style={{ width: `${availPct}%` }} />}
                         </div>
                         {/* Legend */}
                         <div className="flex items-center gap-4 flex-wrap">
                           {[
-                            { dot: 'border border-slate-400 bg-white', label: 'Available' },
-                            { dot: 'bg-green-400',  label: 'On Hold' },
-                            { dot: 'bg-amber-400',  label: 'Waiting for Payment' },
-                            { dot: 'bg-red-400',    label: 'Booked' },
+                            { dot: 'border border-muted-foreground/70 bg-card', label: 'Available' },
+                            { dot: 'bg-success',  label: 'On Hold' },
+                            { dot: 'bg-warning',  label: 'Waiting for Payment' },
+                            { dot: 'bg-destructive',    label: 'Booked' },
                           ].map(l => (
                             <div key={l.label} className="flex items-center gap-1.5">
                               <span className={`w-2 h-2 rounded-full ${l.dot} shrink-0`} />
@@ -2783,20 +2793,23 @@ export default function CalendarView() {
                     <div className="bg-muted/40 px-4 py-2 border-b flex items-center justify-between">
                       <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Cabin Details</p>
                       {otDetail.status !== 'closed' && (
-                        <button
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
                           onClick={() => window.open(`/print/crew-sheet/${otDetail.id}`, '_blank')}
-                          className="flex items-center gap-1.5 text-[10px] font-semibold text-sky-600 hover:text-sky-700 hover:bg-sky-50 px-2 py-1 rounded-md transition-colors"
+                          className="h-auto gap-1.5 px-2 py-1 text-[10px] font-semibold text-info hover:text-info/80 hover:bg-info/10"
                         >
-                          <BookOpen className="h-3 w-3" />
+                          <BookOpen className="size-3" />
                           Download Crew Sheet
-                        </button>
+                        </Button>
                       )}
                     </div>
                     <div className="divide-y">
                       {otDetail.status === 'closed' && (
-                        <div className="px-4 py-2.5 flex items-center gap-2 bg-slate-50 border-b">
-                          <AlertCircle className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                          <p className="text-xs text-slate-500">{otDetail.closedReason ?? 'This trip has been closed'}</p>
+                        <div className="px-4 py-2.5 flex items-center gap-2 bg-muted/50 border-b">
+                          <AlertCircle className="w-3.5 h-3.5 text-muted-foreground/70 shrink-0" />
+                          <p className="text-xs text-muted-foreground">{otDetail.closedReason ?? 'This trip has been closed'}</p>
                         </div>
                       )}
                       {otDetail.cabins?.map((c: any) => {
@@ -2805,16 +2818,15 @@ export default function CalendarView() {
                         const isHold       = hasGuests && c.bookingStatus === 'on_hold'
                         const isPaid       = hasGuests && !isHold && (c.bookingStatus === 'partially_paid' || c.bookingStatus === 'fully_paid' || c.bookingStatus === 'completed' || c.bookingStatus === 'confirmed')
                         const isPending    = hasGuests && !isHold && !isPaid
-                        const dotCls    = isHold    ? 'bg-green-400'
-                                        : isPaid    ? 'bg-red-400'
-                                        : isPending ? 'bg-amber-400'
-                                        : isTripClosed ? 'bg-slate-300'
-                                        : 'bg-white border border-slate-400'
-                        const badgeCls  = isHold    ? 'bg-green-100 text-green-700 border border-green-200'
-                                        : isPaid    ? 'bg-red-100 text-red-700 border border-red-200'
-                                        : isPending ? 'bg-amber-100 text-amber-700 border border-amber-200'
-                                        : isTripClosed ? 'bg-slate-100 text-slate-400 border border-slate-200'
-                                        : 'bg-slate-100 text-slate-600 border border-slate-200'
+                        const dotCls    = isHold    ? 'bg-success'
+                                        : isPaid    ? 'bg-destructive'
+                                        : isPending ? 'bg-warning'
+                                        : isTripClosed ? 'bg-muted-foreground/40'
+                                        : 'bg-card border border-muted-foreground/70'
+                        const badgeTone = isHold    ? 'success'
+                                        : isPaid    ? 'destructive'
+                                        : isPending ? 'warning'
+                                        : 'neutral'
                         const badgeLabel = isHold    ? 'On Hold'
                                          : isPaid    ? 'Booked'
                                          : isPending ? 'Waiting for Payment'
@@ -2848,9 +2860,9 @@ export default function CalendarView() {
                               </div>
                               {/* Badge + salesperson */}
                               <div className="flex flex-col items-end gap-1 shrink-0">
-                                <span className={cn('text-[10px] font-semibold rounded-full px-2.5 py-1 whitespace-nowrap', badgeCls)}>
+                                <StatusBadge tone={badgeTone} size="sm" className={cn('font-semibold px-2.5 py-1', badgeTone === 'neutral' && isTripClosed && 'text-muted-foreground/70')}>
                                   {badgeLabel}
-                                </span>
+                                </StatusBadge>
                                 {c.salesperson && (
                                   <span className="text-[10px] text-muted-foreground whitespace-nowrap">
                                     by: {c.salesperson}
@@ -2876,13 +2888,12 @@ export default function CalendarView() {
                           setWizardOpenTripId(otDetail.id)
                           setWizardOpen(true)
                         }}
-                        className="bg-[#bdac7e] hover:bg-[#a89660] text-white"
                       >
                         <Plus className="w-3.5 h-3.5 mr-2" /> Book This Trip
                       </Button>
                     )}
                     {canEdit && otDetail.status !== 'closed' && new Date(otDetail.endDate) >= new Date(new Date().toDateString()) && (
-                      <Button onClick={startOtEdit} className="bg-[#1a5f6e] hover:bg-[#145260] text-white">
+                      <Button variant="brand" onClick={startOtEdit}>
                         <Pencil className="w-3.5 h-3.5 mr-2" /> Edit Trip
                       </Button>
                     )}
@@ -2894,14 +2905,14 @@ export default function CalendarView() {
                   <Separator />
                   <div className="space-y-4">
                     <div className="space-y-1.5">
-                      <Label className="text-xs text-muted-foreground">Trip Title</Label>
-                      <Input className="h-9" value={otEditForm.title} onChange={e => setOtEditForm(p => ({ ...p, title: e.target.value }))} />
+                      <Label htmlFor="ot-edit-title" className="text-xs text-muted-foreground">Trip Title</Label>
+                      <Input id="ot-edit-title" className="h-9" value={otEditForm.title} onChange={e => setOtEditForm(p => ({ ...p, title: e.target.value }))} />
                     </div>
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div className="space-y-1.5">
-                        <Label className="text-xs text-muted-foreground">Status</Label>
+                        <Label htmlFor="ot-edit-status" className="text-xs text-muted-foreground">Status</Label>
                         <Select value={otEditForm.status} onValueChange={v => setOtEditForm(p => ({ ...p, status: v }))}>
-                          <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                          <SelectTrigger id="ot-edit-status" className="h-9 w-full"><SelectValue /></SelectTrigger>
                           <SelectContent>
                             <SelectItem value="open">Open</SelectItem>
                             <SelectItem value="full">Full</SelectItem>
@@ -2910,37 +2921,37 @@ export default function CalendarView() {
                         </Select>
                       </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div className="space-y-1.5">
-                        <Label className="text-xs text-muted-foreground">Destination</Label>
-                        <Input className="h-9" value={otEditForm.destination} onChange={e => setOtEditForm(p => ({ ...p, destination: e.target.value }))} />
+                        <Label htmlFor="ot-edit-destination" className="text-xs text-muted-foreground">Destination</Label>
+                        <Input id="ot-edit-destination" className="h-9" value={otEditForm.destination} onChange={e => setOtEditForm(p => ({ ...p, destination: e.target.value }))} />
                       </div>
                       <div className="space-y-1.5">
-                        <Label className="text-xs text-muted-foreground">Region</Label>
-                        <Input className="h-9" value={otEditForm.region} onChange={e => setOtEditForm(p => ({ ...p, region: e.target.value }))} />
+                        <Label htmlFor="ot-edit-region" className="text-xs text-muted-foreground">Region</Label>
+                        <Input id="ot-edit-region" className="h-9" value={otEditForm.region} onChange={e => setOtEditForm(p => ({ ...p, region: e.target.value }))} />
                       </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div className="space-y-1.5">
-                        <Label className="text-xs text-muted-foreground">Departure Port</Label>
-                        <Input className="h-9" value={otEditForm.departurePort} onChange={e => setOtEditForm(p => ({ ...p, departurePort: e.target.value }))} />
+                        <Label htmlFor="ot-edit-departure-port" className="text-xs text-muted-foreground">Departure Port</Label>
+                        <Input id="ot-edit-departure-port" className="h-9" value={otEditForm.departurePort} onChange={e => setOtEditForm(p => ({ ...p, departurePort: e.target.value }))} />
                       </div>
                       <div className="space-y-1.5">
-                        <Label className="text-xs text-muted-foreground">Arrival Port</Label>
-                        <Input className="h-9" value={otEditForm.arrivalPort} onChange={e => setOtEditForm(p => ({ ...p, arrivalPort: e.target.value }))} />
+                        <Label htmlFor="ot-edit-arrival-port" className="text-xs text-muted-foreground">Arrival Port</Label>
+                        <Input id="ot-edit-arrival-port" className="h-9" value={otEditForm.arrivalPort} onChange={e => setOtEditForm(p => ({ ...p, arrivalPort: e.target.value }))} />
                       </div>
                     </div>
                     <div className="space-y-1.5">
-                      <Label className="text-xs text-muted-foreground">Description</Label>
-                      <Textarea rows={3} className="resize-none text-sm" value={otEditForm.description} onChange={e => setOtEditForm(p => ({ ...p, description: e.target.value }))} />
+                      <Label htmlFor="ot-edit-description" className="text-xs text-muted-foreground">Description</Label>
+                      <Textarea id="ot-edit-description" rows={3} className="resize-none text-sm" value={otEditForm.description} onChange={e => setOtEditForm(p => ({ ...p, description: e.target.value }))} />
                     </div>
                   </div>
                   <DialogFooter className="gap-2">
                     <Button variant="outline" onClick={() => setIsOtEditing(false)} disabled={otSaving}>
                       <X className="w-3.5 h-3.5 mr-2" /> Cancel
                     </Button>
-                    <Button onClick={saveOt} disabled={otSaving || !otEditForm.title.trim()} className="bg-[#1a5f6e] hover:bg-[#145260] text-white">
-                      {otSaving ? <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" /> : <Check className="w-3.5 h-3.5 mr-2" />}
+                    <Button variant="brand" onClick={saveOt} loading={otSaving} disabled={!otEditForm.title.trim()}>
+                      {!otSaving && <Check className="w-3.5 h-3.5 mr-2" />}
                       Save Changes
                     </Button>
                   </DialogFooter>
@@ -2986,7 +2997,7 @@ export default function CalendarView() {
 
       {/* ── Add/Edit Internal Event Modal ── */}
       <Dialog open={internalEventModalOpen} onOpenChange={v => { setInternalEventModalOpen(v); if (!v) setInternalEventDeleteConfirm(false) }}>
-        <DialogContent className="sm:max-w-sm">
+        <DialogContent className="sm:max-w-sm max-h-[90vh] overflow-y-auto" onInteractOutside={e => { if (isAdmin) e.preventDefault() }}>
           <DialogHeader>
             <DialogTitle>{internalEventEditing ? 'Internal Event' : 'Add Internal Event'}</DialogTitle>
             <DialogDescription>Docking, crossing, overhaul, or a company-wide need — shown on the calendar in its own color.</DialogDescription>
@@ -2997,7 +3008,7 @@ export default function CalendarView() {
               <p className="text-sm">Delete <span className="font-semibold">{internalEventEditing?.title}</span>? This cannot be undone.</p>
               <DialogFooter>
                 <Button variant="outline" onClick={() => setInternalEventDeleteConfirm(false)}>Cancel</Button>
-                <Button variant="destructive" disabled={internalEventSaving} onClick={deleteInternalEvent}>
+                <Button variant="destructive" loading={internalEventSaving} onClick={deleteInternalEvent}>
                   {internalEventSaving ? 'Deleting…' : 'Delete'}
                 </Button>
               </DialogFooter>
@@ -3008,9 +3019,9 @@ export default function CalendarView() {
                 {internalEventError && <p className="text-xs text-destructive bg-destructive/5 border border-destructive/20 rounded-lg px-3 py-2">{internalEventError}</p>}
 
                 <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Type</Label>
+                  <Label htmlFor="ie-type" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Type</Label>
                   <Select disabled={!isAdmin} value={internalEventForm.type} onValueChange={v => setInternalEventForm(f => ({ ...f, type: v as InternalEventType }))}>
-                    <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
+                    <SelectTrigger id="ie-type" className="h-9 w-full text-sm"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       {(Object.keys(INTERNAL_EVENT_LABEL) as InternalEventType[]).map(t => (
                         <SelectItem key={t} value={t}>
@@ -3025,8 +3036,9 @@ export default function CalendarView() {
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Title</Label>
+                  <Label htmlFor="ie-title" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Title</Label>
                   <Input
+                    id="ie-title"
                     disabled={!isAdmin}
                     placeholder={internalEventForm.type === 'COMPANY_NEED' ? 'e.g. Photoshoot, All Crew Annual Leave' : 'e.g. Engine overhaul'}
                     value={internalEventForm.title}
@@ -3035,9 +3047,9 @@ export default function CalendarView() {
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Yacht</Label>
+                  <Label htmlFor="ie-yacht" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Yacht</Label>
                   <Select disabled={!isAdmin} value={internalEventForm.yachtId || '__all__'} onValueChange={v => setInternalEventForm(f => ({ ...f, yachtId: v === '__all__' ? '' : v }))}>
-                    <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
+                    <SelectTrigger id="ie-yacht" className="h-9 w-full text-sm"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="__all__">Company-wide (all yachts)</SelectItem>
                       {yachts.map(y => <SelectItem key={y.id} value={y.id}>{y.name}</SelectItem>)}
@@ -3045,33 +3057,34 @@ export default function CalendarView() {
                   </Select>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="space-y-1.5">
-                    <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Start Date</Label>
-                    <input
+                    <Label htmlFor="ie-start-date" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Start Date</Label>
+                    <Input
+                      id="ie-start-date"
                       type="date"
                       disabled={!isAdmin}
                       value={internalEventForm.startDate}
                       onChange={e => setInternalEventForm(f => ({ ...f, startDate: e.target.value, endDate: f.endDate < e.target.value ? e.target.value : f.endDate }))}
-                      className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-60"
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">End Date</Label>
-                    <input
+                    <Label htmlFor="ie-end-date" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">End Date</Label>
+                    <Input
+                      id="ie-end-date"
                       type="date"
                       disabled={!isAdmin}
                       value={internalEventForm.endDate}
                       min={internalEventForm.startDate}
                       onChange={e => setInternalEventForm(f => ({ ...f, endDate: e.target.value }))}
-                      className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-60"
                     />
                   </div>
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Notes (optional)</Label>
+                  <Label htmlFor="ie-notes" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Notes (optional)</Label>
                   <Textarea
+                    id="ie-notes"
                     disabled={!isAdmin}
                     rows={2}
                     value={internalEventForm.notes}
@@ -3106,7 +3119,7 @@ export default function CalendarView() {
                 <div className="flex gap-2">
                   <Button variant="outline" onClick={() => setInternalEventModalOpen(false)}>{isAdmin ? 'Cancel' : 'Close'}</Button>
                   {isAdmin && (
-                    <Button disabled={internalEventSaving} onClick={saveInternalEvent} className="bg-[#bdac7e] hover:bg-[#a89660] text-white">
+                    <Button loading={internalEventSaving} onClick={saveInternalEvent}>
                       {internalEventSaving ? 'Saving…' : internalEventEditing ? 'Save Changes' : 'Add Event'}
                     </Button>
                   )}
@@ -3120,16 +3133,16 @@ export default function CalendarView() {
       {/* ── Print Modal ── */}
       {printModalOpen && (
         <Dialog open onOpenChange={v => !v && setPrintModalOpen(false)}>
-          <DialogContent className="sm:max-w-sm">
+          <DialogContent className="sm:max-w-sm" onInteractOutside={e => e.preventDefault()}>
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2"><Printer className="w-4 h-4" /> Print Calendar</DialogTitle>
               <DialogDescription>Choose vessel and date range to print.</DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-1">
               <div className="space-y-1.5">
-                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Vessel</Label>
+                <Label htmlFor="print-vessel" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Vessel</Label>
                 <Select value={printYacht} onValueChange={setPrintYacht}>
-                  <SelectTrigger className="h-9 text-sm">
+                  <SelectTrigger id="print-vessel" className="h-9 w-full text-sm">
                     <SelectValue placeholder="Select vessel" />
                   </SelectTrigger>
                   <SelectContent>
@@ -3137,24 +3150,24 @@ export default function CalendarView() {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">From</Label>
-                  <input
+                  <Label htmlFor="print-from-month" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">From</Label>
+                  <Input
+                    id="print-from-month"
                     type="month"
                     value={printFromMonth}
                     onChange={e => setPrintFromMonth(e.target.value)}
-                    className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">To</Label>
-                  <input
+                  <Label htmlFor="print-to-month" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">To</Label>
+                  <Input
+                    id="print-to-month"
                     type="month"
                     value={printToMonth}
                     min={printFromMonth}
                     onChange={e => setPrintToMonth(e.target.value)}
-                    className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                   />
                 </div>
               </div>

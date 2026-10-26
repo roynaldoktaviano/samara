@@ -19,7 +19,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const transfer = await db.stockTransfer.findUnique({ where: { id }, select: { status: true } })
   if (!transfer) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-  if (transfer.status !== 'DISPATCHED') return NextResponse.json({ error: 'Transfer harus berstatus In Transit dulu' }, { status: 400 })
+  if (transfer.status !== 'DISPATCHED') return NextResponse.json({ error: 'Transfer must be In Transit first' }, { status: 400 })
 
   const { token, expiresAt } = await getOrCreateTransferReceiveToken(db, id)
   const link = `${resolveBaseUrl(req)}/crew-receive/${token}`

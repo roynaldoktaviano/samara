@@ -2,16 +2,19 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
+import { Button, buttonVariants } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
+import { StatusBadge, type StatusTone } from '@/components/ui/status-badge'
+import { formatDate, formatMoney } from '@/lib/format'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Plus, Search, Ship, MapPin, Calendar, Users, FileText, Anchor, Navigation, Edit, Trash2, Download, Upload, CheckCircle2, XCircle, Loader2, RotateCw, ChevronLeft, ChevronRight, X } from 'lucide-react'
+import { toast } from 'sonner'
 
 interface CabinInfo { id: string; name: string; capacity: number; deck?: string; bedType?: string }
 interface YachtOption { id: string; name: string; model?: string; cabinCount: number; cabins: CabinInfo[] }
@@ -39,17 +42,14 @@ interface OpenTripRecord {
   _count: { bookings: number }
 }
 
-const ACCENT = '#bdac7e'
+const ACCENT = 'var(--primary)'
 
-const STATUS_CONFIG: Record<string, { badge: string; border: string; label: string }> = {
-  open:      { badge: 'bg-emerald-100 text-emerald-700 border-emerald-300', border: 'border-l-emerald-500', label: 'Open'      },
-  full:      { badge: 'bg-red-100     text-red-700     border-red-300',     border: 'border-l-red-500',     label: 'Sold Out'  },
-  closed:    { badge: 'bg-slate-100   text-slate-500   border-slate-300',   border: 'border-l-slate-400',   label: 'Closed'    },
-  cancelled: { badge: 'bg-rose-100    text-rose-700    border-rose-300',    border: 'border-l-rose-500',    label: 'Cancelled' },
+const STATUS_CONFIG: Record<string, { tone: StatusTone; border: string; label: string }> = {
+  open:      { tone: 'success',     border: 'border-l-success',               label: 'Open'      },
+  full:      { tone: 'destructive', border: 'border-l-destructive',           label: 'Sold Out'  },
+  closed:    { tone: 'neutral',     border: 'border-l-muted-foreground/40',   label: 'Closed'    },
+  cancelled: { tone: 'neutral',     border: 'border-l-destructive',           label: 'Cancelled' },
 }
-
-const fmtDate = (d: string) =>
-  new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
 
 const getDays = (s: string, e: string) =>
   Math.max(1, Math.round((new Date(e).getTime() - new Date(s).getTime()) / 86400000) + 1)
@@ -165,12 +165,12 @@ export default function OpenTrips() {
           })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        alert(data.error ?? 'Failed to save trip')
+        toast.error(data.error ?? 'Failed to save trip')
         return
       }
       await fetchTrips()
       setDialogOpen(false)
-    } catch (e) { console.error(e); alert('Network error — failed to save trip') }
+    } catch (e) { console.error(e); toast.error('Network error — failed to save trip') }
     finally { setSubmitting(false) }
   }
 
@@ -181,12 +181,12 @@ export default function OpenTrips() {
       const res = await fetch(`/api/open-trips/${deleteTarget.id}`, { method: 'DELETE' })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        alert(data.error ?? 'Failed to delete trip')
+        toast.error(data.error ?? 'Failed to delete trip')
         return
       }
       await fetchTrips()
       setDeleteTarget(null)
-    } catch (e) { console.error(e); alert('Network error — failed to delete trip') }
+    } catch (e) { console.error(e); toast.error('Network error — failed to delete trip') }
     finally { setDeleting(false) }
   }
 
@@ -257,17 +257,17 @@ export default function OpenTrips() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1">
             <h3 className="text-2xl font-bold tracking-tight">Open Trips</h3>
-            <button onClick={() => fetchTrips()} title="Refresh" className="text-muted-foreground hover:text-foreground transition-colors mt-0.5">
+            <Button type="button" variant="ghost" size="icon" onClick={() => fetchTrips()} title="Refresh" aria-label="Refresh" className="size-8 text-muted-foreground hover:text-foreground">
               <RotateCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-            </button>
+            </Button>
           </div>
           <p className="text-sm text-muted-foreground">Manage pre-scheduled shared trips sold per cabin</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {/* Download template */}
           <Button variant="outline" onClick={downloadTemplate} className="gap-2">
             <Download className="h-4 w-4" /> Download Template
@@ -279,7 +279,7 @@ export default function OpenTrips() {
               <span>{importing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />} Import CSV</span>
             </Button>
           </label>
-          <Button onClick={openAdd} style={{ backgroundColor: ACCENT, color: 'white' }} className="hover:opacity-90 gap-2">
+          <Button onClick={openAdd} className="gap-2">
             <Plus className="h-4 w-4" /> Schedule Trip
           </Button>
         </div>
@@ -297,15 +297,15 @@ export default function OpenTrips() {
         const lostCabins      = Math.max(0, rawLostCabins - cancelledCabins)
 
         const tripStats = [
-          { label: 'Total',  value: trips.length,       color: '#6b7280' },
-          { label: 'Active', value: activeTrips.length, color: '#4a9f6e' },
+          { label: 'Total',  value: trips.length,       color: 'var(--muted-foreground)' },
+          { label: 'Active', value: activeTrips.length, color: 'var(--success)' },
         ]
         const cabinStats = [
           { label: 'Total',       value: totalCabins,      color: ACCENT,     sub: undefined },
-          { label: 'Available',   value: activeCabins,     color: '#4b8bca',  sub: undefined },
+          { label: 'Available',   value: activeCabins,     color: 'var(--info)',  sub: undefined },
           { label: 'Booked',      value: bookedCabins,     color: '#8b5cf6',  sub: undefined },
-          { label: 'Cancelled',   value: cancelledCabins,  color: '#f97316',  sub: 'was booked' },
-          { label: 'Lost',        value: lostCabins,       color: '#e8547a',  sub: 'never booked' },
+          { label: 'Cancelled',   value: cancelledCabins,  color: 'var(--warning)',  sub: 'was booked' },
+          { label: 'Lost',        value: lostCabins,       color: 'var(--destructive)',  sub: 'never booked' },
         ]
 
         return (
@@ -386,12 +386,15 @@ export default function OpenTrips() {
               </CardDescription>
             </div>
             {hasFilters && (
-              <button
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
                 onClick={() => { setSearch(''); setStatus('all'); setYearFilter('all'); setMonthFilter('all'); setYachtFilter('all') }}
-                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                className="h-7 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground"
               >
-                <X className="h-3 w-3" /> Clear filters
-              </button>
+                <X className="size-3" /> Clear filters
+              </Button>
             )}
           </div>
 
@@ -401,6 +404,7 @@ export default function OpenTrips() {
             <div className="relative flex-1 min-w-40">
               <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
               <Input
+                aria-label="Search trips"
                 placeholder="Search title, destination, yacht…"
                 value={searchTerm}
                 onChange={e => setSearch(e.target.value)}
@@ -409,7 +413,7 @@ export default function OpenTrips() {
             </div>
             {/* Status */}
             <Select value={statusFilter} onValueChange={setStatus}>
-              <SelectTrigger className="h-8 w-32 text-sm"><SelectValue placeholder="Status" /></SelectTrigger>
+              <SelectTrigger aria-label="Filter by status" className="h-8 w-32 text-sm"><SelectValue placeholder="Status" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Status</SelectItem>
                 <SelectItem value="active">Active</SelectItem>
@@ -421,7 +425,7 @@ export default function OpenTrips() {
             </Select>
             {/* Year */}
             <Select value={yearFilter} onValueChange={setYearFilter}>
-              <SelectTrigger className="h-8 w-28 text-sm"><SelectValue placeholder="Year" /></SelectTrigger>
+              <SelectTrigger aria-label="Filter by year" className="h-8 w-28 text-sm"><SelectValue placeholder="Year" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Years</SelectItem>
                 {tripYears.map(y => <SelectItem key={y} value={String(y)}>{y}</SelectItem>)}
@@ -429,7 +433,7 @@ export default function OpenTrips() {
             </Select>
             {/* Month */}
             <Select value={monthFilter} onValueChange={setMonthFilter}>
-              <SelectTrigger className="h-8 w-28 text-sm"><SelectValue placeholder="Month" /></SelectTrigger>
+              <SelectTrigger aria-label="Filter by month" className="h-8 w-28 text-sm"><SelectValue placeholder="Month" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Months</SelectItem>
                 {MONTHS.map((m, i) => <SelectItem key={i+1} value={String(i+1)}>{m}</SelectItem>)}
@@ -437,7 +441,7 @@ export default function OpenTrips() {
             </Select>
             {/* Yacht */}
             <Select value={yachtFilter} onValueChange={setYachtFilter}>
-              <SelectTrigger className="h-8 w-36 text-sm"><SelectValue placeholder="Yacht" /></SelectTrigger>
+              <SelectTrigger aria-label="Filter by yacht" className="h-8 w-36 text-sm"><SelectValue placeholder="Yacht" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Yachts</SelectItem>
                 {tripYachts.map(([id, name]) => <SelectItem key={id} value={id}>{name}</SelectItem>)}
@@ -466,7 +470,7 @@ export default function OpenTrips() {
                 return (
                   (() => {
                     const isPrivatePC = t.status === 'closed' && t.closedReason?.includes('Private Charter')
-                    const cfg = STATUS_CONFIG[t.status] ?? { badge: 'bg-muted text-muted-foreground border-border', border: 'border-l-slate-300', label: t.status }
+                    const cfg = STATUS_CONFIG[t.status] ?? { tone: 'neutral' as StatusTone, border: 'border-l-border', label: t.status }
                     const borderColor = isPrivatePC ? 'border-l-violet-500' : cfg.border
                     return (
                   <div key={t.id} className={`border border-l-4 ${borderColor} rounded-xl p-3 sm:p-4 hover:shadow-sm transition-shadow`}>
@@ -481,17 +485,17 @@ export default function OpenTrips() {
                           )}
                           <span className="font-semibold">{t.title}</span>
                           {isPrivatePC ? (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border bg-violet-100 text-violet-700 border-violet-300">
+                            <StatusBadge tone="purple">
                               → Private Charter
-                            </span>
+                            </StatusBadge>
                           ) : (
-                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${cfg.badge}`}>
+                            <StatusBadge tone={cfg.tone}>
                               {cfg.label}
-                            </span>
+                            </StatusBadge>
                           )}
                           {t.pricePerCabin > 0 && (
                             <span className="text-xs text-muted-foreground">
-                              USD {t.pricePerCabin.toLocaleString()} / cabin
+                              {formatMoney(t.pricePerCabin, { currency: 'USD', decimals: 0 })} / cabin
                             </span>
                           )}
                         </div>
@@ -507,7 +511,7 @@ export default function OpenTrips() {
                           </div>
                           <div className="flex items-center gap-1.5">
                             <Calendar className="w-3.5 h-3.5 shrink-0" />
-                            {fmtDate(t.startDate)} → {fmtDate(t.endDate)}
+                            {formatDate(t.startDate, 'medium', { utc: true })} → {formatDate(t.endDate, 'medium', { utc: true })}
                             <span className="ml-1">({getDays(t.startDate, t.endDate)}d)</span>
                           </div>
                           {t.region && (
@@ -540,9 +544,9 @@ export default function OpenTrips() {
                                   <span className="font-medium text-foreground">{t.spotsBooked}</span> / {t.maxCapacity} cabins booked
                                 </span>
                                 {isPrivatePC ? (
-                                  <span className="font-medium text-slate-500 italic">Switched to Private Charter</span>
+                                  <span className="font-medium text-muted-foreground italic">Switched to Private Charter</span>
                                 ) : (
-                                  <span style={{ color: isFull ? '#e8547a' : '#4a9f6e' }} className="font-medium">
+                                  <span style={{ color: isFull ? 'var(--destructive)' : 'var(--success)' }} className="font-medium">
                                     {isFull ? 'Sold Out' : `${t.spotsAvailable} available`}
                                   </span>
                                 )}
@@ -550,7 +554,7 @@ export default function OpenTrips() {
                               <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
                                 <div
                                   className="h-full rounded-full transition-all"
-                                  style={{ width: `${pct}%`, backgroundColor: isPrivatePC ? '#94a3b8' : isFull ? '#e8547a' : '#4a9f6e' }}
+                                  style={{ width: `${pct}%`, backgroundColor: isPrivatePC ? 'var(--muted-foreground)' : isFull ? 'var(--destructive)' : 'var(--success)' }}
                                 />
                               </div>
                             </div>
@@ -578,12 +582,14 @@ export default function OpenTrips() {
                           <div className="text-xs text-muted-foreground mt-0.5">of {t.maxCapacity} cabins</div>
                         </div>
                         <div className="flex gap-1">
-                          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(t)}>
+                          <Button variant="ghost" size="icon" className="size-8" onClick={() => openEdit(t)} aria-label="Edit trip" title="Edit trip">
                             <Edit className="h-4 w-4" />
                           </Button>
                           <Button
-                            variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                            variant="ghost" size="icon" className="size-8 text-destructive hover:text-destructive hover:bg-destructive/10"
                             onClick={() => setDeleteTarget(t)}
+                            aria-label="Delete trip"
+                            title="Delete trip"
                           >
                             <Trash2 className="h-4 w-4" />
                           </Button>
@@ -606,7 +612,8 @@ export default function OpenTrips() {
               </p>
               <div className="flex items-center gap-1">
                 <Button
-                  variant="outline" size="icon" className="h-7 w-7"
+                  variant="outline" size="icon" className="size-7"
+                  aria-label="Previous page"
                   disabled={page === 1}
                   onClick={() => setPage(p => p - 1)}
                 >
@@ -625,8 +632,9 @@ export default function OpenTrips() {
                       : <Button
                           key={p}
                           variant={page === p ? 'default' : 'outline'}
-                          size="icon" className="h-7 w-7 text-xs"
-                          style={page === p ? { backgroundColor: ACCENT, color: 'white', borderColor: ACCENT } : {}}
+                          size="icon" className="size-7 text-xs"
+                          aria-label={`Page ${p}`}
+                          aria-current={page === p ? 'page' : undefined}
                           onClick={() => setPage(p as number)}
                         >
                           {p}
@@ -634,7 +642,8 @@ export default function OpenTrips() {
                   )
                 }
                 <Button
-                  variant="outline" size="icon" className="h-7 w-7"
+                  variant="outline" size="icon" className="size-7"
+                  aria-label="Next page"
                   disabled={page === totalPages}
                   onClick={() => setPage(p => p + 1)}
                 >
@@ -648,7 +657,7 @@ export default function OpenTrips() {
 
       {/* Add / Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={v => { setDialogOpen(v); if (!v) setEditTrip(null) }}>
-        <DialogContent className="w-[calc(100vw-1rem)] sm:max-w-2xl flex flex-col max-h-[92vh] overflow-hidden">
+        <DialogContent className="sm:max-w-2xl flex flex-col max-h-[90vh] overflow-hidden" aria-describedby={undefined} onInteractOutside={e => e.preventDefault()}>
           <DialogHeader className="shrink-0 border-b pb-3">
             <DialogTitle>{editTrip ? 'Edit Open Trip' : 'Schedule New Open Trip'}</DialogTitle>
           </DialogHeader>
@@ -656,12 +665,12 @@ export default function OpenTrips() {
           <div className="flex-1 min-h-0 overflow-y-auto">
             <div className="p-4 space-y-4">
               <div className="space-y-1.5">
-                <Label>Trip Title <span className="text-destructive">*</span></Label>
-                <Input placeholder="e.g. Komodo Explorer — June 2026" value={form.title} onChange={e => set('title', e.target.value)} />
+                <Label htmlFor="ot-title">Trip Title <span className="text-destructive">*</span></Label>
+                <Input id="ot-title" placeholder="e.g. Komodo Explorer — June 2026" value={form.title} onChange={e => set('title', e.target.value)} />
               </div>
 
               <div className="space-y-1.5">
-                <Label>Yacht <span className="text-destructive">*</span></Label>
+                <Label htmlFor={editTrip ? undefined : 'ot-yacht'}>Yacht <span className="text-destructive">*</span></Label>
                 {editTrip ? (
                   <div className="flex items-center gap-2 h-9 px-3 border rounded-md bg-muted/40 text-sm text-muted-foreground">
                     <Ship className="w-4 h-4" />
@@ -670,7 +679,7 @@ export default function OpenTrips() {
                   </div>
                 ) : (
                   <Select value={form.yachtId} onValueChange={v => set('yachtId', v)}>
-                    <SelectTrigger><SelectValue placeholder="Select yacht" /></SelectTrigger>
+                    <SelectTrigger id="ot-yacht" className="w-full"><SelectValue placeholder="Select yacht" /></SelectTrigger>
                     <SelectContent>
                       {yachts.map(y => (
                         <SelectItem key={y.id} value={y.id}>
@@ -684,7 +693,7 @@ export default function OpenTrips() {
 
               {/* Cabin preview (create mode) */}
               {!editTrip && selectedYacht && selectedYacht.cabins?.length > 0 && (
-                <div className="rounded-lg border p-3 space-y-2" style={{ borderColor: `${ACCENT}40`, backgroundColor: `${ACCENT}08` }}>
+                <div className="rounded-lg border p-3 space-y-2" style={{ borderColor: 'color-mix(in srgb, var(--primary) 25%, transparent)', backgroundColor: 'color-mix(in srgb, var(--primary) 3%, transparent)' }}>
                   <p className="text-xs font-medium text-muted-foreground">
                     Cabins on {selectedYacht.name} ({selectedYacht.cabinCount} total)
                   </p>
@@ -698,19 +707,19 @@ export default function OpenTrips() {
                 </div>
               )}
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <Label>Start Date <span className="text-destructive">*</span></Label>
-                  <Input type="date" value={form.startDate} min={new Date().toISOString().split('T')[0]} onChange={e => set('startDate', e.target.value)} />
+                  <Label htmlFor="ot-start-date">Start Date <span className="text-destructive">*</span></Label>
+                  <Input id="ot-start-date" type="date" value={form.startDate} min={new Date().toISOString().split('T')[0]} onChange={e => set('startDate', e.target.value)} />
                 </div>
                 <div className="space-y-1.5">
-                  <Label>End Date <span className="text-destructive">*</span></Label>
-                  <Input type="date" value={form.endDate} min={form.startDate || new Date().toISOString().split('T')[0]} onChange={e => set('endDate', e.target.value)} />
+                  <Label htmlFor="ot-end-date">End Date <span className="text-destructive">*</span></Label>
+                  <Input id="ot-end-date" type="date" value={form.endDate} min={form.startDate || new Date().toISOString().split('T')[0]} onChange={e => set('endDate', e.target.value)} />
                 </div>
               </div>
 
               <div className="space-y-1.5">
-                <Label>Destination <span className="text-destructive">*</span></Label>
+                <Label htmlFor="ot-destination">Destination <span className="text-destructive">*</span></Label>
                 <Select
                   value={form.destinationId}
                   onValueChange={v => {
@@ -718,7 +727,7 @@ export default function OpenTrips() {
                     set('destination', destinations.find(d => d.id === v)?.name ?? '')
                   }}
                 >
-                  <SelectTrigger><SelectValue placeholder="Select destination..." /></SelectTrigger>
+                  <SelectTrigger id="ot-destination" className="w-full"><SelectValue placeholder="Select destination…" /></SelectTrigger>
                   <SelectContent>
                     {destinations.map(d => (
                       <SelectItem key={d.id} value={d.id}>{d.name}{d.region ? ` — ${d.region}` : ''}</SelectItem>
@@ -728,29 +737,29 @@ export default function OpenTrips() {
               </div>
 
               <div className="space-y-1.5">
-                <Label>Region</Label>
-                <Input placeholder="e.g. East Nusa Tenggara, Raja Ampat" value={form.region} onChange={e => set('region', e.target.value)} />
+                <Label htmlFor="ot-region">Region</Label>
+                <Input id="ot-region" placeholder="e.g. East Nusa Tenggara, Raja Ampat" value={form.region} onChange={e => set('region', e.target.value)} />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <Label>Departure Port</Label>
-                  <Input placeholder="e.g. Labuan Bajo" value={form.departurePort} onChange={e => set('departurePort', e.target.value)} />
+                  <Label htmlFor="ot-departure-port">Departure Port</Label>
+                  <Input id="ot-departure-port" placeholder="e.g. Labuan Bajo" value={form.departurePort} onChange={e => set('departurePort', e.target.value)} />
                 </div>
                 <div className="space-y-1.5">
-                  <Label>Arrival Port</Label>
-                  <Input placeholder="e.g. Lombok Harbor" value={form.arrivalPort} onChange={e => set('arrivalPort', e.target.value)} />
+                  <Label htmlFor="ot-arrival-port">Arrival Port</Label>
+                  <Input id="ot-arrival-port" placeholder="e.g. Lombok Harbor" value={form.arrivalPort} onChange={e => set('arrivalPort', e.target.value)} />
                 </div>
               </div>
 
               <div className="space-y-1.5">
-                <Label>Description</Label>
-                <Textarea placeholder="Trip itinerary, inclusions, notes..." value={form.description} onChange={e => set('description', e.target.value)} rows={3} />
+                <Label htmlFor="ot-description">Description</Label>
+                <Textarea id="ot-description" placeholder="Trip itinerary, inclusions, notes…" value={form.description} onChange={e => set('description', e.target.value)} rows={3} />
               </div>
 
               {/* Summary */}
               {form.startDate && form.endDate && (
-                <div className="rounded-lg p-3 text-sm" style={{ backgroundColor: `${ACCENT}0d` }}>
+                <div className="rounded-lg p-3 text-sm" style={{ backgroundColor: 'color-mix(in srgb, var(--primary) 5%, transparent)' }}>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Duration</span>
                     <span>{getDays(form.startDate, form.endDate)} days</span>
@@ -769,12 +778,11 @@ export default function OpenTrips() {
           <DialogFooter className="shrink-0 border-t px-4 pt-3 gap-2">
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
             <Button
-              disabled={!form.title || !form.yachtId || !form.startDate || !form.endDate || !form.destination || submitting}
+              disabled={!form.title || !form.yachtId || !form.startDate || !form.endDate || !form.destination}
+              loading={submitting}
               onClick={handleSubmit}
-              style={{ backgroundColor: ACCENT, color: 'white' }}
-              className="hover:opacity-90"
             >
-              {submitting ? 'Saving...' : editTrip ? 'Save Changes' : 'Schedule Trip'}
+              {submitting ? 'Saving…' : editTrip ? 'Save Changes' : 'Schedule Trip'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -793,11 +801,11 @@ export default function OpenTrips() {
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              className="bg-destructive hover:bg-destructive/90 text-white"
+              className={buttonVariants({ variant: 'destructive' })}
               disabled={deleting}
               onClick={handleDelete}
             >
-              {deleting ? 'Deleting...' : 'Delete Trip'}
+              {deleting ? 'Deleting…' : 'Delete Trip'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -805,7 +813,7 @@ export default function OpenTrips() {
 
       {/* Import results dialog */}
       <Dialog open={importOpen && !importing && !!importResults} onOpenChange={open => { if (!open) { setImportOpen(false); setImportResults(null) } }}>
-        <DialogContent className="w-[calc(100vw-1rem)] max-w-lg">
+        <DialogContent className="sm:max-w-lg" aria-describedby={undefined}>
           <DialogHeader>
             <DialogTitle>Import Results</DialogTitle>
           </DialogHeader>
@@ -813,26 +821,26 @@ export default function OpenTrips() {
             <div className="space-y-4">
               {/* Summary */}
               <div className="flex gap-3">
-                <div className="flex-1 rounded-xl bg-emerald-50 border border-emerald-100 p-3 text-center">
-                  <div className="text-2xl font-bold text-emerald-700">{importResults.created}</div>
-                  <div className="text-xs text-emerald-600 font-medium mt-0.5">Trips Created</div>
+                <div className="flex-1 rounded-xl bg-success/10 border border-success/30 p-3 text-center">
+                  <div className="text-2xl font-bold text-success">{importResults.created}</div>
+                  <div className="text-xs text-success font-medium mt-0.5">Trips Created</div>
                 </div>
-                <div className="flex-1 rounded-xl bg-red-50 border border-red-100 p-3 text-center">
-                  <div className="text-2xl font-bold text-red-700">{importResults.errors}</div>
-                  <div className="text-xs text-red-600 font-medium mt-0.5">Errors</div>
+                <div className="flex-1 rounded-xl bg-destructive/10 border border-destructive/30 p-3 text-center">
+                  <div className="text-2xl font-bold text-destructive">{importResults.errors}</div>
+                  <div className="text-xs text-destructive font-medium mt-0.5">Errors</div>
                 </div>
               </div>
               {/* Row details */}
               {importResults.results.length > 0 && (
                 <div className="max-h-64 overflow-y-auto space-y-1.5 rounded-lg border p-2">
                   {importResults.results.map(r => (
-                    <div key={r.row} className={`flex items-start gap-2 rounded-lg px-3 py-2 text-sm ${r.status === 'created' ? 'bg-emerald-50' : 'bg-red-50'}`}>
+                    <div key={r.row} className={`flex items-start gap-2 rounded-lg px-3 py-2 text-sm ${r.status === 'created' ? 'bg-success/10' : 'bg-destructive/10'}`}>
                       {r.status === 'created'
-                        ? <CheckCircle2 className="h-4 w-4 text-emerald-500 mt-0.5 shrink-0" />
-                        : <XCircle className="h-4 w-4 text-red-500 mt-0.5 shrink-0" />}
+                        ? <CheckCircle2 className="h-4 w-4 text-success mt-0.5 shrink-0" />
+                        : <XCircle className="h-4 w-4 text-destructive mt-0.5 shrink-0" />}
                       <div className="flex-1 min-w-0">
                         <span className="font-medium">{r.title ?? `Row ${r.row}`}</span>
-                        {r.error && <p className="text-xs text-red-600 mt-0.5">{r.error}</p>}
+                        {r.error && <p className="text-xs text-destructive mt-0.5">{r.error}</p>}
                       </div>
                       <span className="text-xs text-muted-foreground shrink-0">row {r.row}</span>
                     </div>

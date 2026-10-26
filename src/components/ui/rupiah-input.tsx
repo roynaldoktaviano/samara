@@ -4,13 +4,19 @@
 // so existing parseFloat(...)/Number(...) callers keep working unchanged; only the
 // display is formatted. Blank (not "0") shows the placeholder — nothing pre-filled to
 // type over.
-export function RupiahInput({ value, onChange, onBlur, placeholder = '0', className = '', autoFocus, disabled, title }: {
+export function RupiahInput({ value, onChange, onBlur, placeholder = '0', className = '', autoFocus, disabled, title, id, name, required, ...aria }: {
   value: string; onChange: (digits: string) => void; onBlur?: () => void; placeholder?: string; className?: string; autoFocus?: boolean; disabled?: boolean; title?: string
+  id?: string; name?: string; required?: boolean
+  'aria-label'?: string; 'aria-labelledby'?: string; 'aria-describedby'?: string; 'aria-invalid'?: boolean
 }) {
   return (
     <div className="relative">
       <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground pointer-events-none">Rp</span>
       <input
+        id={id}
+        name={name}
+        required={required}
+        {...aria}
         type="text"
         inputMode="numeric"
         autoFocus={autoFocus}
@@ -20,7 +26,7 @@ export function RupiahInput({ value, onChange, onBlur, placeholder = '0', classN
         value={value ? new Intl.NumberFormat('id-ID').format(Number(value)) : ''}
         onChange={e => onChange(e.target.value.replace(/\D/g, ''))}
         onBlur={onBlur}
-        className={`w-full h-9 border rounded-md pl-9 pr-3 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500 disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-muted/40 ${className}`}
+        className={`w-full h-9 border border-input bg-transparent dark:bg-input/30 rounded-md pl-9 pr-3 text-sm shadow-xs outline-none transition-[color,box-shadow] placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:border-destructive disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-muted/40 ${className}`}
       />
     </div>
   )

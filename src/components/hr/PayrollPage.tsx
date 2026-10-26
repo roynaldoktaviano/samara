@@ -2,8 +2,15 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useSession } from 'next-auth/react'
-import { Plus, X, Banknote, Loader2 } from 'lucide-react'
+import { Plus, Banknote } from 'lucide-react'
 import { roleMatches } from '@/lib/role-utils'
+import { StatusBadge, type StatusTone } from '@/components/ui/status-badge'
+import { formatDate } from '@/lib/format'
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { NativeSelect } from '@/components/ui/native-select'
+import { Label } from '@/components/ui/label'
 import PayrollPeriodDetail from './PayrollPeriodDetail'
 
 interface PeriodListItem {
@@ -22,12 +29,12 @@ interface PeriodListItem {
 const STATUS_LABEL: Record<string, string> = {
   OPEN: 'Open', SUBMITTED: 'Submitted', APPROVED: 'Approved', REJECTED: 'Rejected', PAID: 'Paid',
 }
-const STATUS_COLOR: Record<string, string> = {
-  OPEN: 'bg-slate-100 text-slate-700',
-  SUBMITTED: 'bg-blue-100 text-blue-700',
-  APPROVED: 'bg-emerald-100 text-emerald-700',
-  REJECTED: 'bg-red-100 text-red-700',
-  PAID: 'bg-purple-100 text-purple-700',
+const STATUS_TONE: Record<string, StatusTone> = {
+  OPEN: 'neutral',
+  SUBMITTED: 'info',
+  APPROVED: 'success',
+  REJECTED: 'destructive',
+  PAID: 'success',
 }
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 
@@ -90,9 +97,9 @@ export default function PayrollPage() {
           <p className="text-muted-foreground text-sm mt-1">Cut off on the 20th → HR & Finance input → Head of Finance approval → Finance executes on the 25th</p>
         </div>
         {canManage && (
-          <button onClick={openAdd} className="flex items-center gap-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium px-4 py-2 rounded-md transition-colors">
+          <Button onClick={openAdd}>
             <Plus className="h-4 w-4" /> New Period
-          </button>
+          </Button>
         )}
       </div>
 
@@ -110,59 +117,51 @@ export default function PayrollPage() {
         <div className="space-y-3">
           {periods.map(p => (
             <button key={p.id} onClick={() => setSelectedId(p.id)}
-              className="w-full text-left rounded-xl border overflow-hidden hover:border-amber-300 transition-colors">
+              className="w-full text-left rounded-xl border overflow-hidden hover:border-primary/60 transition-colors">
               <div className="flex items-center justify-between px-5 py-4">
                 <div>
                   <p className="font-semibold text-sm">{MONTH_NAMES[p.month - 1]} {p.year}</p>
                   <p className="text-xs text-muted-foreground mt-0.5">
                     {p._count.entries} {p._count.entries === 1 ? 'employee' : 'employees'}
-                    {p.payDate ? ` · Pay date ${new Date(p.payDate).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}` : ''}
+                    {p.payDate ? ` · Pay date ${formatDate(p.payDate)}` : ''}
                   </p>
                 </div>
-                <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${STATUS_COLOR[p.status]}`}>{STATUS_LABEL[p.status]}</span>
+                <StatusBadge tone={STATUS_TONE[p.status]} className="px-2.5 py-1 font-semibold">{STATUS_LABEL[p.status]}</StatusBadge>
               </div>
             </button>
           ))}
         </div>
       )}
 
-      {modal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
-            <div className="flex items-center justify-between px-6 py-4 border-b">
-              <h3 className="font-bold text-sm">New Payroll Period</h3>
-              <button onClick={() => setModal(false)} className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors">
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <div className="px-6 py-5 space-y-4">
-              {formError && <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{formError}</p>}
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Month</label>
-                  <select value={form.month} onChange={e => setForm(f => ({ ...f, month: Number(e.target.value) }))}
-                    className="w-full h-10 border rounded-lg px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500">
-                    {MONTH_NAMES.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
-                  </select>
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Year</label>
-                  <input type="number" value={form.year} onChange={e => setForm(f => ({ ...f, year: Number(e.target.value) }))}
-                    className="w-full h-10 border rounded-lg px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500" />
-                </div>
+      <Dialog open={modal} onOpenChange={o => { if (!o) setModal(false) }}>
+        <DialogContent className="sm:max-w-sm p-0 gap-0 overflow-hidden" onInteractOutside={e => e.preventDefault()}>
+          <DialogHeader className="px-6 py-4 border-b">
+            <DialogTitle className="font-bold text-sm">New Payroll Period</DialogTitle>
+          </DialogHeader>
+          <div className="px-6 py-5 space-y-4">
+            {formError && <p className="text-xs text-destructive bg-destructive/10 border border-destructive/30 rounded-lg px-3 py-2">{formError}</p>}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="payroll-period-month" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Month</Label>
+                <NativeSelect id="payroll-period-month" value={form.month} onChange={e => setForm(f => ({ ...f, month: Number(e.target.value) }))}>
+                  {MONTH_NAMES.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
+                </NativeSelect>
               </div>
-              <p className="text-xs text-muted-foreground">Cutoff defaults to the 20th, pay date to the 25th of the selected month — both editable later.</p>
+              <div className="space-y-1.5">
+                <Label htmlFor="payroll-period-year" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Year</Label>
+                <Input id="payroll-period-year" type="number" value={form.year} onChange={e => setForm(f => ({ ...f, year: Number(e.target.value) }))} />
+              </div>
             </div>
-            <div className="flex items-center justify-end gap-2 px-6 py-4 border-t bg-gray-50/80">
-              <button onClick={() => setModal(false)} className="px-4 py-2 text-sm border rounded-lg hover:bg-white transition-colors">Cancel</button>
-              <button onClick={save} disabled={saving} className="px-5 py-2 text-sm text-white rounded-lg font-semibold bg-amber-600 hover:bg-amber-700 disabled:opacity-50 transition-colors flex items-center gap-2">
-                {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                {saving ? 'Creating...' : 'Create'}
-              </button>
-            </div>
+            <p className="text-xs text-muted-foreground">Cutoff defaults to the 20th, pay date to the 25th of the selected month — both editable later.</p>
           </div>
-        </div>
-      )}
+          <DialogFooter className="px-6 py-4 border-t bg-muted/50">
+            <Button variant="outline" onClick={() => setModal(false)}>Cancel</Button>
+            <Button onClick={save} loading={saving}>
+              {saving ? 'Creating…' : 'Create'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

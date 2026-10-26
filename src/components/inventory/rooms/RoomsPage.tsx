@@ -106,7 +106,7 @@ export default function RoomsPage() {
       <div className="flex items-center gap-2">
         <Ship className="h-4 w-4 text-muted-foreground" />
         <select
-          className="border rounded-lg px-3 py-2 text-sm font-medium focus:outline-none focus:ring-1 focus:ring-amber-500 min-w-64"
+          className="border rounded-lg px-3 py-2 text-sm font-medium focus:outline-none focus:ring-1 focus:ring-ring min-w-64"
           value={locationId} onChange={e => setLocationId(e.target.value)}>
           {renderLocationOptions(locations, { topLevelOnly: true })}
         </select>
@@ -117,13 +117,13 @@ export default function RoomsPage() {
         <div className="rounded-xl border overflow-hidden">
           <div className="flex items-center justify-between px-4 py-3 bg-muted/40 border-b">
             <h3 className="text-sm font-semibold flex items-center gap-2"><DoorOpen className="h-4 w-4" /> Rooms</h3>
-            <button onClick={openAddRoom} className="flex items-center gap-1 text-xs font-medium text-amber-700 hover:text-amber-900">
+            <button onClick={openAddRoom} className="flex items-center gap-1 text-xs font-medium text-primary-strong hover:text-primary-strong/80">
               <Plus className="h-3.5 w-3.5" /> Add
             </button>
           </div>
           <div className="divide-y max-h-[28rem] overflow-y-auto">
             {roomsLoading ? (
-              <div className="p-6 text-center text-sm text-muted-foreground">Loading...</div>
+              <div className="p-6 text-center text-sm text-muted-foreground">Loading…</div>
             ) : rooms.length === 0 ? (
               <div className="p-8 text-center text-muted-foreground text-sm">
                 <DoorOpen className="h-7 w-7 mx-auto mb-2 opacity-20" />
@@ -131,7 +131,7 @@ export default function RoomsPage() {
               </div>
             ) : rooms.map(r => (
               <button key={r.id} onClick={() => setSelectedRoomId(r.id)}
-                className={`w-full flex items-center justify-between px-4 py-3 text-left hover:bg-muted/30 transition-colors ${selectedRoomId === r.id ? 'bg-amber-50' : ''}`}>
+                className={`w-full flex items-center justify-between px-4 py-3 text-left hover:bg-muted/30 transition-colors ${selectedRoomId === r.id ? 'bg-primary/10' : ''}`}>
                 <div>
                   <p className="text-sm font-medium">{r.name}</p>
                   <p className="text-xs text-muted-foreground mt-0.5">{r._count.categories} categories · {r._count.items} items</p>
@@ -140,7 +140,7 @@ export default function RoomsPage() {
                   <span onClick={e => { e.stopPropagation(); openEditRoom(r) }} className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors">
                     <Pencil className="h-3.5 w-3.5" />
                   </span>
-                  <span onClick={e => { e.stopPropagation(); setDeleteConfirm({ kind: 'room', id: r.id, name: r.name }); setDeleteError('') }} className="p-1.5 text-muted-foreground hover:text-destructive hover:bg-red-50 rounded-lg transition-colors">
+                  <span onClick={e => { e.stopPropagation(); setDeleteConfirm({ kind: 'room', id: r.id, name: r.name }); setDeleteError('') }} className="p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg transition-colors">
                     <Trash2 className="h-3.5 w-3.5" />
                   </span>
                   <ChevronRight className="h-4 w-4 text-muted-foreground/50" />
@@ -158,7 +158,7 @@ export default function RoomsPage() {
               {selectedRoom && <span className="text-xs font-normal text-muted-foreground">— {selectedRoom.name}</span>}
             </h3>
             {selectedRoomId && (
-              <button onClick={openAddCategory} className="flex items-center gap-1 text-xs font-medium text-amber-700 hover:text-amber-900">
+              <button onClick={openAddCategory} className="flex items-center gap-1 text-xs font-medium text-primary-strong hover:text-primary-strong/80">
                 <Plus className="h-3.5 w-3.5" /> Add
               </button>
             )}
@@ -167,7 +167,7 @@ export default function RoomsPage() {
             {!selectedRoomId ? (
               <div className="p-8 text-center text-muted-foreground text-sm">Select a room first.</div>
             ) : categoriesLoading ? (
-              <div className="p-6 text-center text-sm text-muted-foreground">Loading...</div>
+              <div className="p-6 text-center text-sm text-muted-foreground">Loading…</div>
             ) : categories.length === 0 ? (
               <div className="p-8 text-center text-muted-foreground text-sm">
                 <Tag className="h-7 w-7 mx-auto mb-2 opacity-20" />
@@ -183,7 +183,7 @@ export default function RoomsPage() {
                   <button onClick={() => openEditCategory(c)} className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors">
                     <Pencil className="h-3.5 w-3.5" />
                   </button>
-                  <button onClick={() => { setDeleteConfirm({ kind: 'category', id: c.id, name: c.name }); setDeleteError('') }} className="p-1.5 text-muted-foreground hover:text-destructive hover:bg-red-50 rounded-lg transition-colors">
+                  <button onClick={() => { setDeleteConfirm({ kind: 'category', id: c.id, name: c.name }); setDeleteError('') }} className="p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg transition-colors">
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
                 </div>
@@ -196,25 +196,25 @@ export default function RoomsPage() {
       {/* Room modal */}
       {roomModal.open && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6">
+          <div className="bg-card rounded-xl shadow-xl w-full max-w-sm p-6">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-semibold">{roomModal.editing ? 'Edit Room' : 'Add Room'}</h3>
               <button onClick={() => setRoomModal(m => ({ ...m, open: false }))}><X className="h-4 w-4 text-muted-foreground" /></button>
             </div>
             {roomModal.error && (
-              <div className="flex items-center gap-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">
+              <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 border border-destructive/30 rounded-lg px-3 py-2 mb-3">
                 <AlertTriangle className="h-4 w-4 shrink-0" /> {roomModal.error}
               </div>
             )}
             <input autoFocus
-              className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500 mb-4"
+              className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring mb-4"
               placeholder="e.g. Kitchen, WheelHouse"
               value={roomModal.name} onChange={e => setRoomModal(m => ({ ...m, name: e.target.value }))}
               onKeyDown={e => e.key === 'Enter' && saveRoom()} />
             <div className="flex gap-3 justify-end">
               <button onClick={() => setRoomModal(m => ({ ...m, open: false }))} className="px-4 py-2 text-sm border rounded-md hover:bg-muted">Cancel</button>
-              <button onClick={saveRoom} disabled={roomModal.saving || !roomModal.name.trim()} className="px-4 py-2 text-sm bg-amber-600 text-white rounded-md hover:bg-amber-700 disabled:opacity-50">
-                {roomModal.saving ? 'Saving...' : 'Save'}
+              <button onClick={saveRoom} disabled={roomModal.saving || !roomModal.name.trim()} className="px-4 py-2 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary-hover disabled:opacity-50">
+                {roomModal.saving ? 'Saving…' : 'Save'}
               </button>
             </div>
           </div>
@@ -224,25 +224,25 @@ export default function RoomsPage() {
       {/* Category modal */}
       {categoryModal.open && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6">
+          <div className="bg-card rounded-xl shadow-xl w-full max-w-sm p-6">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-semibold">{categoryModal.editing ? 'Edit Category' : 'Add Category'}</h3>
               <button onClick={() => setCategoryModal(m => ({ ...m, open: false }))}><X className="h-4 w-4 text-muted-foreground" /></button>
             </div>
             {categoryModal.error && (
-              <div className="flex items-center gap-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">
+              <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 border border-destructive/30 rounded-lg px-3 py-2 mb-3">
                 <AlertTriangle className="h-4 w-4 shrink-0" /> {categoryModal.error}
               </div>
             )}
             <input autoFocus
-              className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500 mb-4"
+              className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring mb-4"
               placeholder="e.g. Cooking Equipment, Navigation"
               value={categoryModal.name} onChange={e => setCategoryModal(m => ({ ...m, name: e.target.value }))}
               onKeyDown={e => e.key === 'Enter' && saveCategory()} />
             <div className="flex gap-3 justify-end">
               <button onClick={() => setCategoryModal(m => ({ ...m, open: false }))} className="px-4 py-2 text-sm border rounded-md hover:bg-muted">Cancel</button>
-              <button onClick={saveCategory} disabled={categoryModal.saving || !categoryModal.name.trim()} className="px-4 py-2 text-sm bg-amber-600 text-white rounded-md hover:bg-amber-700 disabled:opacity-50">
-                {categoryModal.saving ? 'Saving...' : 'Save'}
+              <button onClick={saveCategory} disabled={categoryModal.saving || !categoryModal.name.trim()} className="px-4 py-2 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary-hover disabled:opacity-50">
+                {categoryModal.saving ? 'Saving…' : 'Save'}
               </button>
             </div>
           </div>
@@ -252,19 +252,19 @@ export default function RoomsPage() {
       {/* Delete confirm */}
       {deleteConfirm && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6">
+          <div className="bg-card rounded-xl shadow-xl w-full max-w-sm p-6">
             <h3 className="font-semibold mb-2">Delete {deleteConfirm.kind === 'room' ? 'Room' : 'Category'}?</h3>
             <p className="text-sm text-muted-foreground mb-4">
               <span className="font-medium text-foreground">{deleteConfirm.name}</span> will be permanently deleted.
             </p>
             {deleteError && (
-              <div className="flex items-center gap-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">
+              <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 border border-destructive/30 rounded-lg px-3 py-2 mb-3">
                 <AlertTriangle className="h-4 w-4 shrink-0" /> {deleteError}
               </div>
             )}
             <div className="flex gap-3 justify-end">
               <button onClick={() => setDeleteConfirm(null)} className="px-4 py-2 text-sm border rounded-md hover:bg-muted">Cancel</button>
-              <button onClick={doDelete} className="px-4 py-2 text-sm bg-destructive text-white rounded-md hover:bg-destructive/90">Delete</button>
+              <button onClick={doDelete} className="px-4 py-2 text-sm bg-destructive text-destructive-foreground rounded-md hover:bg-destructive/90">Delete</button>
             </div>
           </div>
         </div>

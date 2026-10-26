@@ -4,8 +4,8 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Lock, Loader2 } from 'lucide-react'
 
-const GOLD = '#bdac7e'
-const GOLD_DARK = '#a89860'
+const GOLD = 'var(--primary)'
+const GOLD_DARK = 'var(--primary-hover)'
 
 export default function SalesProGate() {
   const router = useRouter()
@@ -52,7 +52,7 @@ export default function SalesProGate() {
           width: '100%',
           maxWidth: 380,
           background: '#101615',
-          border: '1px solid rgba(189,172,126,0.25)',
+          border: '1px solid color-mix(in srgb, var(--primary) 25%, transparent)',
           borderRadius: 20,
           padding: '40px 32px',
           boxShadow: '0 24px 80px rgba(0,0,0,0.5)',
@@ -74,11 +74,13 @@ export default function SalesProGate() {
           </div>
         </div>
 
-        <label style={{ fontSize: 12, fontWeight: 600, color: '#8b9490', display: 'block', marginBottom: 8 }}>
+        <label htmlFor="sales-pro-password" style={{ fontSize: 12, fontWeight: 600, color: '#8b9490', display: 'block', marginBottom: 8 }}>
           Masukkan password akses
         </label>
         <input
+          id="sales-pro-password"
           type="password"
+          autoComplete="current-password"
           autoFocus
           value={password}
           onChange={e => setPassword(e.target.value)}
@@ -89,14 +91,14 @@ export default function SalesProGate() {
             fontSize: 14, outline: 'none',
           }}
         />
-        {error && <div style={{ color: '#f87171', fontSize: 13, marginTop: 10 }}>{error}</div>}
+        {error && <div role="alert" style={{ color: '#f87171', fontSize: 13, marginTop: 10 }}>{error}</div>}
 
         <button
           type="submit"
           disabled={loading || !password}
           style={{
             width: '100%', marginTop: 20, padding: '13px', borderRadius: 10, border: 'none',
-            background: loading || !password ? 'rgba(189,172,126,0.3)' : `linear-gradient(135deg, ${GOLD} 0%, ${GOLD_DARK} 100%)`,
+            background: loading || !password ? 'color-mix(in srgb, var(--primary) 30%, transparent)' : `linear-gradient(135deg, ${GOLD} 0%, ${GOLD_DARK} 100%)`,
             color: '#101615', fontWeight: 700, fontSize: 14, cursor: loading || !password ? 'not-allowed' : 'pointer',
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
           }}

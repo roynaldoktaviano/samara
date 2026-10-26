@@ -10,6 +10,7 @@ import { STATUSES, STATUS_META, isOverdue, todayKey, SubtaskCount, RecurrenceTag
 import AssigneePicker from './AssigneePicker'
 import { SubtaskTree, subtaskOps, PriorityPick, type SubtaskTreeState } from './SubtaskRows'
 import { TextCell, TypeCell, RangeCell } from './InlineCells'
+import { Button } from '@/components/ui/button'
 
 interface Props {
   todos: Todo[]
@@ -49,15 +50,16 @@ export default function ListView({ todos, onAdd, onEdit, onDelete, onStatus, onS
         return (
           <section key={s.key}>
             <div className="flex items-center gap-2 rounded-lg bg-muted/50 px-3 py-2">
-              <button onClick={() => setCollapsed(c => ({ ...c, [s.key]: open }))} className="p-0.5 rounded hover:bg-muted text-muted-foreground">
-                <ChevronDown className={`h-4 w-4 transition-transform ${open ? '' : '-rotate-90'}`} />
-              </button>
+              <Button variant="ghost" size="icon" onClick={() => setCollapsed(c => ({ ...c, [s.key]: open }))} className="size-7 text-muted-foreground"
+                aria-label={open ? `Collapse ${s.label}` : `Expand ${s.label}`} aria-expanded={open}>
+                <ChevronDown className={`transition-transform ${open ? '' : '-rotate-90'}`} />
+              </Button>
               <span className={`h-4 w-1 rounded-full ${s.bar}`} />
               <span className="font-semibold text-sm">{s.label}</span>
               <span className="text-xs px-1.5 py-0.5 rounded-md bg-background border text-muted-foreground font-medium">{rows.length}</span>
-              <button onClick={() => onAdd(s.key)} className="ml-auto p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground" title={`Add task to ${s.label}`}>
-                <Plus className="h-4 w-4" />
-              </button>
+              <Button variant="ghost" size="icon" onClick={() => onAdd(s.key)} className="ml-auto size-7 text-muted-foreground hover:text-foreground" title={`Add task to ${s.label}`} aria-label={`Add task to ${s.label}`}>
+                <Plus />
+              </Button>
             </div>
 
             {open && (
@@ -78,7 +80,7 @@ export default function ListView({ todos, onAdd, onEdit, onDelete, onStatus, onS
                   <tbody>
                     {rows.length === 0 ? (
                       <tr><td colSpan={8} className="px-3 py-4 text-xs text-muted-foreground text-center border-b">
-                        No tasks. <button onClick={() => onAdd(s.key)} className="text-amber-700 hover:underline font-medium">Add one</button>
+                        No tasks. <button onClick={() => onAdd(s.key)} className="text-primary-strong hover:underline font-medium">Add one</button>
                       </td></tr>
                     ) : rows.map(t => {
                       const overdue = isOverdue(t, today)
@@ -91,25 +93,26 @@ export default function ListView({ todos, onAdd, onEdit, onDelete, onStatus, onS
                       const ro = !isOwnTask(t, meId)
                       return (
                         <Fragment key={t.id}>
-                        <tr className={`border-b hover:bg-muted/30 transition-colors group ${ro ? 'bg-sky-50/40' : ''}`}>
+                        <tr className={`border-b hover:bg-muted/30 transition-colors group ${ro ? 'bg-info/5' : ''}`}>
                           <td className="px-3 py-3 align-middle">
                             <button onClick={() => onStatus(t, done ? 'TODO' : 'DONE')} disabled={!canProgress}
+                              role="checkbox" aria-checked={done} aria-label={done ? 'Mark as To-do' : 'Mark as Done'}
                               title={!canProgress ? 'Only sub tasks are assigned to you' : done ? 'Mark as To-do' : 'Mark as Done'}
-                              className={`h-4 w-4 rounded border flex items-center justify-center transition-colors disabled:opacity-40 ${done ? 'bg-emerald-600 border-emerald-600 text-white' : 'border-muted-foreground/40 hover:border-emerald-600'}`}>
+                              className={`h-4 w-4 rounded border flex items-center justify-center transition-colors disabled:opacity-40 ${done ? 'bg-success border-success text-success-foreground' : 'border-muted-foreground/40 hover:border-success'}`}>
                               {done && <Check className="h-3 w-3" strokeWidth={3} />}
                             </button>
                           </td>
                           <td className="px-3 py-2">
                             <div className="flex items-center gap-1.5">
                               {subs.length > 0 ? (
-                                <button onClick={() => toggleExpand(t.id)} className="p-0.5 -ml-1 rounded hover:bg-muted text-muted-foreground shrink-0" title={isOpen ? 'Hide sub tasks' : 'Show sub tasks'}>
+                                <button onClick={() => toggleExpand(t.id)} className="p-0.5 -ml-1 rounded hover:bg-muted text-muted-foreground shrink-0" title={isOpen ? 'Hide sub tasks' : 'Show sub tasks'} aria-label={isOpen ? 'Hide sub tasks' : 'Show sub tasks'} aria-expanded={isOpen}>
                                   <ChevronDown className={`h-3.5 w-3.5 transition-transform ${isOpen ? '' : '-rotate-90'}`} />
                                 </button>
                               ) : <span className="w-3.5 -ml-1 shrink-0" />}
                               <div className="flex-1 min-w-0">
                                 <TextCell value={t.title} required readOnly={ro} onSave={title => onPatch(t, { title })}
                                   className={`font-medium break-words ${done ? 'line-through text-muted-foreground' : ''}`} />
-                                {ro && t.user && <p className="text-xs text-sky-700">Assigned by {userLabel(t.user)}</p>}
+                                {ro && t.user && <p className="text-xs text-info">Assigned by {userLabel(t.user)}</p>}
                               </div>
                               {t.recurrence && <span className="shrink-0"><RecurrenceTag todo={t} /></span>}
                               {t.attachments?.length > 0 && (
@@ -118,19 +121,19 @@ export default function ListView({ todos, onAdd, onEdit, onDelete, onStatus, onS
                                 </span>
                               )}
                               {subs.length > 0 && (
-                                <button onClick={() => toggleExpand(t.id)} className="shrink-0"><SubtaskCount subtasks={subs} /></button>
+                                <button onClick={() => toggleExpand(t.id)} className="shrink-0" aria-expanded={isOpen}><SubtaskCount subtasks={subs} /></button>
                               )}
                               <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
                                 {!ro && (
-                                  <button onClick={() => startCreate(t.id)} title="Create sub task"
-                                    className="h-7 w-7 flex items-center justify-center rounded-md border bg-background text-muted-foreground hover:text-foreground hover:bg-muted">
-                                    <Plus className="h-4 w-4" />
-                                  </button>
+                                  <Button variant="outline" size="icon" onClick={() => startCreate(t.id)} title="Create sub task" aria-label="Create sub task"
+                                    className="size-7 text-muted-foreground hover:text-foreground">
+                                    <Plus />
+                                  </Button>
                                 )}
-                                <button onClick={() => onEdit(t)} title="Open task"
-                                  className="h-7 w-7 flex items-center justify-center rounded-md border bg-background text-muted-foreground hover:text-foreground hover:bg-muted">
-                                  <Maximize2 className="h-3.5 w-3.5" />
-                                </button>
+                                <Button variant="outline" size="icon" onClick={() => onEdit(t)} title="Open task" aria-label="Open task"
+                                  className="size-7 text-muted-foreground hover:text-foreground">
+                                  <Maximize2 className="size-3.5" />
+                                </Button>
                               </div>
                             </div>
                           </td>
@@ -146,7 +149,7 @@ export default function ListView({ todos, onAdd, onEdit, onDelete, onStatus, onS
                           <td className="px-2 py-3 border-l text-center">
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
-                                <button className="p-1 rounded hover:bg-muted text-muted-foreground"><MoreHorizontal className="h-4 w-4" /></button>
+                                <Button variant="ghost" size="icon" className="size-8 text-muted-foreground" aria-label="More actions"><MoreHorizontal /></Button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end" className="w-44">
                                 <DropdownMenuItem onClick={() => onEdit(t)}><Pencil className="h-4 w-4 mr-2" />{ro ? 'Open' : 'Edit'}</DropdownMenuItem>
@@ -162,7 +165,7 @@ export default function ListView({ todos, onAdd, onEdit, onDelete, onStatus, onS
                                 </DropdownMenuSub>}
                                 {!ro && <>
                                   <DropdownMenuSeparator />
-                                  <DropdownMenuItem onClick={() => onDelete(t)} className="text-red-600 focus:text-red-600"><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => onDelete(t)} className="text-destructive focus:text-destructive"><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem>
                                 </>}
                               </DropdownMenuContent>
                             </DropdownMenu>

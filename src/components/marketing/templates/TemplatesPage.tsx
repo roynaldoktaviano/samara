@@ -11,10 +11,11 @@ import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, A
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { Palette, Plus, Pencil, Trash2, Copy, Loader2, Code2, LayoutTemplate, Eye, EyeOff } from 'lucide-react'
 import { toast } from 'sonner'
+import { formatDate } from '@/lib/format'
 import EmailBuilder, { TEMPLATES } from '@/components/marketing/builder/EmailBuilder'
 import { createBlock, normalizeDesign, renderBlocksToHtml, DEFAULT_EMAIL_SETTINGS, type EmailBlock, type EmailSettings } from '@/lib/email-builder'
 
-const ACCENT = '#bdac7e'
+const ACCENT = 'var(--primary)'
 
 interface Template {
   id: string
@@ -173,13 +174,13 @@ export default function TemplatesPage() {
           <Palette className="h-5 w-5" style={{ color: ACCENT }} />
           <h1 className="text-xl font-semibold">Email Templates</h1>
         </div>
-        <Button onClick={openNew} style={{ backgroundColor: ACCENT, color: 'white' }} className="hover:opacity-90">
+        <Button onClick={openNew} style={{ backgroundColor: ACCENT, color: 'var(--primary-foreground)' }} className="hover:opacity-90">
           <Plus className="h-4 w-4 mr-2" /> New Template
         </Button>
       </div>
 
       {loading ? (
-        <p className="text-sm text-muted-foreground">Loading...</p>
+        <p className="text-sm text-muted-foreground">Loading…</p>
       ) : templates.length === 0 ? (
         <Card><CardContent className="py-12 text-center text-sm text-muted-foreground">No templates yet. Create one to reuse across campaigns.</CardContent></Card>
       ) : (
@@ -203,17 +204,17 @@ export default function TemplatesPage() {
                 <p className="font-medium text-sm">{t.name}</p>
                 {t.description && <p className="text-xs text-muted-foreground line-clamp-2">{t.description}</p>}
                 <p className="text-[11px] text-muted-foreground">
-                  Created {new Date(t.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                  Created {formatDate(t.createdAt)}
                   {t.createdByName ? ` by ${t.createdByName}` : ''}
                 </p>
                 <p className="text-[11px] text-muted-foreground">
-                  Updated {new Date(t.updatedAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })} · Used {t._count.campaigns}x
+                  Updated {formatDate(t.updatedAt)} · Used {t._count.campaigns}x
                 </p>
                 <div className="flex gap-1.5 pt-1">
                   <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setPreviewTarget(t)}><Eye className="h-3 w-3 mr-1" />Preview</Button>
                   <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => openEdit(t)}><Pencil className="h-3 w-3 mr-1" />Edit</Button>
                   <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => duplicate(t)}><Copy className="h-3 w-3 mr-1" />Duplicate</Button>
-                  <Button variant="outline" size="sm" className="h-7 text-xs text-red-600 ml-auto" onClick={() => setDeleteTarget(t)}><Trash2 className="h-3 w-3" /></Button>
+                  <Button variant="outline" size="sm" className="h-7 text-xs text-destructive ml-auto" onClick={() => setDeleteTarget(t)}><Trash2 className="h-3 w-3" /></Button>
                 </div>
               </CardContent>
             </Card>
@@ -244,9 +245,9 @@ export default function TemplatesPage() {
                   <div className="flex items-center gap-2">
                     <Button type="button" variant="ghost" size="sm" className="text-xs" onClick={() => setShowHtmlPreview(v => !v)}>
                       {showHtmlPreview ? <EyeOff className="h-3.5 w-3.5 mr-1" /> : <Eye className="h-3.5 w-3.5 mr-1" />}
-                      {showHtmlPreview ? 'Sembunyikan preview' : 'Lihat preview'}
+                      {showHtmlPreview ? 'Hide preview' : 'View preview'}
                     </Button>
-                    <Button onClick={save} disabled={saving} style={{ backgroundColor: ACCENT, color: 'white' }} className="hover:opacity-90 rounded-full" size="sm">
+                    <Button onClick={save} disabled={saving} style={{ backgroundColor: ACCENT, color: 'var(--primary-foreground)' }} className="hover:opacity-90 rounded-full" size="sm">
                       {saving && <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />}
                       Save Template
                     </Button>
@@ -256,14 +257,14 @@ export default function TemplatesPage() {
                   <Textarea
                     value={rawHtml}
                     onChange={e => setRawHtml(e.target.value)}
-                    placeholder="<table>...</table> atau <div>...</div> — isi HTML lengkap template kamu"
+                    placeholder="<table>...</table> or <div>...</div> — your template's full HTML"
                     className="font-mono text-xs h-full resize-none"
                   />
                   {showHtmlPreview && (
                     <div className="border rounded-lg overflow-hidden bg-white">
                       <iframe
                         title="Template HTML preview"
-                        srcDoc={rawHtml || '<p style="color:#9ca3af;font-family:sans-serif;padding:12px">Belum ada isi...</p>'}
+                        srcDoc={rawHtml || '<p style="color:#9ca3af;font-family:sans-serif;padding:12px">No content yet…</p>'}
                         className="w-full h-full"
                         style={{ border: 'none' }}
                         sandbox="allow-same-origin"
@@ -279,7 +280,7 @@ export default function TemplatesPage() {
                 settings={settings}
                 onSettingsChange={setSettings}
                 toolbarExtra={
-                  <Button onClick={save} disabled={saving} style={{ backgroundColor: ACCENT, color: 'white' }} className="hover:opacity-90 rounded-full" size="sm">
+                  <Button onClick={save} disabled={saving} style={{ backgroundColor: ACCENT, color: 'var(--primary-foreground)' }} className="hover:opacity-90 rounded-full" size="sm">
                     {saving && <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />}
                     Save Template
                   </Button>
@@ -293,29 +294,27 @@ export default function TemplatesPage() {
       <Dialog open={pickModeOpen} onOpenChange={setPickModeOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Buat template baru</DialogTitle>
-            <DialogDescription>Mau bikin desain-nya pakai HTML sendiri, atau pakai drag & drop builder?</DialogDescription>
+            <DialogTitle>Create new template</DialogTitle>
+            <DialogDescription>Build the design with your own HTML, or use the drag & drop builder?</DialogDescription>
           </DialogHeader>
           <div className="grid grid-cols-2 gap-3 pt-2">
             <button
               type="button"
               onClick={startHtmlMode}
-              className="flex flex-col items-center gap-2 rounded-lg border p-5 hover:border-[--accent] hover:bg-muted/50 transition-colors"
-              style={{ '--accent': ACCENT } as React.CSSProperties}
+              className="flex flex-col items-center gap-2 rounded-lg border p-5 hover:border-primary hover:bg-muted/50 transition-colors"
             >
               <Code2 className="h-6 w-6" style={{ color: ACCENT }} />
               <span className="text-sm font-medium">HTML</span>
-              <span className="text-[11px] text-muted-foreground text-center">Tulis / paste kode HTML sendiri</span>
+              <span className="text-[11px] text-muted-foreground text-center">Write / paste your own HTML code</span>
             </button>
             <button
               type="button"
               onClick={openGallery}
-              className="flex flex-col items-center gap-2 rounded-lg border p-5 hover:border-[--accent] hover:bg-muted/50 transition-colors"
-              style={{ '--accent': ACCENT } as React.CSSProperties}
+              className="flex flex-col items-center gap-2 rounded-lg border p-5 hover:border-primary hover:bg-muted/50 transition-colors"
             >
               <LayoutTemplate className="h-6 w-6" style={{ color: ACCENT }} />
               <span className="text-sm font-medium">Builder</span>
-              <span className="text-[11px] text-muted-foreground text-center">Susun pakai drag & drop block</span>
+              <span className="text-[11px] text-muted-foreground text-center">Arrange with drag & drop blocks</span>
             </button>
           </div>
         </DialogContent>
@@ -324,21 +323,21 @@ export default function TemplatesPage() {
       <Dialog open={galleryOpen} onOpenChange={setGalleryOpen}>
         <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Pilih desain awal</DialogTitle>
-            <DialogDescription>Pilih salah satu template siap-pakai, atau mulai dari kanvas kosong. Semua bisa diedit bebas setelah dipilih.</DialogDescription>
+            <DialogTitle>Select a starting design</DialogTitle>
+            <DialogDescription>Select a ready-made template, or start from a blank canvas. Everything is fully editable once selected.</DialogDescription>
           </DialogHeader>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 pt-2">
             <button
               type="button"
               onClick={startBlank}
-              className="flex flex-col rounded-lg border overflow-hidden hover:border-[#bdac7e] hover:shadow-sm transition-all text-left"
+              className="flex flex-col rounded-lg border overflow-hidden hover:border-primary hover:shadow-sm transition-all text-left"
             >
               <div className="h-28 w-full flex items-center justify-center bg-muted/40 border-b">
                 <Plus className="h-6 w-6 text-muted-foreground" />
               </div>
               <div className="p-2.5">
-                <p className="text-xs font-medium">Mulai kosong</p>
-                <p className="text-[10px] text-muted-foreground">Kanvas kosong, susun dari nol</p>
+                <p className="text-xs font-medium">Start blank</p>
+                <p className="text-[10px] text-muted-foreground">Blank canvas, build from scratch</p>
               </div>
             </button>
             {TEMPLATES.map(t => (
@@ -346,7 +345,7 @@ export default function TemplatesPage() {
                 key={t.id}
                 type="button"
                 onClick={() => startFromGalleryTemplate(t.build)}
-                className="flex flex-col rounded-lg border overflow-hidden hover:border-[#bdac7e] hover:shadow-sm transition-all text-left"
+                className="flex flex-col rounded-lg border overflow-hidden hover:border-primary hover:shadow-sm transition-all text-left"
               >
                 <div className="h-28 w-full overflow-hidden bg-white border-b">
                   <iframe
@@ -372,7 +371,7 @@ export default function TemplatesPage() {
           <DialogHeader className="p-4 border-b shrink-0">
             <DialogTitle>{previewTarget?.name}</DialogTitle>
           </DialogHeader>
-          <div className="flex-1 min-h-0 bg-white">
+          <div className={`flex-1 min-h-0 ${previewTarget?.bodyHtml ? 'bg-white' : 'bg-card'}`}>
             {previewTarget?.bodyHtml ? (
               <iframe
                 title={`Preview ${previewTarget.name}`}
@@ -396,7 +395,7 @@ export default function TemplatesPage() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmDelete} className="bg-red-600 hover:bg-red-700">Delete</AlertDialogAction>
+            <AlertDialogAction onClick={confirmDelete} className="bg-destructive hover:bg-destructive/90">Delete</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

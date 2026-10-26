@@ -5,6 +5,8 @@ import { Plus, X, ChevronRight, CheckCircle2, ClipboardList, AlertTriangle, Tras
 import { useFileDrop } from '@/hooks/useFileDrop'
 import { PhotoSourceMenu } from '@/components/ui/file-preview'
 import { renderLocationOptions } from '@/components/purchasing/LocationOptions'
+import { formatMoney, formatDate } from '@/lib/format'
+import { StatusBadge, type StatusTone } from '@/components/ui/status-badge'
 
 interface Location { id: string; name: string; type: string; parentId: string | null }
 interface CountItem {
@@ -21,15 +23,12 @@ interface StockCount {
   _count?: { items: number }
 }
 
-const STATUS_LABEL: Record<string, string> = { DRAFT: 'Draft', IN_PROGRESS: 'In Progress', COMPLETED: 'Completed', APPROVED: 'Approved' }
-const STATUS_COLOR: Record<string, string> = {
-  DRAFT: 'bg-muted text-muted-foreground',
-  IN_PROGRESS: 'bg-blue-100 text-blue-700',
-  COMPLETED: 'bg-amber-100 text-amber-700',
-  APPROVED: 'bg-green-100 text-green-700',
+const STATUS: Record<string, { label: string; tone: StatusTone }> = {
+  DRAFT:       { label: 'Draft',       tone: 'neutral' },
+  IN_PROGRESS: { label: 'In Progress', tone: 'info' },
+  COMPLETED:   { label: 'Completed',   tone: 'warning' },
+  APPROVED:    { label: 'Approved',    tone: 'success' },
 }
-const fmtDate = (s: string) => new Date(s).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })
-const fmtMoney = (n: number) => 'Rp ' + new Intl.NumberFormat('id-ID').format(Math.round(n))
 
 function compressPhoto(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -61,14 +60,14 @@ function PhotoUpload({ value, onChange }: { value: string; onChange: (v: string)
       {value ? (
         <div className="relative inline-block">
           <img src={value} className="h-28 w-28 object-cover rounded-lg border" alt="count photo" />
-          <button onClick={() => onChange('')} className="absolute -top-2 -right-2 bg-white border rounded-full p-0.5 shadow text-muted-foreground hover:text-destructive">
+          <button onClick={() => onChange('')} className="absolute -top-2 -right-2 bg-card border rounded-full p-0.5 shadow text-muted-foreground hover:text-destructive">
             <X className="h-3 w-3" />
           </button>
         </div>
       ) : (
         <div className="relative">
           <button onClick={() => setMenuOpen(o => !o)} {...dropProps} className={`flex flex-col items-center justify-center gap-2 border-2 border-dashed rounded-lg py-5 px-8 transition-colors w-full ${
-            isDragging ? 'border-amber-400 bg-amber-50 text-amber-700' : 'text-muted-foreground hover:bg-muted/30'
+            isDragging ? 'border-warning bg-warning/10 text-warning' : 'text-muted-foreground hover:bg-muted/30'
           }`}>
             <Camera className="h-5 w-5" />
             <span className="text-sm">{isDragging ? 'Drop to upload' : 'Upload or drag count photo'}</span>
@@ -163,9 +162,9 @@ export default function StockCountsPage() {
 
     // Validate: items with variance need a reason before approve
     if (nextStatus === 'APPROVED') {
-      if (!photo) { setSaveError('Foto wajib diupload sebelum approve'); return }
+      if (!photo) { setSaveError('Count photo is required before approving'); return }
       const missingReason = detail.items?.filter(i => i.countedQty !== i.systemQty && !i.reason?.trim())
-      if (missingReason?.length) { setSaveError(`Isi reason untuk ${missingReason.length} item yang variance`); return }
+      if (missingReason?.length) { setSaveError(`Please enter a reason for ${missingReason.length} item(s) with variance`); return }
     }
 
     setSaving(true)
@@ -184,7 +183,7 @@ export default function StockCountsPage() {
       load()
     } else {
       const err = await res.json()
-      setSaveError(err.error ?? 'Gagal menyimpan')
+      setSaveError(err.error ?? 'Failed to save')
     }
     setSaving(false)
   }
@@ -207,14 +206,14 @@ export default function StockCountsPage() {
           <button onClick={() => setDetail(null)} className="text-muted-foreground hover:text-foreground text-sm">← Back</button>
           <ChevronRight className="h-4 w-4 text-muted-foreground" />
           <span className="text-sm font-mono font-medium">{detail.countNumber}</span>
-          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLOR[detail.status]}`}>{STATUS_LABEL[detail.status]}</span>
+          <StatusBadge tone={STATUS[detail.status]?.tone}>{STATUS[detail.status]?.label}</StatusBadge>
         </div>
 
         <div className="flex items-start justify-between gap-4">
           <div>
             <h2 className="text-xl font-bold">Stock Count — {detail.location.name}</h2>
             <p className="text-sm text-muted-foreground mt-0.5">
-              {fmtDate(detail.createdAt)} · {detail.countedBy.name}
+              {formatDate(detail.createdAt)} · {detail.countedBy.name}
               {detail.approvedBy && ` · Approved by ${detail.approvedBy.name}`}
             </p>
           </div>
@@ -222,10 +221,10 @@ export default function StockCountsPage() {
             <div className="flex gap-2 shrink-0">
               <button onClick={() => save()} disabled={saving}
                 className="px-4 py-2 text-sm border rounded-md hover:bg-muted disabled:opacity-50 transition-colors">
-                {saving ? 'Saving...' : 'Save'}
+                {saving ? 'Saving…' : 'Save'}
               </button>
               <button onClick={() => save('APPROVED')} disabled={saving}
-                className="flex items-center gap-2 px-4 py-2 text-sm bg-green-600 hover:bg-green-700 text-white rounded-md disabled:opacity-50 font-medium transition-colors">
+                className="flex items-center gap-2 px-4 py-2 text-sm bg-success hover:bg-success/90 text-success-foreground rounded-md disabled:opacity-50 font-medium transition-colors">
                 <CheckCheck className="h-4 w-4" /> Approve & Apply
               </button>
             </div>
@@ -233,18 +232,18 @@ export default function StockCountsPage() {
         </div>
 
         {saveError && (
-          <div className="flex items-center gap-2 text-sm bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-red-700">
+          <div className="flex items-center gap-2 text-sm bg-destructive/10 border border-destructive/30 rounded-lg px-4 py-3 text-destructive">
             <AlertTriangle className="h-4 w-4 shrink-0" /> {saveError}
           </div>
         )}
 
         {/* Variance summary */}
         {!detailLoading && varianceItems.length > 0 && (
-          <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
-            <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
-            <div className="text-sm text-amber-800">
+          <div className="flex items-start gap-3 bg-warning/10 border border-warning/30 rounded-lg px-4 py-3">
+            <AlertTriangle className="h-4 w-4 text-warning shrink-0 mt-0.5" />
+            <div className="text-sm text-warning">
               <span className="font-semibold">{varianceItems.length} item{varianceItems.length !== 1 ? 's' : ''}</span> have a variance.
-              {totalVarianceValue > 0 && <span className="ml-1">Total value at risk: <span className="font-semibold">{fmtMoney(totalVarianceValue)}</span>.</span>}
+              {totalVarianceValue > 0 && <span className="ml-1">Total value at risk: <span className="font-semibold">{formatMoney(totalVarianceValue)}</span>.</span>}
               {!isApproved && <span className="ml-1">Fill in reason for each, then "Approve & Apply".</span>}
             </div>
           </div>
@@ -280,7 +279,7 @@ export default function StockCountsPage() {
                   const hasVariance = variance !== 0
                   return (
                     <Fragment key={ci.id}>
-                      <tr className={`${hasVariance ? 'bg-amber-50/30' : ''} hover:bg-muted/10`}>
+                      <tr className={`${hasVariance ? 'bg-warning/5' : ''} hover:bg-muted/10`}>
                         <td className="px-4 py-3">
                           <p className="font-medium text-sm">{ci.itemName}</p>
                           {ci.item && <p className="text-xs text-muted-foreground font-mono mt-0.5">{ci.item.sku}</p>}
@@ -295,7 +294,7 @@ export default function StockCountsPage() {
                                 type="number" min={0} step="any"
                                 value={ci.countedQty}
                                 onChange={e => updateQty(ci.id, Number(e.target.value))}
-                                className="w-20 border rounded-md px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-1 focus:ring-[#bdac7e]/50 focus:border-[#bdac7e] tabular-nums [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                className="w-20 border rounded-md px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-1 focus:ring-ring/50 focus:border-ring tabular-nums [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                               />
                               <span className="text-xs text-muted-foreground shrink-0 w-6">{unit}</span>
                             </div>
@@ -303,7 +302,7 @@ export default function StockCountsPage() {
                         </td>
                         <td className="px-4 py-3 text-right tabular-nums">
                           {hasVariance ? (
-                            <span className={`font-semibold text-sm ${variance > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            <span className={`font-semibold text-sm ${variance > 0 ? 'text-success' : 'text-destructive'}`}>
                               {variance > 0 ? '+' : ''}{variance} <span className="text-xs font-normal">{unit}</span>
                             </span>
                           ) : (
@@ -312,14 +311,14 @@ export default function StockCountsPage() {
                         </td>
                       </tr>
                       {hasVariance && !isApproved && (
-                        <tr className="bg-amber-50/20">
+                        <tr className="bg-warning/5">
                           <td colSpan={4} className="px-4 py-2">
                             <textarea
                               rows={2}
                               placeholder="Reason for variance (required) *"
                               value={ci.reason ?? ''}
                               onChange={e => updateReason(ci.id, e.target.value)}
-                              className={`w-full border rounded-md px-3 py-2 text-xs resize-none focus:outline-none focus:ring-1 focus:ring-[#bdac7e]/50 focus:border-[#bdac7e] ${!ci.reason?.trim() ? 'border-amber-300 bg-amber-50/80' : 'bg-background'}`}
+                              className={`w-full border rounded-md px-3 py-2 text-xs resize-none focus:outline-none focus:ring-1 focus:ring-ring/50 focus:border-ring ${!ci.reason?.trim() ? 'border-warning/30 bg-warning/10' : 'bg-background'}`}
                             />
                           </td>
                         </tr>
@@ -342,7 +341,7 @@ export default function StockCountsPage() {
           <div className="space-y-4">
             <div className="rounded-xl border overflow-hidden">
               <div className="px-4 py-3 bg-muted/40 border-b">
-                <p className="text-sm font-semibold">Count Photo <span className="text-red-500">*</span></p>
+                <p className="text-sm font-semibold">Count Photo <span className="text-destructive">*</span></p>
                 <p className="text-xs text-muted-foreground mt-0.5">Required before approving</p>
               </div>
               <div className="p-4">
@@ -364,11 +363,11 @@ export default function StockCountsPage() {
             )}
 
             {isApproved && (
-              <div className="rounded-xl border border-green-200 bg-green-50 p-4 flex items-center gap-3">
-                <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0" />
+              <div className="rounded-xl border border-success/30 bg-success/10 p-4 flex items-center gap-3">
+                <CheckCircle2 className="h-5 w-5 text-success shrink-0" />
                 <div>
-                  <p className="text-sm font-semibold text-green-800">Approved & Applied</p>
-                  <p className="text-xs text-green-700 mt-0.5">Stock adjusted. {varianceItems.length > 0 ? `${varianceItems.length} exception(s) created.` : 'No variance.'}</p>
+                  <p className="text-sm font-semibold text-success">Approved & Applied</p>
+                  <p className="text-xs text-success mt-0.5">Stock adjusted. {varianceItems.length > 0 ? `${varianceItems.length} exception(s) created.` : 'No variance.'}</p>
                 </div>
               </div>
             )}
@@ -386,7 +385,7 @@ export default function StockCountsPage() {
           <p className="text-muted-foreground text-sm mt-1">Physical stock counts and reconciliation with system records</p>
         </div>
         <button onClick={() => setCreateOpen(true)}
-          className="flex items-center gap-2 bg-[#bdac7e] hover:bg-[#a89860] text-white text-sm font-medium px-4 py-2 rounded-md transition-colors">
+          className="flex items-center gap-2 bg-primary hover:bg-primary-hover text-primary-foreground text-sm font-medium px-4 py-2 rounded-md transition-colors">
           <Plus className="h-4 w-4" /> New Stock Count
         </button>
       </div>
@@ -427,23 +426,23 @@ export default function StockCountsPage() {
                 <tr key={count.id} className="hover:bg-muted/20 cursor-pointer" onClick={() => openDetail(count)}>
                   <td className="px-4 py-3 font-mono font-medium text-xs">{count.countNumber}</td>
                   <td className="px-4 py-3 font-medium">{count.location.name}</td>
-                  <td className="px-4 py-3 text-muted-foreground">{fmtDate(count.createdAt)}</td>
+                  <td className="px-4 py-3 text-muted-foreground">{formatDate(count.createdAt)}</td>
                   <td className="px-4 py-3 text-muted-foreground">{count.countedBy.name}</td>
                   <td className="px-4 py-3 text-center text-muted-foreground">{count._count?.items ?? 0}</td>
                   <td className="px-4 py-3 text-center">
                     {count.photoKey
-                      ? <CheckCircle2 className="h-4 w-4 text-green-500 inline" />
+                      ? <CheckCircle2 className="h-4 w-4 text-success inline" />
                       : <span className="text-xs text-muted-foreground/50">—</span>}
                   </td>
                   <td className="px-4 py-3 text-center">
-                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLOR[count.status]}`}>
-                      {STATUS_LABEL[count.status]}
-                    </span>
+                    <StatusBadge tone={STATUS[count.status]?.tone}>
+                      {STATUS[count.status]?.label}
+                    </StatusBadge>
                   </td>
                   <td className="px-4 py-3 text-right" onClick={e => e.stopPropagation()}>
                     {count.status !== 'APPROVED'
                       ? <button onClick={() => doDelete(count)} className="text-muted-foreground hover:text-destructive"><Trash2 className="h-4 w-4" /></button>
-                      : <CheckCircle2 className="h-4 w-4 text-green-500 inline" />}
+                      : <CheckCircle2 className="h-4 w-4 text-success inline" />}
                   </td>
                 </tr>
               ))}
@@ -455,10 +454,10 @@ export default function StockCountsPage() {
       {/* Create Modal */}
       {createOpen && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
+          <div className="bg-card rounded-xl shadow-xl w-full max-w-md">
             <div className="flex items-center justify-between p-6 border-b">
               <div className="flex items-center gap-2">
-                <ClipboardList className="h-5 w-5 text-[#bdac7e]" />
+                <ClipboardList className="h-5 w-5 text-primary" />
                 <h3 className="font-semibold text-lg">New Stock Count</h3>
               </div>
               <button onClick={() => setCreateOpen(false)}><X className="h-5 w-5 text-muted-foreground" /></button>
@@ -467,7 +466,7 @@ export default function StockCountsPage() {
               <div className="space-y-1.5">
                 <label className="text-sm font-medium">Location *</label>
                 <select
-                  className="w-full h-9 border rounded-md px-3 text-sm focus:outline-none focus:ring-1 focus:ring-[#bdac7e]/50 focus:border-[#bdac7e] bg-white"
+                  className="w-full h-9 border rounded-md px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring/50 focus:border-ring bg-card"
                   value={createLocationId} onChange={e => setCreateLocationId(e.target.value)}>
                   {renderLocationOptions(locations, { renderLabel: l => `${l.name} (${l.type})` })}
                 </select>
@@ -475,7 +474,7 @@ export default function StockCountsPage() {
               <div className="space-y-1.5">
                 <label className="text-sm font-medium">Counted By *</label>
                 <select
-                  className="w-full h-9 border rounded-md px-3 text-sm focus:outline-none focus:ring-1 focus:ring-[#bdac7e]/50 focus:border-[#bdac7e] bg-white"
+                  className="w-full h-9 border rounded-md px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring/50 focus:border-ring bg-card"
                   value={createCountedById} onChange={e => setCreateCountedById(e.target.value)}>
                   {team.map(u => <option key={u.id} value={u.id}>{u.name} ({u.role})</option>)}
                 </select>
@@ -483,8 +482,8 @@ export default function StockCountsPage() {
               <div className="space-y-1.5">
                 <label className="text-sm font-medium">Notes</label>
                 <input
-                  className="w-full h-9 border rounded-md px-3 text-sm focus:outline-none focus:ring-1 focus:ring-[#bdac7e]/50 focus:border-[#bdac7e]"
-                  placeholder="Optional..."
+                  className="w-full h-9 border rounded-md px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring/50 focus:border-ring"
+                  placeholder="Optional…"
                   value={createNotes} onChange={e => setCreateNotes(e.target.value)} />
               </div>
               <div className="text-xs text-muted-foreground bg-muted/40 rounded-lg px-3 py-2.5">
@@ -494,8 +493,8 @@ export default function StockCountsPage() {
             <div className="flex justify-end gap-3 px-6 py-4 border-t bg-muted/30">
               <button onClick={() => setCreateOpen(false)} className="px-4 py-2 text-sm border rounded-md hover:bg-muted">Cancel</button>
               <button onClick={createCount} disabled={creating || !createLocationId || !createCountedById}
-                className="px-4 py-2 text-sm bg-[#bdac7e] text-white rounded-md hover:bg-[#a89860] disabled:opacity-50 font-medium">
-                {creating ? 'Creating...' : 'Create Count'}
+                className="px-4 py-2 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary-hover disabled:opacity-50 font-medium">
+                {creating ? 'Creating…' : 'Create Count'}
               </button>
             </div>
           </div>

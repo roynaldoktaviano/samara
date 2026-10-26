@@ -242,7 +242,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       .map(it => ({ ...it, available: stockMap.get(it.itemId ?? `name:${it.itemName}`) ?? 0 }))
       .filter(it => Number(it.dispatchedQty) > it.available)
     if (insufficient.length > 0) {
-      const detail = insufficient.map(it => `${it.itemName} (tersedia: ${it.available}, diminta: ${it.dispatchedQty})`).join(', ')
+      const detail = insufficient.map(it => `${it.itemName} (available: ${it.available}, requested: ${it.dispatchedQty})`).join(', ')
       return NextResponse.json({ error: `Not enough stock for: ${detail}` }, { status: 409 })
     }
 
@@ -302,8 +302,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (transfer.purchaseRequestId && !transfer.purchaseOrderId) {
       notifyRequester(db, transfer.purchaseRequestId, {
         type: 'PR_TRANSFER_DISPATCHED',
-        title: 'Barang dari gudang sedang dikirim',
-        body: `${transfer.transferNumber} (dari stok gudang) sudah dikirim dan sedang dalam perjalanan.`,
+        title: 'Warehouse items have shipped',
+        body: `${transfer.transferNumber} (from warehouse stock) has shipped and is on the way.`,
         skipUserId: session.user.id,
       }).catch(console.error)
     }

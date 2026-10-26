@@ -3,6 +3,12 @@
 import { useState, useEffect, useCallback } from 'react'
 import { X, Ship } from 'lucide-react'
 import { RupiahInput } from '@/components/ui/rupiah-input'
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { NativeSelect } from '@/components/ui/native-select'
+import { Label } from '@/components/ui/label'
+import { formatDateRange } from '@/lib/format'
 
 interface BookingLite {
   id: string; bookingCode: string; destination: string | null; startDate: string; endDate: string
@@ -29,7 +35,7 @@ const FEE_TYPES = ['Per Day', 'Per Month']
 // whichever single guest's booking code happened to represent the group, since showing
 // that code here would misleadingly imply the freelancer is tied to one specific guest.
 const fmtTrip = (b: BookingLite) => {
-  const dates = `${new Date(b.startDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}–${new Date(b.endDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}`
+  const dates = formatDateRange(b.startDate, b.endDate)
   if (b.isOpenTrip) {
     return `Open Trip${b.yacht ? ` · ${b.yacht.name}` : ''}${b.destination ? ` · ${b.destination}` : ''} · ${dates}`
   }
@@ -126,78 +132,75 @@ export default function AddFreelanceModal({ editing, employees, onClose, onSaved
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
-        <div className="flex items-center justify-between px-6 py-4 border-b">
-          <div className="flex items-center gap-2">
-            <Ship className="h-4 w-4 text-amber-600" />
-            <h3 className="font-bold text-sm">{editing ? 'Edit Freelance' : 'Add Freelance'}</h3>
-          </div>
-          <button onClick={onClose} className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors">
-            <X className="h-4 w-4" />
-          </button>
-        </div>
+    <Dialog open onOpenChange={o => { if (!o) onClose() }}>
+      <DialogContent aria-describedby={undefined} className="sm:max-w-md p-0 gap-0 overflow-hidden" onInteractOutside={e => e.preventDefault()}>
+        <DialogHeader className="flex-row items-center gap-2 text-left px-6 py-4 border-b">
+          <Ship className="h-4 w-4 text-primary-strong" />
+          <DialogTitle className="font-bold text-sm">{editing ? 'Edit Freelance' : 'Add Freelance'}</DialogTitle>
+        </DialogHeader>
         <div className="px-6 py-5 space-y-4 max-h-[70vh] overflow-y-auto">
-          {error && <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>}
+          {error && <p className="text-xs text-destructive bg-destructive/10 border border-destructive/30 rounded-lg px-3 py-2">{error}</p>}
 
           <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Full Name</label>
-            <input autoFocus className="w-full h-10 border rounded-lg px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
+            <Label htmlFor="freelance-full-name" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Full Name</Label>
+            <Input id="freelance-full-name" autoFocus className="h-10"
               value={fullName} onChange={e => setFullName(e.target.value)} />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Phone</label>
-              <input className="w-full h-10 border rounded-lg px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
+              <Label htmlFor="freelance-phone" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Phone</Label>
+              <Input id="freelance-phone" className="h-10"
                 value={phone} onChange={e => setPhone(e.target.value)} />
             </div>
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Email</label>
-              <input className="w-full h-10 border rounded-lg px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
+              <Label htmlFor="freelance-email" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Email</Label>
+              <Input id="freelance-email" className="h-10"
                 value={email} onChange={e => setEmail(e.target.value)} />
             </div>
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Covering Trip(s)</label>
+            <Label htmlFor="freelance-trip-search" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Covering Trip(s)</Label>
             <div className="grid grid-cols-2 gap-1.5">
-              <select
+              <NativeSelect
                 value={tripYacht} onChange={e => { setTripYacht(e.target.value); setTripSearchOpen(true) }}
-                className="h-8 border rounded-md px-2 text-xs bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
+                aria-label="Filter trips by yacht" className="h-8 text-xs md:text-xs"
               >
                 <option value="">All yachts</option>
                 {yachts.map(y => <option key={y.id} value={y.id}>{y.name}</option>)}
-              </select>
-              <input
+              </NativeSelect>
+              <Input
                 type="date" value={tripDate} onChange={e => { setTripDate(e.target.value); setTripSearchOpen(true) }}
-                className="h-8 border rounded-md px-2 text-xs bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
+                aria-label="Filter trips by date" className="h-8 px-2 text-xs md:text-xs"
               />
             </div>
             <div className="min-h-10 border rounded-lg p-1.5 flex flex-wrap gap-1.5 relative">
               {selectedTrips.map(t => (
-                <span key={t.id} className="inline-flex items-center gap-1 text-xs bg-amber-50 text-amber-800 rounded-full px-2.5 py-1">
+                <span key={t.id} className="inline-flex items-center gap-1 text-xs bg-primary/10 text-primary-strong rounded-full px-2.5 py-1">
                   {fmtTrip(t)}
-                  <button type="button" onClick={() => removeTrip(t.id)}><X className="h-3 w-3" /></button>
+                  <button type="button" onClick={() => removeTrip(t.id)} aria-label={`Remove ${fmtTrip(t)}`}><X className="h-3 w-3" /></button>
                 </span>
               ))}
               <div className="relative flex-1 min-w-[140px]">
+                {/* Borderless on purpose: it sits inside the chip container, which draws the border. */}
                 <input
+                  id="freelance-trip-search"
                   value={tripSearch}
                   onChange={e => { setTripSearch(e.target.value); setTripSearchOpen(true) }}
                   onFocus={() => { setTripSearchOpen(true); searchTrips(tripSearch, tripYacht, tripDate) }}
                   onBlur={() => setTimeout(() => setTripSearchOpen(false), 150)}
-                  placeholder="Search booking code or destination..."
+                  placeholder="Search booking code or destination…"
                   className="h-7 w-full text-sm border-0 focus:outline-none px-1"
                 />
                 {tripSearchOpen && (
-                  <div className="absolute z-10 top-full left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                  <div className="absolute z-10 top-full left-0 right-0 mt-1 bg-popover border rounded-lg shadow-lg max-h-48 overflow-y-auto">
                     {tripResults.filter(b => !selectedTrips.some(t => t.id === b.id)).length === 0 ? (
                       <p className="px-3 py-2.5 text-xs text-muted-foreground">No trips found</p>
                     ) : (
                       tripResults.filter(b => !selectedTrips.some(t => t.id === b.id)).map(b => (
                         <button key={b.id} type="button" onMouseDown={() => addTrip(b)}
-                          className="w-full text-left px-3 py-2 text-xs hover:bg-amber-50 border-b last:border-0">
+                          className="w-full text-left px-3 py-2 text-xs hover:bg-primary/10 border-b last:border-0">
                           {fmtTrip(b)}
                         </button>
                       ))
@@ -209,29 +212,31 @@ export default function AddFreelanceModal({ editing, employees, onClose, onSaved
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Replacing</label>
+            <Label htmlFor="freelance-replacing" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Replacing</Label>
             <div className="relative">
-              <input
+              <Input
+                id="freelance-replacing"
                 value={replacingSearch}
                 onChange={e => { setReplacingSearch(e.target.value); setReplacingEmployeeId(''); setReplacingOpen(true) }}
                 onFocus={() => setReplacingOpen(true)}
                 onBlur={() => setTimeout(() => setReplacingOpen(false), 150)}
-                placeholder="Search employee..."
-                className="w-full h-10 border rounded-lg pl-3 pr-8 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
+                placeholder="Search employee…"
+                className="h-10 pr-8"
               />
               {replacingSearch && (
-                <button type="button" onClick={clearReplacing} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
-                  <X className="h-3.5 w-3.5" />
-                </button>
+                <Button type="button" variant="ghost" size="icon" onClick={clearReplacing} aria-label="Clear"
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 size-6 text-muted-foreground">
+                  <X className="size-3.5" />
+                </Button>
               )}
               {replacingOpen && (
-                <div className="absolute z-10 top-full left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                <div className="absolute z-10 top-full left-0 right-0 mt-1 bg-popover border rounded-lg shadow-lg max-h-48 overflow-y-auto">
                   {replacingMatches.length === 0 ? (
                     <p className="px-3 py-2.5 text-xs text-muted-foreground">No employees found</p>
                   ) : (
                     replacingMatches.map(e => (
                       <button key={e.id} type="button" onMouseDown={() => pickReplacing(e)}
-                        className="w-full text-left px-3 py-2 text-xs hover:bg-amber-50 border-b last:border-0">
+                        className="w-full text-left px-3 py-2 text-xs hover:bg-primary/10 border-b last:border-0">
                         {e.fullName}
                       </button>
                     ))
@@ -242,31 +247,28 @@ export default function AddFreelanceModal({ editing, employees, onClose, onSaved
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Contract Until</label>
-            <input type="date" className="w-full h-10 border rounded-lg px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
+            <Label htmlFor="freelance-contract-until" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Contract Until</Label>
+            <Input id="freelance-contract-until" type="date" className="h-10"
               value={contractEndDate} onChange={e => setContractEndDate(e.target.value)} />
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Fee</label>
-            <div className="grid grid-cols-[1fr_120px] gap-1.5">
-              <RupiahInput value={fee} onChange={setFee} />
-              <select
-                value={feeType} onChange={e => setFeeType(e.target.value)}
-                className="h-9 border rounded-md px-2 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
-              >
+            <p id="freelance-fee-label" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide leading-none">Fee</p>
+            <div role="group" aria-labelledby="freelance-fee-label" className="grid grid-cols-[1fr_120px] gap-1.5">
+              <RupiahInput title="Fee amount" value={fee} onChange={setFee} />
+              <NativeSelect value={feeType} onChange={e => setFeeType(e.target.value)} aria-label="Fee type">
                 {FEE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-              </select>
+              </NativeSelect>
             </div>
           </div>
         </div>
-        <div className="flex items-center justify-end gap-2 px-6 py-4 border-t bg-gray-50/80">
-          <button onClick={onClose} className="px-4 py-2 text-sm border rounded-lg hover:bg-white transition-colors">Cancel</button>
-          <button onClick={save} disabled={saving} className="px-5 py-2 text-sm text-white rounded-lg font-semibold bg-amber-600 hover:bg-amber-700 disabled:opacity-50 transition-colors">
-            {saving ? 'Saving...' : editing ? 'Save Changes' : 'Add Freelance'}
-          </button>
-        </div>
-      </div>
-    </div>
+        <DialogFooter className="px-6 py-4 border-t bg-muted/50">
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={save} loading={saving} className="font-semibold">
+            {saving ? 'Saving…' : editing ? 'Save Changes' : 'Add Freelance'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }

@@ -67,7 +67,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       select: { id: true },
     })
     if (duplicate) {
-      return NextResponse.json({ error: `Agent dengan nama "${name.trim()}" sudah ada` }, { status: 409 })
+      return NextResponse.json({ error: `An agent named "${name.trim()}" already exists` }, { status: 409 })
     }
 
     const before = await db.agent.findUnique({ where: { id }, select: { isActive: true, note: true } })
@@ -111,8 +111,8 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     const wasDuplicate = before ? isDuplicateAgent(before) : false
     const isDuplicateNow = isDuplicateAgent(agent)
     if (!wasDuplicate && isDuplicateNow && agent.salespersonId) {
-      const title = 'Agent ditandai duplikat'
-      const notifBody = `${agent.name} yang kamu input ditandai sebagai duplikat dari agent yang sudah ada. Silakan cek dan hapus jika memang sama.`
+      const title = 'Agent flagged as duplicate'
+      const notifBody = `The agent ${agent.name} you entered was flagged as a duplicate of an existing agent. Please check and delete it if they are the same.`
       await db.notification.create({
         data: { userId: agent.salespersonId, type: 'AGENT_DUPLICATE_FLAGGED', title, body: notifBody },
       }).catch(() => {})

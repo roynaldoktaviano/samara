@@ -9,7 +9,8 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Badge } from '@/components/ui/badge'
+import { StatusBadge, type StatusTone } from '@/components/ui/status-badge'
+import { formatMoney } from '@/lib/format'
 import { Wrench, Plus, Edit, Search, AlertCircle, CheckCircle2, Clock } from 'lucide-react'
 
 interface MaintenanceTask {
@@ -47,23 +48,23 @@ export default function Maintenance() {
   })
 
   const getStatusBadge = (status: string) => {
-    const variants: Record<string, 'default' | 'secondary' | 'outline' | 'destructive'> = {
-      'scheduled': 'default',
-      'in_progress': 'secondary',
-      'completed': 'outline',
-      'cancelled': 'destructive',
+    const tones: Record<string, StatusTone> = {
+      'scheduled': 'warning',
+      'in_progress': 'info',
+      'completed': 'success',
+      'cancelled': 'neutral',
     }
     const icons: Record<string, React.ReactNode> = {
-      'scheduled': <Clock className="h-3 w-3 mr-1" />,
-      'in_progress': <AlertCircle className="h-3 w-3 mr-1" />,
-      'completed': <CheckCircle2 className="h-3 w-3 mr-1" />,
-      'cancelled': <AlertCircle className="h-3 w-3 mr-1" />,
+      'scheduled': <Clock className="h-3 w-3" />,
+      'in_progress': <AlertCircle className="h-3 w-3" />,
+      'completed': <CheckCircle2 className="h-3 w-3" />,
+      'cancelled': <AlertCircle className="h-3 w-3" />,
     }
     return (
-      <Badge variant={variants[status as keyof typeof variants] || 'default'} className="flex items-center">
+      <StatusBadge tone={tones[status] ?? 'neutral'}>
         {icons[status as keyof typeof icons]}
         {status.replace('-', ' ')}
-      </Badge>
+      </StatusBadge>
     )
   }
 
@@ -123,7 +124,7 @@ export default function Maintenance() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="description">Description</Label>
-                <Textarea id="description" placeholder="Describe the maintenance task..." rows={3} />
+                <Textarea id="description" placeholder="Describe the maintenance task…" rows={3} />
               </div>
             </div>
             <DialogFooter>
@@ -174,7 +175,7 @@ export default function Maintenance() {
             <Wrench className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">${totalCost.toLocaleString()}</div>
+            <div className="text-2xl font-bold">{formatMoney(totalCost, { currency: 'USD', decimals: 0 })}</div>
             <p className="text-xs text-muted-foreground">Maintenance expenses</p>
           </CardContent>
         </Card>
@@ -205,7 +206,7 @@ export default function Maintenance() {
           <div className="flex items-center gap-2 mb-4">
             <Search className="h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Search maintenance tasks..."
+              placeholder="Search maintenance tasks…"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="max-w-sm"
@@ -236,7 +237,7 @@ export default function Maintenance() {
                     <TableCell>{task.scheduledDate}</TableCell>
                     <TableCell>{getStatusBadge(task.status)}</TableCell>
                     <TableCell className="text-right font-medium">
-                      {task.cost ? `$${task.cost.toLocaleString()}` : '-'}
+                      {task.cost ? formatMoney(task.cost, { currency: 'USD', decimals: 0 }) : '-'}
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">

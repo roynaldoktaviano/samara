@@ -15,7 +15,7 @@ import { useEmailFonts } from '@/components/marketing/shared/useEmailFonts'
 import { AudienceSourceFields, emptyAudience, buildAudienceSources, audienceStateFromSources, type AudienceState, type YachtSummary } from '@/components/marketing/audiences/AudienceSourceFields'
 import { createBlock, renderBlocksToHtml, normalizeDesign, DEFAULT_EMAIL_SETTINGS, type EmailBlock, type EmailSettings } from '@/lib/email-builder'
 
-const ACCENT = '#bdac7e'
+const ACCENT = 'var(--primary)'
 const STEPS = ['Details', 'Design', 'Audience', 'Review'] as const
 
 interface TemplateSummary { id: string; name: string }
@@ -39,26 +39,26 @@ function EmailSenderCombobox({ senders, onPick }: {
   return (
     <div className="relative">
       <button type="button" onClick={() => { setOpen(o => !o); setSearch('') }}
-        className="w-full h-9 border rounded-md px-3 text-sm text-left flex items-center justify-between bg-white focus:outline-none focus:ring-1 focus:ring-[#bdac7e] transition-colors">
-        <span className="text-muted-foreground">Pick a saved sender...</span>
+        className="w-full h-9 border rounded-md px-3 text-sm text-left flex items-center justify-between bg-card focus:outline-none focus:ring-1 focus:ring-ring transition-colors">
+        <span className="text-muted-foreground">Pick a saved sender…</span>
         <Mail className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
       </button>
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute left-0 right-0 top-full mt-1 bg-white border rounded-lg shadow-xl z-50 max-h-60 flex flex-col">
+          <div className="absolute left-0 right-0 top-full mt-1 bg-popover border rounded-lg shadow-xl z-50 max-h-60 flex flex-col">
             <div className="p-2 border-b shrink-0">
               <div className="relative">
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
-                <input autoFocus className="w-full h-8 border rounded px-2.5 pl-8 text-sm focus:outline-none focus:ring-1 focus:ring-[#bdac7e]"
-                  placeholder="Search saved senders..." value={search} onChange={e => setSearch(e.target.value)} />
+                <input autoFocus className="w-full h-8 border rounded px-2.5 pl-8 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                  placeholder="Search saved senders…" value={search} onChange={e => setSearch(e.target.value)} />
               </div>
             </div>
             <div className="overflow-y-auto">
               {opts.length === 0 && <p className="px-3 py-3 text-sm text-muted-foreground">No matches</p>}
               {opts.map(s => (
                 <button key={s.id} type="button" onClick={() => { onPick(s); setOpen(false); setSearch('') }}
-                  className="w-full text-left px-3 py-2 text-sm hover:bg-[#bdac7e]/10 transition-colors">
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-primary/10 transition-colors">
                   <p className="font-medium">{s.fromName || s.fromEmail}</p>
                   <p className="text-xs text-muted-foreground">{s.fromEmail}</p>
                 </button>
@@ -387,7 +387,7 @@ export default function CampaignEditor({
             <button
               key={label}
               onClick={() => i < step && setStep(i)}
-              className={`px-3 py-1.5 rounded-md font-medium ${i === step ? 'text-white' : i < step ? 'text-muted-foreground hover:bg-gray-100' : 'text-gray-300 cursor-default'}`}
+              className={`px-3 py-1.5 rounded-md font-medium ${i === step ? 'text-primary-foreground' : i < step ? 'text-muted-foreground hover:bg-accent' : 'text-muted-foreground/70 cursor-default'}`}
               style={i === step ? { backgroundColor: ACCENT } : undefined}
             >
               {i + 1}. {label}
@@ -408,11 +408,11 @@ export default function CampaignEditor({
             {step === 0 && (
               <div className="p-6 max-w-xl mx-auto space-y-4">
                 <div className="space-y-1.5">
-                  <Label>Campaign name <span className="text-red-500">*</span></Label>
+                  <Label>Campaign name <span className="text-destructive">*</span></Label>
                   <Input value={name} onChange={e => setName(e.target.value)} placeholder="Internal name, e.g. July Promo" />
                 </div>
                 <div className="space-y-1.5">
-                  <Label>Subject <span className="text-red-500">*</span></Label>
+                  <Label>Subject <span className="text-destructive">*</span></Label>
                   <Input value={subject} onChange={e => setSubject(e.target.value)} placeholder="What recipients see as the subject line" />
                 </div>
                 <div className="space-y-1.5">
@@ -420,8 +420,8 @@ export default function CampaignEditor({
                   <Input value={previewText} onChange={e => setPreviewText(e.target.value)} placeholder="Shown after the subject in most inboxes" />
                   <p className={`text-[11px] ${
                     previewText.length === 0 ? 'text-muted-foreground'
-                      : previewText.length < 40 || previewText.length > 130 ? 'text-amber-600'
-                      : 'text-green-600'
+                      : previewText.length < 40 || previewText.length > 130 ? 'text-warning'
+                      : 'text-success'
                   }`}>
                     {previewText.length} characters — write a full sentence, ideally 40–130 characters. Too short and some inboxes (e.g. Gmail Promotions tab) will ignore it and show a snippet pulled from the email body instead.
                   </p>
@@ -434,7 +434,7 @@ export default function CampaignEditor({
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
-                    <Label>From email <span className="text-red-500">*</span></Label>
+                    <Label>From email <span className="text-destructive">*</span></Label>
                     <Input value={fromEmail} onChange={e => setFromEmail(e.target.value)} placeholder="marketing@samarayachting.com" />
                     <p className="text-[11px] text-muted-foreground">Must use a domain verified in Resend.</p>
                   </div>
@@ -457,7 +457,7 @@ export default function CampaignEditor({
                     <>
                       <Label className="text-xs shrink-0">Start from template</Label>
                       <Select onValueChange={applyTemplate}>
-                        <SelectTrigger className="h-8 text-sm max-w-xs"><SelectValue placeholder="Choose a template..." /></SelectTrigger>
+                        <SelectTrigger className="h-8 text-sm max-w-xs"><SelectValue placeholder="Choose a template…" /></SelectTrigger>
                         <SelectContent>
                           {templates.map(t => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
                         </SelectContent>
@@ -500,7 +500,7 @@ export default function CampaignEditor({
                 <div className="flex items-center gap-2 flex-wrap">
                   {savedAudiences.length > 0 && (
                     <Select onValueChange={loadAudienceSegment}>
-                      <SelectTrigger className="h-8 text-xs w-56"><SelectValue placeholder="Load a saved audience..." /></SelectTrigger>
+                      <SelectTrigger className="h-8 text-xs w-56"><SelectValue placeholder="Load a saved audience…" /></SelectTrigger>
                       <SelectContent>
                         {savedAudiences.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
                       </SelectContent>
@@ -517,7 +517,7 @@ export default function CampaignEditor({
                 <div className="flex items-center gap-2 text-sm bg-muted/40 rounded-lg p-3">
                   <Users className="h-4 w-4" style={{ color: ACCENT }} />
                   {audienceLoading ? (
-                    <span className="text-muted-foreground">Calculating audience...</span>
+                    <span className="text-muted-foreground">Calculating audience…</span>
                   ) : (
                     <span><strong>{audienceCount ?? 0}</strong> recipient{audienceCount === 1 ? '' : 's'} (deduplicated, unsubscribed excluded)</span>
                   )}
@@ -559,7 +559,7 @@ export default function CampaignEditor({
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <Button onClick={sendNow} disabled={sending || saving} style={{ backgroundColor: ACCENT, color: 'white' }} className="hover:opacity-90">
+                  <Button onClick={sendNow} disabled={sending || saving} className="bg-primary text-primary-foreground hover:bg-primary-hover">
                     {sending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Send className="h-4 w-4 mr-2" />}
                     Send Now
                   </Button>
@@ -577,7 +577,7 @@ export default function CampaignEditor({
             <ChevronLeft className="h-4 w-4 mr-1" /> Back
           </Button>
           {step < STEPS.length - 1 && (
-            <Button size="sm" onClick={next} style={{ backgroundColor: ACCENT, color: 'white' }} className="hover:opacity-90">
+            <Button size="sm" onClick={next} className="bg-primary text-primary-foreground hover:bg-primary-hover">
               Next <ChevronRight className="h-4 w-4 ml-1" />
             </Button>
           )}
@@ -591,7 +591,7 @@ export default function CampaignEditor({
           </DialogHeader>
           <form className="space-y-3" onSubmit={e => { e.preventDefault(); saveAsNewTemplate() }}>
             <div className="space-y-1.5">
-              <Label>Template name <span className="text-red-500">*</span></Label>
+              <Label>Template name <span className="text-destructive">*</span></Label>
               <Input autoFocus value={templateName} onChange={e => setTemplateName(e.target.value)} placeholder="e.g. Mischief Raja Ampat" />
             </div>
             <div className="space-y-1.5">
@@ -601,7 +601,7 @@ export default function CampaignEditor({
             <p className="text-[11px] text-muted-foreground">Reusable on other campaigns and automations. Later edits here can be saved back to this template.</p>
             <DialogFooter>
               <Button type="button" variant="outline" size="sm" onClick={() => setTemplateDialogOpen(false)} disabled={savingTemplate}>Cancel</Button>
-              <Button type="submit" size="sm" disabled={savingTemplate || !templateName.trim()} style={{ backgroundColor: ACCENT, color: 'white' }} className="hover:opacity-90">
+              <Button type="submit" size="sm" disabled={savingTemplate || !templateName.trim()} className="bg-primary text-primary-foreground hover:bg-primary-hover">
                 {savingTemplate && <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />}
                 Save Template
               </Button>

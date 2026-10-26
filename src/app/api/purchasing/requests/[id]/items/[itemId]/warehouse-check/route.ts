@@ -51,12 +51,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     return NextResponse.json({ error: 'Item was rejected — no stock check needed' }, { status: 409 })
   }
   if (!request.deliveryLocationId) {
-    return NextResponse.json({ error: 'PR tidak punya delivery location — tidak bisa transfer dari stok' }, { status: 409 })
+    return NextResponse.json({ error: 'PR has no delivery location — cannot transfer from stock' }, { status: 409 })
   }
-  if (!fromLocationId) return NextResponse.json({ error: 'Pilih lokasi asal stok' }, { status: 400 })
+  if (!fromLocationId) return NextResponse.json({ error: 'Select a source stock location' }, { status: 400 })
   const fromLocation = await db.stockLocation.findUnique({ where: { id: fromLocationId }, select: { id: true, type: true } })
   if (!fromLocation || fromLocation.type !== 'WAREHOUSE' || fromLocationId === request.deliveryLocationId) {
-    return NextResponse.json({ error: 'Lokasi asal tidak valid' }, { status: 400 })
+    return NextResponse.json({ error: 'Invalid source location' }, { status: 400 })
   }
 
   const catalogItemId = existingItem.itemId
@@ -119,8 +119,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       await db.purchaseRequest.update({ where: { id }, data: { status: 'ON_PROCESS', updatedAt: new Date() } })
     }
     await notifyPurchasingForRequest(
-      db, request.division ?? null, 'PR_FORWARDED_FROM_WAREHOUSE', 'Item kosong di gudang',
-      `${request.prNumber} — ${existingItem.itemName} tidak ada di gudang, perlu dibelikan langsung ke kapal.`,
+      db, request.division ?? null, 'PR_FORWARDED_FROM_WAREHOUSE', 'Item out of stock in warehouse',
+      `${request.prNumber} — ${existingItem.itemName} is not available in the warehouse and needs to be purchased directly for the vessel.`,
       id,
     )
   }

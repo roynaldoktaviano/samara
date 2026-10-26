@@ -4,13 +4,14 @@ import { useState, useEffect, useCallback } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Anchor, Calendar, Users, DollarSign, X,
   TrendingUp, AlertCircle, Ship,
 } from 'lucide-react'
 import { getEffectiveBookingStatus } from '@/lib/booking-status'
+import { formatDate, formatDateRange, formatMoney } from '@/lib/format'
+import { BookingStatusBadge } from '@/components/ui/status-badge'
 
 /* ── types ── */
 interface BookingRecord {
@@ -34,28 +35,9 @@ interface BookingRecord {
 }
 
 /* ── helpers ── */
-const ACCENT = '#bdac7e'
+const ACCENT = 'var(--primary)'
 
 const today = () => new Date().toISOString().split('T')[0]
-
-const fmtDate = (d: string) =>
-  new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
-
-const fmtMoney = (n: number) =>
-  `$${n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
-
-const STATUS_STYLES: Record<string, string> = {
-  pending:        'bg-amber-100   text-amber-700   border-amber-200',
-  partially_paid: 'bg-blue-100    text-blue-700    border-blue-200',
-  fully_paid:     'bg-emerald-100 text-emerald-700 border-emerald-200',
-  on_trip:        'bg-slate-100   text-slate-600   border-slate-200',
-  completed:      'bg-slate-100   text-slate-600   border-slate-200',
-  cancelled:      'bg-red-100     text-red-700     border-red-200',
-}
-const STATUS_LABELS: Record<string, string> = {
-  pending: 'Pending', partially_paid: 'Partially Paid',
-  fully_paid: 'Fully Paid', on_trip: 'On Trip', completed: 'Completed', cancelled: 'Cancelled',
-}
 
 /* filter: does booking overlap with [from, to]? */
 function overlaps(b: BookingRecord, from: string, to: string) {
@@ -144,8 +126,8 @@ export default function Dashboard() {
   const isToday = dateFrom === today() && dateTo === today()
   const isSingleDay = dateFrom === dateTo
   const filterLabel = isSingleDay
-    ? fmtDate(dateFrom)
-    : `${fmtDate(dateFrom)} – ${fmtDate(dateTo)}`
+    ? formatDate(dateFrom, 'medium', { utc: true })
+    : formatDateRange(dateFrom, dateTo, { utc: true })
 
   return (
     <div className="space-y-6">
@@ -165,10 +147,11 @@ export default function Dashboard() {
           {['today', 'week', 'month', 'next30'].map(p => (
             <button
               key={p}
+              type="button"
               onClick={() => applyPreset(p)}
               className="text-xs px-2.5 py-1 rounded-lg border transition-colors hover:bg-muted"
               style={
-                (p === 'today' && isToday) ? { backgroundColor: ACCENT, borderColor: ACCENT, color: 'white' } : {}
+                (p === 'today' && isToday) ? { backgroundColor: ACCENT, borderColor: ACCENT, color: 'var(--primary-foreground)' } : {}
               }
             >
               {p === 'today' ? 'Today' : p === 'week' ? 'This Week' : p === 'month' ? 'This Month' : '30 Days'}
@@ -176,13 +159,15 @@ export default function Dashboard() {
           ))}
 
           {/* Mode toggle */}
-          <div className="flex rounded-lg border overflow-hidden text-xs">
+          <div role="group" aria-label="Date filter mode" className="flex rounded-lg border overflow-hidden text-xs">
             {(['single', 'range'] as const).map(m => (
               <button
                 key={m}
+                type="button"
+                aria-pressed={mode === m}
                 onClick={() => setMode(m)}
                 className="px-3 py-1 transition-colors"
-                style={mode === m ? { backgroundColor: ACCENT, color: 'white' } : { color: '#6b7280' }}
+                style={mode === m ? { backgroundColor: ACCENT, color: 'var(--primary-foreground)' } : { color: 'var(--muted-foreground)' }}
               >
                 {m === 'single' ? 'Single' : 'Range'}
               </button>
@@ -193,6 +178,7 @@ export default function Dashboard() {
           <div className="flex items-center gap-1">
             <Input
               type="date"
+              aria-label={mode === 'range' ? 'From date' : 'Date'}
               value={dateFrom}
               onChange={e => setDateFrom(e.target.value)}
               className="h-8 text-xs w-32 sm:w-36"
@@ -202,6 +188,7 @@ export default function Dashboard() {
                 <span className="text-muted-foreground text-xs">–</span>
                 <Input
                   type="date"
+                  aria-label="To date"
                   value={dateTo}
                   min={dateFrom}
                   onChange={e => setDateTo(e.target.value)}
@@ -213,9 +200,9 @@ export default function Dashboard() {
 
           {/* Clear */}
           {!isToday && (
-            <button onClick={clearFilter} className="h-8 w-8 flex items-center justify-center rounded-lg border hover:bg-muted text-muted-foreground">
-              <X className="h-3.5 w-3.5" />
-            </button>
+            <Button type="button" variant="outline" size="icon" onClick={clearFilter} aria-label="Clear date filter" className="size-8 text-muted-foreground">
+              <X className="size-3.5" />
+            </Button>
           )}
         </div>
       </div>
@@ -226,18 +213,18 @@ export default function Dashboard() {
           {
             title: 'Active Trips',
             value: loading ? '—' : String(activeCount),
-            sub: isSingleDay ? `on ${fmtDate(dateFrom)}` : 'in this range',
+            sub: isSingleDay ? `on ${formatDate(dateFrom, 'medium', { utc: true })}` : 'in this range',
             icon: <Ship className="h-4 w-4 text-muted-foreground" />,
           },
           {
             title: 'Total Revenue',
-            value: loading ? '—' : fmtMoney(totalRevenue),
-            sub: `${fmtMoney(totalPaid)} paid`,
+            value: loading ? '—' : formatMoney(totalRevenue, { currency: 'USD', decimals: 0 }),
+            sub: `${formatMoney(totalPaid, { currency: 'USD', decimals: 0 })} paid`,
             icon: <DollarSign className="h-4 w-4 text-muted-foreground" />,
           },
           {
             title: 'Outstanding',
-            value: loading ? '—' : fmtMoney(outstanding),
+            value: loading ? '—' : formatMoney(outstanding, { currency: 'USD', decimals: 0 }),
             sub: outstanding > 0 ? 'unpaid balance' : 'all settled ✓',
             icon: <TrendingUp className="h-4 w-4 text-muted-foreground" />,
             accent: outstanding > 0,
@@ -249,7 +236,7 @@ export default function Dashboard() {
             icon: <Users className="h-4 w-4 text-muted-foreground" />,
           },
         ].map(card => (
-          <Card key={card.title} className={card.accent ? 'border-amber-200' : ''}>
+          <Card key={card.title} className={card.accent ? 'border-warning/30' : ''}>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">{card.title}</CardTitle>
               {card.icon}
@@ -257,7 +244,7 @@ export default function Dashboard() {
             <CardContent>
               {loading
                 ? <Skeleton className="h-7 w-24 mb-1" />
-                : <div className="text-2xl font-bold" style={card.accent && outstanding > 0 ? { color: '#d97706' } : {}}>{card.value}</div>}
+                : <div className="text-2xl font-bold" style={card.accent && outstanding > 0 ? { color: 'var(--warning)' } : {}}>{card.value}</div>}
               <p className="text-xs text-muted-foreground">{card.sub}</p>
             </CardContent>
           </Card>
@@ -303,7 +290,7 @@ export default function Dashboard() {
                   <div key={b.id} className="flex items-start sm:items-center gap-3 rounded-xl border px-3 sm:px-4 py-3 hover:bg-muted/30 transition-colors">
                     {/* Icon */}
                     <div className="flex h-8 w-8 sm:h-9 sm:w-9 shrink-0 items-center justify-center rounded-full mt-0.5 sm:mt-0"
-                      style={{ backgroundColor: `${ACCENT}20` }}>
+                      style={{ backgroundColor: 'color-mix(in srgb, var(--primary) 12%, transparent)' }}>
                       {b.tripType === 'OPEN_TRIP'
                         ? <Anchor className="h-4 w-4" style={{ color: ACCENT }} />
                         : <Ship className="h-4 w-4" style={{ color: ACCENT }} />}
@@ -321,29 +308,27 @@ export default function Dashboard() {
                         <span className="hidden sm:inline">·</span>
                         <span className="hidden sm:flex items-center gap-1"><Users className="h-3 w-3" /> {b.guestCount} guests</span>
                         <span className="hidden sm:inline">·</span>
-                        <span>{fmtDate(b.startDate)} – {fmtDate(b.endDate)}</span>
+                        <span>{formatDateRange(b.startDate, b.endDate, { utc: true })}</span>
                         {b.agent && <><span className="hidden sm:inline">·</span><span className="hidden sm:inline">via {b.agent.name}</span></>}
                       </div>
                     </div>
 
                     {/* Financial + Status stacked on mobile */}
                     <div className="text-right shrink-0 flex flex-col items-end gap-1">
-                      <div className="font-semibold text-sm">{fmtMoney(b.totalPrice)}</div>
+                      <div className="font-semibold text-sm">{formatMoney(b.totalPrice, { currency: 'USD', decimals: 0 })}</div>
                       {!isFullyPaid && remaining > 0 && (
-                        <div className="flex items-center gap-1 text-xs text-amber-600">
+                        <div className="flex items-center gap-1 text-xs text-warning">
                           <AlertCircle className="h-3 w-3" />
-                          <span className="hidden sm:inline">bal </span>{fmtMoney(remaining)}
+                          <span className="hidden sm:inline">bal </span>{formatMoney(remaining, { currency: 'USD', decimals: 0 })}
                         </div>
                       )}
                       {isFullyPaid && (
-                        <div className="text-xs text-emerald-600">Settled ✓</div>
+                        <div className="text-xs text-success">Settled ✓</div>
                       )}
                       {(() => {
                         const effStatus = getEffectiveBookingStatus(b.status, b.startDate, b.endDate)
                         return (
-                          <Badge variant="outline" className={`text-xs ${STATUS_STYLES[effStatus] ?? ''}`}>
-                            {STATUS_LABELS[effStatus] ?? effStatus}
-                          </Badge>
+                          <BookingStatusBadge status={effStatus} />
                         )
                       })()}
                     </div>

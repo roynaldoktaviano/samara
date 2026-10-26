@@ -6,6 +6,7 @@ import { Loader2, Image as ImageIcon, Heart, Reply, X, ArrowLeft, AlertCircle, C
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { isHttpUrl } from '@/lib/url-safety'
 import { WHATSAPP_BRAND_LABELS, type WhatsappBrand } from '@/lib/whatsapp-brands'
+import { formatDate } from '@/lib/format'
 
 const IG_BLUE = '#3897F0'
 const MESSENGER_BLUE = '#0866FF'
@@ -36,9 +37,6 @@ interface ConversationDetail {
 function initials(name: string | null, username: string | null) {
   if (name?.trim()) return name.trim().split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase()
   return (username ?? '?').slice(0, 2).toUpperCase()
-}
-function fmtTime(iso: string) {
-  return new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
 }
 function quoteSnippet(q: QuotedMessage) {
   if (q.body) return q.body
@@ -122,8 +120,8 @@ export default function InstagramThread({ conversationId, onConversationUpdate, 
   }
 
   return (
-    <div className="flex-1 flex flex-col min-w-0 bg-white">
-      <div className="px-3 md:px-5 py-3 border-b bg-white flex items-center gap-3 shrink-0">
+    <div className="flex-1 flex flex-col min-w-0 bg-card">
+      <div className="px-3 md:px-5 py-3 border-b bg-card flex items-center gap-3 shrink-0">
         {onBack && (
           <button onClick={onBack} title="Back to chats" className="md:hidden -ml-1 h-8 w-8 shrink-0 rounded-full flex items-center justify-center hover:bg-muted">
             <ArrowLeft className="h-5 w-5" />
@@ -158,10 +156,10 @@ export default function InstagramThread({ conversationId, onConversationUpdate, 
               </button>
             )}
             <div className={`max-w-[65%] flex flex-col ${m.direction === 'OUT' ? 'items-end' : 'items-start'}`}>
-            <div className={`rounded-3xl px-4 py-2 text-sm ${m.direction === 'OUT' ? 'text-white' : 'bg-[#EFEFEF] text-foreground'} ${m.status === 'FAILED' ? 'opacity-60' : ''}`}
+            <div className={`rounded-3xl px-4 py-2 text-sm ${m.direction === 'OUT' ? 'text-white' : 'bg-muted text-foreground'} ${m.status === 'FAILED' ? 'opacity-60' : ''}`}
               style={m.direction === 'OUT' ? { backgroundColor: accent } : undefined}>
               {m.replyTo && (
-                <div className={`rounded-2xl px-3 py-1.5 mb-1.5 border-l-2 text-xs ${m.direction === 'OUT' ? 'bg-black/15 border-white/50 text-white/80' : 'bg-black/5 border-[#3897F0] text-muted-foreground'}`}>
+                <div className={`rounded-2xl px-3 py-1.5 mb-1.5 border-l-2 text-xs ${m.direction === 'OUT' ? 'bg-black/15 border-white/50 text-white/80' : 'bg-foreground/5 border-[#3897F0] text-muted-foreground'}`}>
                   <p className="font-medium">{m.replyTo.direction === 'OUT' ? 'You' : contactName}</p>
                   <p className="truncate">{quoteSnippet(m.replyTo)}</p>
                 </div>
@@ -174,7 +172,7 @@ export default function InstagramThread({ conversationId, onConversationUpdate, 
               {m.body && <p className="whitespace-pre-wrap break-words">{m.body}</p>}
             </div>
             {m.status === 'FAILED' ? (
-              <p className="flex items-center gap-1 text-[11px] text-red-600 mt-0.5 px-1" title={m.errorMessage ?? undefined}>
+              <p className="flex items-center gap-1 text-[11px] text-destructive mt-0.5 px-1" title={m.errorMessage ?? undefined}>
                 <AlertCircle className="h-3 w-3 shrink-0" />Not sent{m.errorMessage ? ` — ${m.errorMessage}` : ''}
               </p>
             ) : m.direction === 'OUT' && m.sentByName ? (
@@ -193,14 +191,14 @@ export default function InstagramThread({ conversationId, onConversationUpdate, 
         ))}
         {detail?.messages.length ? (
           <p className="text-[10px] text-muted-foreground text-right pr-1 pt-1">
-            {fmtTime(detail.messages[detail.messages.length - 1].createdAt)}
+            {formatDate(detail.messages[detail.messages.length - 1].createdAt, 'time')}
           </p>
         ) : null}
       </div>
 
-      <div className="border-t bg-white shrink-0">
+      <div className="border-t bg-card shrink-0">
         {replyWindow && (
-          <p className={`flex items-center gap-1.5 px-4 pt-2 text-xs ${replyWindow === 'closed' ? 'text-red-600' : 'text-amber-700'}`}>
+          <p className={`flex items-center gap-1.5 px-4 pt-2 text-xs ${replyWindow === 'closed' ? 'text-destructive' : 'text-warning'}`}>
             <Clock className="h-3.5 w-3.5 shrink-0" />
             {replyWindow === 'closed'
               ? "Customer's last message was over 7 days ago — Meta won't deliver a reply until they message again."
@@ -230,7 +228,7 @@ export default function InstagramThread({ conversationId, onConversationUpdate, 
           <input
             className="flex-1 h-10 rounded-full border px-4 text-sm focus:outline-none focus:ring-1"
             style={{ '--tw-ring-color': accent } as React.CSSProperties}
-            placeholder="Message..."
+            placeholder="Message…"
             value={draft}
             onChange={e => setDraft(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); sendMessage() } }}

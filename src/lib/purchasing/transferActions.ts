@@ -96,7 +96,7 @@ export async function receiveTransferLeg(db: Db, transferId: string, params: {
 }): Promise<{ ok: true } | { ok: false; error: string; status: number }> {
   const transfer = await db.stockTransfer.findUnique({ where: { id: transferId }, include: { items: true } })
   if (!transfer) return { ok: false, error: 'Not found', status: 404 }
-  if (transfer.status !== 'DISPATCHED') return { ok: false, error: 'Transfer belum dikirim', status: 409 }
+  if (transfer.status !== 'DISPATCHED') return { ok: false, error: 'Transfer has not been dispatched yet', status: 409 }
   if (!params.receivePhotoKey) return { ok: false, error: 'Receipt photo is required', status: 400 }
 
   const [toLoc, fromLoc] = await Promise.all([
@@ -233,8 +233,8 @@ export async function receiveTransferLeg(db: Db, transferId: string, params: {
   } else if (transfer.purchaseRequestId && !transfer.purchaseOrderId) {
     notifyRequester(db, transfer.purchaseRequestId, {
       type: 'PR_TRANSFER_RECEIVED',
-      title: 'Barang dari gudang sudah sampai',
-      body: `${transfer.transferNumber} (dari stok gudang) sudah diterima di ${toLoc?.name ?? 'lokasi tujuan'}.`,
+      title: 'Warehouse items have arrived',
+      body: `${transfer.transferNumber} (from warehouse stock) has been received at ${toLoc?.name ?? 'the destination'}.`,
       skipUserId: params.receivedById ?? undefined,
     }).catch(console.error)
   }

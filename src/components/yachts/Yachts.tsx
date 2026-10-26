@@ -18,15 +18,14 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table'
-import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
+import { useConfirm } from '@/components/ui/confirm-dialog'
+import { toast } from 'sonner'
 import { Switch } from '@/components/ui/switch'
-import { Plus, Search, Anchor, ChevronDown, ChevronUp, Trash2, BedDouble, ChevronRight, Pencil, RotateCw, FileText, X, DollarSign, KeyRound } from 'lucide-react'
+import { Plus, Search, Anchor, ChevronDown, ChevronUp, Trash2, BedDouble, ChevronRight, Pencil, RotateCw, FileText, DollarSign, KeyRound } from 'lucide-react'
 import LegalDocumentsPanel from '@/components/hr/LegalDocumentsPanel'
 import YachtPricingPage from '@/components/yachts/YachtPricingPage'
 import CashierPinDialog from '@/components/yachts/CashierPinDialog'
+import { formatMoney } from '@/lib/format'
 
 interface PricingTier { nights: number; price: number }
 // destinationId: null = fallback rate applying regardless of destination (the original
@@ -93,7 +92,7 @@ const BED_TYPES = ['Single', 'Double', 'Twin', 'Queen', 'King', 'Bunk']
 const DECKS     = ['Upper Deck', 'Main Deck', 'Lower Deck', 'Flybridge']
 
 
-const ACCENT = '#bdac7e'
+const ACCENT = 'var(--primary)'
 const STEPS  = ['Boat Info', 'Rooms & Cabins', 'Destinations & Pricing']
 
 export default function Yachts() {
@@ -105,7 +104,6 @@ export default function Yachts() {
   const [searchTerm,   setSearch]       = useState('')
   const [dialogOpen,   setDialogOpen]   = useState(false)
   const [editTarget,   setEditTarget]   = useState<YachtRecord | null>(null)
-  const [deleteTarget, setDeleteTarget] = useState<YachtRecord | null>(null)
   const [expandedId,   setExpandedId]   = useState<string | null>(null)
   const [submitting,   setSubmitting]   = useState(false)
   const [formStep,     setFormStep]     = useState(1)
@@ -113,6 +111,7 @@ export default function Yachts() {
   const [docsTarget,   setDocsTarget]   = useState<YachtRecord | null>(null)
   const [pricingYacht, setPricingYacht] = useState<YachtRecord | null>(null)
   const [pinYacht,     setPinYacht]     = useState<YachtRecord | null>(null)
+  const confirm = useConfirm()
 
   /* form state */
   const [name,        setName]    = useState('')
@@ -337,19 +336,22 @@ export default function Yachts() {
     finally { setSubmitting(false) }
   }
 
-  const handleDelete = async () => {
-    if (!deleteTarget) return
+  const handleDelete = async (target: YachtRecord) => {
+    if (!(await confirm({
+      title: `Delete ${target.name}?`,
+      description: 'This cannot be undone. The yacht and all its cabin definitions will be permanently removed. Existing bookings referencing this yacht will block deletion.',
+      destructive: true,
+    }))) return
     setSubmitting(true)
     try {
-      const res = await fetch(`/api/yachts/${deleteTarget.id}`, { method: 'DELETE' })
+      const res = await fetch(`/api/yachts/${target.id}`, { method: 'DELETE' })
       if (res.ok) {
         await fetchYachts()
-        setDeleteTarget(null)
       } else {
-        const j = await res.json()
-        alert(j.error ?? 'Delete failed')
+        const j = await res.json().catch(() => ({}))
+        toast.error(j.error ?? 'Delete failed')
       }
-    } catch { alert('Network error') }
+    } catch { toast.error('Network error') }
     finally { setSubmitting(false) }
   }
 
@@ -364,31 +366,31 @@ export default function Yachts() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1">
             <h3 className="text-2xl font-bold tracking-tight">Yachts</h3>
-            <button onClick={() => fetchYachts()} title="Refresh" className="text-muted-foreground hover:text-foreground transition-colors mt-0.5">
+            <Button variant="ghost" size="icon" className="size-8 mt-0.5 text-muted-foreground hover:text-foreground" onClick={() => fetchYachts()} title="Refresh" aria-label="Refresh">
               <RotateCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-            </button>
+            </Button>
           </div>
           <p className="text-sm text-muted-foreground">Manage your fleet and cabins</p>
         </div>
         {canEdit && (
-          <Button style={{ backgroundColor: ACCENT, color: 'white' }} className="hover:opacity-90" onClick={openAdd}>
-            <Plus className="mr-2 h-4 w-4" /> Add Yacht
+          <Button onClick={openAdd}>
+            <Plus className="h-4 w-4" /> Add Yacht
           </Button>
         )}
       </div>
 
       {/* ── Add / Edit Dialog ── */}
       <Dialog open={dialogOpen} onOpenChange={v => { setDialogOpen(v); if (!v) resetForm() }}>
-        <DialogContent className="sm:max-w-5xl flex flex-col max-h-[92vh] overflow-hidden gap-0 p-0">
-          <DialogHeader className="shrink-0 px-6 pt-5 pb-4 border-b">
+        <DialogContent className="sm:max-w-5xl flex flex-col max-h-[92vh] overflow-hidden gap-0 p-0" aria-describedby={undefined} onInteractOutside={e => e.preventDefault()}>
+          <DialogHeader className="shrink-0 px-6 pt-5 pb-4 pr-12 border-b text-left">
             <DialogTitle className="text-lg">{editTarget ? `Edit — ${editTarget.name}` : 'Add New Yacht'}</DialogTitle>
 
             {/* Step indicator */}
-            <div className="flex items-center gap-0 mt-3">
+            <div className="flex flex-wrap items-center gap-y-2 mt-3">
               {STEPS.map((label, i) => {
                 const n = i + 1
                 const done   = formStep > n
@@ -400,8 +402,8 @@ export default function Yachts() {
                         className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 transition-colors"
                         style={{
                           backgroundColor: done || active ? ACCENT : undefined,
-                          border: `2px solid ${done || active ? ACCENT : '#d1d5db'}`,
-                          color:  done || active ? 'white' : '#9ca3af',
+                          border: `2px solid ${done || active ? ACCENT : 'var(--border)'}`,
+                          color:  done || active ? 'var(--primary-foreground)' : 'var(--muted-foreground)',
                         }}
                       >
                         {n}
@@ -424,48 +426,48 @@ export default function Yachts() {
 
               {/* ── Step 1: Boat Info ── */}
               {formStep === 1 && (
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="col-span-2 space-y-1.5">
-                    <Label>Boat Name <span className="text-destructive">*</span></Label>
-                    <Input placeholder="e.g. Samara I" value={name} onChange={e => setName(e.target.value)} />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="sm:col-span-2 space-y-1.5">
+                    <Label htmlFor="yacht-name">Boat Name <span className="text-destructive">*</span></Label>
+                    <Input id="yacht-name" placeholder="e.g. Samara I" value={name} onChange={e => setName(e.target.value)} />
                   </div>
                   <div className="space-y-1.5">
-                    <Label>Model / Type</Label>
-                    <Input placeholder="e.g. Custom Phinisi" value={model} onChange={e => setModel(e.target.value)} />
+                    <Label htmlFor="yacht-model">Model / Type</Label>
+                    <Input id="yacht-model" placeholder="e.g. Custom Phinisi" value={model} onChange={e => setModel(e.target.value)} />
                   </div>
                   <div className="space-y-1.5">
-                    <Label>Build Year</Label>
-                    <Input type="number" placeholder="2020" value={year} onChange={e => setYear(e.target.value)} />
+                    <Label htmlFor="yacht-year">Build Year</Label>
+                    <Input id="yacht-year" type="number" placeholder="2020" value={year} onChange={e => setYear(e.target.value)} />
                   </div>
                   <div className="space-y-1.5">
-                    <Label>Length (m)</Label>
-                    <Input type="number" placeholder="27" value={length} onChange={e => setLen(e.target.value)} />
+                    <Label htmlFor="yacht-length">Length (m)</Label>
+                    <Input id="yacht-length" type="number" placeholder="27" value={length} onChange={e => setLen(e.target.value)} />
                   </div>
                   <div className="space-y-1.5">
-                    <Label>Max Capacity (pax) <span className="text-destructive">*</span></Label>
-                    <Input type="number" placeholder="12" value={capacity} onChange={e => setCap(e.target.value)} />
+                    <Label htmlFor="yacht-capacity">Max Capacity (pax) <span className="text-destructive">*</span></Label>
+                    <Input id="yacht-capacity" type="number" placeholder="12" value={capacity} onChange={e => setCap(e.target.value)} />
                   </div>
                   <div className="space-y-1.5">
-                    <Label>Private Charter Rate (USD/night) <span className="text-destructive">*</span></Label>
-                    <Input type="number" placeholder="3500" value={dailyRate} onChange={e => setDaily(e.target.value)} />
+                    <Label htmlFor="yacht-daily-rate">Private Charter Rate (USD/night) <span className="text-destructive">*</span></Label>
+                    <Input id="yacht-daily-rate" type="number" placeholder="3500" value={dailyRate} onChange={e => setDaily(e.target.value)} />
                   </div>
-                  <div className="col-span-2 space-y-1.5">
-                    <Label>Description</Label>
-                    <Textarea placeholder="About this yacht..." value={description} onChange={e => setDesc(e.target.value)} rows={3} />
+                  <div className="sm:col-span-2 space-y-1.5">
+                    <Label htmlFor="yacht-description">Description</Label>
+                    <Textarea id="yacht-description" placeholder="About this yacht…" value={description} onChange={e => setDesc(e.target.value)} rows={3} />
                   </div>
-                  <div className="col-span-2 flex items-center justify-between rounded-lg border px-4 py-3">
+                  <div className="sm:col-span-2 flex items-center justify-between gap-3 rounded-lg border px-4 py-3">
                     <div>
-                      <Label>Can Diving</Label>
+                      <Label htmlFor="yacht-can-diving">Can Diving</Label>
                       <p className="text-xs text-muted-foreground mt-0.5">This vessel can be used for diving activities</p>
                     </div>
-                    <Switch checked={canDiving} onCheckedChange={setCanDiving} />
+                    <Switch id="yacht-can-diving" checked={canDiving} onCheckedChange={setCanDiving} />
                   </div>
-                  <div className="col-span-2 flex items-center justify-between rounded-lg border px-4 py-3">
+                  <div className="sm:col-span-2 flex items-center justify-between gap-3 rounded-lg border px-4 py-3">
                     <div>
-                      <Label>Can Surfing</Label>
+                      <Label htmlFor="yacht-can-surfing">Can Surfing</Label>
                       <p className="text-xs text-muted-foreground mt-0.5">This vessel can be used for surfing activities</p>
                     </div>
-                    <Switch checked={canSurfing} onCheckedChange={setCanSurfing} />
+                    <Switch id="yacht-can-surfing" checked={canSurfing} onCheckedChange={setCanSurfing} />
                   </div>
                 </div>
               )}
@@ -476,18 +478,19 @@ export default function Yachts() {
                 return (
                 <div className="space-y-4">
                   {/* Section header */}
-                  <div className="flex items-start justify-between gap-3">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
                       <p className="text-sm font-medium">Rooms &amp; Cabins</p>
                       <p className="text-xs text-muted-foreground mt-0.5">
                         Set per-cabin price, bed type, and capacity for <span className="font-semibold">{name}</span>.
                       </p>
                     </div>
-                    <div className="flex items-center gap-2 shrink-0">
+                    <div className="flex flex-wrap items-center gap-2">
                       {addingTier ? (
                         <div className="flex items-center gap-1.5 border rounded-lg px-2 py-1 bg-muted/30">
-                          <span className="text-[11px] text-muted-foreground shrink-0">Days:</span>
+                          <label htmlFor="yacht-new-tier-days" className="text-[11px] text-muted-foreground shrink-0">Days:</label>
                           <Input
+                            id="yacht-new-tier-days"
                             autoFocus
                             className="h-6 w-12 text-xs border-0 shadow-none focus-visible:ring-0 bg-transparent px-1 text-center"
                             type="number" min="2" placeholder="6"
@@ -495,16 +498,16 @@ export default function Yachts() {
                             onChange={e => setNewTierDays(e.target.value)}
                             onKeyDown={e => { if (e.key === 'Enter') addTier(); if (e.key === 'Escape') { setAddingTier(false); setNewTierDays('') } }}
                           />
-                          <button type="button" onClick={addTier} className="text-[11px] font-semibold px-1.5 py-0.5 rounded bg-[#bdac7e] text-white hover:opacity-90">Add</button>
-                          <button type="button" onClick={() => { setAddingTier(false); setNewTierDays('') }} className="text-[11px] text-muted-foreground hover:text-foreground px-1">✕</button>
+                          <Button type="button" size="sm" onClick={addTier} className="h-6 px-1.5 rounded text-[11px] font-semibold">Add</Button>
+                          <button type="button" aria-label="Cancel adding duration" onClick={() => { setAddingTier(false); setNewTierDays('') }} className="text-[11px] text-muted-foreground hover:text-foreground px-1">✕</button>
                         </div>
                       ) : (
                         <Button type="button" variant="outline" size="sm" onClick={() => setAddingTier(true)}>
-                          <Plus className="w-3.5 h-3.5 mr-1" /> Duration
+                          <Plus className="w-3.5 h-3.5" /> Duration
                         </Button>
                       )}
                       <Button type="button" variant="outline" size="sm" onClick={addRoom}>
-                        <Plus className="w-3.5 h-3.5 mr-1.5" /> Add Room
+                        <Plus className="w-3.5 h-3.5" /> Add Room
                       </Button>
                     </div>
                   </div>
@@ -512,10 +515,10 @@ export default function Yachts() {
                   {/* Rate card destination view — the grid below always edits whichever
                       destination is picked here. "Default" is the fallback rate used when
                       a destination has no override of its own. */}
-                  <div className="flex items-center gap-2 rounded-lg border bg-muted/20 px-3 py-2">
-                    <Label className="text-xs shrink-0">Rates for</Label>
+                  <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/20 px-3 py-2">
+                    <Label htmlFor="yacht-rates-for" className="text-xs shrink-0">Rates for</Label>
                     <Select value={pricingDestView} onValueChange={setPricingDestView}>
-                      <SelectTrigger className="h-8 text-xs w-56"><SelectValue /></SelectTrigger>
+                      <SelectTrigger id="yacht-rates-for" className="h-8 text-xs w-56"><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value={DEFAULT_RATE_KEY}>Default (all destinations)</SelectItem>
                         {destinations.map(d => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}
@@ -533,11 +536,12 @@ export default function Yachts() {
                       <BedDouble className="w-7 h-7 opacity-30" />
                       <p className="text-sm">No rooms added yet.</p>
                       <Button type="button" variant="outline" size="sm" onClick={addRoom}>
-                        <Plus className="w-3.5 h-3.5 mr-1.5" /> Add First Room
+                        <Plus className="w-3.5 h-3.5" /> Add First Room
                       </Button>
                     </div>
                   ) : (
-                    <div className="rounded-xl border overflow-hidden">
+                    <div className="rounded-xl border overflow-x-auto">
+                      <div className="min-w-max">
                       {/* Column headers */}
                       <div className="grid gap-0 bg-muted/40 border-b" style={{ gridTemplateColumns: gridCols }}>
                         {['#', 'Cabin Name', 'Deck', 'Bed Type', 'Cap', 'Extra'].map((h, i) => (
@@ -547,7 +551,7 @@ export default function Yachts() {
                           <div key={n} className="px-1 py-1.5 flex items-center gap-1">
                             <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: ACCENT }}>{n + 1}D/{n}N</span>
                             {formTiers.length > 1 && (
-                              <button type="button" onClick={() => removeTier(n)} className="w-3.5 h-3.5 flex items-center justify-center rounded-full text-muted-foreground/50 hover:text-destructive hover:bg-destructive/10 transition-colors shrink-0">
+                              <button type="button" aria-label={`Remove ${n + 1}D/${n}N duration`} title={`Remove ${n + 1}D/${n}N duration`} onClick={() => removeTier(n)} className="w-3.5 h-3.5 flex items-center justify-center rounded-full text-muted-foreground/50 hover:text-destructive hover:bg-destructive/10 transition-colors shrink-0">
                                 <span className="text-[9px] leading-none">✕</span>
                               </button>
                             )}
@@ -562,26 +566,26 @@ export default function Yachts() {
                           <div key={r.tempId} className="grid items-center gap-0 hover:bg-muted/10 transition-colors" style={{ gridTemplateColumns: gridCols }}>
                             <div className="px-2 py-2 text-xs font-medium text-muted-foreground text-center">{idx + 1}</div>
                             <div className="px-1 py-1 border-l">
-                              <Input className="h-7 text-sm border-0 shadow-none focus-visible:ring-0 bg-transparent px-1 placeholder:text-muted-foreground/40" placeholder="Name…" value={r.name} onChange={e => updateRoom(r.tempId, { name: e.target.value })} />
+                              <Input aria-label={`Cabin ${idx + 1} name`} className="h-7 text-sm border-0 shadow-none focus-visible:ring-0 bg-transparent px-1 placeholder:text-muted-foreground/40" placeholder="Name…" value={r.name} onChange={e => updateRoom(r.tempId, { name: e.target.value })} />
                             </div>
                             <div className="px-1 py-1 border-l">
                               <Select value={r.deck} onValueChange={v => updateRoom(r.tempId, { deck: v })}>
-                                <SelectTrigger className="h-7 text-xs border-0 shadow-none focus:ring-0 bg-transparent px-1"><SelectValue placeholder="—" /></SelectTrigger>
+                                <SelectTrigger aria-label={`Cabin ${idx + 1} deck`} className="h-7 text-xs border-0 shadow-none focus:ring-0 bg-transparent px-1"><SelectValue placeholder="—" /></SelectTrigger>
                                 <SelectContent>{DECKS.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}</SelectContent>
                               </Select>
                             </div>
                             <div className="px-1 py-1 border-l">
                               <Select value={r.bedType} onValueChange={v => updateRoom(r.tempId, { bedType: v })}>
-                                <SelectTrigger className="h-7 text-xs border-0 shadow-none focus:ring-0 bg-transparent px-1"><SelectValue placeholder="—" /></SelectTrigger>
+                                <SelectTrigger aria-label={`Cabin ${idx + 1} bed type`} className="h-7 text-xs border-0 shadow-none focus:ring-0 bg-transparent px-1"><SelectValue placeholder="—" /></SelectTrigger>
                                 <SelectContent>{BED_TYPES.map(b => <SelectItem key={b} value={b}>{b}</SelectItem>)}</SelectContent>
                               </Select>
                             </div>
                             <div className="px-1 py-1 border-l">
-                              <Input className="h-7 text-xs text-center border-0 shadow-none focus-visible:ring-0 bg-transparent px-0" type="number" min="1" value={r.capacity}
+                              <Input aria-label={`Cabin ${idx + 1} capacity`} className="h-7 text-xs text-center border-0 shadow-none focus-visible:ring-0 bg-transparent px-0" type="number" min="1" value={r.capacity}
                                 onChange={e => updateRoom(r.tempId, { capacity: (Math.max(1, parseInt(e.target.value) || 1)).toString() })} />
                             </div>
                             <div className="px-1 py-1 border-l">
-                              <Input className="h-7 text-xs text-center border-0 shadow-none focus-visible:ring-0 bg-transparent px-0" type="number" min="0" value={r.extraBeds}
+                              <Input aria-label={`Cabin ${idx + 1} extra beds`} className="h-7 text-xs text-center border-0 shadow-none focus-visible:ring-0 bg-transparent px-0" type="number" min="0" value={r.extraBeds}
                                 onChange={e => {
                                   const thisExtra = parseInt(r.extraBeds) || 0
                                   const maxExtra = maxCap > 0 ? Math.max(0, maxCap - totalCabinCap - (totalExtraBeds - thisExtra)) : 9999
@@ -592,13 +596,13 @@ export default function Yachts() {
                               <div key={t.nights} className="px-1 py-1 border-l">
                                 <div className="flex items-center">
                                   <span className="text-xs text-muted-foreground shrink-0 ml-1">$</span>
-                                  <Input className="h-7 text-xs border-0 shadow-none focus-visible:ring-0 bg-transparent px-1 font-medium" type="number" min="0" step="50" placeholder="—" value={t.price}
+                                  <Input aria-label={`Cabin ${idx + 1} ${t.nights + 1}D/${t.nights}N price`} className="h-7 text-xs border-0 shadow-none focus-visible:ring-0 bg-transparent px-1 font-medium" type="number" min="0" step="50" placeholder="—" value={t.price}
                                     onChange={e => updateRoomTierPrice(r.tempId, pricingDestView, t.nights, e.target.value)} />
                                 </div>
                               </div>
                             ))}
                             <div className="flex items-center justify-center border-l">
-                              <button type="button" onClick={() => removeRoom(r.tempId)} className="w-6 h-6 flex items-center justify-center rounded text-muted-foreground/50 hover:text-destructive hover:bg-destructive/10 transition-colors">
+                              <button type="button" aria-label={`Remove cabin ${idx + 1}`} title="Remove room" onClick={() => removeRoom(r.tempId)} className="w-7 h-7 flex items-center justify-center rounded text-muted-foreground/50 hover:text-destructive hover:bg-destructive/10 transition-colors">
                                 <Trash2 className="w-3 h-3" />
                               </button>
                             </div>
@@ -614,13 +618,14 @@ export default function Yachts() {
                             <div key={t.nights} className="px-1 py-1 border-l">
                               <div className="flex items-center">
                                 <span className="text-xs text-muted-foreground shrink-0 ml-1">$</span>
-                                <Input className="h-7 text-xs border-0 shadow-none focus-visible:ring-0 bg-transparent px-1 font-medium" type="number" min="0" step="50" placeholder="—" value={t.price}
+                                <Input aria-label={`Extra bed ${t.nights + 1}D/${t.nights}N price`} className="h-7 text-xs border-0 shadow-none focus-visible:ring-0 bg-transparent px-1 font-medium" type="number" min="0" step="50" placeholder="—" value={t.price}
                                   onChange={e => setExtraBedTiers(prev => prev.map(x => x.nights === t.nights ? { ...x, price: e.target.value } : x))} />
                               </div>
                             </div>
                           ))}
                           <div />
                         </div>
+                      </div>
                       </div>
                     </div>
                   )}
@@ -660,8 +665,9 @@ export default function Yachts() {
                       <p className="text-sm">No destinations set up yet. Add some in the Destinations module first.</p>
                     </div>
                   ) : (
-                    <div className="rounded-xl border overflow-hidden">
-                      <div className="grid grid-cols-[1fr_120px_120px] gap-0 bg-muted/40 border-b px-4 py-1.5">
+                    <div className="rounded-xl border overflow-x-auto">
+                      <div className="min-w-[420px]">
+                      <div className="grid grid-cols-[1fr_120px_120px] gap-3 bg-muted/40 border-b px-4 py-1.5">
                         <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Destination</span>
                         <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Price / Night</span>
                         <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Relocation Fee</span>
@@ -678,6 +684,7 @@ export default function Yachts() {
                               <div className="flex items-center gap-1">
                                 <span className="text-xs text-muted-foreground">$</span>
                                 <Input
+                                  aria-label={`${d.name} price per night`}
                                   className="h-8 text-sm"
                                   type="number" min="0" step="50"
                                   placeholder={dailyRate || '0'}
@@ -688,6 +695,7 @@ export default function Yachts() {
                               <div className="flex items-center gap-1">
                                 <span className="text-xs text-muted-foreground">$</span>
                                 <Input
+                                  aria-label={`${d.name} relocation fee`}
                                   className="h-8 text-sm"
                                   type="number" min="0" step="50"
                                   placeholder="N/A"
@@ -698,6 +706,7 @@ export default function Yachts() {
                             </div>
                           )
                         })}
+                      </div>
                       </div>
                     </div>
                   )}
@@ -722,25 +731,22 @@ export default function Yachts() {
               <Button
                 disabled={!step1Valid}
                 onClick={() => setFormStep(2)}
-                style={{ backgroundColor: ACCENT, color: 'white' }}
-                className="hover:opacity-90 min-w-32"
+                className="min-w-32"
               >
                 Next: Rooms →
               </Button>
             ) : formStep === 2 ? (
               <Button
                 onClick={() => setFormStep(3)}
-                style={{ backgroundColor: ACCENT, color: 'white' }}
-                className="hover:opacity-90 min-w-32"
+                className="min-w-32"
               >
                 Next: Destinations →
               </Button>
             ) : (
               <Button
-                disabled={submitting}
+                loading={submitting}
                 onClick={handleSubmit}
-                style={{ backgroundColor: ACCENT, color: 'white' }}
-                className="hover:opacity-90 min-w-32"
+                className="min-w-32"
               >
                 {submitting ? 'Saving…' : editTarget ? 'Save Changes' : 'Save Yacht'}
               </Button>
@@ -749,48 +755,22 @@ export default function Yachts() {
         </DialogContent>
       </Dialog>
 
-      {/* ── Delete Confirmation ── */}
-      <AlertDialog open={!!deleteTarget} onOpenChange={v => !v && setDeleteTarget(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete {deleteTarget?.name}?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This cannot be undone. The yacht and all its cabin definitions will be permanently removed.
-              Existing bookings referencing this yacht will block deletion.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDelete}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              {submitting ? 'Deleting…' : 'Delete'}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
       {/* ── Cashier PIN ── */}
       {pinYacht && <CashierPinDialog yacht={pinYacht} onClose={() => setPinYacht(null)} />}
 
       {/* ── Documents Panel ── */}
-      {/* Plain overlay, not the shadcn Dialog used above — DialogContent centers itself with a
-          CSS transform, which becomes a containing block for LegalDocumentsPanel's own
-          `fixed inset-0` Add/Edit modal and breaks its full-viewport positioning. */}
-      {docsTarget && (
-        <div className="fixed inset-0 bg-black/50 z-40 flex items-center justify-center p-4" onClick={() => setDocsTarget(null)}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[85vh] overflow-y-auto p-6" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-lg font-bold">{docsTarget.name} — Documents</h3>
-              <button onClick={() => setDocsTarget(null)} className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors">
-                <X className="h-4 w-4" />
-              </button>
-            </div>
+      {/* LegalDocumentsPanel's own Add/Edit modal is a portaled Dialog, so nesting it inside
+          this Dialog is safe (no transformed containing block for a `fixed` child any more). */}
+      <Dialog open={!!docsTarget} onOpenChange={o => { if (!o) setDocsTarget(null) }}>
+        {docsTarget && (
+          <DialogContent className="sm:max-w-3xl max-h-[85vh] overflow-y-auto block" aria-describedby={undefined}>
+            <DialogHeader className="mb-2 pr-8 text-left">
+              <DialogTitle className="text-lg font-bold">{docsTarget.name} — Documents</DialogTitle>
+            </DialogHeader>
             <LegalDocumentsPanel owner={{ id: docsTarget.id, name: docsTarget.name, kind: 'yacht' }} />
-          </div>
-        </div>
-      )}
+          </DialogContent>
+        )}
+      </Dialog>
 
       {/* ── Fleet table ── */}
       <Card>
@@ -808,6 +788,7 @@ export default function Yachts() {
           <div className="flex items-center gap-2 mb-4">
             <Search className="h-4 w-4 text-muted-foreground shrink-0" />
             <Input
+              aria-label="Search yachts"
               placeholder="Search by name or model…"
               value={searchTerm}
               onChange={e => setSearch(e.target.value)}
@@ -858,12 +839,13 @@ export default function Yachts() {
                         <TableCell className="text-sm">{y.year ?? '—'}</TableCell>
                         <TableCell className="text-sm">{y.capacity} pax</TableCell>
                         <TableCell className="text-sm">{y.cabinCount}</TableCell>
-                        <TableCell className="text-sm">${y.dailyRate.toLocaleString()}/night</TableCell>
+                        <TableCell className="text-sm">{formatMoney(y.dailyRate, { currency: 'USD', decimals: 0 })}/night</TableCell>
                         <TableCell className="text-sm">{y._count.bookings}</TableCell>
                         <TableCell>
                           <div className="flex items-center justify-end gap-1">
                             <Button
                               variant="ghost" size="sm" className="h-7 gap-1 text-xs"
+                              aria-expanded={expandedId === y.id}
                               onClick={() => setExpandedId(expandedId === y.id ? null : y.id)}
                             >
                               <BedDouble className="w-3.5 h-3.5" />
@@ -875,6 +857,7 @@ export default function Yachts() {
                                 <Button
                                   variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground"
                                   title="Documents"
+                                  aria-label="Documents"
                                   onClick={() => setDocsTarget(y)}
                                 >
                                   <FileText className="w-3.5 h-3.5" />
@@ -882,6 +865,7 @@ export default function Yachts() {
                                 <Button
                                   variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground"
                                   title="Manage Pricing"
+                                  aria-label="Manage Pricing"
                                   onClick={() => setPricingYacht(y)}
                                 >
                                   <DollarSign className="w-3.5 h-3.5" />
@@ -889,19 +873,25 @@ export default function Yachts() {
                                 <Button
                                   variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground"
                                   title="Cashier PIN"
+                                  aria-label="Cashier PIN"
                                   onClick={() => setPinYacht(y)}
                                 >
                                   <KeyRound className="w-3.5 h-3.5" />
                                 </Button>
                                 <Button
                                   variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                                  title="Edit"
+                                  aria-label="Edit yacht"
                                   onClick={() => openEdit(y)}
                                 >
                                   <Pencil className="w-3.5 h-3.5" />
                                 </Button>
                                 <Button
                                   variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                                  onClick={() => setDeleteTarget(y)}
+                                  title="Delete"
+                                  aria-label="Delete yacht"
+                                  disabled={submitting}
+                                  onClick={() => handleDelete(y)}
                                 >
                                   <Trash2 className="w-3.5 h-3.5" />
                                 </Button>
@@ -918,7 +908,7 @@ export default function Yachts() {
                               <div className="px-8 py-4 text-sm text-muted-foreground">No rooms defined yet for this yacht.</div>
                             ) : (
                               <div className="px-8 py-3">
-                                <div className="grid grid-cols-5 gap-3">
+                                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
                                   {y.cabins.map(c => (
                                     <div key={c.id} className="rounded-lg border bg-card p-3 space-y-1.5">
                                       <div className="font-medium text-sm">{c.name}</div>
@@ -935,7 +925,7 @@ export default function Yachts() {
                                           {c.pricingTiers.filter(t => !t.destinationId).map(t => (
                                             <div key={t.nights} className="flex justify-between text-xs">
                                               <span className="text-muted-foreground">{t.nights + 1}D/{t.nights}N</span>
-                                              <span className="font-semibold" style={{ color: ACCENT }}>${t.price.toLocaleString()}</span>
+                                              <span className="font-semibold" style={{ color: ACCENT }}>{formatMoney(t.price, { currency: 'USD', decimals: 0 })}</span>
                                             </div>
                                           ))}
                                           {c.pricingTiers.some(t => t.destinationId) && (
@@ -946,7 +936,7 @@ export default function Yachts() {
                                               <span className="text-muted-foreground">Extra Bed</span>
                                               <div className="flex gap-1">
                                                 {(y.extraBedTiers as PricingTier[]).filter(t => t.price > 0).map(t => (
-                                                  <span key={t.nights} className="font-semibold" style={{ color: '#e07b54' }}>${t.price.toLocaleString()}</span>
+                                                  <span key={t.nights} className="font-semibold" style={{ color: 'var(--warning)' }}>{formatMoney(t.price, { currency: 'USD', decimals: 0 })}</span>
                                                 ))}
                                               </div>
                                             </div>

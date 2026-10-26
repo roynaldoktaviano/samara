@@ -18,13 +18,13 @@ export async function DELETE(_: NextRequest, { params }: { params: Promise<{ id:
   if (!(await canUseInitialOpname(db, role, id))) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
   const count = await db.stockCount.findUnique({ where: { id } })
-  if (!count || count.type !== 'INITIAL') return NextResponse.json({ error: 'Tidak ditemukan' }, { status: 404 })
+  if (!count || count.type !== 'INITIAL') return NextResponse.json({ error: 'Not found' }, { status: 404 })
   if (count.status === 'COMPLETED' && count.countedById !== session.user.id) {
-    return NextResponse.json({ error: 'Hanya orang yang melakukan opname ini yang bisa mengoreksi' }, { status: 403 })
+    return NextResponse.json({ error: 'Only the person who did this opname can correct it' }, { status: 403 })
   }
 
   const item = await db.stockCountItem.findUnique({ where: { id: itemId } })
-  if (!item || item.countId !== id) return NextResponse.json({ error: 'Tidak ditemukan' }, { status: 404 })
+  if (!item || item.countId !== id) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
   await db.stockCountItem.delete({ where: { id: itemId } })
   return NextResponse.json({ ok: true })
@@ -43,13 +43,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (!(await canUseInitialOpname(db, role, id))) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
   const count = await db.stockCount.findUnique({ where: { id } })
-  if (!count || count.type !== 'INITIAL') return NextResponse.json({ error: 'Tidak ditemukan' }, { status: 404 })
+  if (!count || count.type !== 'INITIAL') return NextResponse.json({ error: 'Not found' }, { status: 404 })
   if (count.status === 'COMPLETED' && count.countedById !== session.user.id) {
-    return NextResponse.json({ error: 'Hanya orang yang melakukan opname ini yang bisa mengoreksi' }, { status: 403 })
+    return NextResponse.json({ error: 'Only the person who did this opname can correct it' }, { status: 403 })
   }
 
   const row = await db.stockCountItem.findUnique({ where: { id: itemId } })
-  if (!row || row.countId !== id) return NextResponse.json({ error: 'Tidak ditemukan' }, { status: 404 })
+  if (!row || row.countId !== id) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
   const body = await req.json()
   if (row.itemId) {
@@ -57,7 +57,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if ('error' in parsed) return NextResponse.json({ error: parsed.error }, { status: 400 })
     await db.purchaseItem.update({ where: { id: row.itemId }, data: { ...parsed.data, updatedAt: new Date() } })
   } else if (!String(body.name ?? '').trim()) {
-    return NextResponse.json({ error: 'Nama produk wajib diisi' }, { status: 400 })
+    return NextResponse.json({ error: 'Product name is required' }, { status: 400 })
   }
 
   const updated = await db.stockCountItem.update({

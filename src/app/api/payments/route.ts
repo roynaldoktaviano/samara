@@ -238,8 +238,8 @@ export async function POST(request: NextRequest) {
           data: financeUsers.map(u => ({
             userId: u.id,
             type: 'INVOICE_REQUESTED',
-            title: 'Invoice diminta oleh Sales',
-            body: `${booking.bookingCode} — ${paymentType} diminta oleh ${submittedByName ?? 'Sales'}`,
+            title: 'Invoice requested by Sales',
+            body: `${booking.bookingCode} — ${paymentType} requested by ${submittedByName ?? 'Sales'}`,
             paymentId: payment.id,
             bookingId: bookingId,
           })),

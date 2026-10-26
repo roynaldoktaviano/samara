@@ -135,7 +135,7 @@ export default function Destinations() {
                     <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => openEdit(d)}>
                       <Pencil className="h-3.5 w-3.5" />
                     </Button>
-                    <Button size="icon" variant="ghost" className="h-7 w-7 text-red-500 hover:text-red-600 hover:bg-red-50" onClick={() => setConfirmDelete(d)}>
+                    <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10" onClick={() => setConfirmDelete(d)}>
                       <Trash2 className="h-3.5 w-3.5" />
                     </Button>
                   </div>
@@ -154,7 +154,7 @@ export default function Destinations() {
           </DialogHeader>
           <div className="space-y-3 py-1">
             <div className="space-y-1.5">
-              <Label className="text-xs">Name <span className="text-red-500">*</span></Label>
+              <Label className="text-xs">Name <span className="text-destructive">*</span></Label>
               <Input placeholder="e.g. Raja Ampat" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
             </div>
             <div className="space-y-1.5">

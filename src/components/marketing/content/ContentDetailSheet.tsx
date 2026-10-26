@@ -18,19 +18,17 @@ import { useFileDrop } from '@/hooks/useFileDrop'
 import { uploadToR2WithProgress } from '@/lib/r2-client'
 import { FORMAT_LABELS, STATUS_LABELS, STATUS_STYLE, type ContentItem } from './contentTypes'
 import { useMarketingTeam, ownerOptionNames } from '@/components/marketing/shared/useMarketingTeam'
-
-const ACCENT = '#bdac7e'
+import { formatDate } from '@/lib/format'
 
 const ACTION_COPY: Record<string, { text: string; tone: string }> = {
-  START_PRODUCTION: { text: 'moved this to In Production', tone: 'text-blue-700' },
-  SUBMIT_APPROVAL: { text: 'submitted this for approval', tone: 'text-amber-700' },
-  APPROVE: { text: 'approved this content', tone: 'text-green-700' },
-  REQUEST_CHANGES: { text: 'requested changes', tone: 'text-red-700' },
-  RESUBMIT: { text: 'started revisions', tone: 'text-blue-700' },
-  PUBLISH: { text: 'marked this as published', tone: 'text-violet-700' },
+  START_PRODUCTION: { text: 'moved this to In Production', tone: 'text-info' },
+  SUBMIT_APPROVAL: { text: 'submitted this for approval', tone: 'text-warning' },
+  APPROVE: { text: 'approved this content', tone: 'text-success' },
+  REQUEST_CHANGES: { text: 'requested changes', tone: 'text-destructive' },
+  RESUBMIT: { text: 'started revisions', tone: 'text-info' },
+  PUBLISH: { text: 'marked this as published', tone: 'text-violet-700 dark:text-violet-300' },
 }
 
-const fmtWhen = (d: string) => new Date(d).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
 const APPROVER_ROLES = ['ADMIN', 'SUPER_ADMIN', 'MARKETING_DIRECTOR']
 
 export default function ContentDetailSheet({ id, onOpenChange, onChanged }: {
@@ -157,7 +155,7 @@ export default function ContentDetailSheet({ id, onOpenChange, onChanged }: {
                 <SheetTitle>
                   <input
                     defaultValue={item.title} onBlur={e => e.target.value.trim() && e.target.value !== item.title && updateField({ title: e.target.value })}
-                    className="text-lg font-semibold w-full bg-transparent focus:outline-none focus:border-b focus:border-[#bdac7e]"
+                    className="text-lg font-semibold w-full bg-transparent focus:outline-none focus:border-b focus:border-ring"
                   />
                 </SheetTitle>
               </SheetHeader>
@@ -167,7 +165,7 @@ export default function ContentDetailSheet({ id, onOpenChange, onChanged }: {
                 <div>
                   <div
                     {...dropProps}
-                    className={`relative rounded-xl border-2 border-dashed overflow-hidden bg-muted/30 transition-colors ${isDragging ? 'border-[#bdac7e] bg-[#bdac7e]/5' : 'border-border'}`}
+                    className={`relative rounded-xl border-2 border-dashed overflow-hidden bg-muted/30 transition-colors ${isDragging ? 'border-primary bg-primary/5' : 'border-border'}`}
                   >
                     {latestVersion?.mediaUrl ? (
                       latestVersion.mediaType === 'video' ? (
@@ -175,7 +173,7 @@ export default function ContentDetailSheet({ id, onOpenChange, onChanged }: {
                       ) : latestVersion.mediaType === 'image' ? (
                         <img src={latestVersion.mediaUrl} alt={item.title} className="w-full max-h-96 object-contain" />
                       ) : (
-                        <a href={latestVersion.mediaUrl} target="_blank" rel="noreferrer" className="flex items-center gap-2 p-6 text-sm text-blue-600 hover:underline">
+                        <a href={latestVersion.mediaUrl} target="_blank" rel="noreferrer" className="flex items-center gap-2 p-6 text-sm text-info hover:underline">
                           <FileText className="h-4 w-4" /> View file
                         </a>
                       )
@@ -187,7 +185,7 @@ export default function ContentDetailSheet({ id, onOpenChange, onChanged }: {
                     )}
                     <button
                       type="button" onClick={() => fileInputRef.current?.click()} disabled={uploadPct !== null}
-                      className="absolute bottom-3 right-3 inline-flex items-center gap-1.5 rounded-md bg-white/95 border px-2.5 py-1.5 text-xs font-medium shadow hover:bg-white"
+                      className="absolute bottom-3 right-3 inline-flex items-center gap-1.5 rounded-md bg-card/95 border px-2.5 py-1.5 text-xs font-medium shadow hover:bg-card"
                     >
                       {uploadPct !== null ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> {uploadPct}%</> : <><UploadCloud className="h-3.5 w-3.5" /> Upload version</>}
                     </button>
@@ -198,7 +196,7 @@ export default function ContentDetailSheet({ id, onOpenChange, onChanged }: {
                     <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground">
                       <span>Version {latestVersion?.versionNumber} of {item.versions.length}</span>
                       <span>·</span>
-                      <span>{latestVersion?.createdByName} · {latestVersion && fmtWhen(latestVersion.createdAt)}</span>
+                      <span>{latestVersion?.createdByName} · {latestVersion && formatDate(latestVersion.createdAt, 'datetimeShort')}</span>
                     </div>
                   )}
                 </div>
@@ -209,7 +207,7 @@ export default function ContentDetailSheet({ id, onOpenChange, onChanged }: {
                     <Label className="text-xs text-muted-foreground">Owner</Label>
                     <select
                       value={item.ownerName ?? ''} onChange={e => updateField({ ownerName: e.target.value || null })}
-                      className="h-8 w-full text-sm border rounded-md px-2 bg-white focus:outline-none focus:ring-1 focus:ring-[#bdac7e]"
+                      className="h-8 w-full text-sm border rounded-md px-2 bg-card focus:outline-none focus:ring-1 focus:ring-ring"
                     >
                       <option value="">Unassigned</option>
                       {ownerOptionNames(team, item.ownerName).map(n => <option key={n} value={n}>{n}</option>)}
@@ -240,10 +238,10 @@ export default function ContentDetailSheet({ id, onOpenChange, onChanged }: {
                     canApprove ? (
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="text-sm text-muted-foreground flex-1 min-w-[180px]">Waiting for your decision.</p>
-                        <Button size="sm" variant="outline" className="text-red-600 border-red-200 hover:bg-red-50" onClick={() => setShowRevisionBox(true)} disabled={busy}>
+                        <Button size="sm" variant="outline" className="text-destructive border-destructive/30 hover:bg-destructive/10" onClick={() => setShowRevisionBox(true)} disabled={busy}>
                           <XCircle className="h-3.5 w-3.5 mr-1.5" /> Request changes
                         </Button>
-                        <Button size="sm" onClick={() => runAction('approve')} disabled={busy} style={{ backgroundColor: ACCENT, color: 'white' }} className="hover:opacity-90">
+                        <Button size="sm" onClick={() => runAction('approve')} disabled={busy} className="bg-primary text-primary-foreground hover:bg-primary-hover">
                           <CheckCircle2 className="h-3.5 w-3.5 mr-1.5" /> Approve
                         </Button>
                       </div>
@@ -273,13 +271,13 @@ export default function ContentDetailSheet({ id, onOpenChange, onChanged }: {
                       <Input value={publishUrl} onChange={e => setPublishUrl(e.target.value)} placeholder="https://instagram.com/p/..." />
                       <div className="flex justify-end gap-2">
                         <Button size="sm" variant="ghost" onClick={() => { setShowPublishBox(false); setPublishUrl('') }}>Cancel</Button>
-                        <Button size="sm" disabled={busy} onClick={() => runAction('publish', { liveUrl: publishUrl })} style={{ backgroundColor: ACCENT, color: 'white' }} className="hover:opacity-90">Confirm published</Button>
+                        <Button size="sm" disabled={busy} onClick={() => runAction('publish', { liveUrl: publishUrl })} className="bg-primary text-primary-foreground hover:bg-primary-hover">Confirm published</Button>
                       </div>
                     </div>
                   )}
                   {item.status === 'PUBLISHED' && (
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <CheckCircle2 className="h-4 w-4 text-violet-600" /> Published{item.liveUrl && <>·<a href={item.liveUrl} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline inline-flex items-center gap-1">view live <ExternalLink className="h-3 w-3" /></a></>}
+                      <CheckCircle2 className="h-4 w-4 text-violet-600 dark:text-violet-400" /> Published{item.liveUrl && <>·<a href={item.liveUrl} target="_blank" rel="noreferrer" className="text-info hover:underline inline-flex items-center gap-1">view live <ExternalLink className="h-3 w-3" /></a></>}
                     </div>
                   )}
                 </div>
@@ -292,12 +290,12 @@ export default function ContentDetailSheet({ id, onOpenChange, onChanged }: {
                       <div key={c.id} className="text-sm">
                         {c.action ? (
                           <p className={`text-xs ${ACTION_COPY[c.action]?.tone ?? 'text-muted-foreground'}`}>
-                            <strong>{c.authorName}</strong> {ACTION_COPY[c.action]?.text ?? c.action.toLowerCase()} · {fmtWhen(c.createdAt)}
+                            <strong>{c.authorName}</strong> {ACTION_COPY[c.action]?.text ?? c.action.toLowerCase()} · {formatDate(c.createdAt, 'datetimeShort')}
                             {c.text && <span className="block mt-0.5 text-foreground not-italic">&ldquo;{c.text}&rdquo;</span>}
                           </p>
                         ) : (
                           <div>
-                            <p><strong>{c.authorName}</strong> <span className="text-xs text-muted-foreground">{fmtWhen(c.createdAt)}</span></p>
+                            <p><strong>{c.authorName}</strong> <span className="text-xs text-muted-foreground">{formatDate(c.createdAt, 'datetimeShort')}</span></p>
                             <p className="text-muted-foreground">{c.text}</p>
                           </div>
                         )}
@@ -306,14 +304,14 @@ export default function ContentDetailSheet({ id, onOpenChange, onChanged }: {
                     {(item.comments ?? []).length === 0 && <p className="text-sm text-muted-foreground">No comments yet.</p>}
                   </div>
                   <div className="flex gap-2">
-                    <Input value={comment} onChange={e => setComment(e.target.value)} placeholder="Add a comment..." onKeyDown={e => e.key === 'Enter' && postComment()} />
+                    <Input value={comment} onChange={e => setComment(e.target.value)} placeholder="Add a comment…" onKeyDown={e => e.key === 'Enter' && postComment()} />
                     <Button size="sm" variant="outline" onClick={postComment} disabled={!comment.trim()}>Send</Button>
                   </div>
                 </div>
               </div>
 
               <div className="border-t px-6 py-3 flex justify-end">
-                <Button variant="ghost" size="sm" className="text-red-600 hover:text-red-700 hover:bg-red-50" onClick={() => setDeleteConfirm(true)}>
+                <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive hover:bg-destructive/10" onClick={() => setDeleteConfirm(true)}>
                   <Trash2 className="h-3.5 w-3.5 mr-1.5" /> Delete content
                 </Button>
               </div>
@@ -330,7 +328,7 @@ export default function ContentDetailSheet({ id, onOpenChange, onChanged }: {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmDelete} className="bg-red-600 hover:bg-red-700">Delete</AlertDialogAction>
+            <AlertDialogAction onClick={confirmDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">Delete</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -345,7 +343,7 @@ function ActionRow({ icon: Icon, label, button, onClick, busy, disabled }: {
     <div className="flex items-center gap-3">
       <Icon className="h-4 w-4 text-muted-foreground shrink-0" />
       <p className="text-sm text-muted-foreground flex-1">{label}</p>
-      <Button size="sm" onClick={onClick} disabled={busy || disabled} style={{ backgroundColor: ACCENT, color: 'white' }} className="hover:opacity-90 shrink-0">
+      <Button size="sm" onClick={onClick} disabled={busy || disabled} className="bg-primary text-primary-foreground hover:bg-primary-hover shrink-0">
         {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : button}
       </Button>
     </div>

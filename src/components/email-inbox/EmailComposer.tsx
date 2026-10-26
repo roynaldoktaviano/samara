@@ -11,6 +11,9 @@ import {
   RemoveFormatting, Undo2, Redo2, Palette, PenLine,
 } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Button } from '@/components/ui/button'
+import { NativeSelect } from '@/components/ui/native-select'
+import { usePrompt } from '@/components/ui/confirm-dialog'
 import EmailSignatureDialog from '@/components/profile/EmailSignatureDialog'
 import { renderEmailSignatureHtml, normalizeEmailSignature, type EmailSignature } from '@/lib/email-signature'
 
@@ -30,9 +33,9 @@ const COLORS = ['#222222', '#5f6368', '#2c4f5e', '#1a73e8', '#188038', '#b3955c'
 
 /** Matches what sanitizeEmailHtml + the email wrapper render, so the editor is WYSIWYG. */
 export const EMAIL_BODY_CLASSES =
-  'text-sm leading-relaxed text-[#222] [&_p]:m-0 [&_p]:min-h-[1.5em] [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:list-decimal [&_ol]:pl-6 ' +
-  '[&_blockquote]:ml-2 [&_blockquote]:pl-3 [&_blockquote]:border-l-[3px] [&_blockquote]:border-[#d0d7de] [&_blockquote]:text-[#555] ' +
-  '[&_a]:text-[#1a73e8] [&_a]:underline'
+  'text-sm leading-relaxed text-[#222] dark:text-foreground [&_p]:m-0 [&_p]:min-h-[1.5em] [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:list-decimal [&_ol]:pl-6 ' +
+  '[&_blockquote]:ml-2 [&_blockquote]:pl-3 [&_blockquote]:border-l-[3px] [&_blockquote]:border-[#d0d7de] [&_blockquote]:text-[#555] dark:[&_blockquote]:border-border dark:[&_blockquote]:text-muted-foreground ' +
+  '[&_a]:text-[#1a73e8] dark:[&_a]:text-info [&_a]:underline'
 
 function editorToValue(editor: Editor): ComposerValue {
   return { html: editor.getHTML(), text: editor.getText({ blockSeparator: '\n' }).trim(), isEmpty: editor.isEmpty }
@@ -60,7 +63,7 @@ export default function EmailComposer({ initialHtml = '', placeholder, onChange,
         link: { openOnClick: false, autolink: true, defaultProtocol: 'https' },
       }),
       TextStyle, Color, FontSize,
-      Placeholder.configure({ placeholder: placeholder ?? 'Write your message...' }),
+      Placeholder.configure({ placeholder: placeholder ?? 'Write your message…' }),
     ],
     content: initialHtml,
     autofocus: autoFocus ? 'end' : false,
@@ -106,27 +109,29 @@ function Toolbar({ editor, sticky }: { editor: Editor; sticky?: boolean }) {
     }),
   })
   const chain = () => editor.chain().focus()
+  const prompt = usePrompt()
 
-  function toggleLink() {
+  async function toggleLink() {
     if (s.link) { chain().extendMarkRange('link').unsetLink().run(); return }
-    const url = window.prompt('Link URL', 'https://')
+    const url = await prompt({ title: 'Insert link', label: 'Link URL', defaultValue: 'https://' })
     if (!url || url === 'https://') return
     chain().extendMarkRange('link').setLink({ href: url }).run()
   }
 
   return (
-    <div className={`flex flex-wrap items-center gap-0.5 px-2 py-1.5 border-b ${sticky ? 'sticky top-0 z-10 bg-white' : 'bg-muted/10'}`}>
+    <div className={`flex flex-wrap items-center gap-0.5 px-2 py-1.5 border-b ${sticky ? 'sticky top-0 z-10 bg-card' : 'bg-muted/10'}`}>
       <Btn title="Undo" onClick={() => chain().undo().run()} disabled={!s.canUndo}><Undo2 /></Btn>
       <Btn title="Redo" onClick={() => chain().redo().run()} disabled={!s.canRedo}><Redo2 /></Btn>
       <Sep />
-      <select
+      <NativeSelect
         title="Text size"
+        aria-label="Text size"
         value={s.fontSize}
         onChange={e => e.target.value ? chain().setFontSize(e.target.value).run() : chain().unsetFontSize().run()}
-        className="h-7 rounded-md border bg-white px-1.5 text-xs focus:outline-none"
+        className="h-7 w-24 shrink-0 bg-card pl-2 pr-7 text-xs md:text-xs"
       >
         {FONT_SIZES.map(f => <option key={f.label} value={f.value}>{f.label}</option>)}
-      </select>
+      </NativeSelect>
       <Sep />
       <Btn title="Bold (⌘B)" active={s.bold} onClick={() => chain().toggleBold().run()}><Bold /></Btn>
       <Btn title="Italic (⌘I)" active={s.italic} onClick={() => chain().toggleItalic().run()}><Italic /></Btn>
@@ -134,7 +139,7 @@ function Toolbar({ editor, sticky }: { editor: Editor; sticky?: boolean }) {
       <Btn title="Strikethrough" active={s.strike} onClick={() => chain().toggleStrike().run()}><Strikethrough /></Btn>
       <Popover>
         <PopoverTrigger asChild>
-          <button type="button" title="Text color" className="h-7 w-7 rounded-md flex flex-col items-center justify-center text-muted-foreground hover:bg-muted">
+          <button type="button" title="Text color" aria-label="Text color" className="h-7 w-7 rounded-md flex flex-col items-center justify-center text-muted-foreground hover:bg-muted">
             <Palette className="h-3.5 w-3.5" />
             <span className="h-0.5 w-3.5 rounded-full mt-0.5" style={{ backgroundColor: s.color || '#222222' }} />
           </button>
@@ -142,10 +147,10 @@ function Toolbar({ editor, sticky }: { editor: Editor; sticky?: boolean }) {
         <PopoverContent className="w-auto p-2" align="start">
           <div className="grid grid-cols-5 gap-1.5">
             {COLORS.map(c => (
-              <button key={c} type="button" title={c} onClick={() => chain().setColor(c).run()}
-                className={`h-6 w-6 rounded-full border ${s.color === c ? 'ring-2 ring-offset-1 ring-[#1a73e8]' : ''}`} style={{ backgroundColor: c }} />
+              <button key={c} type="button" title={c} aria-label={`Text color ${c}`} onClick={() => chain().setColor(c).run()}
+                className={`h-6 w-6 rounded-full border ${s.color === c ? 'ring-2 ring-offset-1 ring-info' : ''}`} style={{ backgroundColor: c }} />
             ))}
-            <button type="button" title="Default color" onClick={() => chain().unsetColor().run()}
+            <button type="button" title="Default color" aria-label="Default color" onClick={() => chain().unsetColor().run()}
               className="h-6 w-6 rounded-full border text-[10px] text-muted-foreground">✕</button>
           </div>
         </PopoverContent>
@@ -165,8 +170,8 @@ function Btn({ title, onClick, active, disabled, children }: {
   title: string; onClick: () => void; active?: boolean; disabled?: boolean; children: React.ReactNode
 }) {
   return (
-    <button type="button" title={title} onMouseDown={e => e.preventDefault()} onClick={onClick} disabled={disabled}
-      className={`h-7 w-7 rounded-md flex items-center justify-center [&_svg]:h-3.5 [&_svg]:w-3.5 disabled:opacity-30 transition-colors ${active ? 'bg-[#1a73e8]/10 text-[#1a73e8]' : 'text-muted-foreground hover:bg-muted'}`}>
+    <button type="button" title={title} aria-label={title} aria-pressed={active} onMouseDown={e => e.preventDefault()} onClick={onClick} disabled={disabled}
+      className={`h-7 w-7 rounded-md flex items-center justify-center [&_svg]:h-3.5 [&_svg]:w-3.5 disabled:opacity-30 transition-colors ${active ? 'bg-info/10 text-info' : 'text-muted-foreground hover:bg-muted'}`}>
       {children}
     </button>
   )
@@ -203,9 +208,9 @@ export function SignaturePreview() {
     <div className="px-4 pb-3">
       <div className="flex items-center justify-between">
         <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Signature</span>
-        <button type="button" onClick={() => setEditing(true)} className="flex items-center gap-1 text-[11px] text-[#1a73e8] hover:underline">
-          <PenLine className="h-3 w-3" /> {html ? 'Edit signature' : 'Set up signature'}
-        </button>
+        <Button type="button" variant="link" onClick={() => setEditing(true)} className="h-auto gap-1 p-0 has-[>svg]:px-0 text-[11px] font-normal text-info">
+          <PenLine className="size-3" /> {html ? 'Edit signature' : 'Set up signature'}
+        </Button>
       </div>
       {html ? (
         <div className="pointer-events-none select-none opacity-90 [&>table]:!mt-2" dangerouslySetInnerHTML={{ __html: html }} />

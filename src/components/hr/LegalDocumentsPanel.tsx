@@ -1,8 +1,17 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { ArrowLeft, Plus, X, Pencil, Trash2, Paperclip, Upload, AlertTriangle, FileText } from 'lucide-react'
+import { ArrowLeft, Plus, Pencil, Trash2, Paperclip, Upload, AlertTriangle, FileText } from 'lucide-react'
 import { readUploadFile } from '@/lib/fileUpload'
+import { StatusBadge, type StatusTone } from '@/components/ui/status-badge'
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { useConfirm } from '@/components/ui/confirm-dialog'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import { NativeSelect } from '@/components/ui/native-select'
+import { Label } from '@/components/ui/label'
+import { formatDate } from '@/lib/format'
 
 interface LegalDocument {
   id: string; legalEntityId: string | null; yachtId: string | null
@@ -26,16 +35,14 @@ const BLANK = {
   establishDate: '', expiryDate: '', issuer: '', vendor: '', notes: '',
 }
 
-const fmtDate = (s: string) => new Date(s).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
-
-function expiryStatus(expiryDate: string | null): { label: string; color: string } | null {
+function expiryStatus(expiryDate: string | null): { label: string; tone: StatusTone } | null {
   if (!expiryDate) return null
   const today = new Date(); today.setHours(0, 0, 0, 0)
   const exp = new Date(expiryDate); exp.setHours(0, 0, 0, 0)
   const daysLeft = Math.ceil((exp.getTime() - today.getTime()) / 86400000)
-  if (daysLeft < 0) return { label: `Expired ${Math.abs(daysLeft)}d ago`, color: 'bg-red-100 text-red-700' }
-  if (daysLeft <= 30) return { label: `Expires in ${daysLeft}d`, color: 'bg-amber-100 text-amber-700' }
-  return { label: `Valid until ${fmtDate(expiryDate)}`, color: 'bg-green-50 text-green-700' }
+  if (daysLeft < 0) return { label: `Expired ${Math.abs(daysLeft)}d ago`, tone: 'destructive' }
+  if (daysLeft <= 30) return { label: `Expires in ${daysLeft}d`, tone: 'warning' }
+  return { label: `Valid until ${formatDate(expiryDate)}`, tone: 'success' }
 }
 
 export default function LegalDocumentsPanel({ owner, onBack, backLabel }: { owner: DocsOwner; onBack?: () => void; backLabel?: string }) {
@@ -47,7 +54,7 @@ export default function LegalDocumentsPanel({ owner, onBack, backLabel }: { owne
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState('')
   const [uploading, setUploading] = useState(false)
-  const [deleteConfirm, setDeleteConfirm] = useState<LegalDocument | null>(null)
+  const confirm = useConfirm()
 
   const ownerParam = owner.kind === 'yacht' ? 'yachtId' : 'legalEntityId'
 
@@ -99,8 +106,13 @@ export default function LegalDocumentsPanel({ owner, onBack, backLabel }: { owne
   }
 
   async function doDelete(doc: LegalDocument) {
+    if (!(await confirm({
+      title: 'Delete Document?',
+      description: <><span className="font-medium text-foreground">{doc.name}</span> will be removed permanently.</>,
+      destructive: true,
+    }))) return
     await fetch(`/api/hr/legal-documents/${doc.id}`, { method: 'DELETE' })
-    setDeleteConfirm(null); load()
+    load()
   }
 
   const sections = (() => {
@@ -119,16 +131,16 @@ export default function LegalDocumentsPanel({ owner, onBack, backLabel }: { owne
       <div className="flex items-center justify-between">
         <div>
           {onBack && (
-            <button onClick={onBack} className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-[#bdac7e] transition-colors mb-2">
-              <ArrowLeft className="w-3.5 h-3.5" /> {backLabel ?? 'Back'}
-            </button>
+            <Button variant="ghost" size="sm" onClick={onBack} className="-ml-2.5 mb-1 h-7 gap-1.5 text-xs text-muted-foreground">
+              <ArrowLeft className="size-3.5" /> {backLabel ?? 'Back'}
+            </Button>
           )}
           {onBack && <h2 className="text-2xl font-bold tracking-tight">{owner.name}</h2>}
           <p className="text-muted-foreground text-sm mt-1">Legal & compliance documents — {documents.length} tracked</p>
         </div>
-        <button onClick={openAdd} className="flex items-center gap-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium px-4 py-2 rounded-md transition-colors">
-          <Plus className="h-4 w-4" /> Add Document
-        </button>
+        <Button onClick={openAdd}>
+          <Plus /> Add Document
+        </Button>
       </div>
 
       {loading ? (
@@ -168,27 +180,27 @@ export default function LegalDocumentsPanel({ owner, onBack, backLabel }: { owne
                         <td className="px-4 py-3 text-muted-foreground text-xs">{doc.subDetail ?? '—'}</td>
                         <td className="px-4 py-3">
                           {status ? (
-                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${status.color}`}>
-                              {status.color.includes('red') && <AlertTriangle className="h-3 w-3" />}
+                            <StatusBadge tone={status.tone}>
+                              {status.tone === 'destructive' && <AlertTriangle className="h-3 w-3" />}
                               {status.label}
-                            </span>
+                            </StatusBadge>
                           ) : <span className="text-muted-foreground text-xs">No expiry set</span>}
                         </td>
                         <td className="px-4 py-3 text-center">
                           {doc.fileKey ? (
-                            <a href={doc.fileKey} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800">
+                            <a href={doc.fileKey} target="_blank" rel="noopener noreferrer" className="text-info hover:text-info/80" aria-label={`View file for ${doc.name}`}>
                               <Paperclip className="h-4 w-4 inline" />
                             </a>
                           ) : <span className="text-muted-foreground/40">—</span>}
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex items-center justify-end gap-1">
-                            <button onClick={() => openEdit(doc)} className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors">
-                              <Pencil className="h-3.5 w-3.5" />
-                            </button>
-                            <button onClick={() => setDeleteConfirm(doc)} className="p-1.5 text-muted-foreground hover:text-destructive hover:bg-red-50 rounded-lg transition-colors">
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
+                            <Button variant="ghost" size="icon" onClick={() => openEdit(doc)} className="size-7 text-muted-foreground" aria-label="Edit document">
+                              <Pencil className="size-3.5" />
+                            </Button>
+                            <Button variant="ghost" size="icon" onClick={() => doDelete(doc)} className="size-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10" aria-label="Delete document">
+                              <Trash2 className="size-3.5" />
+                            </Button>
                           </div>
                         </td>
                       </tr>
@@ -202,119 +214,99 @@ export default function LegalDocumentsPanel({ owner, onBack, backLabel }: { owne
       )}
 
       {/* ── Add/Edit Document Modal ── */}
-      {modal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col overflow-hidden">
-            <div className="flex items-center justify-between px-6 py-4 border-b shrink-0">
-              <h3 className="font-bold text-sm">{modal.doc ? 'Edit Document' : 'Add Document'}</h3>
-              <button onClick={() => setModal(null)} className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors">
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <div className="px-6 py-5 space-y-4 overflow-y-auto">
-              {formError && <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{formError}</p>}
+      <Dialog open={!!modal} onOpenChange={o => { if (!o) setModal(null) }}>
+        <DialogContent aria-describedby={undefined} className="sm:max-w-lg p-0 gap-0 overflow-hidden max-h-[85vh] flex flex-col" onInteractOutside={e => e.preventDefault()}>
+          <DialogHeader className="px-6 py-4 border-b shrink-0">
+            <DialogTitle className="font-bold text-sm pr-6">{modal?.doc ? 'Edit Document' : 'Add Document'}</DialogTitle>
+          </DialogHeader>
+          <div className="px-6 py-5 space-y-4 overflow-y-auto">
+            {formError && <p className="text-xs text-destructive bg-destructive/10 border border-destructive/30 rounded-lg px-3 py-2">{formError}</p>}
 
-              <div className="grid grid-cols-2 gap-3">
-                <div className="col-span-2 space-y-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Document Name</label>
-                  <input autoFocus className="w-full h-10 border rounded-lg px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
-                    value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
-                </div>
-                <div className="col-span-2 space-y-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Section</label>
-                  <input placeholder="e.g. Company Legal, Boat / Vessel Documents" className="w-full h-10 border rounded-lg px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
-                    value={form.section} onChange={e => setForm(f => ({ ...f, section: e.target.value }))} />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Category</label>
-                  <input className="w-full h-10 border rounded-lg px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
-                    value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))} />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Period</label>
-                  <select className="w-full h-10 border rounded-lg px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
-                    value={form.period} onChange={e => setForm(f => ({ ...f, period: e.target.value }))}>
-                    <option value="">—</option>
-                    {withCurrent(PERIOD_OPTIONS, form.period).map(p => <option key={p} value={p}>{p}</option>)}
-                  </select>
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Sub Details</label>
-                  <select className="w-full h-10 border rounded-lg px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
-                    value={form.subDetail} onChange={e => setForm(f => ({ ...f, subDetail: e.target.value }))}>
-                    <option value="">—</option>
-                    {withCurrent(SUB_DETAIL_OPTIONS, form.subDetail).map(s => <option key={s} value={s}>{s}</option>)}
-                  </select>
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Establish Date</label>
-                  <input type="date" className="w-full h-10 border rounded-lg px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
-                    value={form.establishDate} onChange={e => setForm(f => ({ ...f, establishDate: e.target.value }))} />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Expiry Date</label>
-                  <input type="date" className="w-full h-10 border rounded-lg px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
-                    value={form.expiryDate} onChange={e => setForm(f => ({ ...f, expiryDate: e.target.value }))} />
-                  <p className="text-[10px] text-muted-foreground">Leave blank if the document never expires. Reminders fire from this date.</p>
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Issuer</label>
-                  <input className="w-full h-10 border rounded-lg px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
-                    value={form.issuer} onChange={e => setForm(f => ({ ...f, issuer: e.target.value }))} />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Vendor</label>
-                  <input className="w-full h-10 border rounded-lg px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
-                    value={form.vendor} onChange={e => setForm(f => ({ ...f, vendor: e.target.value }))} />
-                </div>
-                <div className="col-span-2 space-y-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">File</label>
-                  {form.fileKey ? (
-                    <div className="flex items-center gap-2">
-                      <a href={form.fileKey} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-800">
-                        <Paperclip className="h-3.5 w-3.5" /> View current file
-                      </a>
-                      <button type="button" onClick={() => setForm(f => ({ ...f, fileKey: '' }))} className="text-xs text-muted-foreground hover:text-destructive">Remove</button>
-                    </div>
-                  ) : (
-                    <label className="flex items-center gap-2 h-10 border border-dashed rounded-lg px-3 text-sm text-muted-foreground cursor-pointer hover:bg-muted/30 transition-colors w-fit">
-                      <Upload className="h-4 w-4" /> {uploading ? 'Uploading...' : 'Upload file'}
-                      <input type="file" className="hidden" onChange={handleFile} disabled={uploading} />
-                    </label>
-                  )}
-                </div>
-                <div className="col-span-2 space-y-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Notes</label>
-                  <textarea rows={2} className="w-full border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500 resize-none"
-                    value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} />
-                </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="col-span-2 space-y-1.5">
+                <Label htmlFor="legal-doc-name" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Document Name</Label>
+                <Input id="legal-doc-name" autoFocus className="h-10"
+                  value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
+              </div>
+              <div className="col-span-2 space-y-1.5">
+                <Label htmlFor="legal-doc-section" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Section</Label>
+                <Input id="legal-doc-section" placeholder="e.g. Company Legal, Boat / Vessel Documents" className="h-10"
+                  value={form.section} onChange={e => setForm(f => ({ ...f, section: e.target.value }))} />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="legal-doc-category" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Category</Label>
+                <Input id="legal-doc-category" className="h-10"
+                  value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))} />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="legal-doc-period" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Period</Label>
+                <NativeSelect id="legal-doc-period" className="h-10"
+                  value={form.period} onChange={e => setForm(f => ({ ...f, period: e.target.value }))}>
+                  <option value="">—</option>
+                  {withCurrent(PERIOD_OPTIONS, form.period).map(p => <option key={p} value={p}>{p}</option>)}
+                </NativeSelect>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="legal-doc-sub-detail" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Sub Details</Label>
+                <NativeSelect id="legal-doc-sub-detail" className="h-10"
+                  value={form.subDetail} onChange={e => setForm(f => ({ ...f, subDetail: e.target.value }))}>
+                  <option value="">—</option>
+                  {withCurrent(SUB_DETAIL_OPTIONS, form.subDetail).map(s => <option key={s} value={s}>{s}</option>)}
+                </NativeSelect>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="legal-doc-establish" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Establish Date</Label>
+                <Input id="legal-doc-establish" type="date" className="h-10"
+                  value={form.establishDate} onChange={e => setForm(f => ({ ...f, establishDate: e.target.value }))} />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="legal-doc-expiry" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Expiry Date</Label>
+                <Input id="legal-doc-expiry" type="date" className="h-10"
+                  value={form.expiryDate} onChange={e => setForm(f => ({ ...f, expiryDate: e.target.value }))} />
+                <p className="text-[10px] text-muted-foreground">Leave blank if the document never expires. Reminders fire from this date.</p>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="legal-doc-issuer" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Issuer</Label>
+                <Input id="legal-doc-issuer" className="h-10"
+                  value={form.issuer} onChange={e => setForm(f => ({ ...f, issuer: e.target.value }))} />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="legal-doc-vendor" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Vendor</Label>
+                <Input id="legal-doc-vendor" className="h-10"
+                  value={form.vendor} onChange={e => setForm(f => ({ ...f, vendor: e.target.value }))} />
+              </div>
+              <div className="col-span-2 space-y-1.5">
+                <Label htmlFor={form.fileKey ? undefined : 'legal-doc-file'} className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">File</Label>
+                {form.fileKey ? (
+                  <div className="flex items-center gap-2">
+                    <a href={form.fileKey} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-xs text-info hover:text-info/80">
+                      <Paperclip className="h-3.5 w-3.5" /> View current file
+                    </a>
+                    <Button type="button" variant="ghost" size="sm" onClick={() => setForm(f => ({ ...f, fileKey: '' }))}
+                      className="h-7 px-2 text-xs text-muted-foreground hover:text-destructive">Remove</Button>
+                  </div>
+                ) : (
+                  <label className="flex items-center gap-2 h-10 border border-dashed rounded-lg px-3 text-sm text-muted-foreground cursor-pointer hover:bg-muted/30 transition-colors w-fit">
+                    <Upload className="h-4 w-4" /> {uploading ? 'Uploading…' : 'Upload file'}
+                    <input id="legal-doc-file" type="file" className="hidden" onChange={handleFile} disabled={uploading} />
+                  </label>
+                )}
+              </div>
+              <div className="col-span-2 space-y-1.5">
+                <Label htmlFor="legal-doc-notes" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Notes</Label>
+                <Textarea id="legal-doc-notes" rows={2} className="resize-none"
+                  value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} />
               </div>
             </div>
-            <div className="flex items-center justify-end gap-2 px-6 py-4 border-t bg-gray-50/80 shrink-0">
-              <button onClick={() => setModal(null)} className="px-4 py-2 text-sm border rounded-lg hover:bg-white transition-colors">Cancel</button>
-              <button onClick={save} disabled={saving} className="px-5 py-2 text-sm text-white rounded-lg font-semibold bg-amber-600 hover:bg-amber-700 disabled:opacity-50 transition-colors">
-                {saving ? 'Saving...' : modal.doc ? 'Save Changes' : 'Add Document'}
-              </button>
-            </div>
           </div>
-        </div>
-      )}
-
-      {/* ── Delete Confirm ── */}
-      {deleteConfirm && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6">
-            <h3 className="font-semibold mb-2">Delete Document?</h3>
-            <p className="text-sm text-muted-foreground mb-4">
-              <span className="font-medium text-foreground">{deleteConfirm.name}</span> will be removed permanently.
-            </p>
-            <div className="flex gap-3 justify-end">
-              <button onClick={() => setDeleteConfirm(null)} className="px-4 py-2 text-sm border rounded-md hover:bg-muted">Cancel</button>
-              <button onClick={() => doDelete(deleteConfirm)} className="px-4 py-2 text-sm bg-destructive text-white rounded-md hover:bg-destructive/90">Delete</button>
-            </div>
-          </div>
-        </div>
-      )}
+          <DialogFooter className="px-6 py-4 border-t bg-muted/50 shrink-0">
+            <Button variant="outline" onClick={() => setModal(null)}>Cancel</Button>
+            <Button onClick={save} loading={saving} className="font-semibold">
+              {saving ? 'Saving…' : modal?.doc ? 'Save Changes' : 'Add Document'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

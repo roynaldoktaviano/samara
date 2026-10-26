@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { SubtaskCheck } from './SubtasksField'
+import { Button } from '@/components/ui/button'
 import {
   DndContext, DragOverlay, PointerSensor, TouchSensor, closestCorners, useDroppable, useSensor, useSensors,
   type DragEndEvent, type DragOverEvent, type DragStartEvent,
@@ -122,12 +123,12 @@ function Column({ status, label, bar, count, onAdd, children }: {
         <span className="font-semibold text-sm">{label}</span>
         <span className="text-xs px-1.5 py-0.5 rounded-md bg-background border text-muted-foreground font-medium">{count}</span>
         {onAdd && (
-          <button onClick={onAdd} className="ml-auto p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground" title={`Add task to ${label}`}>
-            <Plus className="h-4 w-4" />
-          </button>
+          <Button variant="ghost" size="icon" onClick={onAdd} className="ml-auto size-7 text-muted-foreground hover:text-foreground" title={`Add task to ${label}`} aria-label={`Add task to ${label}`}>
+            <Plus />
+          </Button>
         )}
       </div>
-      <div ref={setNodeRef} className={`flex-1 min-h-32 px-2 pb-2 space-y-2 rounded-b-xl transition-colors ${isOver ? 'bg-amber-50/60' : ''}`}>
+      <div ref={setNodeRef} className={`flex-1 min-h-32 px-2 pb-2 space-y-2 rounded-b-xl transition-colors ${isOver ? 'bg-primary/10' : ''}`}>
         {children}
         {count === 0 && <div className="text-xs text-muted-foreground text-center py-6 border border-dashed rounded-lg">Drop tasks here</div>}
       </div>
@@ -157,11 +158,11 @@ function Card({ todo, dragging, onSubtasks }: { todo: Todo; dragging?: boolean; 
   const walk = (subs: Subtask[], depth: number, inherited: boolean): { sub: Subtask; depth: number; can: boolean }[] =>
     subs.flatMap(sub => { const can = canTickSub(sub, inherited, meId); return [{ sub, depth, can }, ...walk(sub.children ?? [], depth + 1, can)] })
   return (
-    <div className={`rounded-lg border bg-background p-3 space-y-2 cursor-grab active:cursor-grabbing select-none hover:border-amber-300 transition-colors ${dragging ? 'shadow-xl rotate-1' : 'shadow-sm'}`}>
+    <div className={`rounded-lg border bg-background p-3 space-y-2 cursor-grab active:cursor-grabbing select-none hover:border-primary/40 transition-colors ${dragging ? 'shadow-xl rotate-1' : 'shadow-sm'}`}>
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <p className={`text-sm font-medium break-words ${done ? 'line-through text-muted-foreground' : ''}`}>{todo.title}</p>
-          {!isOwnTask(todo, meId) && todo.user && <p className="text-xs text-sky-700">Assigned by {userLabel(todo.user)}</p>}
+          {!isOwnTask(todo, meId) && todo.user && <p className="text-xs text-info">Assigned by {userLabel(todo.user)}</p>}
         </div>
       </div>
       {todo.notes && (
@@ -176,10 +177,10 @@ function Card({ todo, dragging, onSubtasks }: { todo: Todo; dragging?: boolean; 
       {todo.subtasks?.length > 0 && (
         <div className="flex items-center gap-2">
           <div className="flex-1 h-1 rounded-full bg-muted overflow-hidden">
-            <div className="h-full bg-emerald-500" style={{ width: `${(flattenSubtasks(todo.subtasks).filter(s => s.done).length / flattenSubtasks(todo.subtasks).length) * 100}%` }} />
+            <div className="h-full bg-success" style={{ width: `${(flattenSubtasks(todo.subtasks).filter(s => s.done).length / flattenSubtasks(todo.subtasks).length) * 100}%` }} />
           </div>
           <button onClick={e => { e.stopPropagation(); setShowSubs(v => !v) }} onPointerDown={e => e.stopPropagation()}
-            className="flex items-center gap-0.5 rounded hover:bg-muted px-0.5" title={showSubs ? 'Hide sub tasks' : 'Show sub tasks'}>
+            className="flex items-center gap-0.5 rounded hover:bg-muted px-0.5" title={showSubs ? 'Hide sub tasks' : 'Show sub tasks'} aria-expanded={showSubs}>
             <SubtaskCount subtasks={todo.subtasks} />
             <ChevronDown className={`h-3 w-3 text-muted-foreground transition-transform ${showSubs ? '' : '-rotate-90'}`} />
           </button>
@@ -193,7 +194,7 @@ function Card({ todo, dragging, onSubtasks }: { todo: Todo; dragging?: boolean; 
               <span className={`mt-px ${can ? '' : 'pointer-events-none opacity-40'}`}><SubtaskCheck done={sub.done} onToggle={() => onSubtasks(todo, mapSubtaskTree(todo.subtasks, sub.id, s => ({ ...s, done: !s.done })))} /></span>
               <span className={`flex-1 break-words ${sub.done ? 'line-through text-muted-foreground' : ''}`}>{sub.title}</span>
               {(sub.assigneeIds?.length ?? 0) > 0 && <AvatarStack ids={sub.assigneeIds!} size={16} max={2} />}
-              {sub.dueDate && <span className={`shrink-0 ${isSubOverdue(sub) ? 'text-red-600' : 'text-muted-foreground'}`}>{fmtDay(sub.dueDate).replace(/, \d{4}$/, '')}</span>}
+              {sub.dueDate && <span className={`shrink-0 ${isSubOverdue(sub) ? 'text-destructive' : 'text-muted-foreground'}`}>{fmtDay(sub.dueDate).replace(/, \d{4}$/, '')}</span>}
             </li>
           ))}
         </ul>
@@ -201,7 +202,7 @@ function Card({ todo, dragging, onSubtasks }: { todo: Todo; dragging?: boolean; 
       {(range || todo.attachments?.length > 0) && (
         <div className="flex items-center justify-between gap-2 text-xs">
           {range ? (
-            <p className={`flex items-center gap-1 ${overdue ? 'text-red-600 font-medium' : 'text-muted-foreground'}`}>
+            <p className={`flex items-center gap-1 ${overdue ? 'text-destructive font-medium' : 'text-muted-foreground'}`}>
               <CalendarDays className="h-3 w-3" />{range}{overdue && ' · Overdue'}
             </p>
           ) : <span />}

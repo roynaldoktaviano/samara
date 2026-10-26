@@ -40,30 +40,30 @@ function getIp(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const { email, password } = await request.json().catch(() => ({ email: '', password: '' }))
   if (typeof email !== 'string' || !email.trim() || typeof password !== 'string' || !password) {
-    return NextResponse.json({ error: 'Email dan password wajib diisi' }, { status: 400 })
+    return NextResponse.json({ error: 'Email and password are required' }, { status: 400 })
   }
 
   const rateLimitKey = `${getIp(request)}:${email.trim().toLowerCase()}`
   if (isRateLimited(rateLimitKey)) {
-    return NextResponse.json({ error: 'Terlalu banyak percobaan gagal. Coba lagi dalam beberapa menit.' }, { status: 429 })
+    return NextResponse.json({ error: 'Too many failed attempts. Please try again in a few minutes.' }, { status: 429 })
   }
 
   const found = await findAgentByEmail(email.trim())
   const portalPasswordHash = found?.agent.portalPasswordHash
   if (!found || !portalPasswordHash) {
     recordFailedAttempt(rateLimitKey)
-    return NextResponse.json({ error: 'Email atau password salah' }, { status: 401 })
+    return NextResponse.json({ error: 'Incorrect email or password' }, { status: 401 })
   }
   const { tenantId, agent } = found
   if (!agent.portalActive) {
     recordFailedAttempt(rateLimitKey)
-    return NextResponse.json({ error: 'Akses portal untuk akun ini sedang dinonaktifkan' }, { status: 403 })
+    return NextResponse.json({ error: 'Portal access for this account is currently disabled' }, { status: 403 })
   }
 
   const valid = await bcrypt.compare(password, portalPasswordHash)
   if (!valid) {
     recordFailedAttempt(rateLimitKey)
-    return NextResponse.json({ error: 'Email atau password salah' }, { status: 401 })
+    return NextResponse.json({ error: 'Incorrect email or password' }, { status: 401 })
   }
 
   // Flag as suspicious before clearing the attempt counter: a bot-like user agent, or

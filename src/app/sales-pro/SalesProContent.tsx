@@ -7,8 +7,8 @@ import {
   Mail, Phone, MessageCircle, Building2, Ship, MapPin,
 } from 'lucide-react'
 
-const GOLD = '#bdac7e'
-const GOLD_DARK = '#a89860'
+const GOLD = 'var(--primary)'
+const GOLD_DARK = 'var(--primary-hover)'
 const INK = '#0a0f0e'
 const PANEL = '#101615'
 
@@ -107,8 +107,8 @@ function CompanyProfile() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 20 }}>
           {HIGHLIGHTS.map(h => (
             <div key={h.title} style={{ background: PANEL, border: '1px solid rgba(255,255,255,0.08)', borderRadius: 16, padding: 24 }}>
-              <div style={{ width: 40, height: 40, borderRadius: 10, background: 'rgba(189,172,126,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 16 }}>
-                <h.icon size={19} color={GOLD} />
+              <div style={{ width: 40, height: 40, borderRadius: 10, background: 'color-mix(in srgb, var(--primary) 15%, transparent)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 16 }}>
+                <h.icon size={19} style={{ color: GOLD }} />
               </div>
               <div style={{ fontSize: 15, fontWeight: 700, color: '#f4f1ea', marginBottom: 8 }}>{h.title}</div>
               <div style={{ fontSize: 13.5, color: '#9aa39e', lineHeight: 1.6 }}>{h.desc}</div>
@@ -122,7 +122,7 @@ function CompanyProfile() {
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
           {DESTINATIONS.map(d => (
             <div key={d} style={{ display: 'flex', alignItems: 'center', gap: 8, background: PANEL, border: '1px solid rgba(255,255,255,0.08)', borderRadius: 999, padding: '10px 18px' }}>
-              <MapPin size={14} color={GOLD} />
+              <MapPin size={14} style={{ color: GOLD }} />
               <span style={{ fontSize: 13.5, color: '#e5e2d8', fontWeight: 500 }}>{d}</span>
             </div>
           ))}
@@ -142,7 +142,7 @@ function Fleet() {
             <div style={{ height: 190, backgroundImage: `url(${y.image})`, backgroundSize: 'cover', backgroundPosition: 'center' }} />
             <div style={{ padding: '20px 22px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                <Anchor size={15} color={GOLD} />
+                <Anchor size={15} style={{ color: GOLD }} />
                 <div style={{ fontSize: 17, fontWeight: 700, color: '#f4f1ea' }}>{y.name}</div>
               </div>
               <div style={{ fontSize: 13.5, color: '#9aa39e', lineHeight: 1.6 }}>{y.tagline}</div>
@@ -167,7 +167,7 @@ function Packages() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 'auto' }}>
               {p.points.map(pt => (
                 <div key={pt} style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-                  <Check size={14} color={GOLD} style={{ marginTop: 2, flexShrink: 0 }} />
+                  <Check size={14} style={{ color: GOLD, marginTop: 2, flexShrink: 0 }} />
                   <span style={{ fontSize: 13, color: '#c9cfca' }}>{pt}</span>
                 </div>
               ))}
@@ -192,8 +192,8 @@ function GalleryContact() {
 
       <div style={{ background: PANEL, border: '1px solid rgba(255,255,255,0.08)', borderRadius: 20, padding: 36, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 24 }}>
         <a href={`tel:${CONTACT.phone.replace(/\s/g, '')}`} style={{ display: 'flex', alignItems: 'center', gap: 14, textDecoration: 'none' }}>
-          <div style={{ width: 42, height: 42, borderRadius: 11, background: 'rgba(189,172,126,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-            <Phone size={18} color={GOLD} />
+          <div style={{ width: 42, height: 42, borderRadius: 11, background: 'color-mix(in srgb, var(--primary) 15%, transparent)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <Phone size={18} style={{ color: GOLD }} />
           </div>
           <div>
             <div style={{ fontSize: 11, color: '#8b9490' }}>Telepon</div>
@@ -201,8 +201,8 @@ function GalleryContact() {
           </div>
         </a>
         <a href={waHref} target="_blank" rel="noopener noreferrer" style={{ display: 'flex', alignItems: 'center', gap: 14, textDecoration: 'none' }}>
-          <div style={{ width: 42, height: 42, borderRadius: 11, background: 'rgba(189,172,126,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-            <MessageCircle size={18} color={GOLD} />
+          <div style={{ width: 42, height: 42, borderRadius: 11, background: 'color-mix(in srgb, var(--primary) 15%, transparent)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <MessageCircle size={18} style={{ color: GOLD }} />
           </div>
           <div>
             <div style={{ fontSize: 11, color: '#8b9490' }}>WhatsApp</div>
@@ -210,8 +210,8 @@ function GalleryContact() {
           </div>
         </a>
         <a href={`mailto:${CONTACT.email}`} style={{ display: 'flex', alignItems: 'center', gap: 14, textDecoration: 'none' }}>
-          <div style={{ width: 42, height: 42, borderRadius: 11, background: 'rgba(189,172,126,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-            <Mail size={18} color={GOLD} />
+          <div style={{ width: 42, height: 42, borderRadius: 11, background: 'color-mix(in srgb, var(--primary) 15%, transparent)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <Mail size={18} style={{ color: GOLD }} />
           </div>
           <div>
             <div style={{ fontSize: 11, color: '#8b9490' }}>Email</div>
@@ -248,7 +248,7 @@ export default function SalesProContent() {
       >
         <div style={{ maxWidth: 1180, margin: '0 auto', padding: '16px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <Building2 size={20} color={GOLD} />
+            <Building2 size={20} style={{ color: GOLD }} />
             <span style={{ fontSize: 16, fontWeight: 700, color: '#f4f1ea' }}>Samara Yachting</span>
           </div>
 
@@ -278,6 +278,8 @@ export default function SalesProContent() {
             </button>
             <button
               onClick={() => setMobileNavOpen(v => !v)}
+              aria-label={mobileNavOpen ? 'Close menu' : 'Open menu'}
+              aria-expanded={mobileNavOpen}
               className="sales-pro-mobile-toggle"
               style={{ display: 'none', background: 'transparent', border: '1px solid rgba(255,255,255,0.12)', color: '#f4f1ea', borderRadius: 10, padding: 8, cursor: 'pointer' }}
             >
@@ -294,7 +296,7 @@ export default function SalesProContent() {
                 onClick={() => selectMenu(m.key)}
                 style={{
                   textAlign: 'left', padding: '10px 14px', borderRadius: 10, border: 'none', cursor: 'pointer',
-                  background: active === m.key ? 'rgba(189,172,126,0.15)' : 'transparent',
+                  background: active === m.key ? 'color-mix(in srgb, var(--primary) 15%, transparent)' : 'transparent',
                   color: active === m.key ? GOLD : '#c9cfca', fontSize: 14, fontWeight: 600,
                 }}
               >

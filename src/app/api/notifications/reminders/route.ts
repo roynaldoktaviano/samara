@@ -92,11 +92,11 @@ export async function POST() {
 
       for (const pr of dueForReminder) {
         const daysOld = Math.max(1, Math.floor((Date.now() - pr.createdAt.getTime()) / 86400000))
-        const requesterName = pr.requestedByEmployee?.fullName ?? pr.requestedBy.name ?? 'Seseorang'
+        const requesterName = pr.requestedByEmployee?.fullName ?? pr.requestedBy.name ?? 'Someone'
         const title = pr.isUrgent
-          ? `🔴 Urgent PR belum diverifikasi (${daysOld} hari)`
-          : `PR belum diverifikasi (${daysOld} hari)`
-        const body = `${pr.prNumber} — diajukan oleh ${requesterName}, sudah ${daysOld} hari menunggu verifikasi. Segera diverifikasi ya.`
+          ? `🔴 Urgent PR not yet verified (${daysOld} ${daysOld === 1 ? 'day' : 'days'})`
+          : `PR not yet verified (${daysOld} ${daysOld === 1 ? 'day' : 'days'})`
+        const body = `${pr.prNumber} — submitted by ${requesterName}, waiting for verification for ${daysOld} ${daysOld === 1 ? 'day' : 'days'}. Please verify it soon.`
         await notifyPurchasingForRequest(db, pr.division, 'PR_VERIFY_REMINDER', title, body, pr.id)
         prGenerated++
       }
@@ -128,18 +128,18 @@ export async function POST() {
           const daysLeft = Math.ceil((d.expiryDate!.getTime() - today.getTime()) / 86400000)
           const ownerName = d.legalEntity?.name ?? d.yacht?.name ?? 'Unknown'
           const title = daysLeft < 0
-            ? `🔴 Dokumen sudah kedaluwarsa: ${d.name}`
+            ? `🔴 Document expired: ${d.name}`
             : daysLeft === 0
-              ? `🔴 Dokumen kedaluwarsa hari ini: ${d.name}`
-              : `Dokumen akan kedaluwarsa (${daysLeft} hari): ${d.name}`
-          const body = `${d.name} — ${ownerName}. ${daysLeft < 0 ? `Sudah lewat ${Math.abs(daysLeft)} hari dari tanggal berlaku.` : `Berlaku sampai ${d.expiryDate!.toISOString().slice(0, 10)}.`} Segera diperbarui.`
+              ? `🔴 Document expires today: ${d.name}`
+              : `Document expiring in ${daysLeft} ${daysLeft === 1 ? 'day' : 'days'}: ${d.name}`
+          const body = `${d.name} — ${ownerName}. ${daysLeft < 0 ? `Expired ${Math.abs(daysLeft)} ${Math.abs(daysLeft) === 1 ? 'day' : 'days'} ago.` : `Valid until ${d.expiryDate!.toISOString().slice(0, 10)}.`} Please renew it soon.`
           return hrUsers.map(u => ({ userId: u.id, type: 'LEGAL_DOC_EXPIRING', title, body, legalDocumentId: d.id }))
         })
         await db.notification.createMany({ data: docRecords })
         docGenerated = docRecords.length
         sendPushToUsers(db, [...new Set(docRecords.map(r => r.userId))], {
-          title: 'Dokumen legal akan/telah kedaluwarsa',
-          body: `${dueDocs.length} dokumen perlu diperbarui.`,
+          title: 'Legal documents expiring or expired',
+          body: `${dueDocs.length} ${dueDocs.length === 1 ? 'document needs' : 'documents need'} renewal.`,
         }).catch(() => {})
       }
     }

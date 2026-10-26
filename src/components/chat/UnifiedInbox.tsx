@@ -1,15 +1,17 @@
 'use client'
 
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useCallback, useRef, useId } from 'react'
 import { useSession } from 'next-auth/react'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-import { Search, MessageCircle, Instagram, Facebook, Mail, Plus, Loader2, Clock, MessageSquarePlus, MessagesSquare, Sailboat, Ship, Anchor } from 'lucide-react'
+import { Search, MessageCircle, Instagram, Facebook, Mail, Plus, Clock, MessageSquarePlus, MessagesSquare, Sailboat, Ship, Anchor } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { formatDate } from '@/lib/format'
 import type { ChatChannel, InboxView, UnifiedInboxItem } from '@/app/api/chat/inbox/route'
 import { WHATSAPP_BRANDS, WHATSAPP_BRAND_LABELS, type WhatsappBrand } from '@/lib/whatsapp-brands'
 import { missingTemplateParams, renderWhatsappTemplateBody } from '@/lib/whatsapp-templates'
@@ -30,9 +32,7 @@ function timeLabel(iso: string) {
   const d = new Date(iso)
   const now = new Date()
   const sameDay = d.toDateString() === now.toDateString()
-  return sameDay
-    ? d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
-    : d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
+  return sameDay ? formatDate(d, 'time') : formatDate(d, 'short')
 }
 
 // "Waiting 12m" on a chat whose customer hasn't been answered yet — amber, then red once it's
@@ -188,13 +188,13 @@ export default function UnifiedInbox({ onOpenEmail, onOpenBooking, initialWhatsa
           </div>
           <Dialog open={newChatOpen} onOpenChange={setNewChatOpen}>
             <DialogTrigger asChild>
-              <Button size="sm" variant="outline" className="hidden md:inline-flex h-8 shrink-0" title="Start a new WhatsApp chat">
-                <Plus className="h-3.5 w-3.5" />
+              <Button size="icon" variant="outline" className="hidden md:inline-flex size-8 shrink-0" title="Start a new WhatsApp chat" aria-label="Start a new WhatsApp chat">
+                <Plus className="size-3.5" />
               </Button>
             </DialogTrigger>
-            <DialogContent>
+            <DialogContent className="max-h-[90vh] overflow-y-auto" aria-describedby={undefined} onInteractOutside={e => e.preventDefault()}>
               <DialogHeader>
-                <DialogTitle>Chat WhatsApp Baru</DialogTitle>
+                <DialogTitle>New WhatsApp Chat</DialogTitle>
               </DialogHeader>
               <NewChatForm onSubmit={startChat} />
             </DialogContent>
@@ -213,15 +213,15 @@ export default function UnifiedInbox({ onOpenEmail, onOpenBooking, initialWhatsa
         <div className="px-4 pb-2 md:p-3 md:border-b space-y-2">
           <div className="relative">
             <Search className="absolute left-3 md:left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 md:h-3.5 md:w-3.5 text-muted-foreground pointer-events-none" />
-            <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search name, number or message…"
+            <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search name, number or message…" aria-label="Search chats"
               className="pl-9 md:pl-8 h-10 md:h-9 rounded-full md:rounded-md bg-muted md:bg-transparent border-0 md:border" />
           </div>
-          <div className="flex gap-2 md:gap-1 overflow-x-auto [scrollbar-width:none]">
+          <div role="group" aria-label="Filter chats" className="flex gap-2 md:gap-1 overflow-x-auto [scrollbar-width:none]">
             {(Object.keys(VIEW_LABELS) as InboxView[]).map(v => (
-              <button key={v} onClick={() => setView(v)}
+              <button key={v} type="button" aria-pressed={view === v} onClick={() => setView(v)}
                 className={cn('shrink-0 md:flex-1 h-8 md:h-7 px-4 md:px-0 rounded-full md:rounded-md text-[13px] md:text-[11px] font-medium md:border transition-colors',
                   view === v
-                    ? 'bg-[#d9fdd3] text-[#0a6b3c] md:bg-foreground md:text-background md:border-foreground'
+                    ? 'bg-[#d9fdd3] text-[#0a6b3c] dark:bg-[#1fa855]/20 dark:text-[#25D366] md:bg-foreground md:text-background md:border-foreground'
                     : 'bg-muted text-muted-foreground md:bg-transparent hover:bg-muted')}>
                 {VIEW_LABELS[v]}
               </button>
@@ -229,12 +229,12 @@ export default function UnifiedInbox({ onOpenEmail, onOpenBooking, initialWhatsa
           </div>
           {isAdmin && salesUsers.length > 0 && (
             <Select value={salesFilter} onValueChange={setSalesFilter}>
-              <SelectTrigger className="h-9 text-xs">
+              <SelectTrigger className="h-9 text-xs" aria-label="Filter by sales rep">
                 <SelectValue placeholder="Filter by sales rep" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All sales</SelectItem>
-                <SelectItem value="unassigned">Belum di-assign</SelectItem>
+                <SelectItem value="unassigned">Unassigned</SelectItem>
                 {salesUsers.map(u => (
                   <SelectItem key={u.id} value={u.id}>{u.name ?? u.email}</SelectItem>
                 ))}
@@ -271,7 +271,7 @@ export default function UnifiedInbox({ onOpenEmail, onOpenBooking, initialWhatsa
                       <AvatarFallback className="text-sm md:text-xs font-semibold bg-muted">{initials(item.name)}</AvatarFallback>
                     </Avatar>
                     <span
-                      className="absolute -bottom-0.5 -right-0.5 h-4 w-4 rounded-full flex items-center justify-center ring-2 ring-white"
+                      className="absolute -bottom-0.5 -right-0.5 h-4 w-4 rounded-full flex items-center justify-center ring-2 ring-card"
                       style={{ backgroundColor: badge.color }}
                     >
                       <BadgeIcon className="h-2.5 w-2.5 text-white" />
@@ -292,7 +292,7 @@ export default function UnifiedInbox({ onOpenEmail, onOpenBooking, initialWhatsa
                       {waiting && (
                         <span title="Customer is waiting for a reply"
                           className={cn('shrink-0 inline-flex items-center gap-0.5 rounded px-1 text-[10px] font-medium',
-                            waiting.urgent ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-800')}>
+                            waiting.urgent ? 'bg-destructive/15 text-destructive' : 'bg-warning/15 text-warning')}>
                           <Clock className="h-2.5 w-2.5" />{waiting.text}
                         </span>
                       )}
@@ -308,13 +308,13 @@ export default function UnifiedInbox({ onOpenEmail, onOpenBooking, initialWhatsa
                           : item.channel === 'instagram' ? `${isMessenger ? 'Messenger' : 'Instagram'}${item.brand ? ` · ${WHATSAPP_BRAND_LABELS[item.brand]}` : ''}`
                           : 'Email'}
                         {!item.assignedToId
-                          ? <span className="text-amber-600 font-medium"> · Belum di-assign</span>
+                          ? <span className="text-warning font-medium"> · Unassigned</span>
                           : isAdmin && item.assignedToName && <> · Sales: {item.assignedToName}</>}
                       </p>
                     )}
                   </div>
 
-                  {unread && <span className="hidden md:block shrink-0 h-2 w-2 rounded-full bg-red-500" />}
+                  {unread && <span className="hidden md:block shrink-0 h-2 w-2 rounded-full bg-destructive" />}
                 </button>
               )
             })
@@ -322,17 +322,17 @@ export default function UnifiedInbox({ onOpenEmail, onOpenBooking, initialWhatsa
         </div>
 
         {/* Mobile: new-chat FAB + brand switcher as a floating bottom tab bar (desktop uses the Tabs above). */}
-        <button onClick={() => setNewChatOpen(true)} title="Start a new WhatsApp chat"
+        <button type="button" onClick={() => setNewChatOpen(true)} title="Start a new WhatsApp chat" aria-label="Start a new WhatsApp chat"
           className="md:hidden absolute right-4 bottom-[6.5rem] h-14 w-14 rounded-2xl bg-[#1fa855] text-white shadow-lg flex items-center justify-center active:scale-95 transition-transform">
           <MessageSquarePlus className="h-6 w-6" />
         </button>
-        <nav className="md:hidden absolute inset-x-4 bottom-[max(1rem,env(safe-area-inset-bottom))] rounded-full border bg-card/95 backdrop-blur shadow-lg grid grid-cols-4 py-2">
+        <nav aria-label="Filter by brand" className="md:hidden absolute inset-x-4 bottom-[max(1rem,env(safe-area-inset-bottom))] rounded-full border bg-card/95 backdrop-blur shadow-lg grid grid-cols-4 py-2">
           {(['all', ...WHATSAPP_BRANDS] as const).map(b => {
             const Icon = BRAND_TAB_ICON[b]
             const active = brandFilter === b
             return (
-              <button key={b} onClick={() => setBrandFilter(b)} className="flex flex-col items-center gap-1">
-                <span className={cn('h-8 w-14 rounded-full flex items-center justify-center transition-colors', active ? 'bg-[#d9fdd3] text-[#0a6b3c]' : 'text-muted-foreground')}>
+              <button key={b} type="button" aria-pressed={active} onClick={() => setBrandFilter(b)} className="flex flex-col items-center gap-1">
+                <span className={cn('h-8 w-14 rounded-full flex items-center justify-center transition-colors', active ? 'bg-[#d9fdd3] text-[#0a6b3c] dark:bg-[#1fa855]/20 dark:text-[#25D366]' : 'text-muted-foreground')}>
                   <Icon className="h-5 w-5" />
                 </span>
                 <span className={cn('text-xs', active ? 'font-semibold text-foreground' : 'text-muted-foreground')}>
@@ -382,6 +382,7 @@ export function NewChatForm({ onSubmit, initialPhone = '', initialName = '' }: {
   const [templateParams, setTemplateParams] = useState<string[]>([])
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const uid = useId()
 
   const templates = useWhatsappTemplates(brand)
   // Falls back to the brand's first template until one is picked (and after a brand switch,
@@ -395,40 +396,40 @@ export function NewChatForm({ onSubmit, initialPhone = '', initialName = '' }: {
     const result = await onSubmit({ phone: phone.trim(), brand, templateName: selectedTemplate.name, templateLanguage: selectedTemplate.language, templateParams, contactName: contactName.trim() || undefined })
     setSubmitting(false)
     if (!result.ok) setError(result.error ?? 'Failed to start conversation')
-    else if (result.providerError) setError(`Terkirim tapi WhatsApp menolak: ${result.providerError}`)
+    else if (result.providerError) setError(`Sent, but WhatsApp rejected it: ${result.providerError}`)
   }
 
   return (
     <div className="space-y-3">
       <div className="space-y-1">
-        <label className="text-xs font-medium text-muted-foreground">Nomor WhatsApp</label>
-        <Input value={phone} onChange={e => setPhone(e.target.value)} placeholder="62812xxxxxxx / 0812xxxxxxx" className="h-9" />
-        <p className="text-[11px] text-muted-foreground">Nomor luar negeri pakai kode negara (mis. 61…, 44…). Awalan 0 otomatis jadi 62.</p>
+        <Label htmlFor={`${uid}-phone`} className="text-xs font-medium text-muted-foreground">WhatsApp Number</Label>
+        <Input id={`${uid}-phone`} type="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="62812xxxxxxx / 0812xxxxxxx" className="h-9" />
+        <p className="text-[11px] text-muted-foreground">Use the country code for foreign numbers (e.g. 61…, 44…). A leading 0 becomes 62 automatically.</p>
       </div>
       <div className="space-y-1">
-        <label className="text-xs font-medium text-muted-foreground">Nama (opsional)</label>
-        <Input value={contactName} onChange={e => setContactName(e.target.value)} placeholder="Nama contact/lead" className="h-9" />
+        <Label htmlFor={`${uid}-name`} className="text-xs font-medium text-muted-foreground">Name (optional)</Label>
+        <Input id={`${uid}-name`} value={contactName} onChange={e => setContactName(e.target.value)} placeholder="Contact/lead name" className="h-9" />
       </div>
       <div className="space-y-1">
-        <label className="text-xs font-medium text-muted-foreground">Nomor Brand</label>
+        <Label htmlFor={`${uid}-brand`} className="text-xs font-medium text-muted-foreground">Brand Number</Label>
         <Select value={brand} onValueChange={v => { setBrand(v as WhatsappBrand); setTemplateName(''); setTemplateParams([]) }}>
-          <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+          <SelectTrigger id={`${uid}-brand`} className="h-9 w-full"><SelectValue /></SelectTrigger>
           <SelectContent>
             {WHATSAPP_BRANDS.map(b => <SelectItem key={b} value={b}>{WHATSAPP_BRAND_LABELS[b]}</SelectItem>)}
           </SelectContent>
         </Select>
       </div>
       <div className="space-y-1">
-        <label className="text-xs font-medium text-muted-foreground">Template</label>
+        <Label htmlFor={`${uid}-template`} className="text-xs font-medium text-muted-foreground">Template</Label>
         <Select value={selectedTemplate ? templateKey(selectedTemplate) : ''} onValueChange={v => { setTemplateName(v); setTemplateParams(new Array(templates.find(t => templateKey(t) === v)?.paramLabels?.length ?? 0).fill('')) }}>
-          <SelectTrigger className="h-9"><SelectValue placeholder="Pilih template" /></SelectTrigger>
+          <SelectTrigger id={`${uid}-template`} className="h-9 w-full"><SelectValue placeholder="Select template" /></SelectTrigger>
           <SelectContent>
             {templates.map(t => <SelectItem key={templateKey(t)} value={templateKey(t)}>{t.label} ({t.language})</SelectItem>)}
           </SelectContent>
         </Select>
       </div>
       {selectedTemplate?.paramLabels?.map((label, i) => (
-        <Input key={i} placeholder={label} value={templateParams[i] ?? ''}
+        <Input key={i} placeholder={label} aria-label={label} value={templateParams[i] ?? ''}
           onChange={e => setTemplateParams(prev => { const next = [...prev]; next[i] = e.target.value; return next })}
           className="h-9" />
       ))}
@@ -437,9 +438,9 @@ export function NewChatForm({ onSubmit, initialPhone = '', initialName = '' }: {
           {renderWhatsappTemplateBody(selectedTemplate, templateParams)}
         </p>
       )}
-      {error && <p className="text-xs text-red-600">{error}</p>}
-      <Button onClick={handleSubmit} disabled={!phone.trim() || !selectedTemplate || submitting || missingTemplateParams(selectedTemplate, templateParams)} className="w-full h-9">
-        {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Mulai Chat'}
+      {error && <p className="text-xs text-destructive">{error}</p>}
+      <Button onClick={handleSubmit} loading={submitting} disabled={!phone.trim() || !selectedTemplate || missingTemplateParams(selectedTemplate, templateParams)} className="w-full">
+        Start Chat
       </Button>
     </div>
   )

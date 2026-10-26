@@ -53,7 +53,7 @@ export async function receiveGoods(db: Db, params: {
   items: ReceiveGoodsItemInput[]
 }) {
   const { orderId, items } = params
-  if (!items.length) return { ok: false, error: 'Minimal 1 item dibutuhkan', status: 400 }
+  if (!items.length) return { ok: false, error: 'At least 1 item is required', status: 400 }
 
   const po = await db.purchaseOrder.findUnique({
     where: { id: orderId },
@@ -70,7 +70,7 @@ export async function receiveGoods(db: Db, params: {
   })
   if (!po) return { ok: false, error: 'PO not found', status: 404 }
   if (!['IN_TRANSIT', 'PARTIALLY_RECEIVED'].includes(po.status))
-    return { ok: false, error: 'Barang hanya dapat diterima setelah PO berstatus In Transit', status: 400 }
+    return { ok: false, error: 'Items can only be received once the PO is In Transit', status: 400 }
 
   // When the PO has a transit route, goods from the supplier can only land at the first
   // transit stop — the caller-supplied locationId is ignored/overridden for routed POs.
@@ -374,10 +374,10 @@ export async function receiveGoods(db: Db, params: {
   })
 
   if (newStatus) {
-    const label = newStatus === 'RECEIVED' ? 'Barang Diterima' : 'Barang Diterima Sebagian'
+    const label = newStatus === 'RECEIVED' ? 'Items Received' : 'Items Partially Received'
     const msg = newStatus === 'RECEIVED'
-      ? `${po.poNumber} dari ${po.supplierName ?? 'supplier'} telah diterima lengkap di gudang`
-      : `${po.poNumber} dari ${po.supplierName ?? 'supplier'} diterima sebagian — cek detail penerimaan`
+      ? `${po.poNumber} from ${po.supplierName ?? 'supplier'} has been fully received at the warehouse`
+      : `${po.poNumber} from ${po.supplierName ?? 'supplier'} was partially received — check the receipt details`
     notifyByRole(db, ['PURCHASING', 'ADMIN'], newStatus === 'RECEIVED' ? 'PO_RECEIVED' : 'PO_PARTIALLY_RECEIVED',
       label, msg, orderId,
     ).catch(console.error)

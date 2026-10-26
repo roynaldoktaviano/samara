@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback } from 'react'
 import { Wallet, X, Upload, MapPin, ArrowLeft } from 'lucide-react'
 import { isPdfDataUrl } from '@/lib/fileUpload'
 import { FilePreview, MultiFilePicker } from '@/components/ui/file-preview'
+import { formatDate, formatMoney } from '@/lib/format'
+import { StatusBadge, type StatusTone } from '@/components/ui/status-badge'
 import { poLineTotal, poLineDiscount } from '@/lib/po-payment'
 
 interface PaymentRequest {
@@ -39,18 +41,15 @@ interface PaymentRequest {
   }
 }
 
-const fmtDate = (s: string) => new Date(s).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
-
 // A request that's individually PAID can still just be a DP — show the PO's
 // overall progress instead of a flat "Paid" so Finance knows a final
 // settlement request may still be coming for the same PO.
-function statusBadge(status: string, poPaymentStatus: string): { label: string; className: string } {
-  if (status === 'REJECTED') return { label: 'Rejected', className: 'bg-red-100 text-red-700' }
-  if (status !== 'PAID') return { label: 'Waiting for Payment', className: 'bg-amber-100 text-amber-700' }
-  if (poPaymentStatus === 'PARTIALLY_PAID') return { label: 'Partially Paid', className: 'bg-orange-100 text-orange-700' }
-  return { label: 'Paid', className: 'bg-green-100 text-green-700' }
+function statusBadge(status: string, poPaymentStatus: string): { label: string; tone: StatusTone } {
+  if (status === 'REJECTED') return { label: 'Rejected', tone: 'destructive' }
+  if (status !== 'PAID') return { label: 'Waiting for Payment', tone: 'warning' }
+  if (poPaymentStatus === 'PARTIALLY_PAID') return { label: 'Partially Paid', tone: 'warning' }
+  return { label: 'Paid', tone: 'success' }
 }
-const fmtMoney = (n: number) => 'Rp ' + new Intl.NumberFormat('id-ID').format(n)
 
 function PhotoLightbox({ photoKey, onClose }: { photoKey: string; onClose: () => void }) {
   const isPdf = isPdfDataUrl(photoKey)
@@ -58,10 +57,10 @@ function PhotoLightbox({ photoKey, onClose }: { photoKey: string; onClose: () =>
     <div className="fixed inset-0 bg-black/70 z-[60] flex items-center justify-center p-4" onClick={onClose}>
       <div className="relative max-w-2xl w-full" onClick={e => e.stopPropagation()}>
         {isPdf ? (
-          <div className="bg-white rounded-xl shadow-2xl overflow-hidden">
+          <div className="bg-card rounded-xl shadow-2xl overflow-hidden">
             <embed src={photoKey} type="application/pdf" className="w-full h-[75vh]" />
             <div className="p-3 flex justify-center">
-              <a href={photoKey} target="_blank" rel="noopener noreferrer" className="text-sm text-amber-700 hover:text-amber-900 font-medium underline underline-offset-2">
+              <a href={photoKey} target="_blank" rel="noopener noreferrer" className="text-sm text-primary-strong hover:text-primary-strong/80 font-medium underline underline-offset-2">
                 Open PDF in new tab
               </a>
             </div>
@@ -172,12 +171,12 @@ export default function PurchaseOrderPayments({ deepLinkId, onDeepLinkHandled }:
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-xs text-muted-foreground uppercase tracking-wide font-semibold">Amount</p>
-                <p className="text-2xl font-bold mt-0.5">{fmtMoney(selected.amount)}</p>
+                <p className="text-2xl font-bold mt-0.5">{formatMoney(selected.amount)}</p>
               </div>
               <div className="text-right">
-                <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${statusBadge(selected.status, selected.poPaymentStatus).className}`}>
+                <StatusBadge tone={statusBadge(selected.status, selected.poPaymentStatus).tone} className="px-2.5 py-1">
                   {statusBadge(selected.status, selected.poPaymentStatus).label}
-                </span>
+                </StatusBadge>
                 {selected.paymentMethod === 'CARD' && (
                   <p className="text-[10px] text-muted-foreground mt-1">Debit Paid · no action needed</p>
                 )}
@@ -185,7 +184,7 @@ export default function PurchaseOrderPayments({ deepLinkId, onDeepLinkHandled }:
             </div>
 
             <div className="text-sm text-muted-foreground">
-              {selected.paymentMethod === 'CARD' ? 'Paid' : 'Requested'} {fmtDate(selected.createdAt)}{selected.requestedBy?.name && ` · by ${selected.requestedBy.name}`}
+              {selected.paymentMethod === 'CARD' ? 'Paid' : 'Requested'} {formatDate(selected.createdAt)}{selected.requestedBy?.name && ` · by ${selected.requestedBy.name}`}
             </div>
 
             {selected.order.requestedByName && (
@@ -223,8 +222,8 @@ export default function PurchaseOrderPayments({ deepLinkId, onDeepLinkHandled }:
                           <tr key={it.id}>
                             <td className="px-3 py-2 font-medium">{it.itemName}</td>
                             <td className="px-3 py-2 text-right">{it.orderedQty} <span className="text-muted-foreground text-xs">{it.unit ?? ''}</span></td>
-                            <td className="px-3 py-2 text-right text-muted-foreground">{fmtMoney(it.unitCost)}</td>
-                            <td className="px-3 py-2 text-right font-medium">{poLineDiscount(it) > 0 && <span className="block text-[10px] font-normal text-green-700">−{it.discountType === 'PERCENT' ? `${it.discountValue}%` : fmtMoney(poLineDiscount(it))}</span>}{fmtMoney(poLineTotal(it))}</td>
+                            <td className="px-3 py-2 text-right text-muted-foreground">{formatMoney(it.unitCost)}</td>
+                            <td className="px-3 py-2 text-right font-medium">{poLineDiscount(it) > 0 && <span className="block text-[10px] font-normal text-success">−{it.discountType === 'PERCENT' ? `${it.discountValue}%` : formatMoney(poLineDiscount(it))}</span>}{formatMoney(poLineTotal(it))}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -233,27 +232,27 @@ export default function PurchaseOrderPayments({ deepLinkId, onDeepLinkHandled }:
                           <>
                             <tr>
                               <td colSpan={3} className="px-3 py-1.5 text-xs text-muted-foreground text-right">Subtotal</td>
-                              <td className="px-3 py-1.5 text-right text-muted-foreground text-xs">{fmtMoney(itemsSubtotal)}</td>
+                              <td className="px-3 py-1.5 text-right text-muted-foreground text-xs">{formatMoney(itemsSubtotal)}</td>
                             </tr>
                             {discountAmount > 0 && (
                               <tr>
                                 <td colSpan={3} className="px-3 py-1.5 text-xs text-muted-foreground text-right">
                                   Discount{selected.order.discountType === 'PERCENT' ? ` (${selected.order.discountValue}%)` : ''}
                                 </td>
-                                <td className="px-3 py-1.5 text-right text-muted-foreground text-xs">-{fmtMoney(discountAmount)}</td>
+                                <td className="px-3 py-1.5 text-right text-muted-foreground text-xs">-{formatMoney(discountAmount)}</td>
                               </tr>
                             )}
                             {selected.order.extraCharges?.map((c, i) => (
                               <tr key={i}>
                                 <td colSpan={3} className="px-3 py-1.5 text-xs text-muted-foreground text-right">{c.label || 'Additional charge'}</td>
-                                <td className="px-3 py-1.5 text-right text-muted-foreground text-xs">{fmtMoney(c.amount)}</td>
+                                <td className="px-3 py-1.5 text-right text-muted-foreground text-xs">{formatMoney(c.amount)}</td>
                               </tr>
                             ))}
                           </>
                         )}
                         <tr>
                           <td colSpan={3} className="px-3 py-2 text-sm font-semibold text-right">PO Total</td>
-                          <td className="px-3 py-2 text-right font-bold">{fmtMoney(itemsSubtotal - discountAmount + chargesTotal)}</td>
+                          <td className="px-3 py-2 text-right font-bold">{formatMoney(itemsSubtotal - discountAmount + chargesTotal)}</td>
                         </tr>
                       </tfoot>
                     </table>
@@ -264,34 +263,34 @@ export default function PurchaseOrderPayments({ deepLinkId, onDeepLinkHandled }:
             })()}
 
             {selected.priorInstallments.length > 0 && (
-              <div className="rounded-lg border border-blue-200 bg-blue-50/60 px-3 py-2.5 text-sm space-y-1.5">
+              <div className="rounded-lg border border-info/30 bg-info/10 px-3 py-2.5 text-sm space-y-1.5">
                 {selected.priorInstallments.map((p, i) => (
-                  <div key={i} className="flex items-center justify-between text-blue-900">
+                  <div key={i} className="flex items-center justify-between text-info">
                     <span>{p.label}{p.kind === 'reimbursement' ? ' (Reimbursement)' : ''}</span>
                     <span className="font-medium">
-                      {fmtMoney(p.amount)}
-                      <span className="text-blue-700 font-normal"> — {p.status === 'PAID' ? 'Paid' : 'Requested'} {fmtDate(p.date)}</span>
+                      {formatMoney(p.amount)}
+                      <span className="text-info/80 font-normal"> — {p.status === 'PAID' ? 'Paid' : 'Requested'} {formatDate(p.date)}</span>
                     </span>
                   </div>
                 ))}
-                <div className="flex items-center justify-between text-blue-900">
+                <div className="flex items-center justify-between text-info">
                   <span>{selected.installmentLabel ?? 'This Payment'}</span>
                   <span className="font-medium">
-                    {fmtMoney(selected.amount)}
-                    <span className="text-blue-700 font-normal">
-                      {' — '}{selected.status === 'PAID' ? 'Paid' : 'Requested'} {fmtDate(selected.status === 'PAID' && selected.paidAt ? selected.paidAt : selected.createdAt)}
+                    {formatMoney(selected.amount)}
+                    <span className="text-info/80 font-normal">
+                      {' — '}{selected.status === 'PAID' ? 'Paid' : 'Requested'} {formatDate(selected.status === 'PAID' && selected.paidAt ? selected.paidAt : selected.createdAt)}
                     </span>
                   </span>
                 </div>
-                <div className="flex items-center justify-between pt-1.5 border-t border-blue-200 font-semibold text-blue-900">
+                <div className="flex items-center justify-between pt-1.5 border-t border-info/30 font-semibold text-info">
                   <span>Remaining Balance</span>
-                  <span>{fmtMoney(selected.remainingBalance)}</span>
+                  <span>{formatMoney(selected.remainingBalance)}</span>
                 </div>
               </div>
             )}
 
             {selected.paymentMethod === 'CARD' && (
-              <div className="rounded-lg bg-green-50 border border-green-200 px-3 py-2.5 text-sm text-green-800">
+              <div className="rounded-lg bg-success/10 border border-success/30 px-3 py-2.5 text-sm text-success">
                 Debit Paid directly by the purchasing team. No transfer or approval needed — this is for your records.
               </div>
             )}
@@ -301,21 +300,21 @@ export default function PurchaseOrderPayments({ deepLinkId, onDeepLinkHandled }:
             )}
 
             {selected.status === 'REJECTED' && (
-              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm">
-                <p className="font-semibold text-red-700 mb-1">Payment Rejected</p>
-                <p className="text-red-800">{selected.rejectionReason}</p>
-                <p className="text-xs text-red-500 mt-1.5">
-                  {selected.rejectedAt && fmtDate(selected.rejectedAt)}{selected.rejectedBy?.name && ` · by ${selected.rejectedBy.name}`}
+              <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2.5 text-sm">
+                <p className="font-semibold text-destructive mb-1">Payment Rejected</p>
+                <p className="text-destructive">{selected.rejectionReason}</p>
+                <p className="text-xs text-destructive mt-1.5">
+                  {selected.rejectedAt && formatDate(selected.rejectedAt)}{selected.rejectedBy?.name && ` · by ${selected.rejectedBy.name}`}
                 </p>
               </div>
             )}
 
             <div className={selected.status === 'PAID' && selected.transferProofKeys.length > 0 ? 'grid grid-cols-2 gap-4' : ''}>
               <div>
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Receipt / Nota{selected.notePhotoKeys.length > 1 ? ` (${selected.notePhotoKeys.length})` : ''}</p>
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Receipt{selected.notePhotoKeys.length > 1 ? ` (${selected.notePhotoKeys.length})` : ''}</p>
                 <div className="grid grid-cols-2 gap-2">
                   {selected.notePhotoKeys.map((k, i) => (
-                    <FilePreview key={i} src={k} alt={`Nota ${i + 1}`} onClick={() => setViewPhoto(k)}
+                    <FilePreview key={i} src={k} alt={`Receipt ${i + 1}`} onClick={() => setViewPhoto(k)}
                       className="w-full h-32 rounded-lg object-contain bg-muted/20 border cursor-zoom-in hover:opacity-90 transition-opacity" />
                   ))}
                 </div>
@@ -323,15 +322,15 @@ export default function PurchaseOrderPayments({ deepLinkId, onDeepLinkHandled }:
 
               {selected.status === 'PAID' && selected.transferProofKeys.length > 0 && (
                 <div>
-                  <p className="text-xs font-semibold text-green-700 uppercase tracking-wide mb-1.5">Transfer Proof{selected.transferProofKeys.length > 1 ? ` (${selected.transferProofKeys.length})` : ''}</p>
+                  <p className="text-xs font-semibold text-success uppercase tracking-wide mb-1.5">Transfer Proof{selected.transferProofKeys.length > 1 ? ` (${selected.transferProofKeys.length})` : ''}</p>
                   <div className="grid grid-cols-2 gap-2">
                     {selected.transferProofKeys.map((k, i) => (
                       <FilePreview key={i} src={k} alt={`Transfer proof ${i + 1}`} onClick={() => setViewPhoto(k)}
                         className="w-full h-32 rounded-lg object-contain bg-muted/20 border cursor-zoom-in hover:opacity-90 transition-opacity" />
                     ))}
                   </div>
-                  <p className="text-xs text-green-700 mt-1.5">
-                    Paid {selected.paidAt && fmtDate(selected.paidAt)}{selected.paidBy?.name && ` · by ${selected.paidBy.name}`}
+                  <p className="text-xs text-success mt-1.5">
+                    Paid {selected.paidAt && formatDate(selected.paidAt)}{selected.paidBy?.name && ` · by ${selected.paidBy.name}`}
                   </p>
                   {selected.paidNotes && (
                     <p className="text-xs text-muted-foreground mt-1.5 whitespace-pre-wrap">{selected.paidNotes}</p>
@@ -344,11 +343,11 @@ export default function PurchaseOrderPayments({ deepLinkId, onDeepLinkHandled }:
           {selected.status === 'PENDING' && (
             <div className="flex justify-end gap-2 px-5 py-4 border-t">
               <button onClick={() => { setRejectReason(''); setRejectError(''); setRejectModal(true) }}
-                className="flex items-center gap-2 px-5 py-2 text-sm text-red-600 border border-red-200 rounded-lg hover:bg-red-50 font-semibold transition-colors">
+                className="flex items-center gap-2 px-5 py-2 text-sm text-destructive border border-destructive/30 rounded-lg hover:bg-destructive/10 font-semibold transition-colors">
                 <X className="h-3.5 w-3.5" /> Reject
               </button>
               <button onClick={() => { setTransferProofs([]); setPayNotes(''); setPayError(''); setPayModal(true) }}
-                className="flex items-center gap-2 px-5 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 font-semibold transition-colors">
+                className="flex items-center gap-2 px-5 py-2 text-sm bg-success text-success-foreground rounded-lg hover:bg-success/90 font-semibold transition-colors">
                 <Upload className="h-3.5 w-3.5" /> Upload Transfer Proof
               </button>
             </div>
@@ -360,30 +359,30 @@ export default function PurchaseOrderPayments({ deepLinkId, onDeepLinkHandled }:
           <>
             <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[55]" onClick={() => setPayModal(false)} />
             <div className="fixed inset-0 z-[55] flex items-center justify-center p-4 pointer-events-none">
-              <div className="pointer-events-auto bg-white rounded-2xl shadow-2xl w-full max-w-md">
+              <div className="pointer-events-auto bg-card rounded-2xl shadow-2xl w-full max-w-md">
                 <div className="flex items-center justify-between px-5 py-4 border-b">
                   <div>
                     <h3 className="font-semibold">Confirm Payment</h3>
-                    <p className="text-xs text-muted-foreground mt-0.5">{selected.order.poNumber} · {fmtMoney(selected.amount)}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{selected.order.poNumber} · {formatMoney(selected.amount)}</p>
                   </div>
                   <button onClick={() => setPayModal(false)} className="text-muted-foreground hover:text-foreground text-xl leading-none">×</button>
                 </div>
                 <div className="p-5 space-y-4">
-                  {payError && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2">{payError}</div>}
+                  {payError && <div className="rounded-lg bg-destructive/10 border border-destructive/30 text-destructive text-sm px-3 py-2">{payError}</div>}
                   <p className="text-xs text-muted-foreground">JPG, PNG, or PDF — you can attach more than one file (e.g. multiple transfer receipts)</p>
                   <MultiFilePicker files={transferProofs} onChange={setTransferProofs} />
                   <div>
                     <label className="text-xs font-medium text-muted-foreground mb-1 block">Notes (optional)</label>
                     <textarea value={payNotes} onChange={e => setPayNotes(e.target.value)} rows={2}
-                      className="w-full border rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-amber-500"
-                      placeholder="Add a note for this payment..." />
+                      className="w-full border rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-ring"
+                      placeholder="Add a note for this payment…" />
                   </div>
                 </div>
                 <div className="flex justify-end gap-2 px-5 py-4 border-t">
                   <button onClick={() => setPayModal(false)} className="px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">Cancel</button>
                   <button onClick={confirmPaid} disabled={transferProofs.length === 0 || paySaving}
-                    className="flex items-center gap-2 px-5 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-40 font-semibold transition-colors">
-                    {paySaving ? <><div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Saving...</> : 'Mark as Paid'}
+                    className="flex items-center gap-2 px-5 py-2 text-sm bg-success text-success-foreground rounded-lg hover:bg-success/90 disabled:opacity-40 font-semibold transition-colors">
+                    {paySaving ? <><div className="h-4 w-4 border-2 border-success-foreground/30 border-t-success-foreground rounded-full animate-spin" />Saving…</> : 'Mark as Paid'}
                   </button>
                 </div>
               </div>
@@ -396,29 +395,29 @@ export default function PurchaseOrderPayments({ deepLinkId, onDeepLinkHandled }:
           <>
             <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[55]" onClick={() => setRejectModal(false)} />
             <div className="fixed inset-0 z-[55] flex items-center justify-center p-4 pointer-events-none">
-              <div className="pointer-events-auto bg-white rounded-2xl shadow-2xl w-full max-w-md">
+              <div className="pointer-events-auto bg-card rounded-2xl shadow-2xl w-full max-w-md">
                 <div className="flex items-center justify-between px-5 py-4 border-b">
                   <div>
                     <h3 className="font-semibold">Reject Payment Request</h3>
-                    <p className="text-xs text-muted-foreground mt-0.5">{selected.order.poNumber} · {fmtMoney(selected.amount)}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{selected.order.poNumber} · {formatMoney(selected.amount)}</p>
                   </div>
                   <button onClick={() => setRejectModal(false)} className="text-muted-foreground hover:text-foreground text-xl leading-none">×</button>
                 </div>
                 <div className="p-5 space-y-4">
-                  {rejectError && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2">{rejectError}</div>}
+                  {rejectError && <div className="rounded-lg bg-destructive/10 border border-destructive/30 text-destructive text-sm px-3 py-2">{rejectError}</div>}
                   <p className="text-xs text-muted-foreground">This will mark the PO itself as Rejected so purchasing can review or cancel it.</p>
                   <div>
-                    <label className="text-xs font-medium text-muted-foreground mb-1 block">Reason <span className="text-red-500">*</span></label>
+                    <label className="text-xs font-medium text-muted-foreground mb-1 block">Reason <span className="text-destructive">*</span></label>
                     <textarea value={rejectReason} onChange={e => setRejectReason(e.target.value)} rows={3}
-                      className="w-full border rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-red-500"
+                      className="w-full border rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-destructive"
                       placeholder="Why is this payment request being rejected?" />
                   </div>
                 </div>
                 <div className="flex justify-end gap-2 px-5 py-4 border-t">
                   <button onClick={() => setRejectModal(false)} className="px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">Cancel</button>
                   <button onClick={confirmReject} disabled={!rejectReason.trim() || rejectSaving}
-                    className="flex items-center gap-2 px-5 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-40 font-semibold transition-colors">
-                    {rejectSaving ? <><div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Rejecting...</> : 'Reject Payment'}
+                    className="flex items-center gap-2 px-5 py-2 text-sm bg-destructive text-destructive-foreground rounded-lg hover:bg-destructive/90 disabled:opacity-40 font-semibold transition-colors">
+                    {rejectSaving ? <><div className="h-4 w-4 border-2 border-destructive-foreground/30 border-t-destructive-foreground rounded-full animate-spin" />Rejecting…</> : 'Reject Payment'}
                   </button>
                 </div>
               </div>
@@ -447,7 +446,7 @@ export default function PurchaseOrderPayments({ deepLinkId, onDeepLinkHandled }:
           ['ALL', 'All'],
         ] as const).map(([key, label]) => (
           <button key={key} onClick={() => setFilterStatus(key)}
-            className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${filterStatus === key ? 'bg-amber-500 text-white' : 'bg-muted text-muted-foreground hover:bg-muted/70'}`}>
+            className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${filterStatus === key ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/70'}`}>
             {label}
           </button>
         ))}
@@ -461,7 +460,7 @@ export default function PurchaseOrderPayments({ deepLinkId, onDeepLinkHandled }:
               <th className="text-left px-4 py-3 font-medium">Supplier</th>
               <th className="text-left px-4 py-3 font-medium">Destination</th>
               <th className="text-right px-4 py-3 font-medium">Amount</th>
-              <th className="text-left px-4 py-3 font-medium">Nota Date</th>
+              <th className="text-left px-4 py-3 font-medium">Receipt Date</th>
               <th className="text-left px-4 py-3 font-medium">Requested By</th>
               <th className="text-left px-4 py-3 font-medium">Status</th>
             </tr>
@@ -480,19 +479,19 @@ export default function PurchaseOrderPayments({ deepLinkId, onDeepLinkHandled }:
               <tr key={r.id} className="hover:bg-muted/30 cursor-pointer" onClick={() => setSelected(r)}>
                 <td className="px-4 py-3 font-mono text-sm font-medium">
                   {r.order.poNumber}
-                  <span className="block font-sans text-[10px] text-muted-foreground mt-0.5">Created {fmtDate(r.order.createdAt)}</span>
+                  <span className="block font-sans text-[10px] text-muted-foreground mt-0.5">Created {formatDate(r.order.createdAt)}</span>
                 </td>
                 <td className="px-4 py-3 text-muted-foreground">{r.order.supplierName ?? '—'}</td>
                 <td className="px-4 py-3 text-muted-foreground text-xs">
                   {r.order.deliveryLocation ? <span className="flex items-center gap-1"><MapPin className="h-3 w-3 shrink-0" />{r.order.deliveryLocation.name}</span> : '—'}
                 </td>
-                <td className="px-4 py-3 text-right font-medium">{fmtMoney(r.amount)}</td>
-                <td className="px-4 py-3 text-muted-foreground">{r.notaDate ? fmtDate(r.notaDate) : '—'}</td>
+                <td className="px-4 py-3 text-right font-medium">{formatMoney(r.amount)}</td>
+                <td className="px-4 py-3 text-muted-foreground">{formatDate(r.notaDate)}</td>
                 <td className="px-4 py-3 text-muted-foreground">{r.requestedBy?.name ?? '—'}</td>
                 <td className="px-4 py-3">
-                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusBadge(r.status, r.poPaymentStatus).className}`}>
+                  <StatusBadge tone={statusBadge(r.status, r.poPaymentStatus).tone}>
                     {statusBadge(r.status, r.poPaymentStatus).label}
-                  </span>
+                  </StatusBadge>
                   {r.paymentMethod === 'CARD' && (
                     <span className="block text-[10px] text-muted-foreground mt-0.5">Debit Paid · no action needed</span>
                   )}

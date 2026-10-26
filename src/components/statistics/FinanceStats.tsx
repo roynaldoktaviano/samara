@@ -9,11 +9,14 @@ import {
   ResponsiveContainer, Legend, Cell,
 } from 'recharts'
 import { DollarSign, Ship, TrendingUp, Briefcase, RotateCw, Users } from 'lucide-react'
+import { formatMoney, formatMoneyCompact } from '@/lib/format'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 
 /* ── constants ── */
 const TEAL        = '#1a5f6e'
 const GOLD        = '#bdac7e'
-const RANK_COLORS = [GOLD, '#9ca3af', '#b45309', '#6b7280', '#6b7280']
+const RANK_COLORS = ['var(--primary)', '#9ca3af', '#b45309', '#6b7280', '#6b7280']
 const REFRESH_MS  = 60_000
 const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
@@ -31,14 +34,6 @@ interface FinanceData {
 }
 
 /* ── helpers ── */
-const fmtK = (n: number) => {
-  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`
-  if (n >= 1_000)     return `$${(n / 1_000).toFixed(1)}K`
-  return `$${n.toFixed(0)}`
-}
-const fmtFull = (n: number) =>
-  `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-
 function toISO(d: Date) { return d.toISOString().split('T')[0] }
 function timeAgo(iso: string) {
   const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000)
@@ -60,11 +55,11 @@ const PRESETS = [
 function MoneyTip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null
   return (
-    <div style={{ background: 'white', border: '1px solid #e5e7eb', borderRadius: 8, padding: '10px 14px', fontSize: 12 }}>
-      <p style={{ fontWeight: 700, marginBottom: 6, color: '#374151' }}>{label}</p>
+    <div style={{ background: 'var(--popover)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px', fontSize: 12 }}>
+      <p style={{ fontWeight: 700, marginBottom: 6, color: 'var(--foreground)' }}>{label}</p>
       {payload.map((p: any) => (
         <p key={p.name} style={{ color: p.color, margin: '2px 0' }}>
-          {p.name}: <strong>{fmtFull(p.value)}</strong>
+          {p.name}: <strong>{formatMoney(p.value, { currency: 'USD' })}</strong>
         </p>
       ))}
     </div>
@@ -78,10 +73,10 @@ function CollectBar({ contracted, collected }: { contracted: number; collected: 
     <div className="w-full">
       <div className="flex justify-between text-[10px] text-muted-foreground mb-0.5">
         <span>Collected {Math.round(pct)}%</span>
-        <span>{fmtK(collected)} / {fmtK(contracted)}</span>
+        <span>{formatMoneyCompact(collected, { currency: 'USD' })} / {formatMoneyCompact(contracted, { currency: 'USD' })}</span>
       </div>
       <div className="h-1.5 rounded-full bg-muted overflow-hidden">
-        <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: TEAL }} />
+        <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: 'var(--brand)' }} />
       </div>
     </div>
   )
@@ -134,10 +129,9 @@ export default function FinanceStats() {
           </p>
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
-          <button onClick={() => fetchStats(true)} disabled={refreshing}
-            className="flex items-center gap-1.5 h-8 px-3 text-xs rounded-md border border-input bg-background hover:bg-muted disabled:opacity-50">
-            <RotateCw className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`} /> Refresh
-          </button>
+          <Button variant="outline" size="sm" onClick={() => fetchStats(true)} disabled={refreshing} className="text-xs">
+            <RotateCw className={`size-3.5 ${refreshing ? 'animate-spin' : ''}`} /> Refresh
+          </Button>
           {data?.updatedAt && !loading && (
             <span className="text-[11px] text-muted-foreground w-14">{timeAgo(data.updatedAt)}</span>
           )}
@@ -147,21 +141,21 @@ export default function FinanceStats() {
       {/* Filter bar */}
       <div className="flex flex-wrap items-center gap-2">
         {PRESETS.map(p => (
-          <button key={p.label} onClick={() => applyPreset(p)}
-            className={`h-8 px-3 rounded-md text-xs font-medium transition-colors border ${activePreset === p.label ? 'border-transparent text-white' : 'border-input bg-background text-muted-foreground hover:bg-muted'}`}
-            style={activePreset === p.label ? { backgroundColor: TEAL } : {}}>
+          <button key={p.label} onClick={() => applyPreset(p)} aria-pressed={activePreset === p.label}
+            className={`h-8 px-3 rounded-md text-xs font-medium transition-colors border ${activePreset === p.label ? 'border-transparent text-brand-foreground' : 'border-input bg-background text-muted-foreground hover:bg-muted'}`}
+            style={activePreset === p.label ? { backgroundColor: 'var(--brand)' } : {}}>
             {p.label}
           </button>
         ))}
         <div className="w-px h-5 bg-border mx-1" />
-        <input type="date" value={from} onChange={e => { setFrom(e.target.value); setActivePreset('') }}
-          className="h-8 px-2 text-xs rounded-md border border-input bg-background focus:outline-none focus:ring-1 focus:ring-ring" />
+        <Input type="date" aria-label="From date" value={from} onChange={e => { setFrom(e.target.value); setActivePreset('') }}
+          className="h-8 w-auto px-2" />
         <span className="text-xs text-muted-foreground">→</span>
-        <input type="date" value={to} onChange={e => { setTo(e.target.value); setActivePreset('') }}
-          className="h-8 px-2 text-xs rounded-md border border-input bg-background focus:outline-none focus:ring-1 focus:ring-ring" />
+        <Input type="date" aria-label="To date" value={to} onChange={e => { setTo(e.target.value); setActivePreset('') }}
+          className="h-8 w-auto px-2" />
         <div className="w-px h-5 bg-border mx-1" />
         <Select value={yachtId} onValueChange={setYachtId}>
-          <SelectTrigger className="h-8 w-36 text-xs"><SelectValue /></SelectTrigger>
+          <SelectTrigger aria-label="Vessel" className="h-8 w-36 text-xs"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Vessels</SelectItem>
             {data?.yachts.map(y => <SelectItem key={y.id} value={y.id}>{y.name}</SelectItem>)}
@@ -185,12 +179,12 @@ export default function FinanceStats() {
             <CardContent>
               {loading || c.value === undefined
                 ? <Skeleton className="h-7 w-28 mb-1" />
-                : <div className={`text-2xl font-bold ${c.warn && (c.value as number) > 0 ? 'text-amber-600' : ''}`}>
-                    {c.count ? c.value : fmtK(c.value as number)}
+                : <div className={`text-2xl font-bold ${c.warn && (c.value as number) > 0 ? 'text-warning' : ''}`}>
+                    {c.count ? c.value : formatMoneyCompact(c.value as number, { currency: 'USD' })}
                   </div>}
               <p className="text-xs text-muted-foreground mt-0.5">{c.sub}</p>
               {!loading && !c.count && ov && ov.contracted > 0 && c.title === 'Collected' && (
-                <p className="text-xs font-medium mt-0.5" style={{ color: TEAL }}>
+                <p className="text-xs font-medium mt-0.5" style={{ color: 'var(--brand)' }}>
                   {Math.round((ov.collected / ov.contracted) * 100)}% collected
                 </p>
               )}
@@ -203,7 +197,7 @@ export default function FinanceStats() {
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
-            <TrendingUp className="h-4 w-4" style={{ color: TEAL }} /> Monthly Revenue
+            <TrendingUp className="h-4 w-4" style={{ color: 'var(--brand)' }} /> Monthly Revenue
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -214,7 +208,7 @@ export default function FinanceStats() {
               <BarChart data={data.monthlyRevenue.map(m => ({ ...m, month: fmtMonth(m.month) }))} barGap={2}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                 <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-                <YAxis tickFormatter={v => fmtK(v)} tick={{ fontSize: 11 }} width={64} />
+                <YAxis tickFormatter={v => formatMoneyCompact(v, { currency: 'USD' })} tick={{ fontSize: 11 }} width={64} />
                 <Tooltip content={<MoneyTip />} />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
                 <Bar dataKey="contracted" name="Contracted" fill={GOLD} radius={[3, 3, 0, 0]} />
@@ -232,7 +226,7 @@ export default function FinanceStats() {
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-base flex items-center gap-2">
-              <Ship className="h-4 w-4" style={{ color: TEAL }} /> Revenue per Vessel
+              <Ship className="h-4 w-4" style={{ color: 'var(--brand)' }} /> Revenue per Vessel
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -251,7 +245,7 @@ export default function FinanceStats() {
                         <span className="font-semibold text-sm">{v.name}</span>
                         <span className="text-xs text-muted-foreground">{v.bookings} bookings</span>
                       </div>
-                      <span className="text-sm font-bold">{fmtK(v.contracted)}</span>
+                      <span className="text-sm font-bold">{formatMoneyCompact(v.contracted, { currency: 'USD' })}</span>
                     </div>
                     <CollectBar contracted={v.contracted} collected={v.collected} />
                   </div>
@@ -265,7 +259,7 @@ export default function FinanceStats() {
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-base flex items-center gap-2">
-              <Briefcase className="h-4 w-4" style={{ color: GOLD }} /> Top Agents by Revenue
+              <Briefcase className="h-4 w-4" style={{ color: 'var(--primary)' }} /> Top Agents by Revenue
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -284,7 +278,7 @@ export default function FinanceStats() {
                         <span className="font-medium text-sm truncate">{a.name}</span>
                       </div>
                       <div className="text-right shrink-0 ml-2">
-                        <div className="text-sm font-bold">{fmtK(a.contracted)}</div>
+                        <div className="text-sm font-bold">{formatMoneyCompact(a.contracted, { currency: 'USD' })}</div>
                         <div className="text-[10px] text-muted-foreground">{a.bookings} bookings</div>
                       </div>
                     </div>
@@ -301,7 +295,7 @@ export default function FinanceStats() {
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
-            <Users className="h-4 w-4" style={{ color: TEAL }} /> Sales Performance
+            <Users className="h-4 w-4" style={{ color: 'var(--brand)' }} /> Sales Performance
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -332,10 +326,10 @@ export default function FinanceStats() {
                           </div>
                         </td>
                         <td className="py-2.5 pr-4 text-right text-muted-foreground">{s.bookings}</td>
-                        <td className="py-2.5 pr-4 text-right font-semibold">{fmtFull(s.contracted)}</td>
-                        <td className="py-2.5 pr-4 text-right" style={{ color: TEAL }}>{fmtFull(s.collected)}</td>
-                        <td className="py-2.5 text-right font-medium" style={{ color: outstanding > 0 ? '#d97706' : '#059669' }}>
-                          {fmtFull(outstanding)}
+                        <td className="py-2.5 pr-4 text-right font-semibold">{formatMoney(s.contracted, { currency: 'USD' })}</td>
+                        <td className="py-2.5 pr-4 text-right" style={{ color: 'var(--brand)' }}>{formatMoney(s.collected, { currency: 'USD' })}</td>
+                        <td className="py-2.5 text-right font-medium" style={{ color: outstanding > 0 ? 'var(--warning)' : 'var(--success)' }}>
+                          {formatMoney(outstanding, { currency: 'USD' })}
                         </td>
                       </tr>
                     )
@@ -345,10 +339,10 @@ export default function FinanceStats() {
                   <tr className="border-t font-bold">
                     <td className="pt-2.5 pr-4 text-xs text-muted-foreground">TOTAL</td>
                     <td className="pt-2.5 pr-4 text-right text-xs text-muted-foreground">{ov?.bookings}</td>
-                    <td className="pt-2.5 pr-4 text-right">{fmtFull(ov?.contracted ?? 0)}</td>
-                    <td className="pt-2.5 pr-4 text-right" style={{ color: TEAL }}>{fmtFull(ov?.collected ?? 0)}</td>
-                    <td className="pt-2.5 text-right" style={{ color: (ov?.outstanding ?? 0) > 0 ? '#d97706' : '#059669' }}>
-                      {fmtFull(ov?.outstanding ?? 0)}
+                    <td className="pt-2.5 pr-4 text-right">{formatMoney(ov?.contracted ?? 0, { currency: 'USD' })}</td>
+                    <td className="pt-2.5 pr-4 text-right" style={{ color: 'var(--brand)' }}>{formatMoney(ov?.collected ?? 0, { currency: 'USD' })}</td>
+                    <td className="pt-2.5 text-right" style={{ color: (ov?.outstanding ?? 0) > 0 ? 'var(--warning)' : 'var(--success)' }}>
+                      {formatMoney(ov?.outstanding ?? 0, { currency: 'USD' })}
                     </td>
                   </tr>
                 </tfoot>

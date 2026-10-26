@@ -56,13 +56,13 @@ export default function Purchasing() {
               onClick={() => setView(item.id)}
               className={`flex items-center gap-2.5 px-4 py-2 text-sm text-left transition-colors rounded-none w-full
                 ${isActive
-                  ? 'bg-amber-50 text-amber-800 font-medium border-r-2 border-amber-500'
+                  ? 'bg-warning/10 text-warning font-medium border-r-2 border-warning'
                   : 'text-muted-foreground hover:bg-muted hover:text-foreground'
                 }`}
             >
               <Icon className="h-3.5 w-3.5 shrink-0" />
               <span className="flex-1">{item.label}</span>
-              {item.built && !isActive && <span className="w-1.5 h-1.5 rounded-full bg-green-400 shrink-0" />}
+              {item.built && !isActive && <span className="w-1.5 h-1.5 rounded-full bg-success shrink-0" />}
             </button>
           )
         })}
@@ -112,11 +112,11 @@ function OverviewPage() {
           </div>
         ))}
       </div>
-      <div className="rounded-lg border bg-amber-50 border-amber-200 p-4 flex gap-3">
-        <AlertCircle className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
-        <div className="text-sm text-amber-800">
+      <div className="rounded-lg border bg-warning/10 border-warning/30 p-4 flex gap-3">
+        <AlertCircle className="h-4 w-4 text-warning mt-0.5 shrink-0" />
+        <div className="text-sm text-warning">
           <p className="font-medium">Progress: Item Master ✓ · Locations ✓ · Purchase Request ✓</p>
-          <p className="mt-0.5 text-amber-700">Next: Purchase Order → Goods Receipt → Transfer to Vessel</p>
+          <p className="mt-0.5 text-warning">Next: Purchase Order → Goods Receipt → Transfer to Vessel</p>
         </div>
       </div>
     </div>
@@ -124,7 +124,7 @@ function OverviewPage() {
 }
 
 function Loading() {
-  return <div className="text-sm text-muted-foreground py-8">Loading...</div>
+  return <div className="text-sm text-muted-foreground py-8">Loading…</div>
 }
 
 function ComingSoon({ title, desc }: { title: string; desc: string }) {

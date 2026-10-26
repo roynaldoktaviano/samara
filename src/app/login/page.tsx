@@ -155,46 +155,50 @@ export default function LoginPage() {
               </p>
 
               {error && (
-                <div className="mb-4 rounded-md bg-red-50 border border-red-200 px-4 py-3 text-[13px] text-red-600">
+                <div role="alert" className="mb-4 rounded-md bg-destructive/10 border border-destructive/30 px-4 py-3 text-[13px] text-destructive">
                   {error}
                 </div>
               )}
 
               <div className="mb-4">
-                <label className="block text-[13px] font-semibold text-[#3c5462] mb-1.5">Email</label>
+                <label htmlFor="login-email" className="block text-[13px] font-semibold text-[#3c5462] mb-1.5">Email</label>
                 <input
+                  id="login-email"
                   type="email"
-                  placeholder="Input your Email..."
+                  autoComplete="email"
+                  placeholder="Input your Email…"
                   value={email}
                   onChange={(e) => { setEmail(e.target.value); setShowPicker(false); }}
                   required
-                  className="w-full bg-transparent rounded-md border border-[#cdd8df] px-4 py-3 text-[13px] text-[#2a3d4a] placeholder:text-[#b0bfc8] placeholder:italic placeholder:font-light outline-none focus:border-[#1a6070] transition-colors"
+                  className="w-full bg-transparent rounded-md border border-[#cdd8df] px-4 py-3 text-[13px] text-[#2a3d4a] placeholder:text-[#b0bfc8] placeholder:italic placeholder:font-light outline-none focus:border-brand transition-colors"
                 />
               </div>
 
               <div className="mb-1">
-                <label className="block text-[13px] font-semibold text-[#3c5462] mb-1.5">Password</label>
+                <label htmlFor="login-password" className="block text-[13px] font-semibold text-[#3c5462] mb-1.5">Password</label>
                 <input
+                  id="login-password"
                   type="password"
+                  autoComplete="current-password"
                   placeholder="Input your Password"
                   value={password}
                   onChange={(e) => { setPassword(e.target.value); setShowPicker(false); }}
                   required
-                  className="w-full bg-transparent rounded-md border border-[#cdd8df] px-4 py-3 text-[13px] text-[#2a3d4a] placeholder:text-[#b0bfc8] placeholder:italic placeholder:font-light outline-none focus:border-[#1a6070] transition-colors"
+                  className="w-full bg-transparent rounded-md border border-[#cdd8df] px-4 py-3 text-[13px] text-[#2a3d4a] placeholder:text-[#b0bfc8] placeholder:italic placeholder:font-light outline-none focus:border-brand transition-colors"
                 />
               </div>
 
               <button
                 type="submit"
                 disabled={loading}
-                className="mt-6 py-3.5 w-full sm:w-[70%] rounded-md mx-auto block bg-[#1a5f6e] hover:bg-[#145260] active:bg-[#0f3f4a] disabled:opacity-60 disabled:cursor-not-allowed text-white text-[13px] font-semibold tracking-wide transition-colors cursor-pointer"
+                className="mt-6 py-3.5 w-full sm:w-[70%] rounded-md mx-auto block bg-brand hover:bg-brand-hover active:bg-[#0f3f4a] disabled:opacity-60 disabled:cursor-not-allowed text-brand-foreground text-[13px] font-semibold tracking-wide transition-colors cursor-pointer"
               >
-                {loading ? "Logging in..." : "Log In to Dashboard"}
+                {loading ? "Logging in…" : "Log In to Dashboard"}
               </button>
 
               <p className="mt-4 text-center text-[12px] text-[#8fa3ad]">
                 Forgot password?{" "}
-                <span className="text-[#8fa3ad] underline cursor-pointer hover:text-[#1a6070] transition-colors">
+                <span className="text-[#8fa3ad] underline cursor-pointer hover:text-brand transition-colors">
                   Try to Remember
                 </span>
               </p>
@@ -223,13 +227,13 @@ export default function LoginPage() {
       {/* ── Tenant picker modal ── */}
       {showPicker && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-6 animate-in fade-in zoom-in-95 duration-200">
+          <div role="dialog" aria-modal="true" aria-labelledby="login-tenant-picker-title" className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-6 animate-in fade-in zoom-in-95 duration-200">
             <div className="text-center mb-5">
-              <div className="text-lg font-bold text-[#1b3a4b] mb-1" style={{ fontFamily: "'Merriweather', serif" }}>
-                Pilih Sistem
+              <div id="login-tenant-picker-title" className="text-lg font-bold text-[#1b3a4b] mb-1" style={{ fontFamily: "'Merriweather', serif" }}>
+                Select System
               </div>
               <p className="text-[12px] text-[#7e9099]">
-                Akun ini terdaftar di beberapa sistem. Mau masuk ke mana?
+                This account is registered in multiple systems. Which one do you want to sign in to?
               </p>
             </div>
 
@@ -239,7 +243,7 @@ export default function LoginPage() {
                   key={opt.tenantSlug}
                   type="button"
                   onClick={() => handlePickTenant(opt)}
-                  className="flex items-center gap-4 w-full border border-[#cdd8df] hover:border-[#1a6070] hover:bg-[#f0f7f9] rounded-xl px-4 py-3.5 text-left transition-all group"
+                  className="flex items-center gap-4 w-full border border-[#cdd8df] hover:border-brand hover:bg-brand/5 rounded-xl px-4 py-3.5 text-left transition-all group"
                 >
                   <div className="w-10 h-10 flex items-center justify-center shrink-0">
                     <img
@@ -249,12 +253,12 @@ export default function LoginPage() {
                     />
                   </div>
                   <div>
-                    <div className="text-[13px] font-semibold text-[#1b3a4b] group-hover:text-[#1a6070] transition-colors">
+                    <div className="text-[13px] font-semibold text-[#1b3a4b] group-hover:text-brand transition-colors">
                       {opt.tenantName}
                     </div>
                     <div className="text-[11px] text-[#aabbc4]">/{opt.tenantSlug}</div>
                   </div>
-                  <svg className="ml-auto w-4 h-4 text-[#cdd8df] group-hover:text-[#1a6070] transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg aria-hidden="true" className="ml-auto w-4 h-4 text-[#cdd8df] group-hover:text-brand transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                   </svg>
                 </button>
@@ -266,7 +270,7 @@ export default function LoginPage() {
               onClick={() => setShowPicker(false)}
               className="mt-4 w-full text-center text-[12px] text-[#aabbc4] hover:text-[#7e9099] transition-colors"
             >
-              Batal
+              Cancel
             </button>
           </div>
         </div>

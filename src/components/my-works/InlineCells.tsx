@@ -1,14 +1,17 @@
 'use client'
 
-import { useRef, useState } from 'react'
+import { useId, useRef, useState } from 'react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import { Label } from '@/components/ui/label'
 import { dayKey, fmtRange, TypeTag } from './shared'
 
 // Click-to-edit table cells for the List view. Each one commits on blur / Enter and
 // reverts on Escape; the parent saves through a partial PATCH.
 
 const cellBtn = 'w-full text-left rounded px-1.5 py-1 -mx-1.5 -my-1 hover:bg-muted/70 cursor-text min-h-7'
-const editCls = 'w-full border rounded-md px-2 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500'
 
 // `readOnly` (a task assigned to me by someone else) renders the plain value with no editor.
 export function TextCell({ value, onSave, multiline, required, placeholder = '-', className = '', datalist, readOnly }: {
@@ -35,8 +38,8 @@ export function TextCell({ value, onSave, multiline, required, placeholder = '-'
 
   if (readOnly) return <span className={`block ${className}`}>{value || <span className="text-muted-foreground">{placeholder}</span>}</span>
   if (editing) return multiline
-    ? <textarea autoFocus rows={3} className={`${editCls} py-1.5 resize-y`} value={draft} onChange={e => setDraft(e.target.value)} onBlur={commit} onKeyDown={keys} />
-    : <input autoFocus list={datalist} className={`${editCls} h-8`} value={draft} onChange={e => setDraft(e.target.value)} onBlur={commit} onKeyDown={keys} />
+    ? <Textarea autoFocus rows={3} className="px-2 py-1.5 resize-y" value={draft} onChange={e => setDraft(e.target.value)} onBlur={commit} onKeyDown={keys} />
+    : <Input autoFocus list={datalist} className="h-8 px-2" value={draft} onChange={e => setDraft(e.target.value)} onBlur={commit} onKeyDown={keys} />
 
   return (
     <button type="button" onClick={start} className={`${cellBtn} ${className}`}>
@@ -57,7 +60,7 @@ function TypeInput({ value, datalist, onDone }: { value: string | null; datalist
   const done = useRef(false)
   const finish = (v: string | null) => { if (!done.current) { done.current = true; onDone(v) } }
   return (
-    <input autoFocus list={datalist} className={`${editCls} h-8`} value={draft} onChange={e => setDraft(e.target.value)}
+    <Input autoFocus list={datalist} className="h-8 px-2" aria-label="Type" value={draft} onChange={e => setDraft(e.target.value)}
       onBlur={() => finish(draft.trim())}
       onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') finish(null) }} />
   )
@@ -72,6 +75,7 @@ export function RangeCell({ startDate, dueDate, overdue, onSave, readOnly }: {
   const [end, setEnd] = useState('')
   const [error, setError] = useState('')
   const range = fmtRange({ startDate, dueDate })
+  const uid = useId()
 
   function onOpenChange(o: boolean) {
     if (o) { setStart(startDate ? dayKey(startDate) : ''); setEnd(dueDate ? dayKey(dueDate) : ''); setError('') }
@@ -83,27 +87,27 @@ export function RangeCell({ startDate, dueDate, overdue, onSave, readOnly }: {
     setOpen(false)
   }
 
-  if (readOnly) return <span className={`whitespace-nowrap ${overdue ? 'text-red-600 font-medium' : ''}`}>{range ?? <span className="text-muted-foreground">-</span>}</span>
+  if (readOnly) return <span className={`whitespace-nowrap ${overdue ? 'text-destructive font-medium' : ''}`}>{range ?? <span className="text-muted-foreground">-</span>}</span>
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger asChild>
-        <button type="button" className={`${cellBtn} whitespace-nowrap ${overdue ? 'text-red-600 font-medium' : ''}`}>
+        <button type="button" className={`${cellBtn} whitespace-nowrap ${overdue ? 'text-destructive font-medium' : ''}`}>
           {range ?? <span className="text-muted-foreground">-</span>}
         </button>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-64 p-3 space-y-3">
         <div className="space-y-1">
-          <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Start Date</label>
-          <input type="date" className={`${editCls} h-9`} value={start} onChange={e => setStart(e.target.value)} />
+          <Label htmlFor={`${uid}-start`} className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Start Date</Label>
+          <Input id={`${uid}-start`} type="date" className="px-2" value={start} onChange={e => setStart(e.target.value)} />
         </div>
         <div className="space-y-1">
-          <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">End Date</label>
-          <input type="date" className={`${editCls} h-9`} min={start || undefined} value={end} onChange={e => setEnd(e.target.value)} />
+          <Label htmlFor={`${uid}-end`} className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">End Date</Label>
+          <Input id={`${uid}-end`} type="date" className="px-2" min={start || undefined} value={end} onChange={e => setEnd(e.target.value)} />
         </div>
-        {error && <p className="text-xs text-red-600">{error}</p>}
+        {error && <p className="text-xs text-destructive">{error}</p>}
         <div className="flex items-center gap-2">
-          {(startDate || dueDate) && <button type="button" onClick={() => apply('', '')} className="text-xs text-muted-foreground hover:text-foreground underline">Clear</button>}
-          <button type="button" onClick={() => apply()} className="ml-auto h-8 px-3 text-sm font-semibold text-white rounded-md bg-amber-600 hover:bg-amber-700">Apply</button>
+          {(startDate || dueDate) && <Button type="button" variant="link" size="sm" onClick={() => apply('', '')} className="h-auto p-0 text-xs text-muted-foreground hover:text-foreground underline">Clear</Button>}
+          <Button type="button" size="sm" onClick={() => apply()} className="ml-auto font-semibold">Apply</Button>
         </div>
       </PopoverContent>
     </Popover>

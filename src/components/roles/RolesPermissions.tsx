@@ -17,20 +17,20 @@ interface ModuleDef { id: string; label: string; group: string; subGroup?: strin
 interface GroupDef { key: string; label: string }
 
 const ROLE_META: Record<RoleKey, { label: string; desc: string; color: string }> = {
-  ADMIN:             { label: 'Admin',             desc: 'Full access by default',                            color: 'bg-purple-100 text-purple-700' },
-  SUPER_ADMIN:       { label: 'Super Admin',        desc: 'System administration',                             color: 'bg-red-100 text-red-700' },
-  SALES:             { label: 'Sales',              desc: 'Manage bookings & guests',                          color: 'bg-blue-100 text-blue-700' },
-  SALES_MARKETING:   { label: 'Sales & Marketing',  desc: 'Combined role',                                     color: 'bg-indigo-100 text-indigo-700' },
-  FINANCE:           { label: 'Finance',            desc: 'Financial overview & costs',                        color: 'bg-emerald-100 text-emerald-700' },
-  MARKETING:         { label: 'Marketing',          desc: 'Trips & customer reach',                            color: 'bg-orange-100 text-orange-700' },
-  MARKETING_DIRECTOR:{ label: 'Marketing Director',  desc: 'Marketing + approval authority',                    color: 'bg-fuchsia-100 text-fuchsia-700' },
-  PURCHASING:        { label: 'Purchasing',         desc: 'Manage procurement',                                color: 'bg-amber-100 text-amber-700' },
-  WAREHOUSE:         { label: 'Warehouse',          desc: 'Check stock for requests, receive & check incoming goods', color: 'bg-teal-100 text-teal-700' },
-  HR:                { label: 'HR',                 desc: 'People & employee records',                         color: 'bg-pink-100 text-pink-700' },
-  FINANCE_DIRECTOR:  { label: 'Finance Director',   desc: 'Combined role',                                     color: 'bg-cyan-100 text-cyan-700' },
-  CREW:              { label: 'Crew',               desc: 'Ship crew — Purchase Request only',                 color: 'bg-sky-100 text-sky-700' },
-  BOAT_CAPTAIN:      { label: 'Boat Captain',        desc: 'Purchase Request + approves crew requests',        color: 'bg-blue-100 text-blue-700' },
-  CRUISE_DIRECTOR:   { label: 'Cruise Director',     desc: 'Purchase Request + approves crew requests',        color: 'bg-indigo-100 text-indigo-700' },
+  ADMIN:             { label: 'Admin',             desc: 'Full access by default',                            color: 'bg-purple-100 text-purple-700 dark:bg-purple-500/15 dark:text-purple-300' },
+  SUPER_ADMIN:       { label: 'Super Admin',        desc: 'System administration',                             color: 'bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300' },
+  SALES:             { label: 'Sales',              desc: 'Manage bookings & guests',                          color: 'bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300' },
+  SALES_MARKETING:   { label: 'Sales & Marketing',  desc: 'Combined role',                                     color: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300' },
+  FINANCE:           { label: 'Finance',            desc: 'Financial overview & costs',                        color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300' },
+  MARKETING:         { label: 'Marketing',          desc: 'Trips & customer reach',                            color: 'bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-300' },
+  MARKETING_DIRECTOR:{ label: 'Marketing Director',  desc: 'Marketing + approval authority',                    color: 'bg-fuchsia-100 text-fuchsia-700 dark:bg-fuchsia-500/15 dark:text-fuchsia-300' },
+  PURCHASING:        { label: 'Purchasing',         desc: 'Manage procurement',                                color: 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300' },
+  WAREHOUSE:         { label: 'Warehouse',          desc: 'Check stock for requests, receive & check incoming goods', color: 'bg-teal-100 text-teal-700 dark:bg-teal-500/15 dark:text-teal-300' },
+  HR:                { label: 'HR',                 desc: 'People & employee records',                         color: 'bg-pink-100 text-pink-700 dark:bg-pink-500/15 dark:text-pink-300' },
+  FINANCE_DIRECTOR:  { label: 'Finance Director',   desc: 'Combined role',                                     color: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-500/15 dark:text-cyan-300' },
+  CREW:              { label: 'Crew',               desc: 'Ship crew — Purchase Request only',                 color: 'bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300' },
+  BOAT_CAPTAIN:      { label: 'Boat Captain',        desc: 'Purchase Request + approves crew requests',        color: 'bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300' },
+  CRUISE_DIRECTOR:   { label: 'Cruise Director',     desc: 'Purchase Request + approves crew requests',        color: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300' },
 }
 
 // Mirrors ALWAYS_ON in src/lib/role-permissions.ts — kept in sync manually since that file
@@ -155,6 +155,8 @@ export default function RolesPermissions() {
               return (
                 <button
                   key={r.role}
+                  type="button"
+                  aria-pressed={selectedRole === r.role}
                   onClick={() => setSelectedRole(r.role)}
                   className={`w-full text-left rounded-lg px-3 py-2.5 mb-1 transition-colors ${
                     selectedRole === r.role ? 'bg-muted' : 'hover:bg-muted/50'
@@ -172,7 +174,7 @@ export default function RolesPermissions() {
         </Card>
 
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0">
+          <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 space-y-0">
             <div>
               <CardTitle className="flex items-center gap-2">
                 <Badge className={`${ROLE_META[selectedRole].color} border-0 font-medium`}>{ROLE_META[selectedRole].label}</Badge>
@@ -180,19 +182,19 @@ export default function RolesPermissions() {
               </CardTitle>
               <CardDescription>{ROLE_META[selectedRole].desc}</CardDescription>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <Button variant="outline" size="sm" onClick={resetToDefault} disabled={saving || !current?.isCustomized}>
-                <RotateCcw className="w-3.5 h-3.5 mr-1.5" /> Reset to Default
+                <RotateCcw className="w-3.5 h-3.5" /> Reset to Default
               </Button>
-              <Button size="sm" onClick={save} disabled={saving || !dirty} className="bg-[#bdac7e] hover:bg-[#a89660] text-white">
-                <Save className="w-3.5 h-3.5 mr-1.5" /> {saving ? 'Saving…' : 'Save'}
+              <Button size="sm" onClick={save} disabled={saving || !dirty}>
+                <Save className="w-3.5 h-3.5" /> {saving ? 'Saving…' : 'Save'}
               </Button>
             </div>
           </CardHeader>
           <CardContent className="space-y-5">
             <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-              <Input placeholder="Search modules…" value={search} onChange={e => setSearch(e.target.value)} className="pl-8 h-9 text-sm" />
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+              <Input placeholder="Search modules…" aria-label="Search modules" value={search} onChange={e => setSearch(e.target.value)} className="pl-8" />
             </div>
 
             {groupedModules.map(({ group, items }) => (

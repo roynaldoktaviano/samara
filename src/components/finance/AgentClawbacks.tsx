@@ -14,8 +14,9 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from '@/components/ui/dialog'
 import { Banknote, Loader2, Plus, Pencil, X } from 'lucide-react'
+import { formatDate, formatMoney } from '@/lib/format'
 
-const ACCENT = '#bdac7e'
+const ACCENT = 'var(--primary)'
 
 interface AgentSummary {
   id: string
@@ -54,8 +55,6 @@ interface AgentDetail {
 
 const TRIP_TYPE_LABEL: Record<string, string> = { OPEN_TRIP: 'Open Trip', PRIVATE_CHARTER: 'Private Charter' }
 
-const fmtMoney = (n: number) => `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-const fmtDate = (s: string) => new Date(s).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
 
 /**
  * Finance-facing slice of the Agent module — rate + running debt only, nothing else about
@@ -221,9 +220,9 @@ export default function AgentClawbacks() {
               ) : filtered.map(a => (
                 <TableRow key={a.id} className="cursor-pointer hover:bg-muted/40" onClick={() => openAgent(a.id)}>
                   <TableCell className="font-medium">{a.name}</TableCell>
-                  <TableCell className="text-right">{fmtMoney(a.clawbackRatePerNight)}</TableCell>
-                  <TableCell className={`text-right font-semibold ${a.clawbackBalance > 0 ? 'text-red-600' : 'text-muted-foreground'}`}>
-                    {fmtMoney(a.clawbackBalance)}
+                  <TableCell className="text-right">{formatMoney(a.clawbackRatePerNight, { currency: 'USD' })}</TableCell>
+                  <TableCell className={`text-right font-semibold ${a.clawbackBalance > 0 ? 'text-destructive' : 'text-muted-foreground'}`}>
+                    {formatMoney(a.clawbackBalance, { currency: 'USD' })}
                   </TableCell>
                   <TableCell><Pencil className="h-3.5 w-3.5 text-muted-foreground" /></TableCell>
                 </TableRow>
@@ -248,7 +247,7 @@ export default function AgentClawbacks() {
                   <Label>Default Rate / Night (USD)</Label>
                   <div className="flex items-center gap-2">
                     <Input type="number" min="0" step="10" value={rateInput} onChange={e => setRateInput(e.target.value)} />
-                    <Button size="sm" disabled={rateSaving} onClick={saveRate} style={{ backgroundColor: ACCENT }} className="text-white shrink-0">
+                    <Button size="sm" disabled={rateSaving} onClick={saveRate} style={{ backgroundColor: ACCENT }} className="text-primary-foreground shrink-0">
                       {rateSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Save'}
                     </Button>
                   </div>
@@ -256,8 +255,8 @@ export default function AgentClawbacks() {
                 </div>
                 <div className="space-y-1.5">
                   <Label>Outstanding Balance</Label>
-                  <p className={`h-9 flex items-center text-lg font-bold ${detail.clawbackBalance > 0 ? 'text-red-600' : 'text-muted-foreground'}`}>
-                    {fmtMoney(detail.clawbackBalance)}
+                  <p className={`h-9 flex items-center text-lg font-bold ${detail.clawbackBalance > 0 ? 'text-destructive' : 'text-muted-foreground'}`}>
+                    {formatMoney(detail.clawbackBalance, { currency: 'USD' })}
                   </p>
                 </div>
               </div>
@@ -272,8 +271,8 @@ export default function AgentClawbacks() {
                           {r.yacht?.name ?? 'Any yacht'} · {r.tripType ? TRIP_TYPE_LABEL[r.tripType] : 'Any trip type'}
                         </span>
                         <div className="flex items-center gap-2 shrink-0">
-                          <span className="font-medium">{fmtMoney(r.ratePerNight)}</span>
-                          <button onClick={() => deleteRateOverride(r.id)} disabled={deletingRateId === r.id} className="text-muted-foreground hover:text-red-600 transition-colors">
+                          <span className="font-medium">{formatMoney(r.ratePerNight, { currency: 'USD' })}</span>
+                          <button onClick={() => deleteRateOverride(r.id)} disabled={deletingRateId === r.id} className="text-muted-foreground hover:text-destructive transition-colors">
                             {deletingRateId === r.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <X className="h-3 w-3" />}
                           </button>
                         </div>
@@ -304,7 +303,7 @@ export default function AgentClawbacks() {
                     </Select>
                   </div>
                   <Input className="h-8 text-xs" type="number" min="0" step="10" placeholder="$/night" value={newRateValue} onChange={e => setNewRateValue(e.target.value)} />
-                  <Button size="sm" className="h-8 text-white" disabled={rateOverrideSaving} onClick={addRateOverride} style={{ backgroundColor: ACCENT }} title="Add override">
+                  <Button size="sm" className="h-8 text-primary-foreground" disabled={rateOverrideSaving} onClick={addRateOverride} style={{ backgroundColor: ACCENT }} title="Add override">
                     {rateOverrideSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
                   </Button>
                 </div>
@@ -337,11 +336,11 @@ export default function AgentClawbacks() {
                           {e.booking ? `Booking ${e.booking.bookingCode}` : (e.note || 'Manual entry')}
                         </p>
                         <p className="text-[11px] text-muted-foreground mt-0.5">
-                          {fmtDate(e.createdAt)}{e.createdByName ? ` · ${e.createdByName}` : ''}
+                          {formatDate(e.createdAt)}{e.createdByName ? ` · ${e.createdByName}` : ''}
                         </p>
                       </div>
-                      <span className={`font-semibold shrink-0 ${e.amount > 0 ? 'text-red-600' : 'text-green-600'}`}>
-                        {e.amount > 0 ? '+' : ''}{fmtMoney(e.amount)}
+                      <span className={`font-semibold shrink-0 ${e.amount > 0 ? 'text-destructive' : 'text-success'}`}>
+                        {formatMoney(e.amount, { currency: 'USD', signed: true })}
                       </span>
                     </div>
                   ))}

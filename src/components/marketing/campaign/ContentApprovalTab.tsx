@@ -7,6 +7,8 @@ import { toast } from 'sonner'
 import ContentDetailSheet from '@/components/marketing/content/ContentDetailSheet'
 import { FORMAT_LABELS, STATUS_LABELS, type ContentItem, type ContentStatus } from '@/components/marketing/content/contentTypes'
 import { PILL, type Campaign } from './campaignTypes'
+import { formatDate } from '@/lib/format'
+import { StatusBadge, type StatusTone } from '@/components/ui/status-badge'
 
 // Mirrors proto-3's ContentApproval screen (src/app/proto-3/App.jsx) — a persistent
 // asset grid on the left and a review panel on the right that updates in place when you
@@ -17,13 +19,13 @@ import { PILL, type Campaign } from './campaignTypes'
 // comment thread) routes to "Open full editor", which opens that same shared sheet — so
 // this stays a reskin of the approval step, not a second content-workflow engine to
 // maintain in parallel.
-const CONTENT_STATUS_HEX: Record<ContentStatus, string> = {
-  IDEA: 'bg-[#eef0f2] text-[#626872]',
-  IN_PRODUCTION: 'bg-[#eaf1ff] text-[#2864d7]',
-  WAITING_APPROVAL: 'bg-[#fff2d8] text-[#996313]',
-  APPROVED: 'bg-[#e6f7ee] text-[#087b4c]',
-  REVISION: 'bg-[#fdecec] text-[#bd3c3c]',
-  PUBLISHED: 'bg-[#f3ebfa] text-[#8553b5]',
+const CONTENT_STATUS_TONE: Record<ContentStatus, StatusTone> = {
+  IDEA: 'neutral',
+  IN_PRODUCTION: 'info',
+  WAITING_APPROVAL: 'warning',
+  APPROVED: 'success',
+  REVISION: 'destructive',
+  PUBLISHED: 'purple',
 }
 
 const FILTERS = [
@@ -34,7 +36,6 @@ const FILTERS = [
 ] as const
 
 const APPROVER_ROLES = ['ADMIN', 'SUPER_ADMIN', 'MARKETING_DIRECTOR']
-const fmtWhen = (d: string) => new Date(d).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
 
 export default function ContentApprovalTab({ campaign, onNew, onRefresh }: {
   campaign: Campaign; onNew: () => void; onRefresh: () => void
@@ -54,9 +55,9 @@ export default function ContentApprovalTab({ campaign, onNew, onRefresh }: {
 
   if (items.length === 0) {
     return (
-      <div className="border rounded-xl bg-white p-12 text-center">
+      <div className="border rounded-xl bg-card p-12 text-center">
         <p className="text-sm text-muted-foreground mb-3">No content linked to this campaign yet.</p>
-        <button onClick={onNew} className="h-[35px] px-3.5 rounded-md bg-[#22262b] hover:bg-[#0d0f11] text-white text-[12px] font-semibold inline-flex items-center gap-1.5">
+        <button onClick={onNew} className="h-[35px] px-3.5 rounded-md bg-foreground hover:bg-foreground/90 text-background text-[12px] font-semibold inline-flex items-center gap-1.5">
           <Plus className="h-4 w-4" /> New content
         </button>
       </div>
@@ -65,13 +66,13 @@ export default function ContentApprovalTab({ campaign, onNew, onRefresh }: {
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[1.55fr_1fr] gap-4 items-start">
-      <div className="border rounded-xl bg-white overflow-hidden">
+      <div className="border rounded-xl bg-card overflow-hidden">
         <div className="flex items-center justify-between gap-3 p-4 border-b">
           <div>
             <h2 className="font-semibold text-sm">Campaign content</h2>
             <p className="text-[10px] text-muted-foreground mt-0.5">{items.length} asset{items.length === 1 ? '' : 's'} · {approvedCount} approved · {attentionCount} need attention</p>
           </div>
-          <button onClick={onNew} className="h-[31px] px-2.5 rounded-md bg-[#22262b] hover:bg-[#0d0f11] text-white text-[10px] font-semibold inline-flex items-center gap-1 shrink-0">
+          <button onClick={onNew} className="h-[31px] px-2.5 rounded-md bg-foreground hover:bg-foreground/90 text-background text-[10px] font-semibold inline-flex items-center gap-1 shrink-0">
             <Plus className="h-3.5 w-3.5" /> New content
           </button>
         </div>
@@ -81,10 +82,10 @@ export default function ContentApprovalTab({ campaign, onNew, onRefresh }: {
             return (
               <button
                 key={f.key} onClick={() => setFilter(f.key)}
-                className={`shrink-0 text-[10px] relative h-full ${filter === f.key ? 'font-bold text-[#222]' : 'text-[#747a82]'}`}
+                className={`shrink-0 text-[10px] relative h-full ${filter === f.key ? 'font-bold text-foreground' : 'text-muted-foreground'}`}
               >
                 {f.label} {count}
-                {filter === f.key && <span className="absolute left-0 right-0 bottom-0 h-[2px] bg-[#222]" />}
+                {filter === f.key && <span className="absolute left-0 right-0 bottom-0 h-[2px] bg-foreground" />}
               </button>
             )
           })}
@@ -95,13 +96,13 @@ export default function ContentApprovalTab({ campaign, onNew, onRefresh }: {
             return (
               <button
                 key={item.id} onClick={() => setActiveId(item.id)}
-                className={`text-left border rounded-lg bg-white overflow-hidden transition-all ${activeId === item.id ? 'border-[#2a67dd] ring-1 ring-[#2a67dd]' : 'hover:shadow-md'}`}
+                className={`text-left border rounded-lg bg-card overflow-hidden transition-all ${activeId === item.id ? 'border-info ring-1 ring-info' : 'hover:shadow-md'}`}
               >
-                <div className="h-[100px] bg-[#eef0f2] relative flex items-center justify-center">
+                <div className="h-[100px] bg-muted relative flex items-center justify-center">
                   {latest?.mediaUrl ? (
                     latest.mediaType === 'video' ? <video src={latest.mediaUrl} className="w-full h-full object-cover" muted /> : latest.mediaType === 'image' ? <img src={latest.mediaUrl} alt={item.title} className="w-full h-full object-cover" /> : <FileText className="h-6 w-6 text-muted-foreground/40" />
                   ) : <ImageIcon className="h-6 w-6 text-muted-foreground/30" />}
-                  <span className={`absolute top-1.5 left-1.5 ${PILL} ${CONTENT_STATUS_HEX[item.status]}`}>{STATUS_LABELS[item.status]}</span>
+                  <StatusBadge tone={CONTENT_STATUS_TONE[item.status]} className={`absolute top-1.5 left-1.5 ${PILL}`}>{STATUS_LABELS[item.status]}</StatusBadge>
                 </div>
                 <div className="p-2 space-y-0.5">
                   <h3 className="font-medium text-[10px] leading-snug line-clamp-1">{item.title}</h3>
@@ -163,26 +164,26 @@ function ReviewPanel({ id, brand, onOpenFull, onChanged }: { id: string | null; 
     }
   }
 
-  if (!id) return <div className="border rounded-xl bg-white p-8 text-center text-sm text-muted-foreground">Select an asset to review it.</div>
-  if (loading && !item) return <div className="border rounded-xl bg-white p-8 flex justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+  if (!id) return <div className="border rounded-xl bg-card p-8 text-center text-sm text-muted-foreground">Select an asset to review it.</div>
+  if (loading && !item) return <div className="border rounded-xl bg-card p-8 flex justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
   if (!item) return null
 
   const latest = item.versions?.[0] ?? null
   const lastNote = [...(item.comments ?? [])].reverse().find(c => c.text)
 
   return (
-    <div className="border rounded-xl bg-white overflow-hidden">
+    <div className="border rounded-xl bg-card overflow-hidden">
       <div className="flex items-center justify-between p-4 border-b">
         <div className="min-w-0">
           <span className="text-[8px] text-muted-foreground block">{FORMAT_LABELS[item.format]}</span>
           <h2 className="font-semibold text-[13px] truncate">{item.title}</h2>
         </div>
-        <button onClick={() => onOpenFull(id)} className="text-[9px] font-semibold shrink-0 inline-flex items-center gap-1" style={{ color: '#2764d9' }}>
+        <button onClick={() => onOpenFull(id)} className="text-[9px] font-semibold shrink-0 inline-flex items-center gap-1" style={{ color: 'var(--info)' }}>
           Open full editor <ExternalLink className="h-3 w-3" />
         </button>
       </div>
 
-      <div className="bg-[#eef0f2] p-4 flex justify-center">
+      <div className="bg-muted p-4 flex justify-center">
         <div className="w-[150px] rounded-[16px] border-[4px] border-[#1d2024] overflow-hidden bg-black shadow-lg">
           <div className="h-3 relative bg-black"><span className="absolute left-1/2 -translate-x-1/2 top-0.5 w-9 h-1 rounded bg-[#1d2024]" /></div>
           <div className="h-[190px] bg-[#0b0f14] relative">
@@ -211,7 +212,7 @@ function ReviewPanel({ id, brand, onOpenFull, onChanged }: { id: string | null; 
         {item.versions.length > 0 && (
           <div className="flex items-center justify-between text-[8px] text-muted-foreground pb-3 border-b">
             <span>Version {latest?.versionNumber} of {item.versions.length} · {latest?.createdByName}</span>
-            <button onClick={() => onOpenFull(id)} className="inline-flex items-center gap-1 font-semibold" style={{ color: '#2764d9' }}>
+            <button onClick={() => onOpenFull(id)} className="inline-flex items-center gap-1 font-semibold" style={{ color: 'var(--info)' }}>
               <Layers className="h-3 w-3" /> Version history
             </button>
           </div>
@@ -221,19 +222,19 @@ function ReviewPanel({ id, brand, onOpenFull, onChanged }: { id: string | null; 
           <label className="text-[8px] tracking-wide text-muted-foreground font-semibold uppercase block mb-1">Caption</label>
           {item.caption ? (
             <>
-              <p className={`text-[10px] leading-relaxed text-[#3a3d41] ${showFullCaption ? '' : 'line-clamp-2'}`}>{item.caption}</p>
+              <p className={`text-[10px] leading-relaxed text-foreground/80 ${showFullCaption ? '' : 'line-clamp-2'}`}>{item.caption}</p>
               {!showFullCaption && item.caption.length > 90 && (
-                <button onClick={() => setShowFullCaption(true)} className="text-[9px] mt-1" style={{ color: '#2764d9' }}>Show full caption</button>
+                <button onClick={() => setShowFullCaption(true)} className="text-[9px] mt-1" style={{ color: 'var(--info)' }}>Show full caption</button>
               )}
             </>
           ) : <p className="text-[10px] text-muted-foreground">No caption yet.</p>}
         </div>
 
         {lastNote && (
-          <div className="bg-[#fffaf0] rounded-md p-2.5 flex gap-2">
+          <div className="bg-warning/10 rounded-md p-2.5 flex gap-2">
             <div className="min-w-0">
-              <p className="text-[9px] flex justify-between gap-2"><strong>{lastNote.authorName}</strong><span className="text-muted-foreground shrink-0">{fmtWhen(lastNote.createdAt)}</span></p>
-              <p className="text-[9px] text-[#5f646c] leading-snug mt-0.5">{lastNote.text}</p>
+              <p className="text-[9px] flex justify-between gap-2"><strong>{lastNote.authorName}</strong><span className="text-muted-foreground shrink-0">{formatDate(lastNote.createdAt, 'datetimeShort')}</span></p>
+              <p className="text-[9px] text-muted-foreground leading-snug mt-0.5">{lastNote.text}</p>
             </div>
           </div>
         )}
@@ -245,22 +246,22 @@ function ReviewPanel({ id, brand, onOpenFull, onChanged }: { id: string | null; 
                 <div className="space-y-2">
                   <textarea
                     value={revisionNote} onChange={e => setRevisionNote(e.target.value)} rows={2} autoFocus
-                    placeholder="What needs to change?" className="w-full text-[10px] border rounded-md p-2 focus:outline-none focus:ring-1 focus:ring-[#bdac7e]"
+                    placeholder="What needs to change?" className="w-full text-[10px] border rounded-md p-2 focus:outline-none focus:ring-1 focus:ring-ring"
                   />
                   <div className="flex justify-end gap-1.5">
                     <button onClick={() => { setShowRevisionBox(false); setRevisionNote('') }} className="h-7 px-2.5 rounded-md border text-[9px] font-semibold">Cancel</button>
                     <button
                       disabled={!revisionNote.trim() || busy} onClick={() => runAction('request_changes', { comment: revisionNote })}
-                      className="h-7 px-2.5 rounded-md bg-red-600 hover:bg-red-700 text-white text-[9px] font-semibold disabled:opacity-40"
+                      className="h-7 px-2.5 rounded-md bg-destructive hover:bg-destructive/90 text-destructive-foreground text-[9px] font-semibold disabled:opacity-40"
                     >Send back</button>
                   </div>
                 </div>
               ) : (
                 <div className="flex gap-1.5">
-                  <button onClick={() => setShowRevisionBox(true)} disabled={busy} className="flex-1 h-8 rounded-md border text-[#444950] hover:bg-muted/40 text-[10px] font-semibold inline-flex items-center justify-center gap-1.5">
+                  <button onClick={() => setShowRevisionBox(true)} disabled={busy} className="flex-1 h-8 rounded-md border text-foreground/80 hover:bg-muted/40 text-[10px] font-semibold inline-flex items-center justify-center gap-1.5">
                     <MessageSquare className="h-3.5 w-3.5" /> Request changes
                   </button>
-                  <button onClick={() => runAction('approve')} disabled={busy} className="flex-1 h-8 rounded-md bg-[#22262b] hover:bg-[#0d0f11] text-white text-[10px] font-semibold inline-flex items-center justify-center gap-1.5">
+                  <button onClick={() => runAction('approve')} disabled={busy} className="flex-1 h-8 rounded-md bg-foreground hover:bg-foreground/90 text-background text-[10px] font-semibold inline-flex items-center justify-center gap-1.5">
                     {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <><CheckCircle2 className="h-3.5 w-3.5" /> Approve content</>}
                   </button>
                 </div>
@@ -274,7 +275,7 @@ function ReviewPanel({ id, brand, onOpenFull, onChanged }: { id: string | null; 
               {item.status === 'IN_PRODUCTION' && <><Send className="h-3.5 w-3.5" /> Submit for approval in full editor</>}
               {item.status === 'REVISION' && <><ArrowRight className="h-3.5 w-3.5" /> Revise in full editor</>}
               {item.status === 'APPROVED' && <><CheckCircle2 className="h-3.5 w-3.5" /> Mark published in full editor</>}
-              {item.status === 'PUBLISHED' && <><CheckCircle2 className="h-3.5 w-3.5 text-violet-600" /> Published{item.liveUrl ? ' · view live' : ''}</>}
+              {item.status === 'PUBLISHED' && <><CheckCircle2 className="h-3.5 w-3.5 text-violet-600 dark:text-violet-400" /> Published{item.liveUrl ? ' · view live' : ''}</>}
             </button>
           )}
         </div>
@@ -334,7 +335,7 @@ function MobilePublishingPacket({ item, onClose, onChanged }: { item: ContentIte
 
   return (
     <div className="fixed inset-0 z-[70] bg-black/55 backdrop-blur-[2px] grid place-items-center p-5" onClick={onClose}>
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-[860px] max-h-[92vh] overflow-y-auto grid grid-cols-1 md:grid-cols-[330px_1fr]" onClick={e => e.stopPropagation()}>
+      <div className="bg-card rounded-xl shadow-2xl w-full max-w-[860px] max-h-[92vh] overflow-y-auto grid grid-cols-1 md:grid-cols-[330px_1fr]" onClick={e => e.stopPropagation()}>
         <div className="relative min-h-[220px] md:min-h-[490px] bg-black flex items-end p-4">
           {latest?.mediaUrl && (
             latest.mediaType === 'video'
@@ -355,25 +356,25 @@ function MobilePublishingPacket({ item, onClose, onChanged }: { item: ContentIte
         <div className="p-5">
           <div className="flex items-start justify-between gap-3 mb-4">
             <div className="min-w-0">
-              <span className="text-[8px] tracking-[.15em] text-[#9b7c43] font-bold">MOBILE PUBLISHING PACKET</span>
+              <span className="text-[8px] tracking-[.15em] text-primary-strong font-bold">MOBILE PUBLISHING PACKET</span>
               <h2 className="text-[17px] font-semibold mt-1 truncate">{item.title}</h2>
               <p className="text-[10px] text-muted-foreground mt-0.5">{FORMAT_LABELS[item.format]}{item.ownerName ? ` · ${item.ownerName}` : ''}</p>
             </div>
             <button onClick={onClose} className="h-8 w-8 rounded-full bg-muted grid place-items-center shrink-0"><X className="h-4 w-4" /></button>
           </div>
 
-          <div className="bg-[#eaf8f1] rounded-md p-2.5 flex items-center gap-2.5 mb-4">
-            <CheckCircle2 className="h-4 w-4 text-[#158457] shrink-0" />
+          <div className="bg-success/10 rounded-md p-2.5 flex items-center gap-2.5 mb-4">
+            <CheckCircle2 className="h-4 w-4 text-success shrink-0" />
             <div className="min-w-0">
-              <strong className="text-[10px] block text-[#157e51]">Approved and ready</strong>
-              {approvedNote && <span className="text-[9px] text-[#157e51]/80">Approved by {approvedNote.authorName}</span>}
+              <strong className="text-[10px] block text-success">Approved and ready</strong>
+              {approvedNote && <span className="text-[9px] text-success/80">Approved by {approvedNote.authorName}</span>}
             </div>
           </div>
 
           <div className="mb-4">
             <div className="flex items-center justify-between mb-1">
               <label className="text-[8px] tracking-wide text-muted-foreground font-semibold uppercase">Caption</label>
-              {item.caption && <button onClick={copyCaption} className="text-[9px] font-semibold" style={{ color: '#2764d9' }}>Copy</button>}
+              {item.caption && <button onClick={copyCaption} className="text-[9px] font-semibold" style={{ color: 'var(--info)' }}>Copy</button>}
             </div>
             <div className="border rounded-md bg-muted/30 p-2.5 text-[10px] leading-relaxed whitespace-pre-wrap">{item.caption || 'No caption written yet.'}</div>
           </div>
@@ -383,7 +384,7 @@ function MobilePublishingPacket({ item, onClose, onChanged }: { item: ContentIte
             <div className="border rounded-md divide-y">
               {instructions.map((x, i) => (
                 <button key={x} onClick={() => toggle(i)} className="w-full flex items-center gap-2 px-2.5 py-2 text-left text-[10px]">
-                  <span className={`h-4 w-4 rounded border grid place-items-center shrink-0 ${checked[i] ? 'bg-[#1ba36a] border-[#1ba36a] text-white' : 'border-[#ccd1d6]'}`}>
+                  <span className={`h-4 w-4 rounded border grid place-items-center shrink-0 ${checked[i] ? 'bg-success border-success text-success-foreground' : 'border-border'}`}>
                     {checked[i] && <Check className="h-2.5 w-2.5" />}
                   </span>
                   {x}
@@ -396,7 +397,7 @@ function MobilePublishingPacket({ item, onClose, onChanged }: { item: ContentIte
             <label className="text-[8px] tracking-wide text-muted-foreground font-semibold uppercase block mb-1.5">After publishing</label>
             {item.status === 'PUBLISHED' ? (
               <p className="text-[10px] text-muted-foreground">
-                Already marked as published{item.liveUrl && <> · <a href={item.liveUrl} target="_blank" rel="noreferrer" className="underline" style={{ color: '#2764d9' }}>view live</a></>}
+                Already marked as published{item.liveUrl && <> · <a href={item.liveUrl} target="_blank" rel="noreferrer" className="underline" style={{ color: 'var(--info)' }}>view live</a></>}
               </p>
             ) : (
               <div className="flex items-center border rounded-md pl-2.5 overflow-hidden">
@@ -407,7 +408,7 @@ function MobilePublishingPacket({ item, onClose, onChanged }: { item: ContentIte
                 />
                 <button
                   onClick={confirmLive} disabled={busy || !liveUrl.trim()}
-                  className="h-9 px-3 bg-[#22262b] hover:bg-[#0d0f11] text-white text-[10px] font-semibold disabled:opacity-40 shrink-0"
+                  className="h-9 px-3 bg-foreground hover:bg-foreground/90 text-background text-[10px] font-semibold disabled:opacity-40 shrink-0"
                 >
                   {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Confirm live'}
                 </button>

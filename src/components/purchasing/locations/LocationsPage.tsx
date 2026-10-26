@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Plus, Pencil, Trash2, ToggleLeft, ToggleRight, X, Warehouse, Ship, Eye, AlertTriangle, Package, MapPin, Truck, Layers, SlidersHorizontal, User, ChevronRight, CornerDownRight } from 'lucide-react'
 import { renderLocationOptions } from '@/components/purchasing/LocationOptions'
+import { formatMoney } from '@/lib/format'
 
 interface Yacht { id: string; name: string }
 interface StockLocation {
@@ -22,20 +23,18 @@ const TYPE_LABEL: Record<string, string> = {
   WAREHOUSE: 'Warehouse', VESSEL: 'Vessel', TRANSIT: 'Transit', SITE: 'Site', ADJUSTMENT: 'Adjustment',
 }
 const TYPE_COLOR: Record<string, string> = {
-  WAREHOUSE: 'bg-amber-100 text-amber-700',
-  VESSEL:    'bg-blue-100 text-blue-700',
-  TRANSIT:   'bg-purple-100 text-purple-700',
-  SITE:      'bg-green-100 text-green-700',
-  ADJUSTMENT:'bg-gray-100 text-gray-600',
+  WAREHOUSE: 'bg-warning/15 text-warning',
+  VESSEL:    'bg-info/15 text-info',
+  TRANSIT:   'bg-purple-100 text-purple-700 dark:bg-purple-500/15 dark:text-purple-300',
+  SITE:      'bg-success/15 text-success',
+  ADJUSTMENT:'bg-muted text-muted-foreground',
 }
 const STORAGE_COLOR: Record<string, string> = {
-  Dry: 'bg-orange-50 text-orange-700 border border-orange-200',
-  Cold: 'bg-cyan-50 text-cyan-700 border border-cyan-200',
-  Frozen: 'bg-indigo-50 text-indigo-700 border border-indigo-200',
-  Mixed: 'bg-gray-50 text-gray-600 border border-gray-200',
+  Dry: 'bg-warning/10 text-warning border border-warning/30',
+  Cold: 'bg-cyan-50 text-cyan-700 border border-cyan-200 dark:bg-cyan-500/15 dark:text-cyan-300 dark:border-cyan-500/30',
+  Frozen: 'bg-indigo-50 text-indigo-700 border border-indigo-200 dark:bg-indigo-500/15 dark:text-indigo-300 dark:border-indigo-500/30',
+  Mixed: 'bg-muted/50 text-muted-foreground border border-border',
 }
-
-const fmtMoney = (n: number) => 'Rp ' + new Intl.NumberFormat('id-ID').format(n)
 
 const BLANK = { name: '', type: 'WAREHOUSE', yachtId: '', parentId: '', manager: '', address: '', storageClass: '', managedBy: 'WAREHOUSE', consumptionMode: '', isPosBar: false }
 
@@ -197,10 +196,10 @@ export default function LocationsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold tracking-tight">Stock Locations</h2>
-          <p className="text-muted-foreground text-sm mt-1">Gudang, kapal, transit, dan lokasi penyimpanan lainnya</p>
+          <p className="text-muted-foreground text-sm mt-1">Warehouses, vessels, transit and other storage locations</p>
         </div>
         <button onClick={openAdd}
-          className="flex items-center gap-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium px-4 py-2 rounded-md transition-colors">
+          className="flex items-center gap-2 bg-primary hover:bg-primary-hover text-primary-foreground text-sm font-medium px-4 py-2 rounded-md transition-colors">
           <Plus className="h-4 w-4" /> Add Location
         </button>
       </div>
@@ -218,8 +217,8 @@ export default function LocationsPage() {
           </button>
         ))}
         <input
-          className="ml-auto border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500 w-48"
-          placeholder="Cari lokasi..."
+          className="ml-auto border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring w-48"
+          placeholder="Search locations…"
           value={search} onChange={e => setSearch(e.target.value)}
         />
       </div>
@@ -235,8 +234,8 @@ export default function LocationsPage() {
           <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead className="bg-muted/50 text-xs text-muted-foreground">
               <tr>
-                <th className="text-left px-4 py-3 font-medium">Nama Lokasi</th>
-                <th className="text-left px-4 py-3 font-medium">Tipe</th>
+                <th className="text-left px-4 py-3 font-medium">Location Name</th>
+                <th className="text-left px-4 py-3 font-medium">Type</th>
                 <th className="text-left px-4 py-3 font-medium">Vessel</th>
                 <th className="text-left px-4 py-3 font-medium">PIC / Manager</th>
                 <th className="text-left px-4 py-3 font-medium">Storage Class</th>
@@ -248,7 +247,7 @@ export default function LocationsPage() {
               {groupedRows.length === 0 ? (
                 <tr><td colSpan={7} className="text-center py-12 text-muted-foreground text-sm">
                   <MapPin className="h-8 w-8 mx-auto mb-2 opacity-20" />
-                  Tidak ada lokasi ditemukan.
+                  No locations found.
                 </td></tr>
               ) : groupedRows.map(({ loc, depth }) => (
                 <tr key={loc.id} className={`hover:bg-muted/30 transition-colors ${!loc.isActive ? 'opacity-50' : ''} ${depth > 0 ? 'bg-muted/10' : ''}`}>
@@ -271,12 +270,12 @@ export default function LocationsPage() {
                     )}
                   </td>
                   <td className="px-4 py-3">
-                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${TYPE_COLOR[loc.type] ?? 'bg-gray-100 text-gray-600'}`}>
+                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${TYPE_COLOR[loc.type] ?? 'bg-muted text-muted-foreground'}`}>
                       {TYPE_LABEL[loc.type] ?? loc.type}
                     </span>
                     <div className="flex flex-wrap items-center gap-1 mt-1">
-                      {loc.isPosBar && <span className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-rose-100 text-rose-700">POS Bar</span>}
-                      <span className={`text-[10px] ${effectiveMode(loc) === 'EXPENSE_ON_RECEIVE' ? 'text-orange-600' : 'text-muted-foreground'}`}>
+                      {loc.isPosBar && <span className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-destructive/15 text-destructive">POS Bar</span>}
+                      <span className={`text-[10px] ${effectiveMode(loc) === 'EXPENSE_ON_RECEIVE' ? 'text-warning' : 'text-muted-foreground'}`}>
                         {MODE_LABEL[effectiveMode(loc)]}
                       </span>
                     </div>
@@ -284,7 +283,7 @@ export default function LocationsPage() {
                   <td className="px-4 py-3 text-muted-foreground text-xs">
                     {loc.yacht ? (
                       <button onClick={() => openInventory(loc.yacht!)}
-                        className="flex items-center gap-1 text-blue-600 hover:text-blue-800 font-medium">
+                        className="flex items-center gap-1 text-info hover:text-info/80 font-medium">
                         <Ship className="h-3 w-3" /> {loc.yacht.name}
                       </button>
                     ) : '—'}
@@ -292,7 +291,7 @@ export default function LocationsPage() {
                   <td className="px-4 py-3 text-muted-foreground text-xs">{loc.manager || '—'}</td>
                   <td className="px-4 py-3">
                     {loc.storageClass ? (
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STORAGE_COLOR[loc.storageClass] ?? 'bg-gray-100 text-gray-600'}`}>
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STORAGE_COLOR[loc.storageClass] ?? 'bg-muted text-muted-foreground'}`}>
                         {loc.storageClass}
                       </span>
                     ) : '—'}
@@ -300,7 +299,7 @@ export default function LocationsPage() {
                   <td className="px-4 py-3 text-center">
                     <button onClick={() => toggleActive(loc)}>
                       {loc.isActive
-                        ? <ToggleRight className="h-5 w-5 text-green-600 mx-auto" />
+                        ? <ToggleRight className="h-5 w-5 text-success mx-auto" />
                         : <ToggleLeft className="h-5 w-5 text-muted-foreground mx-auto" />}
                     </button>
                   </td>
@@ -308,7 +307,7 @@ export default function LocationsPage() {
                     <div className="flex items-center justify-end gap-1">
                       {loc.type === 'VESSEL' && loc.yacht && (
                         <button onClick={() => openInventory(loc.yacht!)}
-                          className="p-1.5 text-muted-foreground hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="View Inventory">
+                          className="p-1.5 text-muted-foreground hover:text-info hover:bg-info/10 rounded-lg transition-colors" title="View Inventory">
                           <Eye className="h-3.5 w-3.5" />
                         </button>
                       )}
@@ -317,7 +316,7 @@ export default function LocationsPage() {
                         <Pencil className="h-3.5 w-3.5" />
                       </button>
                       <button onClick={() => setDeleteConfirm(loc)}
-                        className="p-1.5 text-muted-foreground hover:text-destructive hover:bg-red-50 rounded-lg transition-colors">
+                        className="p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg transition-colors">
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
                     </div>
@@ -334,25 +333,25 @@ export default function LocationsPage() {
         <>
           <div className="fixed inset-0 bg-black/50 z-50" onClick={() => setModal(false)} />
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
-            <div className="pointer-events-auto bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
+            <div className="pointer-events-auto bg-card rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
 
               {/* Header */}
-              <div className="px-6 pt-6 pb-5" style={{ background: 'linear-gradient(135deg, #bdac7e 0%, #a89860 100%)' }}>
+              <div className="px-6 pt-6 pb-5" style={{ background: 'linear-gradient(135deg, var(--primary) 0%, var(--primary-hover) 100%)' }}>
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-3">
-                    <div className="p-2.5 bg-white/20 rounded-xl">
-                      <MapPin className="h-5 w-5 text-white" />
+                    <div className="p-2.5 bg-primary-foreground/20 rounded-xl">
+                      <MapPin className="h-5 w-5 text-primary-foreground" />
                     </div>
                     <div>
-                      <h3 className="font-bold text-white text-lg leading-tight">
+                      <h3 className="font-bold text-primary-foreground text-lg leading-tight">
                         {editing ? 'Edit Location' : 'Add Location'}
                       </h3>
-                      <p className="text-amber-100 text-xs mt-0.5">
-                        {editing ? 'Perbarui detail lokasi penyimpanan' : 'Tambah lokasi penyimpanan baru'}
+                      <p className="text-primary-foreground/80 text-xs mt-0.5">
+                        {editing ? 'Update storage location details' : 'Add a new storage location'}
                       </p>
                     </div>
                   </div>
-                  <button onClick={() => setModal(false)} className="p-1.5 text-white/70 hover:text-white hover:bg-white/20 rounded-lg transition-colors">
+                  <button onClick={() => setModal(false)} className="p-1.5 text-primary-foreground/70 hover:text-primary-foreground hover:bg-primary-foreground/20 rounded-lg transition-colors">
                     <X className="h-4 w-4" />
                   </button>
                 </div>
@@ -360,7 +359,7 @@ export default function LocationsPage() {
 
               <div className="px-6 py-5 space-y-5 max-h-[65vh] overflow-y-auto">
                 {formError && (
-                  <div className="flex items-center gap-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
+                  <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 border border-destructive/30 rounded-xl px-4 py-3">
                     <AlertTriangle className="h-4 w-4 shrink-0" /> {formError}
                   </div>
                 )}
@@ -368,11 +367,11 @@ export default function LocationsPage() {
                 {/* Location Name */}
                 <div className="space-y-1.5">
                   <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                    Nama Lokasi <span className="text-red-500 normal-case">*</span>
+                    Location Name <span className="text-destructive normal-case">*</span>
                   </label>
                   <input
-                    className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-4 py-3 text-sm font-medium focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all placeholder:text-gray-400"
-                    placeholder="e.g. Gudang Utama Bajo"
+                    className="w-full border-2 border-border bg-muted/50 rounded-xl px-4 py-3 text-sm font-medium focus:outline-none focus:border-ring focus:bg-card transition-all placeholder:text-muted-foreground"
+                    placeholder="e.g. Bajo Main Warehouse"
                     value={form.name}
                     onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
                     autoFocus
@@ -382,7 +381,7 @@ export default function LocationsPage() {
                 {/* Type selector — visual cards */}
                 <div className="space-y-2">
                   <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                    Tipe Lokasi <span className="text-red-500 normal-case">*</span>
+                    Location Type <span className="text-destructive normal-case">*</span>
                   </label>
                   <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
                     {([
@@ -394,11 +393,11 @@ export default function LocationsPage() {
                     ] as const).map(({ value, label, icon: Icon, color }) => {
                       const active = form.type === value
                       const colorMap: Record<string, string> = {
-                        amber:  active ? 'border-amber-400 bg-amber-50 text-amber-700'  : 'border-gray-100 bg-gray-50 text-gray-400 hover:border-amber-200 hover:text-amber-600',
-                        blue:   active ? 'border-blue-400 bg-blue-50 text-blue-700'    : 'border-gray-100 bg-gray-50 text-gray-400 hover:border-blue-200 hover:text-blue-600',
-                        purple: active ? 'border-purple-400 bg-purple-50 text-purple-700': 'border-gray-100 bg-gray-50 text-gray-400 hover:border-purple-200 hover:text-purple-600',
-                        green:  active ? 'border-green-400 bg-green-50 text-green-700'  : 'border-gray-100 bg-gray-50 text-gray-400 hover:border-green-200 hover:text-green-600',
-                        gray:   active ? 'border-gray-400 bg-gray-100 text-gray-700'   : 'border-gray-100 bg-gray-50 text-gray-400 hover:border-gray-300 hover:text-gray-600',
+                        amber:  active ? 'border-warning bg-warning/10 text-warning'  : 'border-border bg-muted/50 text-muted-foreground/70 hover:border-primary/40 hover:text-warning',
+                        blue:   active ? 'border-info bg-info/10 text-info'    : 'border-border bg-muted/50 text-muted-foreground/70 hover:border-info/30 hover:text-info',
+                        purple: active ? 'border-purple-400 bg-purple-50 text-purple-700 dark:bg-purple-500/15 dark:text-purple-300': 'border-border bg-muted/50 text-muted-foreground/70 hover:border-purple-200 dark:hover:border-purple-500/30 hover:text-purple-600 dark:hover:text-purple-300',
+                        green:  active ? 'border-success bg-success/10 text-success'  : 'border-border bg-muted/50 text-muted-foreground/70 hover:border-success/30 hover:text-success',
+                        gray:   active ? 'border-muted-foreground/60 bg-muted text-foreground/80'   : 'border-border bg-muted/50 text-muted-foreground/70 hover:border-muted-foreground/40 hover:text-muted-foreground',
                       }
                       return (
                         <button key={value} type="button"
@@ -416,14 +415,14 @@ export default function LocationsPage() {
                 {form.type === 'VESSEL' && (
                   <div className="space-y-1.5">
                     <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                      Kapal <span className="text-red-500 normal-case">*</span>
+                      Vessel <span className="text-destructive normal-case">*</span>
                     </label>
                     <div className="relative">
-                      <Ship className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-blue-400 pointer-events-none" />
+                      <Ship className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-info pointer-events-none" />
                       <select
-                        className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl pl-10 pr-4 py-3 text-sm focus:outline-none focus:border-blue-400 focus:bg-white transition-all appearance-none"
+                        className="w-full border-2 border-border bg-muted/50 rounded-xl pl-10 pr-4 py-3 text-sm focus:outline-none focus:border-ring focus:bg-card transition-all appearance-none"
                         value={form.yachtId} onChange={e => setForm(f => ({ ...f, yachtId: e.target.value }))}>
-                        <option value="">— Pilih kapal —</option>
+                        <option value="">— Select vessel —</option>
                         {yachts.map(y => <option key={y.id} value={y.id}>{y.name}</option>)}
                       </select>
                     </div>
@@ -438,17 +437,17 @@ export default function LocationsPage() {
                   <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Storage Class</label>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                     {([
-                      { value: 'Dry',    label: 'Dry',    desc: 'Kering',  cls: 'orange' },
-                      { value: 'Cold',   label: 'Cold',   desc: 'Dingin',  cls: 'cyan'   },
-                      { value: 'Frozen', label: 'Frozen', desc: 'Beku',    cls: 'indigo' },
-                      { value: 'Mixed',  label: 'Mixed',  desc: 'Campuran',cls: 'gray'   },
+                      { value: 'Dry',    label: 'Dry',    desc: 'Ambient',  cls: 'orange' },
+                      { value: 'Cold',   label: 'Cold',   desc: 'Chilled',  cls: 'cyan'   },
+                      { value: 'Frozen', label: 'Frozen', desc: 'Freezer',   cls: 'indigo' },
+                      { value: 'Mixed',  label: 'Mixed',  desc: 'Combined',cls: 'gray'   },
                     ] as const).map(({ value, label, desc, cls }) => {
                       const active = form.storageClass === value
                       const colorMap: Record<string, string> = {
-                        orange: active ? 'border-orange-400 bg-orange-50 text-orange-700' : 'border-gray-100 bg-gray-50 text-gray-400 hover:border-orange-200',
-                        cyan:   active ? 'border-cyan-400 bg-cyan-50 text-cyan-700'       : 'border-gray-100 bg-gray-50 text-gray-400 hover:border-cyan-200',
-                        indigo: active ? 'border-indigo-400 bg-indigo-50 text-indigo-700' : 'border-gray-100 bg-gray-50 text-gray-400 hover:border-indigo-200',
-                        gray:   active ? 'border-gray-400 bg-gray-100 text-gray-700'      : 'border-gray-100 bg-gray-50 text-gray-400 hover:border-gray-300',
+                        orange: active ? 'border-warning bg-warning/10 text-warning' : 'border-border bg-muted/50 text-muted-foreground/70 hover:border-primary/40',
+                        cyan:   active ? 'border-cyan-400 bg-cyan-50 text-cyan-700 dark:bg-cyan-500/15 dark:text-cyan-300'       : 'border-border bg-muted/50 text-muted-foreground/70 hover:border-cyan-200 dark:hover:border-cyan-500/30',
+                        indigo: active ? 'border-indigo-400 bg-indigo-50 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300' : 'border-border bg-muted/50 text-muted-foreground/70 hover:border-indigo-200 dark:hover:border-indigo-500/30',
+                        gray:   active ? 'border-muted-foreground/60 bg-muted text-foreground/80'      : 'border-border bg-muted/50 text-muted-foreground/70 hover:border-muted-foreground/40',
                       }
                       return (
                         <button key={value} type="button"
@@ -466,11 +465,11 @@ export default function LocationsPage() {
                 <div className="space-y-1.5">
                   <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Parent Location</label>
                   <div className="relative">
-                    <ChevronRight className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
+                    <ChevronRight className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/70 pointer-events-none" />
                     <select
-                      className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl pl-10 pr-4 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all appearance-none"
+                      className="w-full border-2 border-border bg-muted/50 rounded-xl pl-10 pr-4 py-3 text-sm focus:outline-none focus:border-ring focus:bg-card transition-all appearance-none"
                       value={form.parentId} onChange={e => setForm(f => ({ ...f, parentId: e.target.value }))}>
-                      <option value="">— Tidak ada —</option>
+                      <option value="">— None —</option>
                       {renderLocationOptions(locations, {
                         excludeIds: editing ? new Set([editing.id]) : undefined,
                         renderLabel: l => `${l.name} · ${TYPE_LABEL[l.type] ?? l.type}`,
@@ -481,16 +480,16 @@ export default function LocationsPage() {
 
                 {/* Managed By */}
                 <div className="space-y-2">
-                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Siapa yang bisa Receive?</label>
+                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Who can receive?</label>
                   <div className="grid grid-cols-2 gap-2">
                     {([
-                      { value: 'WAREHOUSE', label: 'Warehouse', desc: 'Tim gudang Bajo / kapal', icon: Warehouse, color: 'teal' },
-                      { value: 'PURCHASING', label: 'Purchasing', desc: 'Tim purchasing Bali', icon: Package, color: 'amber' },
+                      { value: 'WAREHOUSE', label: 'Warehouse', desc: 'Bajo warehouse / vessel team', icon: Warehouse, color: 'teal' },
+                      { value: 'PURCHASING', label: 'Purchasing', desc: 'Bali purchasing team', icon: Package, color: 'amber' },
                     ] as const).map(({ value, label, desc, icon: Icon, color }) => {
                       const active = form.managedBy === value
                       const colorMap: Record<string, string> = {
-                        teal:  active ? 'border-teal-400 bg-teal-50 text-teal-700'   : 'border-gray-100 bg-gray-50 text-gray-400 hover:border-teal-200',
-                        amber: active ? 'border-amber-400 bg-amber-50 text-amber-700': 'border-gray-100 bg-gray-50 text-gray-400 hover:border-amber-200',
+                        teal:  active ? 'border-teal-400 bg-teal-50 text-teal-700 dark:bg-teal-500/15 dark:text-teal-300'   : 'border-border bg-muted/50 text-muted-foreground/70 hover:border-teal-200 dark:hover:border-teal-500/30',
+                        amber: active ? 'border-warning bg-warning/10 text-warning': 'border-border bg-muted/50 text-muted-foreground/70 hover:border-primary/40',
                       }
                       return (
                         <button key={value} type="button"
@@ -513,7 +512,7 @@ export default function LocationsPage() {
                   {form.type === 'VESSEL' && (
                     <button type="button"
                       onClick={() => setForm(f => ({ ...f, isPosBar: !f.isPosBar }))}
-                      className={`w-full flex items-center justify-between px-3 py-3 rounded-xl border-2 transition-all text-left ${form.isPosBar ? 'border-rose-400 bg-rose-50 text-rose-700' : 'border-gray-100 bg-gray-50 text-gray-500 hover:border-rose-200'}`}>
+                      className={`w-full flex items-center justify-between px-3 py-3 rounded-xl border-2 transition-all text-left ${form.isPosBar ? 'border-destructive bg-destructive/10 text-destructive' : 'border-border bg-muted/50 text-muted-foreground hover:border-destructive/30'}`}>
                       <div>
                         <p className="text-xs font-bold leading-none">POS Bar for this yacht</p>
                         <p className="text-[10px] opacity-70 mt-0.5">The cashier sells from here. Stock is held and only counted as used when sold, given as complimentary, or lost in stock count. One bar per yacht.</p>
@@ -532,7 +531,7 @@ export default function LocationsPage() {
                         return (
                           <button key={value || 'auto'} type="button"
                             onClick={() => setForm(f => ({ ...f, consumptionMode: value }))}
-                            className={`px-3 py-2.5 rounded-xl border-2 transition-all text-left ${active ? 'border-[#bdac7e] bg-amber-50 text-amber-800' : 'border-gray-100 bg-gray-50 text-gray-400 hover:border-amber-200'}`}>
+                            className={`px-3 py-2.5 rounded-xl border-2 transition-all text-left ${active ? 'border-primary bg-primary/10 text-primary-strong' : 'border-border bg-muted/50 text-muted-foreground/70 hover:border-primary/40'}`}>
                             <p className="text-xs font-bold leading-none">{label}</p>
                             <p className="text-[10px] opacity-70 mt-0.5">{desc}</p>
                           </button>
@@ -546,10 +545,10 @@ export default function LocationsPage() {
                 <div className="space-y-1.5">
                   <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">PIC / Manager</label>
                   <div className="relative">
-                    <User className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
+                    <User className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/70 pointer-events-none" />
                     <input
-                      className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl pl-10 pr-4 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all placeholder:text-gray-400"
-                      placeholder="Nama penanggungjawab"
+                      className="w-full border-2 border-border bg-muted/50 rounded-xl pl-10 pr-4 py-3 text-sm focus:outline-none focus:border-ring focus:bg-card transition-all placeholder:text-muted-foreground"
+                      placeholder="Person in charge"
                       value={form.manager}
                       onChange={e => setForm(f => ({ ...f, manager: e.target.value }))}
                     />
@@ -558,10 +557,10 @@ export default function LocationsPage() {
 
                 {/* Address */}
                 <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Alamat</label>
+                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Address</label>
                   <textarea
-                    className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all placeholder:text-gray-400 resize-none"
-                    placeholder="Alamat lengkap lokasi ini — dipakai sebagai Ship To di PO"
+                    className="w-full border-2 border-border bg-muted/50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-ring focus:bg-card transition-all placeholder:text-muted-foreground resize-none"
+                    placeholder="Full address of this location — used as Ship To on POs"
                     rows={2}
                     value={form.address}
                     onChange={e => setForm(f => ({ ...f, address: e.target.value }))}
@@ -570,18 +569,18 @@ export default function LocationsPage() {
               </div>
 
               {/* Footer */}
-              <div className="flex items-center justify-between px-6 py-4 border-t bg-gray-50/80">
+              <div className="flex items-center justify-between px-6 py-4 border-t bg-muted/50">
                 <button onClick={() => setModal(false)}
-                  className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground border rounded-xl hover:bg-white transition-all">
-                  Batal
+                  className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground border rounded-xl hover:bg-card transition-all">
+                  Cancel
                 </button>
                 <button onClick={save} disabled={saving}
-                  className="flex items-center gap-2 px-6 py-2.5 text-sm text-white rounded-xl font-semibold disabled:opacity-50 transition-colors shadow-sm" style={{ backgroundColor: '#bdac7e' }}
-                  onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#a89860')}
-                  onMouseLeave={e => (e.currentTarget.style.backgroundColor = '#bdac7e')}>
+                  className="flex items-center gap-2 px-6 py-2.5 text-sm text-primary-foreground rounded-xl font-semibold disabled:opacity-50 transition-colors shadow-sm" style={{ backgroundColor: 'var(--primary)' }}
+                  onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'var(--primary-hover)')}
+                  onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'var(--primary)')}>
                   {saving
-                    ? <><span className="h-3.5 w-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" /> Menyimpan...</>
-                    : editing ? 'Simpan Perubahan' : 'Tambah Lokasi'
+                    ? <><span className="h-3.5 w-3.5 border-2 border-primary-foreground/40 border-t-primary-foreground rounded-full animate-spin" /> Saving…</>
+                    : editing ? 'Save Changes' : 'Add Location'
                   }
                 </button>
               </div>
@@ -593,15 +592,15 @@ export default function LocationsPage() {
       {/* ── Delete Confirm ── */}
       {deleteConfirm && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6">
-            <h3 className="font-semibold mb-2">Hapus Lokasi?</h3>
+          <div className="bg-card rounded-xl shadow-xl w-full max-w-sm p-6">
+            <h3 className="font-semibold mb-2">Delete Location?</h3>
             <p className="text-sm text-muted-foreground mb-4">
-              <span className="font-medium text-foreground">{deleteConfirm.name}</span> akan dihapus permanen.
-              Lokasi yang masih memiliki stok tidak bisa dihapus.
+              <span className="font-medium text-foreground">{deleteConfirm.name}</span> will be permanently deleted.
+              Locations that still hold stock cannot be deleted.
             </p>
             <div className="flex gap-3 justify-end">
               <button onClick={() => setDeleteConfirm(null)} className="px-4 py-2 text-sm border rounded-md hover:bg-muted">Cancel</button>
-              <button onClick={() => doDelete(deleteConfirm)} className="px-4 py-2 text-sm bg-destructive text-white rounded-md hover:bg-destructive/90">Hapus</button>
+              <button onClick={() => doDelete(deleteConfirm)} className="px-4 py-2 text-sm bg-destructive text-destructive-foreground rounded-md hover:bg-destructive/90">Delete</button>
             </div>
           </div>
         </div>
@@ -610,10 +609,10 @@ export default function LocationsPage() {
       {/* ── Vessel Inventory Modal ── */}
       {invModal.open && invModal.yacht && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col">
+          <div className="bg-card rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col">
             <div className="flex items-center justify-between px-6 py-5 border-b shrink-0">
               <div className="flex items-center gap-3">
-                <div className="p-2 rounded-xl bg-blue-50"><Ship className="h-5 w-5 text-blue-500" /></div>
+                <div className="p-2 rounded-xl bg-info/10"><Ship className="h-5 w-5 text-info" /></div>
                 <div>
                   <h3 className="font-bold text-lg">{invModal.yacht.name}</h3>
                   <p className="text-xs text-muted-foreground mt-0.5">Real-time inventory on vessel</p>
@@ -631,22 +630,22 @@ export default function LocationsPage() {
               ) : invRows.length === 0 ? (
                 <div className="p-12 text-center text-muted-foreground">
                   <Package className="h-10 w-10 mx-auto mb-3 opacity-20" />
-                  <p className="text-sm font-medium">Belum ada stok di kapal ini</p>
-                  <p className="text-xs mt-1">Item akan muncul setelah transfer dari gudang</p>
+                  <p className="text-sm font-medium">No stock on this vessel yet</p>
+                  <p className="text-xs mt-1">Items will appear after a transfer from the warehouse</p>
                 </div>
               ) : (
                 <>
                   <div className="flex items-center gap-6 px-6 py-3.5 bg-muted/30 border-b text-sm">
                     <div><span className="text-muted-foreground">Total items: </span><span className="font-semibold">{invRows.length}</span></div>
-                    <div><span className="text-muted-foreground">Value: </span><span className="font-semibold">{fmtMoney(totalInvValue)}</span></div>
+                    <div><span className="text-muted-foreground">Value: </span><span className="font-semibold">{formatMoney(totalInvValue)}</span></div>
                     {lowStockRows.length > 0 && (
-                      <div className="flex items-center gap-1 text-red-600 font-medium ml-auto">
+                      <div className="flex items-center gap-1 text-destructive font-medium ml-auto">
                         <AlertTriangle className="h-3.5 w-3.5" />{lowStockRows.length} low stock
                       </div>
                     )}
                   </div>
                   <div className="overflow-x-auto"><table className="w-full text-sm">
-                    <thead className="text-xs text-muted-foreground border-b sticky top-0 bg-white">
+                    <thead className="text-xs text-muted-foreground border-b sticky top-0 bg-card">
                       <tr>
                         <th className="text-left px-6 py-2.5 font-medium">Item</th>
                         <th className="text-left px-4 py-2.5 font-medium">Category</th>
@@ -658,7 +657,7 @@ export default function LocationsPage() {
                       {invRows.map(({ item, qty, costPerUnit }) => {
                         const isLow = item.minStock > 0 && qty < item.minStock
                         return (
-                          <tr key={item.id} className={`hover:bg-muted/20 ${isLow ? 'bg-red-50/40' : ''}`}>
+                          <tr key={item.id} className={`hover:bg-muted/20 ${isLow ? 'bg-destructive/5' : ''}`}>
                             <td className="px-6 py-3">
                               <p className="font-medium">{item.name}</p>
                               <p className="text-xs text-muted-foreground font-mono mt-0.5">{item.sku}</p>
@@ -667,10 +666,10 @@ export default function LocationsPage() {
                               <span className="px-2 py-0.5 rounded-full text-xs bg-muted text-muted-foreground">{item.category}</span>
                             </td>
                             <td className="px-6 py-3 text-right">
-                              <span className={`font-semibold ${isLow ? 'text-red-600' : ''}`}>{qty} {item.baseUnit}</span>
-                              {isLow && <AlertTriangle className="h-3 w-3 text-red-500 inline ml-1" />}
+                              <span className={`font-semibold ${isLow ? 'text-destructive' : ''}`}>{qty} {item.baseUnit}</span>
+                              {isLow && <AlertTriangle className="h-3 w-3 text-destructive inline ml-1" />}
                             </td>
-                            <td className="px-6 py-3 text-right text-muted-foreground">{fmtMoney(qty * costPerUnit)}</td>
+                            <td className="px-6 py-3 text-right text-muted-foreground">{formatMoney(qty * costPerUnit)}</td>
                           </tr>
                         )
                       })}

@@ -22,12 +22,14 @@ import {
   CHANNEL_STATUS_ORDER, PILL, heroBackground, computeCampaignReadiness, type Campaign, type CampaignChannel, type CampaignChannelType, type CampaignStage,
 } from './campaignTypes'
 import { useMarketingTeam, ownerOptionNames, type MarketingTeamMember } from '@/components/marketing/shared/useMarketingTeam'
+import { formatDate, formatMoney } from '@/lib/format'
+import { StatusBadge, type StatusTone } from '@/components/ui/status-badge'
 
 // Visual language for this whole detail page mirrors proto-3's CampaignDetail exactly
-// (src/app/proto-3/App.jsx) — the campaign-tabs underline accent (#b39a69), badge tones,
-// KPI strip, channel cards and asset grid all use its literal hex values rather than this
-// app's usual gold (#bdac7e), per explicit user request to match the mockup pixel-for-pixel.
-const TAB_ACCENT = '#b39a69'
+// (src/app/proto-3/App.jsx) — the campaign-tabs underline accent, badge tones, KPI strip,
+// channel cards and asset grid follow its layout; colours now come from the theme tokens
+// (primary / success / warning / info …) so the page re-themes per tenant and in dark mode.
+const TAB_ACCENT = 'var(--primary)'
 const TABS = ['Overview', 'Brief', 'Channels', 'Content & Approval', 'Performance'] as const
 type Tab = typeof TABS[number]
 
@@ -49,17 +51,15 @@ const CHANNEL_TO_CONTENT_FORMATS: Partial<Record<CampaignChannelType, ContentFor
 // Local override of Content Studio's STATUS_STYLE (contentTypes.ts) with proto-3's exact
 // badge hex pairs — kept local rather than changed globally, since Content Studio's own
 // pages are out of scope for this reskin (per the user's "Campaign Hub only for now" choice).
-const CONTENT_STATUS_HEX: Record<ContentStatus, string> = {
-  IDEA: 'bg-[#eef0f2] text-[#626872]',
-  IN_PRODUCTION: 'bg-[#eaf1ff] text-[#2864d7]',
-  WAITING_APPROVAL: 'bg-[#fff2d8] text-[#996313]',
-  APPROVED: 'bg-[#e6f7ee] text-[#087b4c]',
-  REVISION: 'bg-[#fdecec] text-[#bd3c3c]',
-  PUBLISHED: 'bg-[#f3ebfa] text-[#8553b5]',
+const CONTENT_STATUS_TONE: Record<ContentStatus, StatusTone> = {
+  IDEA: 'neutral',
+  IN_PRODUCTION: 'info',
+  WAITING_APPROVAL: 'warning',
+  APPROVED: 'success',
+  REVISION: 'destructive',
+  PUBLISHED: 'purple',
 }
 
-const fmtDate = (d: string | null) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
-const fmtMoney = (n: number | null) => n == null ? '—' : n.toLocaleString('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 })
 const APPROVER_ROLES = ['ADMIN', 'SUPER_ADMIN', 'MARKETING_DIRECTOR']
 
 export default function CampaignDetailPage({ id, onBack }: { id: string; onBack: () => void }) {
@@ -127,7 +127,7 @@ export default function CampaignDetailPage({ id, onBack }: { id: string; onBack:
             </button>
             <button
               onClick={() => setTab('Brief')}
-              className="h-[30px] px-3 rounded-md bg-white text-[#222] hover:bg-white/90 text-[10px] font-semibold inline-flex items-center gap-1.5"
+              className="h-[30px] px-3 rounded-md bg-card text-foreground hover:bg-card/90 text-[10px] font-semibold inline-flex items-center gap-1.5"
             >
               <Pencil className="h-3 w-3" /> Edit campaign
             </button>
@@ -142,7 +142,7 @@ export default function CampaignDetailPage({ id, onBack }: { id: string; onBack:
             />
             {campaign.objective && <p className="text-[11px] text-white/85 max-w-xl mb-3">{campaign.objective}</p>}
             <div className="flex items-center gap-4 flex-wrap text-[9px] text-white/85">
-              <span className="inline-flex items-center gap-1.5"><Calendar className="h-3 w-3" /> {fmtDate(campaign.startDate)} – {fmtDate(campaign.endDate)}</span>
+              <span className="inline-flex items-center gap-1.5"><Calendar className="h-3 w-3" /> {formatDate(campaign.startDate)} – {formatDate(campaign.endDate)}</span>
               {campaign.audienceSegments && campaign.audienceSegments.length > 0 && (
                 <span className="inline-flex items-center gap-1.5"><Users className="h-3 w-3" /> {campaign.audienceSegments.join(' · ')}</span>
               )}
@@ -157,8 +157,8 @@ export default function CampaignDetailPage({ id, onBack }: { id: string; onBack:
               value={campaign.ownerName ?? ''} onChange={e => updateField({ ownerName: e.target.value || null })}
               className="bg-transparent border-0 px-1 rounded hover:bg-white/10 focus:outline-none focus:ring-1 focus:ring-white/40 text-white text-[9px] mb-1"
             >
-              <option value="" className="text-black">Unassigned</option>
-              {ownerOptionNames(team, campaign.ownerName).map(n => <option key={n} value={n} className="text-black">{n}</option>)}
+              <option value="" className="text-foreground bg-popover">Unassigned</option>
+              {ownerOptionNames(team, campaign.ownerName).map(n => <option key={n} value={n} className="text-foreground bg-popover">{n}</option>)}
             </select>
             <Select
               value={campaign.stage} onValueChange={v => updateField({ stage: v as CampaignStage })}
@@ -176,14 +176,14 @@ export default function CampaignDetailPage({ id, onBack }: { id: string; onBack:
         </div>
       </div>
 
-      <div className="md:mx-6 sticky top-0 z-10 bg-white border-b flex items-center gap-5 overflow-x-auto px-1 sm:px-2">
+      <div className="md:mx-6 sticky top-0 z-10 bg-card border-b flex items-center gap-5 overflow-x-auto px-1 sm:px-2">
         {TABS.map(t => (
           <button
             key={t} onClick={() => setTab(t)}
-            className={`shrink-0 py-3 text-[11px] font-medium border-b-2 -mb-px transition-colors ${tab === t ? 'text-[#222]' : 'border-transparent text-[#6f747c] hover:text-[#222]'}`}
+            className={`shrink-0 py-3 text-[11px] font-medium border-b-2 -mb-px transition-colors ${tab === t ? 'text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
             style={tab === t ? { borderColor: TAB_ACCENT } : { borderColor: 'transparent' }}
           >
-            {t}{t === 'Content & Approval' && contentNeedingAttention.length > 0 && <em className={`ml-1.5 not-italic ${PILL} bg-[#fff0d4] text-[#936115]`}>{contentNeedingAttention.length}</em>}
+            {t}{t === 'Content & Approval' && contentNeedingAttention.length > 0 && <em className={`ml-1.5 not-italic ${PILL} bg-warning/15 text-warning`}>{contentNeedingAttention.length}</em>}
           </button>
         ))}
       </div>
@@ -211,18 +211,18 @@ export default function CampaignDetailPage({ id, onBack }: { id: string; onBack:
 
 // proto-3's inline "→" navigation links (.text-btn) are blue, distinct from the gold/tab
 // accent used elsewhere on this page — kept as its own constant so every such link matches.
-const LINK_BLUE = '#2764d9'
+const LINK_BLUE = 'var(--info)'
 
 // One continuous bordered strip with internal dividers — proto-3's .campaign-kpis, not
 // this app's usual gapped grid of separate cards.
 function KpiStrip({ items }: { items: { label: string; value: string; sub?: string; subTone?: 'green' | 'blue' }[] }) {
   return (
-    <div className={`grid bg-white border rounded-xl`} style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0,1fr))` }}>
+    <div className={`grid bg-card border rounded-xl`} style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0,1fr))` }}>
       {items.map((it, i) => (
         <div key={it.label} className={`p-4 ${i < items.length - 1 ? 'border-r' : ''}`}>
           <span className="text-[8px] tracking-wide text-muted-foreground">{it.label}</span>
           <strong className="text-xl font-bold tracking-tight block mt-1.5 mb-0.5">{it.value}</strong>
-          {it.sub && <small className={`text-[8px] ${it.subTone === 'green' ? 'text-[#168458]' : it.subTone === 'blue' ? 'text-[#2563eb]' : 'text-muted-foreground'}`}>{it.sub}</small>}
+          {it.sub && <small className={`text-[8px] ${it.subTone === 'green' ? 'text-success' : it.subTone === 'blue' ? 'text-info' : 'text-muted-foreground'}`}>{it.sub}</small>}
         </div>
       ))}
     </div>
@@ -231,13 +231,13 @@ function KpiStrip({ items }: { items: { label: string; value: string; sub?: stri
 
 // proto-3's .donut — a conic-gradient ring with the value printed in the middle. `value`
 // drives the gradient stop directly, so this is inert decoration around a real number.
-function Donut({ value, color = '#16a46a', size = 58 }: { value: number; color?: string; size?: number }) {
+function Donut({ value, color = 'var(--success)', size = 58 }: { value: number; color?: string; size?: number }) {
   return (
     <div
       className="rounded-full grid place-items-center relative shrink-0"
-      style={{ width: size, height: size, background: `conic-gradient(${color} ${value}%, #edf0f3 0)` }}
+      style={{ width: size, height: size, background: `conic-gradient(${color} ${value}%, var(--muted) 0)` }}
     >
-      <div className="absolute rounded-full bg-white" style={{ inset: size * 0.12 }} />
+      <div className="absolute rounded-full bg-card" style={{ inset: size * 0.12 }} />
       <span className="relative text-[10px] font-bold">{value}%</span>
     </div>
   )
@@ -253,15 +253,15 @@ function OverviewTab({ campaign, onGo }: { campaign: Campaign; onGo: (t: Tab) =>
   return (
     <div className="space-y-4">
       <KpiStrip items={[
-        { label: 'SPEND', value: fmtMoney(totalSpend || null), sub: campaign.plannedBudget ? `${Math.round((totalSpend / campaign.plannedBudget) * 100)}% of budget` : undefined, subTone: 'blue' },
+        { label: 'SPEND', value: formatMoney(totalSpend || null), sub: campaign.plannedBudget ? `${Math.round((totalSpend / campaign.plannedBudget) * 100)}% of budget` : undefined, subTone: 'blue' },
         { label: 'QUALIFIED LEADS', value: String(attribution.leads), sub: campaign.utmSlug ? undefined : 'set a UTM slug in Brief to track', subTone: attribution.leads > 0 ? 'green' : undefined },
         { label: 'BOOKINGS', value: String(attribution.bookings), sub: attribution.bookings > 0 ? 'attributed' : undefined, subTone: 'blue' },
-        { label: 'REVENUE', value: fmtMoney(attribution.revenue || null), sub: attribution.revenue > 0 ? 'confirmed payments' : undefined, subTone: 'green' },
+        { label: 'REVENUE', value: formatMoney(attribution.revenue || null), sub: attribution.revenue > 0 ? 'confirmed payments' : undefined, subTone: 'green' },
         { label: 'ROAS', value: roas, sub: totalSpend > 0 ? 'revenue ÷ spend' : undefined },
       ]} />
 
       <div className="grid grid-cols-1 lg:grid-cols-[1.8fr_1fr] gap-4">
-        <div className="border rounded-xl bg-white p-5 h-fit">
+        <div className="border rounded-xl bg-card p-5 h-fit">
           <div className="flex items-center justify-between mb-3">
             <h2 className="font-semibold text-sm">Campaign components</h2>
             <button onClick={() => onGo('Channels')} className="text-[10px] font-semibold" style={{ color: LINK_BLUE }}>Manage channels →</button>
@@ -282,8 +282,8 @@ function OverviewTab({ campaign, onGo }: { campaign: Campaign; onGo: (t: Tab) =>
                 // "Since" caption under the status badge — real last-edited time, standing
                 // in for proto-3's fabricated "Live since 08 Jul" / "Next send 24 Jul".
                 const since = ch.type === 'EMAIL' && ch.emailCampaign?.sentAt
-                  ? `Sent ${fmtDate(ch.emailCampaign.sentAt)}`
-                  : `Updated ${fmtDate(ch.updatedAt)}`
+                  ? `Sent ${formatDate(ch.emailCampaign.sentAt)}`
+                  : `Updated ${formatDate(ch.updatedAt)}`
                 // Result column — only Email has a real, tracked result; every other
                 // channel type has no ad-platform/analytics integration to pull one from.
                 const result = ch.type === 'EMAIL' && ch.emailCampaign && ch.emailCampaign.sentCount > 0
@@ -297,7 +297,7 @@ function OverviewTab({ campaign, onGo }: { campaign: Campaign; onGo: (t: Tab) =>
                     key={ch.id} onClick={() => onGo('Channels')}
                     className="w-full flex items-center gap-2.5 py-2.5 first:pt-0 last:pb-0 text-left hover:bg-muted/30 -mx-1 px-1 rounded"
                   >
-                    <span className="h-9 w-9 rounded-lg grid place-items-center shrink-0" style={{ background: `${CHANNEL_ACCENT[ch.type]}14`, color: CHANNEL_ACCENT[ch.type] }}>
+                    <span className="h-9 w-9 rounded-lg grid place-items-center shrink-0" style={{ background: `color-mix(in srgb, ${CHANNEL_ACCENT[ch.type]} 8%, transparent)`, color: CHANNEL_ACCENT[ch.type] }}>
                       <Icon className="h-4 w-4" />
                     </span>
                     <div className="min-w-0 flex-1">
@@ -327,7 +327,7 @@ function OverviewTab({ campaign, onGo }: { campaign: Campaign; onGo: (t: Tab) =>
         </div>
 
         <div className="space-y-4">
-          <div className="border rounded-xl bg-white p-5">
+          <div className="border rounded-xl bg-card p-5">
             <div className="flex items-center justify-between mb-1">
               <div><h2 className="font-semibold text-sm">Campaign readiness</h2><p className="text-[10px] text-muted-foreground mt-0.5">All launch requirements</p></div>
               <Donut value={readiness.overall} />
@@ -342,17 +342,17 @@ function OverviewTab({ campaign, onGo }: { campaign: Campaign; onGo: (t: Tab) =>
               ].map(([label, pct]) => (
                 <div key={label as string} className="grid grid-cols-[110px_1fr_28px] items-center gap-2">
                   <span className="text-[9px] truncate">{label}</span>
-                  <div className="h-1 rounded-full bg-muted overflow-hidden"><div className="h-full rounded-full bg-[#21a36a]" style={{ width: `${pct}%` }} /></div>
+                  <div className="h-1 rounded-full bg-muted overflow-hidden"><div className="h-full rounded-full bg-success" style={{ width: `${pct}%` }} /></div>
                   <strong className="text-[8px] text-right">{pct}%</strong>
                 </div>
               ))}
             </div>
           </div>
 
-          <div className="border rounded-xl bg-white p-5">
+          <div className="border rounded-xl bg-card p-5">
             <div className="flex items-center justify-between mb-3">
               <h2 className="font-semibold text-sm">Approval needed</h2>
-              {attention.length > 0 && <span className={`${PILL} bg-[#fff2d8] text-[#996313]`}>{attention.length}</span>}
+              {attention.length > 0 && <span className={`${PILL} bg-warning/15 text-warning`}>{attention.length}</span>}
             </div>
             {attention.length === 0 ? (
               <p className="text-sm text-muted-foreground">Nothing needs attention right now.</p>
@@ -361,7 +361,7 @@ function OverviewTab({ campaign, onGo }: { campaign: Campaign; onGo: (t: Tab) =>
                 {attention.slice(0, 5).map(c => (
                   <button key={c.id} onClick={() => onGo('Content & Approval')} className="flex items-center justify-between text-sm w-full text-left hover:opacity-70">
                     <span className="truncate">{c.title}</span>
-                    <span className={`${PILL} ${CONTENT_STATUS_HEX[c.status]} shrink-0`}>{STATUS_LABELS[c.status]}</span>
+                    <StatusBadge tone={CONTENT_STATUS_TONE[c.status]} className={`${PILL} shrink-0`}>{STATUS_LABELS[c.status]}</StatusBadge>
                   </button>
                 ))}
               </div>
@@ -385,7 +385,7 @@ function TagList({ label, values, onChange, placeholder }: {
       <BriefLabel>{label}</BriefLabel>
       <div className="flex flex-wrap gap-1.5 border rounded-md p-2 min-h-9">
         {values.map((v, i) => (
-          <span key={i} className="inline-flex items-center gap-1 text-[9px] bg-[#eef2f9] text-[#355a91] rounded px-1.5 py-1">
+          <span key={i} className="inline-flex items-center gap-1 text-[9px] bg-info/10 text-info rounded px-1.5 py-1">
             {v}
             <button onClick={() => onChange(values.filter((_, j) => j !== i))}><X className="h-2.5 w-2.5" /></button>
           </span>
@@ -426,7 +426,7 @@ function BriefTab({ campaign, onSave, onRefresh, campaignId }: {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
       <div className="lg:col-span-2 space-y-4">
-        <div className="border rounded-xl bg-white p-5 space-y-4">
+        <div className="border rounded-xl bg-card p-5 space-y-4">
           <h2 className="font-semibold text-sm">Campaign brief</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1.5">
@@ -448,23 +448,23 @@ function BriefTab({ campaign, onSave, onRefresh, campaignId }: {
           </div>
         </div>
 
-        <div className="border rounded-xl bg-white p-5 space-y-4">
+        <div className="border rounded-xl bg-card p-5 space-y-4">
           <h2 className="font-semibold text-sm">Audience, markets & languages</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <TagList label="AUDIENCE SEGMENTS" values={campaign.audienceSegments ?? []} onChange={v => onSave({ audienceSegments: v })} placeholder="Add audience..." />
-            <TagList label="MARKETS" values={campaign.markets ?? []} onChange={v => onSave({ markets: v })} placeholder="Add country or region..." />
+            <TagList label="AUDIENCE SEGMENTS" values={campaign.audienceSegments ?? []} onChange={v => onSave({ audienceSegments: v })} placeholder="Add audience…" />
+            <TagList label="MARKETS" values={campaign.markets ?? []} onChange={v => onSave({ markets: v })} placeholder="Add country or region…" />
             <div className="space-y-1.5">
               <BriefLabel>Master language</BriefLabel>
               <Input defaultValue={campaign.masterLanguage ?? ''} onBlur={e => onSave({ masterLanguage: e.target.value })} placeholder="e.g. English" />
             </div>
-            <TagList label="ADDITIONAL LANGUAGES" values={campaign.additionalLanguages ?? []} onChange={v => onSave({ additionalLanguages: v })} placeholder="Add..." />
+            <TagList label="ADDITIONAL LANGUAGES" values={campaign.additionalLanguages ?? []} onChange={v => onSave({ additionalLanguages: v })} placeholder="Add…" />
             <div className="sm:col-span-2">
-              <TagList label="EXCLUSIONS" values={campaign.exclusions ?? []} onChange={v => onSave({ exclusions: v })} placeholder="Add exclusion..." />
+              <TagList label="EXCLUSIONS" values={campaign.exclusions ?? []} onChange={v => onSave({ exclusions: v })} placeholder="Add exclusion…" />
             </div>
           </div>
         </div>
 
-        <div className="border rounded-xl bg-white p-5 space-y-2">
+        <div className="border rounded-xl bg-card p-5 space-y-2">
           <h2 className="font-semibold text-sm">Attribution</h2>
           <p className="text-[10px] text-muted-foreground">
             Add <code className="bg-muted px-1 rounded">?utm_campaign={campaign.utmSlug || '…'}</code> to this campaign's ad and link URLs — inquiries that come in with it get counted as this campaign's leads, bookings and revenue on the Overview tab.
@@ -476,7 +476,7 @@ function BriefTab({ campaign, onSave, onRefresh, campaignId }: {
         </div>
       </div>
 
-      <div className="border rounded-xl bg-white p-5 space-y-3 h-fit">
+      <div className="border rounded-xl bg-card p-5 space-y-3 h-fit">
         <h2 className="font-semibold text-sm">Discussion</h2>
         <div className="space-y-3 max-h-96 overflow-y-auto">
           {(campaign.comments ?? []).map(c => (
@@ -485,17 +485,17 @@ function BriefTab({ campaign, onSave, onRefresh, campaignId }: {
               <div className="flex-1 min-w-0">
                 <p className="flex items-center justify-between gap-2">
                   <strong className="text-[9px]">{c.authorName}</strong>
-                  <span className="text-[7px] text-muted-foreground shrink-0">{new Date(c.createdAt).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
+                  <span className="text-[7px] text-muted-foreground shrink-0">{formatDate(c.createdAt, 'datetimeShort')}</span>
                 </p>
-                <p className="text-[9px] text-[#5f646c] leading-relaxed mt-0.5">{c.text}</p>
+                <p className="text-[9px] text-muted-foreground leading-relaxed mt-0.5">{c.text}</p>
               </div>
             </div>
           ))}
           {(campaign.comments ?? []).length === 0 && <p className="text-sm text-muted-foreground">No comments yet.</p>}
         </div>
         <div className="flex gap-2">
-          <Input value={comment} onChange={e => setComment(e.target.value)} placeholder="Add a campaign comment..." onKeyDown={e => e.key === 'Enter' && postComment()} />
-          <Button size="sm" onClick={postComment} disabled={!comment.trim()} style={{ backgroundColor: '#22262b' }} className="hover:bg-[#0d0f11]">Send</Button>
+          <Input value={comment} onChange={e => setComment(e.target.value)} placeholder="Add a campaign comment…" onKeyDown={e => e.key === 'Enter' && postComment()} />
+          <Button size="sm" onClick={postComment} disabled={!comment.trim()} className="bg-foreground text-background hover:bg-foreground/90">Send</Button>
         </div>
       </div>
     </div>
@@ -554,7 +554,7 @@ function ChannelsTab({ campaign, onRefresh, team, onOpenContent, onNewContent }:
       {availableTypes.length > 0 && (
         <div className="flex items-center gap-2">
           <Select value={addType} onValueChange={v => setAddType(v as CampaignChannelType)}>
-            <SelectTrigger className="w-56"><SelectValue placeholder="Add a component..." /></SelectTrigger>
+            <SelectTrigger className="w-56"><SelectValue placeholder="Add a component…" /></SelectTrigger>
             <SelectContent>
               {availableTypes.map(t => <SelectItem key={t} value={t}>{CHANNEL_LABELS[t]}</SelectItem>)}
             </SelectContent>
@@ -591,7 +591,7 @@ function ChannelsTab({ campaign, onRefresh, team, onOpenContent, onNewContent }:
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmDelete} className="bg-red-600 hover:bg-red-700">Remove</AlertDialogAction>
+            <AlertDialogAction onClick={confirmDelete} className="bg-destructive hover:bg-destructive/90">Remove</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -628,10 +628,10 @@ function ChannelCard({ channel, onUpdate, onDelete, team, linkedContent, onOpenC
   const progress = channel.status === 'NOT_STARTED' ? 0 : channel.status === 'IN_PROGRESS' ? 45 : channel.status === 'READY' ? 80 : 100
 
   return (
-    <div className="border rounded-xl bg-white p-4 space-y-3">
+    <div className="border rounded-xl bg-card p-4 space-y-3">
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2.5 min-w-0">
-          <span className="h-10 w-10 rounded-lg flex items-center justify-center shrink-0" style={{ background: `${accent}14`, color: accent }}><Icon className="h-4.5 w-4.5" /></span>
+          <span className="h-10 w-10 rounded-lg flex items-center justify-center shrink-0" style={{ background: `color-mix(in srgb, ${accent} 8%, transparent)`, color: accent }}><Icon className="h-4.5 w-4.5" /></span>
           <h3 className="font-semibold text-[12px] truncate">{CHANNEL_LABELS[channel.type]}</h3>
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
@@ -641,7 +641,7 @@ function ChannelCard({ channel, onUpdate, onDelete, team, linkedContent, onOpenC
               {CHANNEL_STATUS_ORDER.map(s => <SelectItem key={s} value={s}>{CHANNEL_STATUS_LABELS[s]}</SelectItem>)}
             </SelectContent>
           </Select>
-          <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-600" onClick={onDelete}><Trash2 className="h-3.5 w-3.5" /></Button>
+          <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-destructive" onClick={onDelete}><Trash2 className="h-3.5 w-3.5" /></Button>
         </div>
       </div>
 
@@ -668,7 +668,7 @@ function ChannelCard({ channel, onUpdate, onDelete, team, linkedContent, onOpenC
           ) : linking ? (
             <div className="flex items-center gap-1.5">
               <Select value={pickEmailId} onValueChange={setPickEmailId}>
-                <SelectTrigger className="h-7 text-xs flex-1"><SelectValue placeholder={unlinkedEmails.length ? 'Pick an email campaign...' : 'None available'} /></SelectTrigger>
+                <SelectTrigger className="h-7 text-xs flex-1"><SelectValue placeholder={unlinkedEmails.length ? 'Pick an email campaign…' : 'None available'} /></SelectTrigger>
                 <SelectContent>
                   {unlinkedEmails.map(e => <SelectItem key={e.id} value={e.id}>{e.name}</SelectItem>)}
                 </SelectContent>
@@ -726,7 +726,7 @@ function ChannelCard({ channel, onUpdate, onDelete, team, linkedContent, onOpenC
               {linkedContent.slice(0, 4).map(item => (
                 <button key={item.id} onClick={() => onOpenContent?.(item.id)} className="w-full flex items-center justify-between gap-2 px-2.5 py-1.5 text-left hover:bg-muted/50">
                   <span className="text-xs truncate">{item.title}</span>
-                  <span className={`${PILL} ${CONTENT_STATUS_HEX[item.status]} shrink-0`}>{STATUS_LABELS[item.status]}</span>
+                  <StatusBadge tone={CONTENT_STATUS_TONE[item.status]} className={`${PILL} shrink-0`}>{STATUS_LABELS[item.status]}</StatusBadge>
                 </button>
               ))}
               {linkedContent.length > 4 && (
@@ -741,7 +741,7 @@ function ChannelCard({ channel, onUpdate, onDelete, team, linkedContent, onOpenC
         <Label className="text-xs text-muted-foreground">Owner</Label>
         <select
           value={channel.ownerName ?? ''} onChange={e => onUpdate({ ownerName: e.target.value || null })}
-          className="h-8 w-full text-sm border rounded-md px-2 bg-white focus:outline-none focus:ring-1 focus:ring-[#bdac7e]"
+          className="h-8 w-full text-sm border rounded-md px-2 bg-card focus:outline-none focus:ring-1 focus:ring-ring"
         >
           <option value="">Unassigned</option>
           {ownerOptionNames(team, channel.ownerName).map(n => <option key={n} value={n}>{n}</option>)}
@@ -767,7 +767,7 @@ function ChannelCard({ channel, onUpdate, onDelete, team, linkedContent, onOpenC
       </div>
       <div className="space-y-1.5">
         <Label className="text-xs text-muted-foreground">Notes</Label>
-        <Textarea defaultValue={channel.notes ?? ''} onBlur={e => onUpdate({ notes: e.target.value })} rows={2} className="text-sm" placeholder="Setup notes, next action..." />
+        <Textarea defaultValue={channel.notes ?? ''} onBlur={e => onUpdate({ notes: e.target.value })} rows={2} className="text-sm" placeholder="Setup notes, next action…" />
       </div>
     </div>
   )
@@ -783,31 +783,31 @@ function PerformanceTab({ campaign }: { campaign: Campaign }) {
   return (
     <div className="space-y-4">
       <KpiStrip items={[
-        { label: 'PLANNED BUDGET', value: fmtMoney(totalPlanned || null) },
-        { label: 'ACTUAL SPEND', value: fmtMoney(totalSpend || null), sub: totalPlanned ? `${Math.round((totalSpend / totalPlanned) * 100)}% of budget` : undefined, subTone: 'blue' },
+        { label: 'PLANNED BUDGET', value: formatMoney(totalPlanned || null) },
+        { label: 'ACTUAL SPEND', value: formatMoney(totalSpend || null), sub: totalPlanned ? `${Math.round((totalSpend / totalPlanned) * 100)}% of budget` : undefined, subTone: 'blue' },
         { label: 'CONTENT PUBLISHED', value: String((campaign.contentItems ?? []).filter(c => c.status === 'PUBLISHED').length), sub: `of ${(campaign.contentItems ?? []).length} total`, subTone: 'green' },
       ]} />
 
       {emailChannel?.emailCampaign && (
-        <div className="border rounded-xl bg-white p-5">
+        <div className="border rounded-xl bg-card p-5">
           <h2 className="font-semibold text-sm mb-3">Email channel</h2>
           <div className="grid grid-cols-3 gap-3 text-sm">
             <div><span className="text-xs text-muted-foreground block">Status</span><strong>{emailChannel.emailCampaign.status}</strong></div>
             <div><span className="text-xs text-muted-foreground block">Sent</span><strong>{emailChannel.emailCampaign.sentCount} / {emailChannel.emailCampaign.totalRecipients}</strong></div>
-            <div><span className="text-xs text-muted-foreground block">Sent at</span><strong>{emailChannel.emailCampaign.sentAt ? fmtDate(emailChannel.emailCampaign.sentAt) : '—'}</strong></div>
+            <div><span className="text-xs text-muted-foreground block">Sent at</span><strong>{formatDate(emailChannel.emailCampaign.sentAt)}</strong></div>
           </div>
           <p className="text-xs text-muted-foreground mt-3">Open/click detail lives on this campaign's entry in Email Campaigns.</p>
         </div>
       )}
 
-      <div className="border rounded-xl bg-white p-5">
+      <div className="border rounded-xl bg-card p-5">
         <h2 className="font-semibold text-sm mb-3">Content pipeline</h2>
         <div className="space-y-2">
           {contentByStatus.map(({ status, count }) => (
             <div key={status} className="flex items-center gap-3 text-sm">
               <span className="w-32 shrink-0 text-muted-foreground">{STATUS_LABELS[status]}</span>
               <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
-                <div className="h-full rounded-full" style={{ width: `${(campaign.contentItems ?? []).length ? (count / (campaign.contentItems ?? []).length) * 100 : 0}%`, background: '#21a36a' }} />
+                <div className="h-full rounded-full" style={{ width: `${(campaign.contentItems ?? []).length ? (count / (campaign.contentItems ?? []).length) * 100 : 0}%`, background: 'var(--success)' }} />
               </div>
               <span className="w-6 text-right font-medium">{count}</span>
             </div>

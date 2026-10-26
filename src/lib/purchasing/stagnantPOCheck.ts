@@ -94,16 +94,16 @@ export async function runStagnantPOCheck(db: PrismaClient) {
   const reminderRecords: { userId: string; type: string; title: string; body: string; orderId: string }[] = []
   for (const po of dueForReminder) {
     const daysStale = Math.floor((now - po.lastActivity.getTime()) / 86400000)
-    const title = `PO ${po.poNumber} belum bergerak (${daysStale} hari)`
-    const body = `${po.poNumber} masih di status ${po.status} tanpa perubahan selama ${daysStale} hari. Segera ditindaklanjuti.`
+    const title = `PO ${po.poNumber} has not moved (${daysStale} ${daysStale === 1 ? 'day' : 'days'})`
+    const body = `${po.poNumber} has been in ${po.status} with no changes for ${daysStale} ${daysStale === 1 ? 'day' : 'days'}. Please follow up soon.`
     const targets = po.createdById ? [po.createdById] : purchasingFallback.map(u => u.id)
     for (const userId of targets) reminderRecords.push({ userId, type: 'PO_STAGNANT_REMINDER', title, body, orderId: po.id })
   }
   if (reminderRecords.length > 0) {
     await db.notification.createMany({ data: reminderRecords })
     sendPushToUsers(db, [...new Set(reminderRecords.map(r => r.userId))], {
-      title: 'PO belum bergerak',
-      body: `${dueForReminder.length} PO butuh tindak lanjut.`,
+      title: 'POs not moving',
+      body: `${dueForReminder.length} ${dueForReminder.length === 1 ? 'PO needs' : 'POs need'} follow-up.`,
     }).catch(console.error)
   }
 
@@ -113,15 +113,15 @@ export async function runStagnantPOCheck(db: PrismaClient) {
     const managerUserId = po.createdById ? await resolveQuotationApproverId(db, po.createdById) : null
     if (!managerUserId) continue
     const picName = po.createdBy?.name ?? 'Purchasing'
-    const title = `PO ${po.poNumber} stuck ${daysStale} hari — perlu perhatian`
-    const body = `${po.poNumber} ditangani ${picName}, masih di status ${po.status} selama ${daysStale} hari tanpa tindak lanjut.`
+    const title = `PO ${po.poNumber} stuck for ${daysStale} ${daysStale === 1 ? 'day' : 'days'} — needs attention`
+    const body = `${po.poNumber}, handled by ${picName}, has been in ${po.status} for ${daysStale} ${daysStale === 1 ? 'day' : 'days'} with no follow-up.`
     escalationRecords.push({ userId: managerUserId, type: 'PO_STAGNANT_ESCALATION', title, body, orderId: po.id })
   }
   if (escalationRecords.length > 0) {
     await db.notification.createMany({ data: escalationRecords })
     sendPushToUsers(db, [...new Set(escalationRecords.map(r => r.userId))], {
-      title: 'PO stuck perlu eskalasi',
-      body: `${dueForEscalation.length} PO perlu perhatian atasan.`,
+      title: 'Stuck POs need escalation',
+      body: `${dueForEscalation.length} ${dueForEscalation.length === 1 ? 'PO needs' : 'POs need'} manager attention.`,
     }).catch(console.error)
   }
 

@@ -3,8 +3,11 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { useSession, signOut } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
+import { ThemeToggle } from '@/components/ThemeToggle'
+import { TenantTheme } from '@/components/TenantTheme'
 import { usePageTransition } from '@/components/PageTransitionOverlay'
 import { getTenantBranding } from '@/lib/tenant-branding'
+import { formatRelative } from '@/lib/format'
 import { motion, AnimatePresence } from 'framer-motion'
 import { toast } from 'sonner'
 import { SidebarProvider, Sidebar, SidebarContent, SidebarGroup, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarHeader, SidebarFooter, SidebarTrigger } from '@/components/ui/sidebar'
@@ -129,10 +132,10 @@ function FinanceTabView() {
   const [tab, setTab] = useState<FinanceTab>('summary')
   return (
     <div className="space-y-4">
-      <div className="flex gap-1 border-b">
+      <div className="flex gap-1 border-b overflow-x-auto">
         {FINANCE_TABS.map(t => (
           <button key={t.key} onClick={() => setTab(t.key)}
-            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${tab === t.key ? 'border-[#1a5f6e] text-[#1a5f6e]' : 'border-transparent text-muted-foreground hover:text-foreground'}`}>
+            className={`shrink-0 whitespace-nowrap px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${tab === t.key ? 'border-brand text-brand' : 'border-transparent text-muted-foreground hover:text-foreground'}`}>
             {t.label}
           </button>
         ))}
@@ -146,13 +149,13 @@ function FinanceTabView() {
 }
 
 const roleBadgeColor: Record<string, string> = {
-  ADMIN:      'bg-purple-100 text-purple-700',
-  SALES:      'bg-blue-100 text-blue-700',
-  FINANCE:    'bg-emerald-100 text-emerald-700',
-  MARKETING:  'bg-orange-100 text-orange-700',
-  PURCHASING: 'bg-amber-100 text-amber-700',
-  WAREHOUSE:  'bg-teal-100 text-teal-700',
-  HR:         'bg-pink-100 text-pink-700',
+  ADMIN:      'bg-purple-100 text-purple-700 dark:bg-purple-500/15 dark:text-purple-300',
+  SALES:      'bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300',
+  FINANCE:    'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300',
+  MARKETING:  'bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-300',
+  PURCHASING: 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300',
+  WAREHOUSE:  'bg-teal-100 text-teal-700 dark:bg-teal-500/15 dark:text-teal-300',
+  HR:         'bg-pink-100 text-pink-700 dark:bg-pink-500/15 dark:text-pink-300',
 }
 
 const roleLabel: Record<string, string> = {
@@ -202,32 +205,22 @@ const NOTIF_ICON: Record<string, React.ElementType> = {
   PO_FULLY_PAID:              CheckCircle2,
 }
 const NOTIF_COLOR: Record<string, string> = {
-  PAYMENT_SUBMITTED: 'text-amber-600',
-  PAYMENT_CONFIRMED: 'text-green-600',
-  PAYMENT_REJECTED:  'text-red-600',
-  INVOICE_READY:     'text-violet-600',
-  DEPOSIT_DUE_H2:    'text-amber-500',
-  DEPOSIT_DUE_H1:    'text-orange-500',
-  DEPOSIT_DUE_H0:    'text-red-600',
-  REQUEST_ORDER_SUBMITTED: 'text-blue-600',
-  LEGAL_DOC_EXPIRING: 'text-red-600',
-  PR_VERIFY_REMINDER: 'text-red-600',
-  PO_PAYMENT_REQUESTED: 'text-amber-600',
-  PO_PAYMENT_PAID: 'text-green-600',
-  PO_PAID_BY_PURCHASING: 'text-green-600',
-  PO_REIMBURSEMENT_REQUESTED: 'text-amber-600',
-  PO_REIMBURSEMENT_PAID: 'text-green-600',
-  PO_FULLY_PAID: 'text-green-600',
-}
-
-function fmtRelative(d: string) {
-  const diff = Date.now() - new Date(d).getTime()
-  const min  = Math.floor(diff / 60000)
-  if (min < 1)   return 'Just now'
-  if (min < 60)  return `${min} min ago`
-  const hr = Math.floor(min / 60)
-  if (hr < 24)   return `${hr} hr ago`
-  return `${Math.floor(hr / 24)} days ago`
+  PAYMENT_SUBMITTED: 'text-warning',
+  PAYMENT_CONFIRMED: 'text-success',
+  PAYMENT_REJECTED:  'text-destructive',
+  INVOICE_READY:     'text-violet-600 dark:text-violet-400',
+  DEPOSIT_DUE_H2:    'text-warning',
+  DEPOSIT_DUE_H1:    'text-warning',
+  DEPOSIT_DUE_H0:    'text-destructive',
+  REQUEST_ORDER_SUBMITTED: 'text-info',
+  LEGAL_DOC_EXPIRING: 'text-destructive',
+  PR_VERIFY_REMINDER: 'text-destructive',
+  PO_PAYMENT_REQUESTED: 'text-warning',
+  PO_PAYMENT_PAID: 'text-success',
+  PO_PAID_BY_PURCHASING: 'text-success',
+  PO_REIMBURSEMENT_REQUESTED: 'text-warning',
+  PO_REIMBURSEMENT_PAID: 'text-success',
+  PO_FULLY_PAID: 'text-success',
 }
 
 function playChime() {
@@ -262,8 +255,8 @@ function PurchasingComingSoon({ title, desc }: { title: string; desc: string }) 
       </div>
       <div className="rounded-lg border border-dashed p-12 text-center text-muted-foreground">
         <ShoppingCart className="h-8 w-8 mx-auto mb-3 opacity-30" />
-        <p className="text-sm font-medium">Segera hadir</p>
-        <p className="text-xs mt-1">Fitur ini sedang dalam pengembangan</p>
+        <p className="text-sm font-medium">Coming soon</p>
+        <p className="text-xs mt-1">This feature is currently in development</p>
       </div>
     </div>
   )
@@ -793,7 +786,7 @@ export default function Home() {
             initial={{ rotate: 0 }}
             animate={{ rotate: 360 }}
             transition={{ repeat: Infinity, duration: 1, ease: 'linear' }}
-            className="w-9 h-9 border-[3px] border-[#bdac7e] border-t-transparent rounded-full"
+            className="w-9 h-9 border-[3px] border-primary border-t-transparent rounded-full"
           />
           <p className="text-sm text-muted-foreground tracking-wide">Loading…</p>
         </motion.div>
@@ -936,7 +929,7 @@ export default function Home() {
         <div className="space-y-6">
           <div>
             <h3 className="text-2xl font-bold tracking-tight">Settings</h3>
-            <p className="text-muted-foreground text-sm">Konfigurasi sistem</p>
+            <p className="text-muted-foreground text-sm">System configuration</p>
           </div>
           <CompanySettings />
           <TncPdfSettings />
@@ -949,72 +942,11 @@ export default function Home() {
 
   return (
     <>
-    {branding.primaryColor && (
-      <style>{`
-        /* ── Sidebar ── */
-        [data-sidebar="sidebar"] {
-          background-color: ${branding.sidebarBg} !important;
-        }
-        [data-sidebar="sidebar"] button,
-        [data-sidebar="sidebar"] a,
-        [data-sidebar="sidebar"] span {
-          color: rgba(255,255,255,0.82) !important;
-        }
-        [data-sidebar="group-label"] {
-          color: rgba(255,255,255,0.48) !important;
-        }
-        [data-sidebar="sidebar"] p {
-          color: rgba(255,255,255,0.45) !important;
-        }
-        [data-sidebar="sidebar"] button[data-active="true"],
-        [data-sidebar="sidebar"] button[data-active="true"] span {
-          background-color: rgba(255,255,255,0.18) !important;
-          color: #ffffff !important;
-        }
-        [data-sidebar="sidebar"] button:hover {
-          background-color: rgba(255,255,255,0.12) !important;
-          color: #ffffff !important;
-        }
-        [data-sidebar="sidebar"] button:hover span { color: #ffffff !important; }
-        [data-sidebar="sidebar"] svg { color: inherit !important; }
-
-        /* ── Global primary color overrides ── */
-        [data-tenant="siloina"] {
-          --brand-primary: ${branding.primaryColor};
-          --brand-primary-hover: ${branding.primaryHover};
-        }
-        [data-tenant="siloina"] [class*="1a5f6e"] {
-          --_c: ${branding.primaryColor};
-        }
-        [data-tenant="siloina"] [class*="bg-"][class*="1a5f6e"] {
-          background-color: ${branding.primaryColor} !important;
-        }
-        [data-tenant="siloina"] [class*="bg-"][class*="145260"],
-        [data-tenant="siloina"] [class*="bg-"][class*="1a5f6e"]:hover {
-          background-color: ${branding.primaryHover} !important;
-        }
-        [data-tenant="siloina"] [class*="text-"][class*="1a5f6e"] {
-          color: ${branding.primaryColor} !important;
-        }
-        [data-tenant="siloina"] [class*="text-"][class*="1a5f6e"]:hover {
-          color: ${branding.primaryColor} !important;
-        }
-        [data-tenant="siloina"] [class*="border-"][class*="1a5f6e"] {
-          border-color: ${branding.primaryColor} !important;
-        }
-        [data-tenant="siloina"] [stroke="#1a5f6e"] {
-          stroke: ${branding.primaryColor} !important;
-        }
-        [data-tenant="siloina"] [class*="ring-"][class*="1a5f6e"],
-        [data-tenant="siloina"] [class*="1a5f6e\/"] {
-          --tw-ring-color: ${branding.primaryColor}33 !important;
-        }
-      `}</style>
-    )}
+    <TenantTheme slug={session.user.tenantSlug ?? 'samara'} branding={branding} />
     <SidebarProvider defaultOpen={sidebarDefaultOpen}>
       <div className="flex min-h-screen bg-background w-full" data-tenant={session.user.tenantSlug ?? 'samara'}>
         <Sidebar>
-          <SidebarHeader className="px-5 py-5 border-b" style={branding.sidebarBg ? { borderColor: 'rgba(255,255,255,0.18)' } : undefined}>
+          <SidebarHeader className="px-5 py-5 border-b border-sidebar-border">
             <div className="flex items-center gap-3">
               <img
                 src={branding.logoUrl}
@@ -1076,14 +1008,14 @@ export default function Home() {
                       isActive={isItemActive}
                       className={`relative !py-3.5 !px-3 rounded-lg transition-colors ${asChild ? 'pl-8 text-xs' : 'text-[13px]'} ${
                         isItemActive
-                          ? 'bg-[#bdac7e]/15 text-[#7a6a3f] font-semibold hover:bg-[#bdac7e]/20 hover:text-[#7a6a3f]'
+                          ? 'bg-sidebar-active text-sidebar-active-foreground font-semibold hover:bg-sidebar-active hover:text-sidebar-active-foreground'
                           : asChild
-                            ? 'text-gray-500 font-normal hover:bg-gray-100 hover:text-gray-800'
-                            : 'text-gray-700 font-medium hover:bg-gray-100 hover:text-gray-900'
+                            ? 'text-sidebar-muted-foreground font-normal hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'
+                            : 'text-sidebar-foreground font-medium hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'
                       }`}
                     >
                       <div className="relative shrink-0">
-                        <Icon className={`${asChild ? 'h-3.5 w-3.5' : 'h-[17px] w-[17px]'} ${isItemActive ? 'text-[#8a744a]' : 'text-gray-400'}`} />
+                        <Icon className={`${asChild ? 'h-3.5 w-3.5' : 'h-[17px] w-[17px]'} ${isItemActive ? 'text-sidebar-active-foreground' : 'text-sidebar-muted-foreground'}`} />
                         <AnimatePresence>
                           {showDot && (
                             <motion.span
@@ -1092,7 +1024,7 @@ export default function Home() {
                               animate={{ scale: 1, opacity: 1 }}
                               exit={{ scale: 0, opacity: 0 }}
                               transition={{ type: 'spring', stiffness: 500, damping: 25 }}
-                              className="absolute -top-1.5 -right-1.5 min-w-3.5 h-3.5 px-0.5 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center leading-none"
+                              className="absolute -top-2 -right-2 min-w-4 h-4 px-1 bg-destructive text-destructive-foreground text-[9px] font-bold tabular-nums rounded-full ring-2 ring-sidebar flex items-center justify-center leading-none"
                             >
                               {dotCount > 9 ? '9+' : dotCount}
                             </motion.span>
@@ -1100,7 +1032,7 @@ export default function Home() {
                         </AnimatePresence>
                       </div>
                       <span className="truncate">{item.label}</span>
-                      {isItemActive && <span className="absolute right-2 top-1/2 -translate-y-1/2 w-1 h-4 rounded-full bg-[#bdac7e]" />}
+                      {isItemActive && <span className="absolute right-2 top-1/2 -translate-y-1/2 w-1 h-4 rounded-full bg-sidebar-primary" />}
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 )
@@ -1112,7 +1044,7 @@ export default function Home() {
                 const isExpanded = isSectionActive || expandedGroups.has(key)
 
                 return (
-                  <div key={key} className={`rounded-lg transition-colors ${isExpanded ? 'bg-gray-50 pb-2' : ''}`}>
+                  <div key={key} className={`rounded-lg transition-colors ${isExpanded ? 'bg-sidebar-accent/50 pb-2' : ''}`}>
                     <SidebarMenuItem>
                       <SidebarMenuButton
                         onClick={() => setExpandedGroups(prev => {
@@ -1123,13 +1055,13 @@ export default function Home() {
                         })}
                         className={`!py-3.5 !px-3 rounded-lg text-[14px] transition-colors ${
                           isSectionActive
-                            ? 'text-[#7a6a3f] font-semibold hover:bg-gray-100'
-                            : 'text-gray-800 font-semibold hover:bg-gray-100'
+                            ? 'text-sidebar-active-foreground font-semibold hover:bg-sidebar-accent'
+                            : 'text-sidebar-foreground font-semibold hover:bg-sidebar-accent'
                         }`}
                       >
-                        <SectionIcon className={`h-[17px] w-[17px] shrink-0 ${isSectionActive ? 'text-[#8a744a]' : 'text-gray-500'}`} />
+                        <SectionIcon className={`h-[17px] w-[17px] shrink-0 ${isSectionActive ? 'text-sidebar-active-foreground' : 'text-sidebar-muted-foreground'}`} />
                         <span className="flex-1 truncate">{label}</span>
-                        <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-gray-400 transition-transform duration-200 ${isExpanded ? '' : '-rotate-90'}`} />
+                        <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-sidebar-muted-foreground transition-transform duration-200 ${isExpanded ? '' : '-rotate-90'}`} />
                       </SidebarMenuButton>
                     </SidebarMenuItem>
                     <AnimatePresence initial={false}>
@@ -1152,7 +1084,7 @@ export default function Home() {
                                   if (!subItems.length) return null
                                   return (
                                     <div key={sub.key} className="mt-4">
-                                      <div className="pl-3 pb-2 flex items-center text-[10px] font-semibold uppercase tracking-wider text-[#a8874f]">
+                                      <div className="pl-3 pb-2 flex items-center text-[10px] font-semibold uppercase tracking-wider text-primary-strong">
                                         {sub.label}
                                       </div>
                                       <SidebarMenu className="px-1 gap-4">{renderItems(subItems, true)}</SidebarMenu>
@@ -1176,7 +1108,7 @@ export default function Home() {
 
                 return (
                   <SidebarGroup className="!p-3 pt-4">
-                    <SidebarGroupLabel className="!h-auto px-2 pb-2.5 text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+                    <SidebarGroupLabel className="!h-auto px-2 pb-2.5 text-[11px] font-semibold uppercase tracking-wider text-sidebar-muted-foreground">
                       Menu
                     </SidebarGroupLabel>
                     <SidebarMenu className="gap-5">
@@ -1218,7 +1150,7 @@ export default function Home() {
 
                 return (
                   <SidebarGroup className="!p-3 pt-4">
-                    <SidebarGroupLabel className="!h-auto px-2 pb-2.5 text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+                    <SidebarGroupLabel className="!h-auto px-2 pb-2.5 text-[11px] font-semibold uppercase tracking-wider text-sidebar-muted-foreground">
                       Menu
                     </SidebarGroupLabel>
                     <SidebarMenu className="gap-5">
@@ -1258,7 +1190,7 @@ export default function Home() {
 
                 return (
                   <SidebarGroup className="!p-3 pt-4">
-                    <SidebarGroupLabel className="!h-auto px-2 pb-2.5 text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+                    <SidebarGroupLabel className="!h-auto px-2 pb-2.5 text-[11px] font-semibold uppercase tracking-wider text-sidebar-muted-foreground">
                       Menu
                     </SidebarGroupLabel>
                     <SidebarMenu className="gap-5">
@@ -1285,13 +1217,13 @@ export default function Home() {
                 const mainItems = visibleNavItems.filter(i => i.group === 'main')
                 return (
                   <SidebarGroup className="!p-3 pt-4">
-                    <SidebarGroupLabel className="!h-auto px-2 pb-2.5 text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+                    <SidebarGroupLabel className="!h-auto px-2 pb-2.5 text-[11px] font-semibold uppercase tracking-wider text-sidebar-muted-foreground">
                       Menu
                     </SidebarGroupLabel>
                     {mainItems.length > 0 && <SidebarMenu className="gap-5">{renderItems(mainItems)}</SidebarMenu>}
                     {moduleGroups.map(group => (
                       <div key={group.key} className="mt-6">
-                        <div className="px-2 pb-2.5 text-[11px] font-semibold uppercase tracking-wider text-[#a8874f]">
+                        <div className="px-2 pb-2.5 text-[11px] font-semibold uppercase tracking-wider text-primary-strong">
                           {group.label}
                         </div>
                         <SidebarMenu className="gap-5">{renderItems(group.items)}</SidebarMenu>
@@ -1303,7 +1235,7 @@ export default function Home() {
 
               return (
                 <SidebarGroup className="!p-3 pt-4">
-                  <SidebarGroupLabel className="!h-auto px-2 pb-2.5 text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+                  <SidebarGroupLabel className="!h-auto px-2 pb-2.5 text-[11px] font-semibold uppercase tracking-wider text-sidebar-muted-foreground">
                     Menu
                   </SidebarGroupLabel>
                   <SidebarMenu className="gap-5">{renderItems(visibleNavItems)}</SidebarMenu>
@@ -1312,8 +1244,8 @@ export default function Home() {
             })()}
           </SidebarContent>
 
-          <SidebarFooter className="px-5 py-4 border-t" style={branding.sidebarBg ? { borderColor: 'rgba(255,255,255,0.18)' } : undefined}>
-            <p className="text-[10.5px] text-center text-gray-400" style={branding.sidebarBg ? { color: 'rgba(255,255,255,0.45)' } : undefined}>
+          <SidebarFooter className="px-5 py-4 border-t border-sidebar-border">
+            <p className="text-[10.5px] text-center text-sidebar-muted-foreground">
               © 2026 {branding.name}.
             </p>
           </SidebarFooter>
@@ -1326,10 +1258,15 @@ export default function Home() {
 
             <div className="flex items-center gap-3">
 
+              <ThemeToggle />
+
               {/* ── Notification Bell ── */}
               <div className="relative" ref={notifRef}>
               <button
                 onClick={() => setNotifOpen(v => !v)}
+                aria-label="Notifications"
+                aria-haspopup="true"
+                aria-expanded={notifOpen}
                 className="relative p-2.5 rounded-full hover:bg-muted transition-colors"
               >
                 <motion.div
@@ -1348,7 +1285,7 @@ export default function Home() {
                       animate={{ scale: 1, opacity: 1 }}
                       exit={{ scale: 0, opacity: 0 }}
                       transition={{ type: 'spring', stiffness: 500, damping: 22 }}
-                      className="absolute top-1 right-1 min-w-4 h-4 px-0.5 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center leading-none pointer-events-none"
+                      className="absolute top-0.5 right-0.5 min-w-4 h-4 px-1 bg-destructive text-destructive-foreground text-[9px] font-bold tabular-nums rounded-full ring-2 ring-background flex items-center justify-center leading-none pointer-events-none"
                     >
                       {unreadCount > 9 ? '9+' : unreadCount}
                     </motion.span>
@@ -1365,7 +1302,7 @@ export default function Home() {
                     exit="hidden"
                     transition={{ duration: 0.15, ease: 'easeOut' }}
                     style={{ transformOrigin: 'top right' }}
-                    className="absolute right-0 top-full mt-2 w-[calc(100vw-1rem)] sm:w-80 max-w-sm rounded-xl border bg-background shadow-xl z-50 overflow-hidden"
+                    className="fixed left-2 right-2 top-14 sm:absolute sm:left-auto sm:right-0 sm:top-full sm:mt-2 sm:w-80 rounded-xl border bg-background shadow-xl z-50 overflow-hidden"
                   >
                     {/* Dropdown header */}
                     <div className="flex items-center justify-between px-4 py-3 border-b bg-muted/30">
@@ -1373,7 +1310,7 @@ export default function Home() {
                       {unreadCount > 0 && (
                         <button
                           onClick={markAllRead}
-                          className="flex items-center gap-1 text-xs text-[#1a5f6e] hover:underline"
+                          className="flex items-center gap-1 text-xs text-brand hover:underline"
                         >
                           <CheckCheck className="h-3 w-3" />
                           Mark all as read
@@ -1399,7 +1336,7 @@ export default function Home() {
                             onClick={() => handleNotifClick(n)}
                             className={[
                               'w-full text-left px-4 py-3 hover:bg-muted/50 transition-colors flex items-start gap-3',
-                              !n.isRead ? 'bg-blue-50/50 dark:bg-blue-950/20' : '',
+                              !n.isRead ? 'bg-info/5' : '',
                             ].join(' ')}
                           >
                             <div className={`mt-0.5 shrink-0 ${color}`}>
@@ -1410,10 +1347,10 @@ export default function Home() {
                                 {n.title}
                               </p>
                               <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{n.body}</p>
-                              <p className="text-[10px] text-muted-foreground/70 mt-1" suppressHydrationWarning>{fmtRelative(n.createdAt)}</p>
+                              <p className="text-[10px] text-muted-foreground/70 mt-1" suppressHydrationWarning>{formatRelative(n.createdAt)}</p>
                             </div>
                             {!n.isRead && (
-                              <span className="shrink-0 mt-1.5 w-2 h-2 rounded-full bg-blue-500" />
+                              <span className="shrink-0 mt-1.5 w-2 h-2 rounded-full bg-info" />
                             )}
                           </motion.button>
                         )
@@ -1425,7 +1362,7 @@ export default function Home() {
                       {notifications.some(n => n.type.startsWith('DEPOSIT_DUE')) && (
                         <button
                           onClick={() => { setCurrentView('bookings'); setNotifOpen(false) }}
-                          className="text-xs text-[#bdac7e] hover:underline"
+                          className="text-xs text-primary hover:underline"
                         >
                           View bookings →
                         </button>
@@ -1433,7 +1370,7 @@ export default function Home() {
                       {isFinance && (
                         <button
                           onClick={() => { setCurrentView('payments'); setNotifOpen(false) }}
-                          className="text-xs text-[#1a5f6e] hover:underline"
+                          className="text-xs text-brand hover:underline"
                         >
                           View payments →
                         </button>
@@ -1451,13 +1388,15 @@ export default function Home() {
               <div className="relative" ref={userMenuRef}>
                 <button
                   onClick={() => setShowUserMenu(v => !v)}
+                  aria-haspopup="menu"
+                  aria-expanded={showUserMenu}
                   className="flex items-center gap-3 rounded-xl px-3 py-2 hover:bg-muted transition-colors"
                 >
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#1a5f6e] text-white text-sm font-semibold uppercase">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand text-brand-foreground text-sm font-semibold uppercase">
                     {session.user.name?.charAt(0) ?? session.user.email?.charAt(0) ?? 'U'}
                   </div>
                   <div className="text-left hidden sm:block min-w-18">
-                    <span className={`inline-block rounded-md px-2 py-0.5 text-[10px] font-semibold leading-none mb-1 ${roleBadgeColor[userRole] ?? 'bg-gray-100 text-gray-600'}`}>
+                    <span className={`inline-block rounded-md px-2 py-0.5 text-[10px] font-semibold leading-none mb-1 ${roleBadgeColor[userRole] ?? 'bg-muted text-muted-foreground'}`}>
                       {roleLabel[userRole] ?? userRole}
                     </span>
                     <p className="text-sm font-medium text-foreground leading-none">
@@ -1497,7 +1436,7 @@ export default function Home() {
                       <div className="border-t mx-2" />
                       <button
                         onClick={() => triggerTransition(() => signOut({ callbackUrl: '/login' }), 900, branding)}
-                        className="flex w-full items-center gap-2 px-3 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors"
+                        className="flex w-full items-center gap-2 px-3 py-2.5 text-sm text-destructive hover:bg-destructive/10 transition-colors"
                       >
                         <LogOut className="h-4 w-4" />
                         Sign Out
@@ -1539,7 +1478,7 @@ export default function Home() {
 
     {/* ── Edit Profile Dialog ── */}
     <Dialog open={profileOpen} onOpenChange={v => { if (!v) setProfileOpen(false) }}>
-      <DialogContent className="sm:max-w-sm">
+      <DialogContent className="sm:max-w-sm max-h-[90vh] overflow-y-auto" onInteractOutside={e => e.preventDefault()}>
         <DialogHeader>
           <DialogTitle>Edit Profile</DialogTitle>
         </DialogHeader>
@@ -1578,6 +1517,7 @@ export default function Home() {
                   className="absolute right-2.5 top-2.5 text-muted-foreground hover:text-foreground"
                   onClick={() => setShowCurPw(v => !v)}
                   tabIndex={-1}
+                  aria-label={showCurPw ? 'Hide password' : 'Show password'}
                 >
                   {showCurPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
@@ -1602,6 +1542,7 @@ export default function Home() {
                   className="absolute right-2.5 top-2.5 text-muted-foreground hover:text-foreground"
                   onClick={() => setShowNewPw(v => !v)}
                   tabIndex={-1}
+                  aria-label={showNewPw ? 'Hide password' : 'Show password'}
                 >
                   {showNewPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
@@ -1627,8 +1568,8 @@ export default function Home() {
           <Button variant="outline" onClick={() => setProfileOpen(false)} disabled={profileSaving}>
             Cancel
           </Button>
-          <Button onClick={handleProfileSave} disabled={profileSaving}>
-            {profileSaving ? 'Saving...' : 'Save Changes'}
+          <Button onClick={handleProfileSave} loading={profileSaving}>
+            {profileSaving ? 'Saving…' : 'Save Changes'}
           </Button>
         </DialogFooter>
       </DialogContent>

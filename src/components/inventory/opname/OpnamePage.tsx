@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { Ship, DoorOpen, Star, Camera, CheckCircle2, AlertTriangle, ClipboardList, ArrowLeft, Loader2 } from 'lucide-react'
 import { renderLocationOptions } from '@/components/purchasing/LocationOptions'
 import { PhotoSourceMenu, FilePreview } from '@/components/ui/file-preview'
+import { StatusBadge, type StatusTone } from '@/components/ui/status-badge'
 import { readUploadFile } from '@/lib/fileUpload'
 
 interface StockLocation { id: string; name: string; type: string; parentId: string | null; yachtId: string | null }
@@ -145,8 +146,11 @@ export default function OpnamePage() {
     setOpname(data)
   }
 
-  const STATUS_LABEL: Record<string, string> = { DRAFT: 'Draft', IN_PROGRESS: 'In Progress', COMPLETED: 'Completed' }
-  const STATUS_COLOR: Record<string, string> = { DRAFT: 'bg-blue-100 text-blue-700', IN_PROGRESS: 'bg-amber-100 text-amber-700', COMPLETED: 'bg-green-100 text-green-700' }
+  const STATUS: Record<string, { label: string; tone: StatusTone }> = {
+    DRAFT:       { label: 'Draft',       tone: 'neutral' },
+    IN_PROGRESS: { label: 'In Progress', tone: 'info' },
+    COMPLETED:   { label: 'Completed',   tone: 'success' },
+  }
 
   if (view === 'list') {
     return (
@@ -156,7 +160,7 @@ export default function OpnamePage() {
             <h2 className="text-2xl font-bold tracking-tight">Stock Opname</h2>
             <p className="text-muted-foreground text-sm mt-1">Check the physical condition of inventory items per room</p>
           </div>
-          <button onClick={openStart} className="flex items-center gap-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium px-4 py-2 rounded-md transition-colors">
+          <button onClick={openStart} className="flex items-center gap-2 bg-primary hover:bg-primary-hover text-primary-foreground text-sm font-medium px-4 py-2 rounded-md transition-colors">
             <ClipboardList className="h-4 w-4" /> Start Opname
           </button>
         </div>
@@ -191,7 +195,7 @@ export default function OpnamePage() {
                     <td className="px-4 py-3 text-muted-foreground text-xs">{o.countedBy.name ?? '—'}</td>
                     <td className="px-4 py-3 text-right">{o._count.entries}</td>
                     <td className="px-4 py-3 text-center">
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLOR[o.status] ?? ''}`}>{STATUS_LABEL[o.status] ?? o.status}</span>
+                      <StatusBadge tone={STATUS[o.status]?.tone ?? 'neutral'}>{STATUS[o.status]?.label ?? o.status}</StatusBadge>
                     </td>
                   </tr>
                 ))}
@@ -215,20 +219,20 @@ export default function OpnamePage() {
         </div>
 
         {noAssignedShip && (
-          <div className="flex items-center gap-2 text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+          <div className="flex items-center gap-2 text-sm text-warning bg-warning/10 border border-warning/30 rounded-lg px-3 py-2">
             <AlertTriangle className="h-4 w-4 shrink-0" /> No ship is assigned to your account yet. Ask an admin to assign one in Users.
           </div>
         )}
 
         {startError && (
-          <div className="flex items-center gap-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+          <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 border border-destructive/30 rounded-lg px-3 py-2">
             <AlertTriangle className="h-4 w-4 shrink-0" /> {startError}
           </div>
         )}
 
         <div className="space-y-1.5">
           <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5"><Ship className="h-3.5 w-3.5" /> Select Ship / Place</label>
-          <select className="w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
+          <select className="w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
             value={startLocationId} onChange={e => setStartLocationId(e.target.value)}>
             <option value="">— Select —</option>
             {renderLocationOptions(locations, { topLevelOnly: true })}
@@ -236,15 +240,15 @@ export default function OpnamePage() {
         </div>
         <div className="space-y-1.5">
           <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5"><DoorOpen className="h-3.5 w-3.5" /> Select Room</label>
-          <select className="w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500 disabled:opacity-50"
+          <select className="w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
             value={startRoomId} onChange={e => setStartRoomId(e.target.value)} disabled={!startLocationId}>
             <option value="">— Select —</option>
             {rooms.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
           </select>
         </div>
         <button onClick={startOpname} disabled={!startLocationId || !startRoomId || starting}
-          className="w-full flex items-center justify-center gap-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium px-4 py-2.5 rounded-lg disabled:opacity-50 transition-colors">
-          {starting ? <><Loader2 className="h-4 w-4 animate-spin" /> Starting...</> : 'Start Opname'}
+          className="w-full flex items-center justify-center gap-2 bg-primary hover:bg-primary-hover text-primary-foreground text-sm font-medium px-4 py-2.5 rounded-lg disabled:opacity-50 transition-colors">
+          {starting ? <><Loader2 className="h-4 w-4 animate-spin" /> Starting…</> : 'Start Opname'}
         </button>
       </div>
     )
@@ -252,7 +256,7 @@ export default function OpnamePage() {
 
   // Session view
   if (sessionLoading || !opname) {
-    return <div className="py-16 text-center text-sm text-muted-foreground">Loading opname session...</div>
+    return <div className="py-16 text-center text-sm text-muted-foreground">Loading opname session…</div>
   }
 
   const ratedCount = opname.entries.filter(e => e.rating !== null).length
@@ -269,11 +273,11 @@ export default function OpnamePage() {
           <h2 className="text-2xl font-bold tracking-tight">{opname.opnameNumber}</h2>
           <p className="text-muted-foreground text-sm mt-1">{opname.location.name} · {opname.room.name} · {ratedCount}/{opname.entries.length} units rated</p>
         </div>
-        <span className={`px-3 py-1 rounded-full text-xs font-medium ${STATUS_COLOR[opname.status]}`}>{STATUS_LABEL[opname.status]}</span>
+        <StatusBadge tone={STATUS[opname.status]?.tone ?? 'neutral'} className="px-3 py-1">{STATUS[opname.status]?.label}</StatusBadge>
       </div>
 
       {completeError && (
-        <div className="flex items-center gap-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+        <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 border border-destructive/30 rounded-lg px-3 py-2">
           <AlertTriangle className="h-4 w-4 shrink-0" /> {completeError}
         </div>
       )}
@@ -282,7 +286,7 @@ export default function OpnamePage() {
         {opname.entries.map(entry => {
           const damaged = entry.rating !== null && entry.rating <= 2
           return (
-            <div key={entry.id} className={`rounded-xl border p-4 space-y-3 ${damaged ? 'border-red-200 bg-red-50/30' : ''}`}>
+            <div key={entry.id} className={`rounded-xl border p-4 space-y-3 ${damaged ? 'border-destructive/30 bg-destructive/5' : ''}`}>
               <div>
                 <p className="text-xs text-muted-foreground font-mono">{entry.item.itemNumber} · Unit #{entry.unitIndex}</p>
                 <p className="text-sm font-semibold">{entry.item.name}</p>
@@ -296,7 +300,7 @@ export default function OpnamePage() {
                     <button key={i} type="button" disabled={opname.status === 'COMPLETED'}
                       onClick={() => saveEntry(entry.id, { rating: starValue })}
                       className="disabled:cursor-not-allowed">
-                      <Star className={`h-6 w-6 transition-colors ${filled ? 'fill-amber-400 text-amber-400' : 'text-gray-200 hover:text-amber-200'}`} />
+                      <Star className={`h-6 w-6 transition-colors ${filled ? 'fill-amber-400 text-amber-400' : 'text-muted-foreground/30 hover:text-amber-200'}`} />
                     </button>
                   )
                 })}
@@ -308,7 +312,7 @@ export default function OpnamePage() {
               ) : (
                 <button type="button" disabled={opname.status === 'COMPLETED'}
                   onClick={() => setPhotoMenuFor(entry.id)}
-                  className="w-full h-20 border-2 border-dashed rounded-lg flex flex-col items-center justify-center gap-1 text-muted-foreground hover:border-amber-400 hover:text-amber-700 transition-colors disabled:opacity-50">
+                  className="w-full h-20 border-2 border-dashed rounded-lg flex flex-col items-center justify-center gap-1 text-muted-foreground hover:border-primary hover:text-primary-strong transition-colors disabled:opacity-50">
                   <Camera className="h-4 w-4" />
                   <span className="text-xs">Condition Photo</span>
                 </button>
@@ -317,13 +321,13 @@ export default function OpnamePage() {
 
               {damaged && (
                 entry.replacementRequestItem ? (
-                  <div className="flex items-center justify-between text-xs bg-green-50 text-green-700 border border-green-200 rounded-lg px-2.5 py-1.5">
+                  <div className="flex items-center justify-between text-xs bg-success/10 text-success border border-success/30 rounded-lg px-2.5 py-1.5">
                     <span>{entry.replacementRequestItem.request.prNumber} submitted</span>
                     <CheckCircle2 className="h-3.5 w-3.5" />
                   </div>
                 ) : (
                   <button type="button" onClick={() => requestReplacement(entry.id)} disabled={requestingFor === entry.id}
-                    className="w-full flex items-center justify-center gap-1.5 text-xs font-medium bg-red-600 hover:bg-red-700 text-white rounded-lg py-2 disabled:opacity-50">
+                    className="w-full flex items-center justify-center gap-1.5 text-xs font-medium bg-destructive hover:bg-destructive/90 text-destructive-foreground rounded-lg py-2 disabled:opacity-50">
                     {requestingFor === entry.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <AlertTriangle className="h-3.5 w-3.5" />}
                     Request for Replacement
                   </button>
@@ -337,7 +341,7 @@ export default function OpnamePage() {
       {opname.status !== 'COMPLETED' && (
         <div className="flex justify-end">
           <button onClick={completeOpname} disabled={!allRated || completing}
-            className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium px-5 py-2.5 rounded-lg disabled:opacity-50 transition-colors">
+            className="flex items-center gap-2 bg-success hover:bg-success/90 text-success-foreground text-sm font-medium px-5 py-2.5 rounded-lg disabled:opacity-50 transition-colors">
             {completing ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
             Complete Opname
           </button>

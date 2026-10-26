@@ -9,6 +9,8 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Badge } from '@/components/ui/badge'
+import { StatusBadge } from '@/components/ui/status-badge'
+import { formatDate } from '@/lib/format'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -17,6 +19,7 @@ import { UserPlus, Plus, Edit, MessageCircle, Send, Search, Mail, Phone, Chevron
 import LeadEditSheet from '@/components/leads/LeadEditSheet'
 import LostReasonDialog from '@/components/leads/LostReasonDialog'
 import { isHttpUrl } from '@/lib/url-safety'
+import { WebsiteJourney } from '@/components/shared/WebsiteJourney'
 import { LEAD_ORIGINS, LEAD_ORIGIN_LABEL, LEAD_ORIGIN_COLOR, INQUIRY_FORM_LABEL, classifyLeadOrigin, formPageLabel, type LeadOrigin } from '@/lib/lead-origin'
 import FreshsalesImportModal from '@/components/shared/FreshsalesImportModal'
 import { LEAD_STAGES, LEAD_STAGE_LABEL, LEAD_STAGE_COLOR, LEAD_TRANSITIONS, type LeadStage } from '@/lib/lead-pipeline'
@@ -67,7 +70,6 @@ const CHANNEL_TABS: { value: LeadChannel; label: string; title: string }[] = [
   { value: 'meta', label: 'Instant Form',   title: 'Instant Form Leads' },
 ]
 
-const fmtShortDate = (d: string) => new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', timeZone: 'UTC' })
 
 interface Inquiry {
   id: string
@@ -119,11 +121,11 @@ interface WebhookFailure {
 }
 
 const FAILURE_REASON_LABEL: Record<WebhookFailure['reason'], string> = {
-  unknown_tenant:              'Tenant/website tidak dikenali',
-  unauthorized:                'Secret webhook salah/tidak cocok',
-  insufficient_contact_data:   'Form tidak ada nama/email/telepon yang dikenali',
-  domain_not_allowed:          'Pageview dari domain di luar daftar Allowed Domains',
-  exception:                   'Error server saat memproses',
+  unknown_tenant:              'Unrecognized tenant/website',
+  unauthorized:                'Wrong/mismatched webhook secret',
+  insufficient_contact_data:   'Form has no recognizable name/email/phone',
+  domain_not_allowed:          'Pageview from a domain not in Allowed Domains',
+  exception:                   'Server error while processing',
 }
 
 /* ─── Main Component ─────────────────────────────────────────────────────── */
@@ -391,7 +393,7 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail }: {
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" onClick={() => setFailuresOpen(true)}>
-            <AlertTriangle className="mr-2 h-4 w-4" /> Gagal Masuk
+            <AlertTriangle className="mr-2 h-4 w-4" /> Failed Submissions
           </Button>
           {canExportGoogleAds && (
             <Button variant="outline" disabled={exportingGoogleAds} onClick={handleExportGoogleAds} title="Leads who clicked a Google Ads ad (have a Google Click ID)">
@@ -431,7 +433,7 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail }: {
           <div className="flex flex-wrap items-center gap-2 mb-4">
             <Search className="h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Search by name, email, phone, passport..."
+              placeholder="Search by name, email, phone, passport…"
               value={search}
               onChange={e => setSearch(e.target.value)}
               className="max-w-sm"
@@ -632,10 +634,10 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail }: {
                         </TableCell>
                         <TableCell className="max-w-[260px]">
                           <p className="text-xs truncate" title={mi?.utmCampaign ?? ''}>{mi?.utmCampaign ?? '—'}</p>
-                          {mi && <p className="text-[11px] text-muted-foreground capitalize">{mi.utmSource} · {new Date(mi.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</p>}
+                          {mi && <p className="text-[11px] text-muted-foreground capitalize">{mi.utmSource} · {formatDate(mi.createdAt)}</p>}
                         </TableCell>
                         <TableCell>
-                          <p className="text-xs whitespace-nowrap">{mi?.checkInDate ? `${fmtShortDate(mi.checkInDate)}${mi.checkOutDate ? ` – ${fmtShortDate(mi.checkOutDate)}` : ''}` : '—'}</p>
+                          <p className="text-xs whitespace-nowrap">{mi?.checkInDate ? `${formatDate(mi.checkInDate, 'short', { utc: true })}${mi.checkOutDate ? ` – ${formatDate(mi.checkOutDate, 'short', { utc: true })}` : ''}` : '—'}</p>
                           {mi?.guestCount != null && <p className="text-[11px] text-muted-foreground">{mi.guestCount} guest{mi.guestCount === 1 ? '' : 's'}</p>}
                         </TableCell>
                       </>
@@ -650,27 +652,27 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail }: {
                       {l.isSubscribed === null ? (
                         <span className="text-muted-foreground text-xs">—</span>
                       ) : l.isSubscribed ? (
-                        <Badge className="bg-green-100 text-green-700 hover:bg-green-100 border-transparent">Subscribed</Badge>
+                        <StatusBadge tone="success">Subscribed</StatusBadge>
                       ) : (
-                        <Badge className="bg-gray-100 text-gray-600 hover:bg-gray-100 border-transparent">Unsubscribed</Badge>
+                        <StatusBadge tone="neutral">Unsubscribed</StatusBadge>
                       )}
                     </TableCell>
                     <TableCell>
                       {l.nationality ? <div className="flex items-center gap-1 text-xs"><Globe className="h-3 w-3 text-muted-foreground" />{l.nationality}</div> : <span className="text-muted-foreground text-xs">—</span>}
                     </TableCell>
                     <TableCell>
-                      <span className="text-xs text-muted-foreground">{new Date(l.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+                      <span className="text-xs text-muted-foreground">{formatDate(l.createdAt)}</span>
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1">
                         {canFollowUp && l.email && (
-                          <Button variant="ghost" size="icon" title="Follow up by Email" className="text-blue-600 hover:text-blue-600 hover:bg-blue-50"
+                          <Button variant="ghost" size="icon" title="Follow up by Email" className="text-info hover:text-info hover:bg-info/10"
                             onClick={e => { e.stopPropagation(); setEmailFollowUp(l) }}>
                             <Mail className="h-4 w-4" />
                           </Button>
                         )}
                         {canFollowUp && l.phone && (
-                          <Button variant="ghost" size="icon" title="Follow up by WhatsApp" className="text-green-600 hover:text-green-600 hover:bg-green-50"
+                          <Button variant="ghost" size="icon" title="Follow up by WhatsApp" className="text-success hover:text-success hover:bg-success/10"
                             onClick={e => { e.stopPropagation(); setWaFollowUp(l) }}>
                             <MessageCircle className="h-4 w-4" />
                           </Button>
@@ -767,12 +769,12 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail }: {
               {detail && (
                 <div className="flex items-center gap-2 flex-wrap justify-end">
                   {canFollowUp && detail.email && (
-                    <Button size="sm" variant="outline" className="text-blue-700 border-blue-200 hover:bg-blue-50 hover:text-blue-700" onClick={() => setEmailFollowUp(detail)}>
+                    <Button size="sm" variant="outline" className="text-info border-info/30 hover:bg-info/10 hover:text-info" onClick={() => setEmailFollowUp(detail)}>
                       <Mail className="h-3.5 w-3.5 mr-1.5" /> Follow up by Email
                     </Button>
                   )}
                   {canFollowUp && detail.phone && (
-                    <Button size="sm" variant="outline" className="text-green-700 border-green-200 hover:bg-green-50 hover:text-green-700" onClick={() => setWaFollowUp(detail)}>
+                    <Button size="sm" variant="outline" className="text-success border-success/30 hover:bg-success/10 hover:text-success" onClick={() => setWaFollowUp(detail)}>
                       <MessageCircle className="h-3.5 w-3.5 mr-1.5" /> Follow up by WhatsApp
                     </Button>
                   )}
@@ -821,7 +823,7 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail }: {
                     ['Yacht / Product Interest', detail.productInterest],
                     ['Destination', detail.destinationId ? destinationMap[detail.destinationId] : null],
                     ['Travel Dates', (detail.travelStartDate && detail.travelEndDate)
-                      ? `${new Date(detail.travelStartDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })} → ${new Date(detail.travelEndDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}`
+                      ? `${formatDate(detail.travelStartDate)} → ${formatDate(detail.travelEndDate)}`
                       : detail.travelSeason],
                     ['Number of Guests', detail.guestCount],
                     ['Lead Quality', detail.leadQuality],
@@ -861,13 +863,13 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail }: {
                                 </span>
                               )
                             })()}
-                            <span className="text-[11px] text-muted-foreground">{new Date(inq.createdAt).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                            <span className="text-[11px] text-muted-foreground">{formatDate(inq.createdAt, 'datetime')}</span>
                           </div>
                           {(inq.checkInDate || inq.checkOutDate) && (
                             <p className="text-xs text-muted-foreground">
-                              {inq.checkInDate ? new Date(inq.checkInDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
+                              {inq.checkInDate ? formatDate(inq.checkInDate) : '—'}
                               {' → '}
-                              {inq.checkOutDate ? new Date(inq.checkOutDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
+                              {inq.checkOutDate ? formatDate(inq.checkOutDate) : '—'}
                               {inq.guestCount ? ` · ${inq.guestCount} guest${inq.guestCount > 1 ? 's' : ''}` : ''}
                               {inq.tripType ? ` · ${inq.tripType}` : ''}
                             </p>
@@ -893,22 +895,7 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail }: {
                 </div>
                 <div className="text-sm">
                   <p className="text-xs text-muted-foreground uppercase tracking-wide mb-2">Website Journey</p>
-                  {pageViews === null ? (
-                    <p className="text-xs text-muted-foreground">Loading…</p>
-                  ) : pageViews.length === 0 ? (
-                    <p className="text-xs text-muted-foreground">No page views recorded yet</p>
-                  ) : (
-                    <div className="rounded-lg border divide-y max-h-64 overflow-y-auto">
-                      {pageViews.map(pv => (
-                        <div key={pv.id} className="flex items-center justify-between gap-3 px-3 py-1.5">
-                          <span className="text-xs font-mono truncate">
-                            {isHttpUrl(pv.url) ? <a href={pv.url} target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground">{pv.title || pv.url}</a> : (pv.title || pv.url)}
-                          </span>
-                          <span className="text-[11px] text-muted-foreground shrink-0">{new Date(pv.occurredAt).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                  <WebsiteJourney pageViews={pageViews} />
                 </div>
               </CardContent>
             </Card>
@@ -922,7 +909,7 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail }: {
           <DialogHeader>
             <DialogTitle>Attribution</DialogTitle>
             <DialogDescription>
-              {attributionInquiry && new Date(attributionInquiry.createdAt).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+              {attributionInquiry && formatDate(attributionInquiry.createdAt, 'datetime')}
             </DialogDescription>
           </DialogHeader>
           {attributionInquiry && (() => {
@@ -983,9 +970,9 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail }: {
       <Dialog open={failuresOpen} onOpenChange={setFailuresOpen}>
         <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Submission yang Gagal Masuk</DialogTitle>
+            <DialogTitle>Failed Submissions</DialogTitle>
             <DialogDescription>
-              Form dari website yang ditolak sebelum sempat jadi Lead — dipakai untuk cocokin sama Freshchat/sumber lain kalau ada lead yang kelihatannya &quot;hilang&quot;.
+              Website forms rejected before they became a Lead — use these to cross-check Freshchat/other sources when a lead seems &quot;missing&quot;.
             </DialogDescription>
           </DialogHeader>
           {loadingFailures ? (
@@ -993,7 +980,7 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail }: {
               {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-16 w-full" />)}
             </div>
           ) : failures.length === 0 ? (
-            <p className="text-sm text-muted-foreground italic py-6 text-center">Tidak ada submission yang gagal dalam catatan sistem.</p>
+            <p className="text-sm text-muted-foreground italic py-6 text-center">No failed submissions on record.</p>
           ) : (
             <div className="space-y-2">
               {failures.map(f => {
@@ -1005,9 +992,9 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail }: {
                 return (
                   <div key={f.id} className="rounded-lg border p-3 text-sm space-y-1.5">
                     <div className="flex items-center justify-between gap-3">
-                      <Badge variant="outline" className="text-amber-700 border-amber-300 bg-amber-50">{FAILURE_REASON_LABEL[f.reason]}</Badge>
+                      <Badge variant="outline" className="text-warning border-warning/30 bg-warning/10">{FAILURE_REASON_LABEL[f.reason]}</Badge>
                       <span className="text-xs text-muted-foreground">
-                        {new Date(f.createdAt).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                        {formatDate(f.createdAt, 'datetime')}
                       </span>
                     </div>
                     {hasPreview ? (
@@ -1017,7 +1004,7 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail }: {
                         {previewPhone && <span className="font-mono">{previewPhone}</span>}
                       </div>
                     ) : (
-                      <p className="text-xs text-muted-foreground italic">Tidak ada data form yang bisa dibaca (submission kosong/format tidak dikenali).</p>
+                      <p className="text-xs text-muted-foreground italic">No readable form data (empty submission or unrecognized format).</p>
                     )}
                     {f.detail && <p className="text-xs text-muted-foreground break-all">{f.detail}</p>}
                   </div>
@@ -1063,11 +1050,11 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail }: {
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              className="bg-destructive hover:bg-destructive/90 text-white"
+              className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
               disabled={deleting}
               onClick={e => { e.preventDefault(); confirmDelete() }}
             >
-              {deleting ? 'Deleting...' : 'Delete Lead'}
+              {deleting ? 'Deleting…' : 'Delete Lead'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -1094,11 +1081,11 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail }: {
             </AlertDialogCancel>
             {bulkErrors.length === 0 && (
               <AlertDialogAction
-                className="bg-destructive hover:bg-destructive/90 text-white"
+                className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
                 disabled={bulkDeleting}
                 onClick={e => { e.preventDefault(); confirmBulkDelete() }}
               >
-                {bulkDeleting ? 'Deleting...' : `Delete ${selectedIds.size}`}
+                {bulkDeleting ? 'Deleting…' : `Delete ${selectedIds.size}`}
               </AlertDialogAction>
             )}
           </AlertDialogFooter>
@@ -1163,12 +1150,12 @@ function EmailFollowUpDialog({ lead, onClose, onSent }: { lead: Lead | null; onC
           </div>
           <div className="space-y-1">
             <label className="text-xs font-medium text-muted-foreground">Message</label>
-            <div className="rounded-md border overflow-hidden bg-white">
+            <div className="rounded-md border overflow-hidden bg-card">
               <EmailComposer initialHtml={greeting} onChange={setBody} onSubmit={() => sendRef.current()} resetKey={lead?.id ?? ''} minHeight={160} />
               <SignaturePreview />
             </div>
           </div>
-          {error && <p className="text-xs text-red-600">{error}</p>}
+          {error && <p className="text-xs text-destructive">{error}</p>}
           <Button onClick={send} disabled={!subject.trim() || !body.text || sending} className="w-full h-9">
             {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Send className="h-4 w-4 mr-1.5" /> Send Email</>}
           </Button>

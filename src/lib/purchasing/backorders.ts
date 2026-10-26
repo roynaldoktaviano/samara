@@ -67,9 +67,9 @@ export async function allocateBackorders(db: Db, locationId: string, itemIds: (s
     }
 
     for (const [requestId, c] of created) {
-      const body = `${c.transferNumber} siap dikirim untuk backorder ${c.prNumber}: ${c.lines.join(', ')}.`
-      await notifyByRoleForRequest(db, ['WAREHOUSE', 'ADMIN'], 'PR_BACKORDER_READY', 'Backorder siap dikirim', body, requestId)
-      await notifyRequester(db, requestId, { type: 'PR_BACKORDER_READY', title: 'Sisa barang siap dikirim', body })
+      const body = `${c.transferNumber} is ready to ship for backorder ${c.prNumber}: ${c.lines.join(', ')}.`
+      await notifyByRoleForRequest(db, ['WAREHOUSE', 'ADMIN'], 'PR_BACKORDER_READY', 'Backorder ready to ship', body, requestId)
+      await notifyRequester(db, requestId, { type: 'PR_BACKORDER_READY', title: 'Remaining items ready to ship', body })
     }
     return [...created.values()].map(c => c.transferNumber)
   } catch (e) {

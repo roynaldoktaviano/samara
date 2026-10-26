@@ -173,7 +173,7 @@ export default function Brands() {
                       <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => openEdit(b)}>
                         <Pencil className="h-3.5 w-3.5" />
                       </Button>
-                      <Button size="icon" variant="ghost" className="h-7 w-7 text-red-500 hover:text-red-600 hover:bg-red-50" onClick={() => setConfirmDelete(b)}>
+                      <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10" onClick={() => setConfirmDelete(b)}>
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>
                     </div>
@@ -193,11 +193,11 @@ export default function Brands() {
           </DialogHeader>
           <div className="space-y-3 py-1">
             <div className="space-y-1.5">
-              <Label className="text-xs">Brand name <span className="text-red-500">*</span></Label>
+              <Label className="text-xs">Brand name <span className="text-destructive">*</span></Label>
               <Input placeholder="e.g. Samara Liveaboard" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs">Company name <span className="text-red-500">*</span></Label>
+              <Label className="text-xs">Company name <span className="text-destructive">*</span></Label>
               <Input placeholder="e.g. PT Samara Wisata Bahari" value={form.companyName} onChange={e => setForm(f => ({ ...f, companyName: e.target.value }))} />
             </div>
             <div className="space-y-1.5">

@@ -2,7 +2,9 @@
 
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { ChevronLeft, ChevronRight, Ship, SlidersHorizontal, X } from 'lucide-react'
-import { getEffectiveBookingStatus } from '@/lib/booking-status'
+import { getEffectiveBookingStatus, bookingStatusStyle } from '@/lib/booking-status'
+import { formatDate } from '@/lib/format'
+import { StatusBadge } from '@/components/ui/status-badge'
 
 interface PublicBooking {
   id: string; yachtId: string; yachtName: string
@@ -30,31 +32,24 @@ const DAY_H  = 32
 
 /* ── Helpers ── */
 
-function fmtDate(iso: string): string {
-  const d = new Date(iso + 'T00:00:00')
-  return `${d.getDate()} ${MONTH_FULL[d.getMonth()].slice(0, 3)} ${d.getFullYear()}`
-}
-
 function bookingStatusColor(status: string): string {
-  if (status === 'on_hold')                                                     return '#22c55e'
-  if (status === 'pending' || status === 'waiting_for_payment' || status === 'process_payments') return '#eab308'
-  if (status === 'on_trip' || status === 'completed')                          return '#94a3b8'
-  if (status === 'confirmed' || status === 'partially_paid' || status === 'fully_paid') return '#ef4444'
-  return '#64748b'
+  if (status === 'waiting_for_payment' || status === 'process_payments') return bookingStatusStyle('pending').color
+  if (status === 'partially_paid') return bookingStatusStyle('confirmed').color
+  return bookingStatusStyle(status).color
 }
 
 function cabinDotColor(bookingStatus: string | null, tripClosed: boolean): string {
-  if (tripClosed) return '#ef4444'
+  if (tripClosed) return 'var(--destructive)'
   if (bookingStatus === null)                                                  return 'transparent'
-  if (bookingStatus === 'on_hold')                                             return '#22c55e'
+  if (bookingStatus === 'on_hold')                                             return 'var(--success)'
   if (bookingStatus === 'pending'
     || bookingStatus === 'waiting_for_payment'
-    || bookingStatus === 'process_payments')                                   return '#eab308'
-  return '#ef4444'
+    || bookingStatus === 'process_payments')                                   return 'var(--warning)'
+  return 'var(--destructive)'
 }
 
 function stripeStyle(color: string): React.CSSProperties {
-  return { background: `repeating-linear-gradient(45deg,${color} 0px,${color} 3px,${color}44 3px,${color}44 8px)` }
+  return { background: `repeating-linear-gradient(45deg,${color} 0px,${color} 3px,color-mix(in srgb, ${color} 27%, transparent) 3px,color-mix(in srgb, ${color} 27%, transparent) 8px)` }
 }
 
 function buildWeeks(year: number, month: number) {
@@ -97,7 +92,7 @@ function getAgendaItems(
     const s = new Date(t.startDate + 'T00:00:00')
     const e = new Date(t.endDate   + 'T00:00:00')
     if (date >= s && date <= e) {
-      const color = t.status === 'closed' ? '#94a3b8' : t.status === 'full' ? '#ef4444' : '#22c55e'
+      const color = t.status === 'closed' ? '#94a3b8' : t.status === 'full' ? 'var(--destructive)' : 'var(--success)'
       items.push({ kind: 'opentrip', id: t.id, yachtName: t.yachtName, status: t.status, color, startDate: t.startDate, endDate: t.endDate, cabins: t.cabins })
     }
   }
@@ -187,7 +182,7 @@ function buildSegments(
     .forEach(t => {
       const isClosed = t.status === 'closed'
       const isFull   = t.status === 'full' || (!isClosed && t.spotsAvailable === 0)
-      const color    = isClosed ? '#94a3b8' : isFull ? '#ef4444' : '#22c55e'
+      const color    = isClosed ? '#94a3b8' : isFull ? 'var(--destructive)' : 'var(--success)'
       addSegs(
         t.id, `Booked · ${t.yachtName}`, color, true,
         new Date(t.startDate + 'T00:00:00'), new Date(t.endDate + 'T00:00:00'),
@@ -316,16 +311,16 @@ export default function PublicCalendarPage() {
   /* Shared chrome pieces */
   const header = (
     <header className="bg-white border-b px-3 sm:px-6 py-2 flex items-center gap-2 sm:gap-3 shrink-0">
-      <Ship className="w-4 h-4 text-[#bdac7e] shrink-0" />
+      <Ship className="w-4 h-4 text-primary shrink-0" />
       <span className="font-bold text-xs sm:text-sm text-slate-700 tracking-wide whitespace-nowrap">Samara Liveaboard</span>
       <span className="text-slate-200 hidden sm:inline">|</span>
-      <span className="hidden sm:inline text-xs text-slate-400">Jadwal Ketersediaan</span>
+      <span className="hidden sm:inline text-xs text-slate-400">Availability Schedule</span>
       <div className="hidden md:flex items-center gap-4 ml-auto">
         {[
-          { style: stripeStyle('#22c55e'), label: 'Open Trip' },
-          { style: stripeStyle('#ef4444'), label: 'Full' },
+          { style: stripeStyle('var(--success)'), label: 'Open Trip' },
+          { style: stripeStyle('var(--destructive)'), label: 'Full' },
           { style: stripeStyle('#94a3b8'), label: 'Closed' },
-          { style: { backgroundColor: '#3b82f6', borderRadius: 2 } as React.CSSProperties, label: 'Private Charter' },
+          { style: { backgroundColor: 'var(--info)', borderRadius: 2 } as React.CSSProperties, label: 'Private Charter' },
         ].map(l => (
           <div key={l.label} className="flex items-center gap-1.5">
             <span className="w-5 h-2.5 rounded-sm inline-block shrink-0" style={l.style} />
@@ -342,9 +337,9 @@ export default function PublicCalendarPage() {
       <div className="flex sm:hidden flex-wrap gap-x-4 gap-y-1">
         {[
           { dot: null,      label: 'Available' },
-          { dot: '#22c55e', label: 'On Hold' },
-          { dot: '#eab308', label: 'Waiting for Payment' },
-          { dot: '#ef4444', label: 'Confirmed / Paid' },
+          { dot: 'var(--success)', label: 'On Hold' },
+          { dot: 'var(--warning)', label: 'Waiting for Payment' },
+          { dot: 'var(--destructive)', label: 'Confirmed / Paid' },
         ].map(({ dot, label }) => (
           <div key={label} className="flex items-center gap-1.5 w-[calc(50%-8px)]">
             <span style={{
@@ -361,9 +356,9 @@ export default function PublicCalendarPage() {
         <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider whitespace-nowrap shrink-0">Status</span>
         {[
           { dot: null,      label: 'Available' },
-          { dot: '#22c55e', label: 'On Hold' },
-          { dot: '#eab308', label: 'Waiting for Payment' },
-          { dot: '#ef4444', label: 'Confirmed / Paid' },
+          { dot: 'var(--success)', label: 'On Hold' },
+          { dot: 'var(--warning)', label: 'Waiting for Payment' },
+          { dot: 'var(--destructive)', label: 'Confirmed / Paid' },
         ].map(({ dot, label }) => (
           <div key={label} className="flex items-center gap-1.5 shrink-0">
             <span style={{
@@ -383,14 +378,15 @@ export default function PublicCalendarPage() {
       {filterOpen && (
         <div className="bg-white rounded-2xl shadow-xl border border-slate-200 px-3 sm:px-4 py-3 flex flex-col gap-1 sm:gap-1.5 min-w-44 sm:min-w-48">
           <div className="flex items-center justify-between mb-1">
-            <span className="text-[10px] sm:text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Filter Kapal</span>
-            <button onClick={() => setFilterOpen(false)} className="p-0.5 rounded hover:bg-slate-100 text-slate-400">
+            <span className="text-[10px] sm:text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Filter by Vessel</span>
+            <button onClick={() => setFilterOpen(false)} aria-label="Close vessel filter" className="relative after:absolute after:-inset-1.5 p-0.5 rounded hover:bg-slate-100 text-slate-400">
               <X className="w-3.5 h-3.5" />
             </button>
           </div>
           {yachtNames.map(n => (
             <button key={n}
               onClick={() => { setYachtFilter(yachtFilter === n ? 'all' : n); setFilterOpen(false) }}
+              aria-pressed={yachtFilter === n}
               className={[
                 'flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium transition-colors text-left',
                 yachtFilter === n ? 'text-white' : 'text-slate-600 hover:bg-slate-100',
@@ -405,6 +401,8 @@ export default function PublicCalendarPage() {
       )}
       <button
         onClick={() => setFilterOpen(v => !v)}
+        aria-expanded={filterOpen}
+        aria-label={yachtFilter === 'all' ? 'Filter by vessel' : `Filter by vessel: ${yachtFilter}`}
         className="flex items-center gap-2 pl-3.5 sm:pl-4 pr-4 sm:pr-5 py-2.5 sm:py-3 rounded-full shadow-lg text-xs sm:text-sm font-semibold transition-all active:scale-95"
         style={activeColor
           ? { backgroundColor: activeColor, color: '#fff' }
@@ -437,23 +435,25 @@ export default function PublicCalendarPage() {
             <div className="flex items-center gap-0.5">
               <button
                 onClick={() => setCurrent(d => { const n = new Date(d); n.setFullYear(n.getFullYear() - 1); return n })}
-                className="p-1 rounded-full hover:bg-slate-100 text-slate-400">
+                aria-label="Previous year"
+                className="relative after:absolute after:-inset-1.5 p-1 rounded-full hover:bg-slate-100 text-slate-400">
                 <ChevronLeft className="w-3 h-3" />
               </button>
-              <span className="bg-[#bdac7e] text-white text-[10px] font-bold px-2.5 py-0.5 rounded-full select-none">{year}</span>
+              <span className="bg-primary text-primary-foreground text-[10px] font-bold px-2.5 py-0.5 rounded-full select-none">{year}</span>
               <button
                 onClick={() => setCurrent(d => { const n = new Date(d); n.setFullYear(n.getFullYear() + 1); return n })}
-                className="p-1 rounded-full hover:bg-slate-100 text-slate-400">
+                aria-label="Next year"
+                className="relative after:absolute after:-inset-1.5 p-1 rounded-full hover:bg-slate-100 text-slate-400">
                 <ChevronRight className="w-3 h-3" />
               </button>
             </div>
             {/* Month */}
             <div className="flex items-center gap-2">
-              <button onClick={() => navigate('prev')} className="p-1 rounded-full hover:bg-slate-100 text-slate-400">
+              <button onClick={() => navigate('prev')} aria-label="Previous month" className="relative after:absolute after:-inset-1.5 p-1 rounded-full hover:bg-slate-100 text-slate-400">
                 <ChevronLeft className="w-4 h-4" />
               </button>
               <span className="text-sm font-bold text-slate-800 w-28 text-center select-none">{MONTH_FULL[month]}</span>
-              <button onClick={() => navigate('next')} className="p-1 rounded-full hover:bg-slate-100 text-slate-400">
+              <button onClick={() => navigate('next')} aria-label="Next month" className="relative after:absolute after:-inset-1.5 p-1 rounded-full hover:bg-slate-100 text-slate-400">
                 <ChevronRight className="w-4 h-4" />
               </button>
             </div>
@@ -479,12 +479,15 @@ export default function PublicCalendarPage() {
                 <button key={i}
                   onClick={() => day > 0 && setSelectedDay(day)}
                   disabled={day === 0}
+                  aria-label={day > 0 ? `${day} ${MONTH_FULL[month]} ${year}` : undefined}
+                  aria-hidden={day === 0 || undefined}
+                  aria-pressed={day > 0 ? isSelected : undefined}
                   className="flex flex-col items-center py-0.5 disabled:pointer-events-none">
                   <span className={[
                     'w-8 h-8 flex items-center justify-center rounded-full text-xs font-semibold transition-colors',
                     day === 0       ? 'text-transparent'
-                    : isSelected    ? 'bg-[#bdac7e] text-white'
-                    : isTodayCell   ? 'border border-[#bdac7e] text-[#bdac7e]'
+                    : isSelected    ? 'bg-primary text-primary-foreground'
+                    : isTodayCell   ? 'border border-primary text-primary'
                     : isPast        ? 'text-slate-300'
                     :                 'text-slate-700 hover:bg-slate-100',
                   ].join(' ')}>
@@ -536,23 +539,18 @@ export default function PublicCalendarPage() {
                   {/* Yacht + badge */}
                   <div className="flex items-center gap-2 mb-1">
                     <span className="font-bold text-sm text-slate-800">{item.yachtName}</span>
-                    <span className={[
-                      'text-[10px] font-bold px-2 py-0.5 rounded-full',
-                      item.kind === 'charter'
-                        ? 'bg-slate-100 text-slate-500'
-                        : isClosed
-                          ? 'bg-slate-100 text-slate-500'
-                          : item.status === 'full'
-                            ? 'bg-red-50 text-red-500'
-                            : 'bg-green-50 text-green-600',
-                    ].join(' ')}>
+                    <StatusBadge
+                      size="sm"
+                      className="font-bold px-2 py-0.5"
+                      tone={item.kind === 'charter' || isClosed ? 'neutral' : item.status === 'full' ? 'destructive' : 'success'}
+                    >
                       {item.kind === 'charter' ? 'Private Charter' : isClosed ? 'Closed' : item.status === 'full' ? 'Full' : 'Open Trip'}
-                    </span>
+                    </StatusBadge>
                   </div>
 
                   {/* Date range + status */}
                   <p className="text-[11px] text-slate-500 font-medium mb-1">
-                    {fmtDate(item.startDate)} — {fmtDate(item.endDate)}
+                    {formatDate(item.startDate, 'medium', { utc: true })} — {formatDate(item.endDate, 'medium', { utc: true })}
                   </p>
                   <p className="text-[11px] text-slate-400 mb-2 capitalize">
                     {item.status.replace(/_/g, ' ')}
@@ -597,22 +595,24 @@ export default function PublicCalendarPage() {
             <div className="flex items-center gap-0.5">
               <button
                 onClick={() => setCurrent(d => { const n = new Date(d); n.setFullYear(n.getFullYear() - 1); return n })}
-                className="p-1 rounded hover:bg-slate-100 text-slate-400 transition-colors">
+                aria-label="Previous year"
+                className="relative after:absolute after:-inset-1.5 p-1 rounded hover:bg-slate-100 text-slate-400 transition-colors">
                 <ChevronLeft className="w-3 h-3" />
               </button>
-              <span className="bg-[#bdac7e] text-white text-[11px] font-semibold px-2.5 py-0.5 rounded-full select-none">{year}</span>
+              <span className="bg-primary text-primary-foreground text-[11px] font-semibold px-2.5 py-0.5 rounded-full select-none">{year}</span>
               <button
                 onClick={() => setCurrent(d => { const n = new Date(d); n.setFullYear(n.getFullYear() + 1); return n })}
-                className="p-1 rounded hover:bg-slate-100 text-slate-400 transition-colors">
+                aria-label="Next year"
+                className="relative after:absolute after:-inset-1.5 p-1 rounded hover:bg-slate-100 text-slate-400 transition-colors">
                 <ChevronRight className="w-3 h-3" />
               </button>
             </div>
             <div className="flex items-center gap-2">
-              <button onClick={() => navigate('prev')} className="p-1.5 rounded-full hover:bg-slate-100 text-slate-400 transition-colors">
+              <button onClick={() => navigate('prev')} aria-label="Previous month" className="p-1.5 rounded-full hover:bg-slate-100 text-slate-400 transition-colors">
                 <ChevronLeft className="w-3.5 h-3.5" />
               </button>
               <span className="text-sm font-semibold text-slate-700 w-32 text-center select-none">{MONTH_FULL[month]}</span>
-              <button onClick={() => navigate('next')} className="p-1.5 rounded-full hover:bg-slate-100 text-slate-400 transition-colors">
+              <button onClick={() => navigate('next')} aria-label="Next month" className="p-1.5 rounded-full hover:bg-slate-100 text-slate-400 transition-colors">
                 <ChevronRight className="w-3.5 h-3.5" />
               </button>
             </div>
@@ -670,7 +670,7 @@ export default function PublicCalendarPage() {
                               {day > 0 && (
                                 <span className={[
                                   'text-xs font-medium w-6 h-6 flex items-center justify-center rounded-full',
-                                  todayCell ? 'bg-[#bdac7e] text-white' : pastDate ? 'text-slate-300' : 'text-slate-500',
+                                  todayCell ? 'bg-primary text-primary-foreground' : pastDate ? 'text-slate-300' : 'text-slate-500',
                                 ].join(' ')}>
                                   {day}
                                 </span>
@@ -700,7 +700,7 @@ export default function PublicCalendarPage() {
 
                         if (seg.isStripe) {
                           const c = seg.color
-                          barStyle.background    = `repeating-linear-gradient(45deg,${c} 0px,${c} 3px,${c}44 3px,${c}44 8px)`
+                          barStyle.background    = `repeating-linear-gradient(45deg,${c} 0px,${c} 3px,color-mix(in srgb, ${c} 27%, transparent) 3px,color-mix(in srgb, ${c} 27%, transparent) 8px)`
                           barStyle.outline       = `1.5px solid ${seg.color}`
                           barStyle.outlineOffset = '-1px'
                         } else {
@@ -726,7 +726,7 @@ export default function PublicCalendarPage() {
                                       <span style={{ fontSize: 8, fontWeight: 700, color: '#fff', backgroundColor: '#94a3b8', borderRadius: 3, padding: '1px 3px', whiteSpace: 'nowrap', flexShrink: 0 }}>CLOSED</span>
                                     )}
                                     {seg.status === 'full' && (
-                                      <span style={{ fontSize: 8, fontWeight: 700, color: '#fff', backgroundColor: '#ef4444', borderRadius: 3, padding: '1px 3px', whiteSpace: 'nowrap', flexShrink: 0 }}>FULL</span>
+                                      <span style={{ fontSize: 8, fontWeight: 700, color: 'var(--destructive-foreground)', backgroundColor: 'var(--destructive)', borderRadius: 3, padding: '1px 3px', whiteSpace: 'nowrap', flexShrink: 0 }}>FULL</span>
                                     )}
                                   </div>
                                   {seg.openTripRef && seg.openTripRef.cabins.length > 0 && (

@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { TrendingUp, Package, ShoppingCart, RefreshCw, Clock, AlertTriangle, FileCheck, ShieldCheck } from 'lucide-react'
+import { formatDate, formatMoney, formatNumber } from '@/lib/format'
+import { StatusBadge } from '@/components/ui/status-badge'
 
 interface Summary { thisMonthSpend: number; thisMonthPOCount: number; totalStockValue: number; totalStockLocations: number }
 interface MonthSpend { label: string; totalValue: number; poCount: number }
@@ -11,17 +13,13 @@ interface MovementRow { id: string; date: string; itemName: string; baseUnit: st
 interface LowStockException { type: string; itemName: string; locationName: string; currentQty: number; minStock: number; baseUnit: string; value: number }
 interface ExceptionRow { id: string; createdAt: string; type: string; itemName: string; locationName: string; qty: number; value: number; reason: string | null; status: string }
 
-const fmtMoney = (n: number) => 'Rp ' + new Intl.NumberFormat('id-ID').format(Math.round(n))
-const fmtDate = (s: string) => new Date(s).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
-const fmtNum = (n: number) => new Intl.NumberFormat('id-ID').format(n)
-
 const TYPE_COLOR: Record<string, string> = {
-  RECEIPT: 'bg-green-50 text-green-700',
-  RECEIVE: 'bg-green-50 text-green-700',
-  TRANSFER: 'bg-blue-50 text-blue-700',
-  ADJUSTMENT: 'bg-amber-50 text-amber-700',
-  CONSUME: 'bg-red-50 text-red-700',
-  COUNT: 'bg-purple-50 text-purple-700',
+  RECEIPT: 'bg-success/10 text-success',
+  RECEIVE: 'bg-success/10 text-success',
+  TRANSFER: 'bg-info/10 text-info',
+  ADJUSTMENT: 'bg-warning/10 text-warning',
+  CONSUME: 'bg-destructive/10 text-destructive',
+  COUNT: 'bg-purple-50 text-purple-700 dark:bg-purple-500/15 dark:text-purple-300',
 }
 
 const TABS = ['Stock Valuation', 'Expiry / Batch', 'Movement Ledger', 'Trip Reconciliation', 'Exceptions', 'Purchasing KPIs'] as const
@@ -82,14 +80,14 @@ export default function ReportsPage() {
         <>
           {/* KPIs + Monthly Spending */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <KpiCard icon={<ShoppingCart className="h-5 w-5 text-amber-600" />}
-              label="This Month's Spending" value={fmtMoney(summary?.thisMonthSpend ?? 0)}
+            <KpiCard icon={<ShoppingCart className="h-5 w-5 text-warning" />}
+              label="This Month's Spending" value={formatMoney(summary?.thisMonthSpend ?? 0)}
               sub={`${summary?.thisMonthPOCount ?? 0} POs`} />
-            <KpiCard icon={<Package className="h-5 w-5 text-blue-600" />}
-              label="Total Stock Value" value={fmtMoney(summary?.totalStockValue ?? 0)}
+            <KpiCard icon={<Package className="h-5 w-5 text-info" />}
+              label="Total Stock Value" value={formatMoney(summary?.totalStockValue ?? 0)}
               sub={`${summary?.totalStockLocations ?? 0} locations`} />
-            <KpiCard icon={<TrendingUp className="h-5 w-5 text-green-600" />}
-              label="6-Month Spending" value={fmtMoney(spendingByMonth.reduce((s, m) => s + m.totalValue, 0))}
+            <KpiCard icon={<TrendingUp className="h-5 w-5 text-success" />}
+              label="6-Month Spending" value={formatMoney(spendingByMonth.reduce((s, m) => s + m.totalValue, 0))}
               sub={`${spendingByMonth.reduce((s, m) => s + m.poCount, 0)} POs`} />
           </div>
 
@@ -102,9 +100,9 @@ export default function ReportsPage() {
                   <div key={i} className="flex items-center gap-3">
                     <span className="text-xs text-muted-foreground w-20 shrink-0">{m.label}</span>
                     <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
-                      <div className="h-2 rounded-full bg-amber-500" style={{ width: `${(m.totalValue / maxSpend) * 100}%` }} />
+                      <div className="h-2 rounded-full bg-primary" style={{ width: `${(m.totalValue / maxSpend) * 100}%` }} />
                     </div>
-                    <span className="text-xs font-medium w-32 text-right shrink-0">{fmtMoney(m.totalValue)}</span>
+                    <span className="text-xs font-medium w-32 text-right shrink-0">{formatMoney(m.totalValue)}</span>
                     <span className="text-xs text-muted-foreground w-12 text-right shrink-0">{m.poCount} PO</span>
                   </div>
                 ))}
@@ -117,7 +115,7 @@ export default function ReportsPage() {
             <div className="flex border-b bg-muted/30 overflow-x-auto">
               {TABS.map(t => (
                 <button key={t} onClick={() => setTab(t)}
-                  className={`px-5 py-3 text-sm font-medium whitespace-nowrap transition-colors border-b-2 ${tab === t ? 'border-amber-500 text-amber-700 bg-white' : 'border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/50'}`}>
+                  className={`px-5 py-3 text-sm font-medium whitespace-nowrap transition-colors border-b-2 ${tab === t ? 'border-primary text-primary-strong bg-card' : 'border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/50'}`}>
                   {t}
                 </button>
               ))}
@@ -144,11 +142,11 @@ export default function ReportsPage() {
                           <td className="px-5 py-3 font-medium">{r.locationName}</td>
                           <td className="px-5 py-3 text-muted-foreground text-xs">{r.locationType}</td>
                           <td className="px-5 py-3 text-right">{r.itemCount}</td>
-                          <td className="px-5 py-3 text-right font-semibold">{fmtMoney(r.value)}</td>
+                          <td className="px-5 py-3 text-right font-semibold">{formatMoney(r.value)}</td>
                           <td className="px-5 py-3 text-center">
                             {r.negativeCount > 0
-                              ? <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-red-50 text-red-600">{r.negativeCount}</span>
-                              : <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-green-50 text-green-700">0</span>}
+                              ? <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-destructive/10 text-destructive">{r.negativeCount}</span>
+                              : <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-success/10 text-success">0</span>}
                           </td>
                         </tr>
                       ))}
@@ -157,7 +155,7 @@ export default function ReportsPage() {
                     <tfoot className="bg-muted/30 border-t text-sm font-semibold">
                       <tr>
                         <td colSpan={3} className="px-5 py-3 text-right text-muted-foreground">Total</td>
-                        <td className="px-5 py-3 text-right">{fmtMoney(stockValuation.reduce((s, r) => s + r.value, 0))}</td>
+                        <td className="px-5 py-3 text-right">{formatMoney(stockValuation.reduce((s, r) => s + r.value, 0))}</td>
                         <td />
                       </tr>
                     </tfoot>
@@ -190,16 +188,16 @@ export default function ReportsPage() {
                             <td className="px-5 py-3 font-medium">{r.itemName}</td>
                             <td className="px-5 py-3 text-muted-foreground">{r.locationName}</td>
                             <td className="px-5 py-3 font-mono text-xs">{r.batch ?? '—'}</td>
-                            <td className="px-5 py-3 text-right">{fmtNum(r.quantity)} {r.baseUnit}</td>
+                            <td className="px-5 py-3 text-right">{formatNumber(r.quantity, { decimals: 3 })} {r.baseUnit}</td>
                             <td className="px-5 py-3">
-                              <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${expired ? 'bg-red-100 text-red-700' : nearExpiry ? 'bg-amber-100 text-amber-700' : 'bg-green-50 text-green-700'}`}>
-                                {fmtDate(r.expiresAt)}
-                              </span>
+                              <StatusBadge tone={expired ? 'destructive' : nearExpiry ? 'warning' : 'success'}>
+                                {formatDate(r.expiresAt)}
+                              </StatusBadge>
                               <span className="text-xs text-muted-foreground ml-2">
                                 {expired ? `${Math.abs(days)}d ago` : `${days}d`}
                               </span>
                             </td>
-                            <td className="px-5 py-3 text-right">{fmtMoney(r.value)}</td>
+                            <td className="px-5 py-3 text-right">{formatMoney(r.value)}</td>
                           </tr>
                         )
                       })}
@@ -231,14 +229,14 @@ export default function ReportsPage() {
                             : r.toLocation ?? r.fromLocation ?? '—'
                         return (
                           <tr key={r.id} className="hover:bg-muted/20">
-                            <td className="px-5 py-3 text-muted-foreground text-xs whitespace-nowrap">{fmtDate(r.date)}</td>
+                            <td className="px-5 py-3 text-muted-foreground text-xs whitespace-nowrap">{formatDate(r.date)}</td>
                             <td className="px-5 py-3 font-medium">{r.itemName}</td>
                             <td className="px-5 py-3">
                               <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${TYPE_COLOR[r.type] ?? 'bg-muted text-muted-foreground'}`}>
                                 {r.type}
                               </span>
                             </td>
-                            <td className="px-5 py-3 text-right font-medium">{fmtNum(r.quantity)} <span className="text-xs text-muted-foreground font-normal">{r.baseUnit}</span></td>
+                            <td className="px-5 py-3 text-right font-medium">{formatNumber(r.quantity, { decimals: 3 })} <span className="text-xs text-muted-foreground font-normal">{r.baseUnit}</span></td>
                             <td className="px-5 py-3 text-xs text-muted-foreground whitespace-nowrap">{route}</td>
                             <td className="px-5 py-3 text-xs text-muted-foreground">{r.by}</td>
                           </tr>
@@ -266,10 +264,10 @@ export default function ReportsPage() {
                   STOCK_COUNT_VARIANCE: 'Stock Count Variance',
                 }
                 const EXCEPTION_TYPE_COLOR: Record<string, string> = {
-                  NEGATIVE_STOCK: 'bg-red-50 text-red-700',
-                  TRANSFER_DISCREPANCY: 'bg-blue-50 text-blue-700',
-                  RECEIVING_DISCREPANCY: 'bg-amber-50 text-amber-700',
-                  STOCK_COUNT_VARIANCE: 'bg-purple-50 text-purple-700',
+                  NEGATIVE_STOCK: 'bg-destructive/10 text-destructive',
+                  TRANSFER_DISCREPANCY: 'bg-info/10 text-info',
+                  RECEIVING_DISCREPANCY: 'bg-warning/10 text-warning',
+                  STOCK_COUNT_VARIANCE: 'bg-purple-50 text-purple-700 dark:bg-purple-500/15 dark:text-purple-300',
                 }
                 const openCount = exceptionRegister.filter(e => e.status === 'OPEN').length
                 const lowStockCount = lowStockExceptions.length
@@ -278,10 +276,10 @@ export default function ReportsPage() {
                     {/* Summary row */}
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                       {[
-                        { label: 'Open Exceptions', value: openCount, color: openCount > 0 ? 'text-red-600' : 'text-green-600' },
+                        { label: 'Open Exceptions', value: openCount, color: openCount > 0 ? 'text-destructive' : 'text-success' },
                         { label: 'Resolved', value: exceptionRegister.filter(e => e.status === 'RESOLVED').length, color: 'text-foreground' },
-                        { label: 'Low Stock Items', value: lowStockCount, color: lowStockCount > 0 ? 'text-amber-600' : 'text-green-600' },
-                        { label: 'Total Value at Risk', value: fmtMoney(exceptionRegister.filter(e => e.status === 'OPEN').reduce((s, e) => s + e.value, 0)), color: 'text-foreground' },
+                        { label: 'Low Stock Items', value: lowStockCount, color: lowStockCount > 0 ? 'text-warning' : 'text-success' },
+                        { label: 'Total Value at Risk', value: formatMoney(exceptionRegister.filter(e => e.status === 'OPEN').reduce((s, e) => s + e.value, 0)), color: 'text-foreground' },
                       ].map(s => (
                         <div key={s.label} className="rounded-lg border p-3">
                           <p className="text-xs text-muted-foreground">{s.label}</p>
@@ -308,10 +306,10 @@ export default function ReportsPage() {
                           </thead>
                           <tbody className="divide-y">
                             {exceptionRegister.length === 0
-                              ? <tr><td colSpan={7} className="text-center py-10 text-green-700 text-sm">No exceptions recorded</td></tr>
+                              ? <tr><td colSpan={7} className="text-center py-10 text-success text-sm">No exceptions recorded</td></tr>
                               : exceptionRegister.map(e => (
                                 <tr key={e.id} className="hover:bg-muted/20">
-                                  <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{fmtDate(e.createdAt)}</td>
+                                  <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{formatDate(e.createdAt)}</td>
                                   <td className="px-4 py-3">
                                     <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${EXCEPTION_TYPE_COLOR[e.type] ?? 'bg-muted text-muted-foreground'}`}>
                                       {EXCEPTION_TYPE_LABEL[e.type] ?? e.type}
@@ -319,14 +317,14 @@ export default function ReportsPage() {
                                   </td>
                                   <td className="px-4 py-3 font-medium max-w-[160px] truncate">{e.itemName}</td>
                                   <td className="px-4 py-3 text-muted-foreground">{e.locationName}</td>
-                                  <td className="px-4 py-3 text-right font-medium">{e.value > 0 ? fmtMoney(e.value) : '—'}</td>
+                                  <td className="px-4 py-3 text-right font-medium">{e.value > 0 ? formatMoney(e.value) : '—'}</td>
                                   <td className="px-4 py-3 text-muted-foreground max-w-[200px]">
                                     <span className="truncate block" title={e.reason ?? ''}>{e.reason ?? '—'}</span>
                                   </td>
                                   <td className="px-4 py-3">
-                                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${e.status === 'OPEN' ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}>
+                                    <StatusBadge tone={e.status === 'OPEN' ? 'destructive' : 'success'}>
                                       {e.status === 'OPEN' ? 'Open' : 'Resolved'}
-                                    </span>
+                                    </StatusBadge>
                                   </td>
                                 </tr>
                               ))}
@@ -354,12 +352,12 @@ export default function ReportsPage() {
                                 <tr key={i} className="hover:bg-muted/20">
                                   <td className="px-4 py-3 font-medium">{r.itemName}</td>
                                   <td className="px-4 py-3 text-right">
-                                    <span className={r.currentQty === 0 ? 'font-bold text-red-600' : 'font-medium text-amber-600'}>
-                                      {fmtNum(r.currentQty)} {r.baseUnit}
+                                    <span className={r.currentQty === 0 ? 'font-bold text-destructive' : 'font-medium text-warning'}>
+                                      {formatNumber(r.currentQty, { decimals: 3 })} {r.baseUnit}
                                     </span>
                                   </td>
-                                  <td className="px-4 py-3 text-right text-muted-foreground">{fmtNum(r.minStock)} {r.baseUnit}</td>
-                                  <td className="px-4 py-3 text-right">{fmtMoney(r.value)}</td>
+                                  <td className="px-4 py-3 text-right text-muted-foreground">{formatNumber(r.minStock, { decimals: 3 })} {r.baseUnit}</td>
+                                  <td className="px-4 py-3 text-right">{formatMoney(r.value)}</td>
                                 </tr>
                               ))}
                             </tbody>
@@ -420,7 +418,7 @@ const KPI_PRESETS = [
 ]
 
 function KpiTile({ label, value, tone }: { label: string; value: string | number; tone?: 'red' | 'green' | 'amber' | 'muted' }) {
-  const color = tone === 'red' ? 'text-red-600' : tone === 'green' ? 'text-green-600' : tone === 'amber' ? 'text-amber-600' : 'text-foreground'
+  const color = tone === 'red' ? 'text-destructive' : tone === 'green' ? 'text-success' : tone === 'amber' ? 'text-warning' : 'text-foreground'
   return (
     <div className="rounded-lg border p-3">
       <p className="text-xs text-muted-foreground">{label}</p>
@@ -455,16 +453,16 @@ function PurchasingKpiTab() {
       <div className="flex flex-wrap items-center gap-2">
         {KPI_PRESETS.map(p => (
           <button key={p.label} onClick={() => applyPreset(p)}
-            className={`h-8 px-3 rounded-md text-xs font-medium transition-colors border ${activePreset === p.label ? 'border-amber-500 bg-amber-500 text-white' : 'border-input bg-background text-muted-foreground hover:bg-muted'}`}>
+            className={`h-8 px-3 rounded-md text-xs font-medium transition-colors border ${activePreset === p.label ? 'border-primary bg-primary text-primary-foreground' : 'border-input bg-background text-muted-foreground hover:bg-muted'}`}>
             {p.label}
           </button>
         ))}
         <div className="w-px h-5 bg-border mx-1" />
         <input type="date" value={from} onChange={e => { setFrom(e.target.value); setActivePreset('') }}
-          className="h-8 px-2 text-xs rounded-md border border-input bg-background focus:outline-none focus:ring-1 focus:ring-amber-500" />
+          className="h-8 px-2 text-xs rounded-md border border-input bg-background focus:outline-none focus:ring-1 focus:ring-ring" />
         <span className="text-xs text-muted-foreground">→</span>
         <input type="date" value={to} onChange={e => { setTo(e.target.value); setActivePreset('') }}
-          className="h-8 px-2 text-xs rounded-md border border-input bg-background focus:outline-none focus:ring-1 focus:ring-amber-500" />
+          className="h-8 px-2 text-xs rounded-md border border-input bg-background focus:outline-none focus:ring-1 focus:ring-ring" />
         <span className="text-xs text-muted-foreground ml-2">{loading ? 'Loading…' : kpi?.periodLabel}</span>
       </div>
 
@@ -477,9 +475,9 @@ function PurchasingKpiTab() {
             <h3 className="text-sm font-semibold">1. ERP Accuracy — Same-Day Updates</h3>
             <p className="text-xs text-muted-foreground">Proxy metric — measures the gap between the system's own timestamps, not a separate real-world event date.</p>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <KpiCard icon={<Clock className="h-5 w-5 text-blue-600" />} label="PR Verified Same Day"
+              <KpiCard icon={<Clock className="h-5 w-5 text-info" />} label="PR Verified Same Day"
                 value={`${kpi.kpi1.prSameDayPct}%`} sub={`${kpi.kpi1.prSameDayCount} of ${kpi.kpi1.prVerifiedTotal} PRs`} />
-              <KpiCard icon={<Clock className="h-5 w-5 text-blue-600" />} label="PO Dispatched Same Day"
+              <KpiCard icon={<Clock className="h-5 w-5 text-info" />} label="PO Dispatched Same Day"
                 value={`${kpi.kpi1.poSameDayPct}%`} sub={`${kpi.kpi1.poSameDayCount} of ${kpi.kpi1.poDispatchedTotal} POs`} />
             </div>
           </div>
@@ -488,7 +486,7 @@ function PurchasingKpiTab() {
           <div className="space-y-2">
             <h3 className="text-sm font-semibold">2. Order Processing Timeliness</h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <KpiCard icon={<Clock className="h-5 w-5 text-amber-600" />} label={`Draft → Verified (${kpi.kpi2.slaHours}h SLA)`}
+              <KpiCard icon={<Clock className="h-5 w-5 text-warning" />} label={`Draft → Verified (${kpi.kpi2.slaHours}h SLA)`}
                 value={`${kpi.kpi2.draftToVerified.withinSlaPct}%`} sub={`${kpi.kpi2.draftToVerified.withinSlaCount} of ${kpi.kpi2.draftToVerified.total} within SLA · avg ${kpi.kpi2.draftToVerified.avgHours}h`} />
               <KpiCard icon={<Clock className="h-5 w-5 text-muted-foreground" />} label="Verified → Converted (no SLA)"
                 value={`${kpi.kpi2.verifiedToConverted.avgHours}h avg`} sub={`median ${kpi.kpi2.verifiedToConverted.medianHours}h · ${kpi.kpi2.verifiedToConverted.count} PRs — descriptive only`} />
@@ -509,7 +507,7 @@ function PurchasingKpiTab() {
               <KpiTile label="Never followed up" value={kpi.kpi3.neverFollowedUp} tone={kpi.kpi3.neverFollowedUp > 0 ? 'red' : 'green'} />
             </div>
             <div className="max-w-xs">
-              <KpiCard icon={<AlertTriangle className="h-5 w-5 text-red-600" />} label="Follow-up Rate" value={`${kpi.kpi3.followUpRatePct}%`} sub="of overdue POs got at least one follow-up" />
+              <KpiCard icon={<AlertTriangle className="h-5 w-5 text-destructive" />} label="Follow-up Rate" value={`${kpi.kpi3.followUpRatePct}%`} sub="of overdue POs got at least one follow-up" />
             </div>
           </div>
 
@@ -518,7 +516,7 @@ function PurchasingKpiTab() {
             <h3 className="text-sm font-semibold">4. Documentation Completeness</h3>
             <p className="text-xs text-muted-foreground">Received POs with approval, order, invoice and receiving evidence all on file.</p>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <KpiCard icon={<FileCheck className="h-5 w-5 text-green-600" />} label="Fully Documented"
+              <KpiCard icon={<FileCheck className="h-5 w-5 text-success" />} label="Fully Documented"
                 value={`${kpi.kpi4.completenessPct}%`} sub={`${kpi.kpi4.allFourCompleteCount} of ${kpi.kpi4.receivedPoTotal} received POs`} />
               <div className="grid grid-cols-4 gap-2">
                 <KpiTile label="Approval" value={`${kpi.kpi4.breakdown.approvalPct}%`} />
@@ -534,7 +532,7 @@ function PurchasingKpiTab() {
             <h3 className="text-sm font-semibold">5. Compliance &amp; Commercial Discipline</h3>
             <p className="text-xs text-muted-foreground">Converted PR items above Band A with enough quotations on file (or a valid exemption) and justification where the cheapest quote wasn't chosen.</p>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <KpiCard icon={<ShieldCheck className="h-5 w-5 text-blue-600" />} label="Sourcing Compliance"
+              <KpiCard icon={<ShieldCheck className="h-5 w-5 text-info" />} label="Sourcing Compliance"
                 value={`${kpi.kpi5.compliancePct}%`} sub={`${kpi.kpi5.compliantItemCount} of ${kpi.kpi5.eligibleItemTotal} eligible items`} />
               <div className="grid grid-cols-4 gap-2">
                 {(['B', 'C', 'D', 'E'] as const).map(b => (

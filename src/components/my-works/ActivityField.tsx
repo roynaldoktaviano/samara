@@ -5,6 +5,10 @@ import { Send, Trash2, Paperclip, X, Loader2, FileText, Upload } from 'lucide-re
 import { useFileDrop } from '@/hooks/useFileDrop'
 import { uploadToR2WithProgress } from '@/lib/r2-client'
 import { Avatar, fmtSize, useWorks, userLabel, type Attachment, type WorkUser } from './shared'
+import { formatDate } from '@/lib/format'
+import { toast } from 'sonner'
+import { Button } from '@/components/ui/button'
+import { useConfirm } from '@/components/ui/confirm-dialog'
 
 interface Activity {
   id: string; kind: 'COMMENT' | 'ESTIMATION'; body: string; createdAt: string
@@ -15,13 +19,10 @@ interface Pending { id: string; name: string; progress: number; error?: string }
 const MAX_SIZE = 25 * 1024 * 1024 // keep in sync with TODO_ATTACHMENT_MAX_SIZE (src/lib/todo.ts)
 const MAX_FILES = 10 // keep in sync with TODO_COMMENT_MAX_FILES
 
-// "Oct 5 at 9:41 pm" — same feel as ClickUp's activity feed.
+// "05 Oct, 21:41" this year, "05 Oct 2025, 21:41" for older entries.
 function fmtWhen(iso: string) {
-  const d = new Date(iso)
-  const sameYear = d.getFullYear() === new Date().getFullYear()
-  const day = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', ...(sameYear ? {} : { year: 'numeric' }) })
-  const time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }).toLowerCase()
-  return `${day} at ${time}`
+  const sameYear = new Date(iso).getFullYear() === new Date().getFullYear()
+  return formatDate(iso, sameYear ? 'datetimeShort' : 'datetime')
 }
 
 function CommentFiles({ files }: { files: Attachment[] }) {
@@ -60,6 +61,7 @@ export default function ActivityField({ todoId, uploadPrefix, createdAt, created
   todoId: string; uploadPrefix: string; createdAt: string; createdBy: { id: string; user: WorkUser | undefined }
 }) {
   const { meId } = useWorks()
+  const confirm = useConfirm()
   const [items, setItems] = useState<Activity[] | null>(null)
   const [draft, setDraft] = useState('')
   const [files, setFiles] = useState<Attachment[]>([])
@@ -122,9 +124,10 @@ export default function ActivityField({ todoId, uploadPrefix, createdAt, created
   }
 
   async function remove(a: Activity) {
-    if (!confirm('Delete this comment?')) return
+    if (!(await confirm({ title: 'Delete this comment?', destructive: true }))) return
     const res = await fetch(`/api/my-works/${todoId}/activity?activityId=${a.id}`, { method: 'DELETE' })
     if (res.ok) setItems(i => (i ?? []).filter(x => x.id !== a.id))
+    else toast.error((await res.json().catch(() => null))?.error ?? 'Failed to delete comment')
   }
 
   const who = (id: string, u: WorkUser | undefined) => id === meId ? 'You' : userLabel(u)
@@ -133,7 +136,7 @@ export default function ActivityField({ todoId, uploadPrefix, createdAt, created
   return (
     <div className="relative flex flex-col h-full min-h-0" {...dropProps}>
       {isDragging && (
-        <div className="absolute inset-2 z-10 rounded-xl border-2 border-dashed border-amber-500 bg-amber-50/90 flex flex-col items-center justify-center text-sm font-medium text-amber-800 pointer-events-none">
+        <div className="absolute inset-2 z-10 rounded-xl border-2 border-dashed border-primary bg-card/90 flex flex-col items-center justify-center text-sm font-medium text-primary-strong pointer-events-none">
           <Upload className="h-6 w-6 mb-1" />Drop files to attach to your comment
         </div>
       )}
@@ -147,10 +150,10 @@ export default function ActivityField({ todoId, uploadPrefix, createdAt, created
           <span className="flex-1">{who(createdBy.id, createdBy.user)} created this task</span>
           <span className="shrink-0">{fmtWhen(createdAt)}</span>
         </div>
-        {items === null && <p className="text-xs text-muted-foreground px-1">Loading...</p>}
+        {items === null && <p className="text-xs text-muted-foreground px-1">Loading…</p>}
         {items?.map(a => a.kind === 'ESTIMATION' ? (
           <div key={a.id} className="flex items-start gap-2 text-xs text-muted-foreground px-1">
-            <span className="mt-1.5 h-1 w-1 rounded-full bg-sky-500 shrink-0" />
+            <span className="mt-1.5 h-1 w-1 rounded-full bg-info shrink-0" />
             <span className="flex-1"><span className="font-medium text-foreground">{who(a.userId, a.user)}</span> {a.body}</span>
             <span className="shrink-0">{fmtWhen(a.createdAt)}</span>
           </div>
@@ -161,10 +164,10 @@ export default function ActivityField({ todoId, uploadPrefix, createdAt, created
               <span className="text-sm font-semibold truncate">{userLabel(a.user)}</span>
               <span className="text-xs text-muted-foreground shrink-0">{fmtWhen(a.createdAt)}</span>
               {a.userId === meId && (
-                <button onClick={() => remove(a)} title="Delete comment"
-                  className="ml-auto p-1 rounded text-muted-foreground hover:text-red-600 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
+                <Button variant="ghost" size="icon" onClick={() => remove(a)} title="Delete comment" aria-label="Delete comment"
+                  className="ml-auto size-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10 dark:hover:bg-destructive/10 opacity-0 group-hover:opacity-100 focus-visible:opacity-100">
+                  <Trash2 className="size-3.5" />
+                </Button>
               )}
             </div>
             {a.body && <p className="text-sm whitespace-pre-wrap break-words mt-2">{a.body}</p>}
@@ -174,8 +177,8 @@ export default function ActivityField({ todoId, uploadPrefix, createdAt, created
       </div>
 
       <div className="border-t bg-background p-3">
-        <div className="rounded-xl border focus-within:ring-1 focus-within:ring-amber-500">
-          <textarea rows={2} placeholder="Write a comment..." value={draft} onChange={e => setDraft(e.target.value)}
+        <div className="rounded-xl border focus-within:ring-1 focus-within:ring-ring">
+          <textarea rows={2} placeholder="Write a comment…" aria-label="Write a comment" value={draft} onChange={e => setDraft(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); send() } }}
             onPaste={e => { const f = Array.from(e.clipboardData.files); if (f.length) { e.preventDefault(); addFiles(f) } }}
             className="w-full px-3 pt-2.5 text-sm bg-transparent focus:outline-none resize-none" />
@@ -187,33 +190,33 @@ export default function ActivityField({ todoId, uploadPrefix, createdAt, created
                     ? <img src={f.url} alt="" className="h-6 w-6 rounded object-cover" /> // eslint-disable-line @next/next/no-img-element
                     : <FileText className="h-4 w-4 text-muted-foreground shrink-0" />}
                   <span className="truncate">{f.name}</span>
-                  <button onClick={() => setFiles(x => x.filter(y => y.url !== f.url))} className="text-muted-foreground hover:text-red-600"><X className="h-3 w-3" /></button>
+                  <button type="button" onClick={() => setFiles(x => x.filter(y => y.url !== f.url))} aria-label={`Remove ${f.name}`} className="text-muted-foreground hover:text-destructive"><X className="h-3 w-3" /></button>
                 </span>
               ))}
               {pending.map(p => (
-                <span key={p.id} className={`flex items-center gap-1.5 rounded-md border px-1.5 py-1 text-xs max-w-[180px] ${p.error ? 'border-red-200 bg-red-50 text-red-700' : 'bg-muted/40'}`}>
+                <span key={p.id} className={`flex items-center gap-1.5 rounded-md border px-1.5 py-1 text-xs max-w-[180px] ${p.error ? 'border-destructive/30 bg-destructive/10 text-destructive' : 'bg-muted/40'}`}>
                   {p.error ? <Paperclip className="h-3.5 w-3.5 shrink-0" /> : <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" />}
                   <span className="truncate">{p.error ? `${p.name} — ${p.error}` : `${p.name} ${p.progress}%`}</span>
-                  {p.error && <button onClick={() => setPending(x => x.filter(y => y.id !== p.id))}><X className="h-3 w-3" /></button>}
+                  {p.error && <button type="button" onClick={() => setPending(x => x.filter(y => y.id !== p.id))} aria-label={`Dismiss ${p.name}`}><X className="h-3 w-3" /></button>}
                 </span>
               ))}
             </div>
           )}
           <div className="flex items-center gap-1 px-2 pb-2">
-            <button type="button" onClick={() => inputRef.current?.click()} title="Attach files or images"
-              className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted">
-              <Paperclip className="h-4 w-4" />
-            </button>
+            <Button type="button" variant="ghost" size="icon" onClick={() => inputRef.current?.click()} title="Attach files or images" aria-label="Attach files or images"
+              className="size-8 text-muted-foreground hover:text-foreground">
+              <Paperclip />
+            </Button>
             <input ref={inputRef} type="file" multiple className="hidden"
               onChange={e => { if (e.target.files) addFiles(Array.from(e.target.files)); e.target.value = '' }} />
             <span className="text-[11px] text-muted-foreground">Ctrl+Enter to send · paste or drop files</span>
-            <button onClick={send} disabled={!canSend} title="Send"
-              className="ml-auto h-8 px-3 flex items-center gap-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold disabled:opacity-40 transition-colors">
-              {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}Send
-            </button>
+            <Button size="sm" onClick={send} disabled={!canSend} loading={sending} title="Send"
+              className="ml-auto text-xs font-semibold">
+              {!sending && <Send className="size-3.5" />}Send
+            </Button>
           </div>
         </div>
-        {error && <p className="text-xs text-red-600 mt-1.5">{error}</p>}
+        {error && <p className="text-xs text-destructive mt-1.5">{error}</p>}
       </div>
     </div>
   )

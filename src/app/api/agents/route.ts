@@ -58,7 +58,7 @@ export async function POST(request: NextRequest) {
       select: { id: true },
     })
     if (duplicate) {
-      return NextResponse.json({ error: `Agent dengan nama "${name.trim()}" sudah ada` }, { status: 409 })
+      return NextResponse.json({ error: `An agent named "${name.trim()}" already exists` }, { status: 409 })
     }
 
     const agent = await db.agent.create({

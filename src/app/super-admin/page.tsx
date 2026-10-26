@@ -5,6 +5,9 @@ import { useSession, signOut } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { TENANT_FEATURE_DEFINITIONS, type TenantFeatures } from '@/lib/tenant-features'
 import { groupedTenantSecretDefinitions, type TenantSecretKey } from '@/lib/tenant-secrets-definitions'
+import { StatusBadge } from '@/components/ui/status-badge'
+import { useConfirm } from '@/components/ui/confirm-dialog'
+import { toast } from 'sonner'
 
 interface Tenant {
   id: string
@@ -58,7 +61,8 @@ function LogoUrlEditor({ tenant, onUpdate }: { tenant: Tenant; onUpdate: () => v
   return (
     <div className="flex items-center gap-2">
       <input
-        className="border border-gray-200 rounded px-2 py-1 text-xs w-52 outline-none focus:border-[#1e3a5f]"
+        aria-label="Logo URL"
+        className="border border-gray-200 rounded px-2 py-1 text-xs w-52 min-w-0 outline-none focus:border-[#1e3a5f]"
         placeholder="https://..."
         value={val}
         onChange={e => setVal(e.target.value)}
@@ -67,7 +71,7 @@ function LogoUrlEditor({ tenant, onUpdate }: { tenant: Tenant; onUpdate: () => v
       <button onClick={save} disabled={saving} className="text-xs bg-[#1e3a5f] text-white px-2 py-1 rounded disabled:opacity-50">
         {saving ? '...' : 'Save'}
       </button>
-      <button onClick={() => setEditing(false)} className="text-xs text-gray-400 hover:text-gray-600">✕</button>
+      <button onClick={() => setEditing(false)} aria-label="Cancel" className="text-xs text-gray-400 hover:text-gray-600">✕</button>
     </div>
   )
 }
@@ -90,15 +94,18 @@ function TenantFeaturesEditor({ tenant, onUpdate }: { tenant: Tenant; onUpdate: 
   return (
     <div className="space-y-2">
       {TENANT_FEATURE_DEFINITIONS.map(f => (
-        <div key={f.key} className="flex items-center justify-between py-2">
-          <div>
+        <div key={f.key} className="flex items-center justify-between gap-3 py-2">
+          <div className="min-w-0">
             <div className="text-sm font-medium text-gray-700">{f.label}</div>
             <div className="text-xs text-gray-400">{f.description}</div>
           </div>
           <button
             onClick={() => toggle(f.key)}
             disabled={saving === f.key}
-            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
+            role="switch"
+            aria-checked={!!features[f.key]}
+            aria-label={f.label}
+            className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none ${
               features[f.key] ? 'bg-[#1e3a5f]' : 'bg-gray-200'
             } ${saving === f.key ? 'opacity-50' : ''}`}
           >
@@ -129,13 +136,13 @@ function TenantSecretsEditor({ tenant, onUpdate }: { tenant: Tenant; onUpdate: (
       })
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
-        alert(err.error || `Failed to save (${res.status})`)
+        toast.error(err.error || `Failed to save (${res.status})`)
         return
       }
       setDrafts(d => ({ ...d, [key]: '' }))
       onUpdate()
     } catch {
-      alert('Failed to save — network error')
+      toast.error('Failed to save — network error')
     } finally {
       setSaving(null)
     }
@@ -156,14 +163,14 @@ function TenantSecretsEditor({ tenant, onUpdate }: { tenant: Tenant; onUpdate: (
             </summary>
             <div className="px-3 pb-1">
               {group.items.map(s => (
-                <div key={s.key} className="flex items-center justify-between gap-3 py-2 border-b border-gray-50 last:border-0">
+                <div key={s.key} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3 py-2 border-b border-gray-50 last:border-0">
                   <div className="min-w-0">
-                    <div className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                    <div className="text-sm font-medium text-gray-700 flex flex-wrap items-center gap-2">
                       {s.label}
                       {status?.[s.key] ? (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 font-medium">Configured</span>
+                        <StatusBadge tone="success" size="sm" className="py-0.5">Configured</StatusBadge>
                       ) : (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500 font-medium">Using default</span>
+                        <StatusBadge tone="neutral" size="sm" className="py-0.5">Using default</StatusBadge>
                       )}
                     </div>
                     <div className="text-xs text-gray-400">{s.description}</div>
@@ -172,7 +179,8 @@ function TenantSecretsEditor({ tenant, onUpdate }: { tenant: Tenant; onUpdate: (
                     <input
                       type="password"
                       autoComplete="off"
-                      className="border border-gray-200 rounded px-2 py-1 text-xs w-48 outline-none focus:border-[#1e3a5f]"
+                      aria-label={s.label}
+                      className="border border-gray-200 rounded px-2 py-1 text-xs flex-1 min-w-0 sm:flex-none sm:w-48 outline-none focus:border-[#1e3a5f]"
                       placeholder={status?.[s.key] ? '••••••••••' : 'Not set'}
                       value={drafts[s.key] ?? ''}
                       onChange={e => setDrafts(d => ({ ...d, [s.key]: e.target.value }))}
@@ -196,6 +204,7 @@ function TenantSecretsEditor({ tenant, onUpdate }: { tenant: Tenant; onUpdate: (
 }
 
 function RequestOrderLinkPanel({ tenant, onUpdate }: { tenant: Tenant; onUpdate: () => void }) {
+  const confirm = useConfirm()
   const [regenerating, setRegenerating] = useState(false)
   const [copied, setCopied] = useState(false)
   const link = tenant.requestOrderToken && typeof window !== 'undefined'
@@ -203,7 +212,7 @@ function RequestOrderLinkPanel({ tenant, onUpdate }: { tenant: Tenant; onUpdate:
     : ''
 
   async function regenerate() {
-    if (!confirm('Regenerate this link? The old link will stop working immediately.')) return
+    if (!(await confirm({ title: 'Regenerate this link?', description: 'The old link will stop working immediately.', confirmLabel: 'Regenerate', destructive: true }))) return
     setRegenerating(true)
     await fetch('/api/super-admin/tenants', {
       method: 'PATCH',
@@ -221,7 +230,7 @@ function RequestOrderLinkPanel({ tenant, onUpdate }: { tenant: Tenant; onUpdate:
   }
 
   return (
-    <div className="flex items-center justify-between gap-3 py-1">
+    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3 py-1">
       <div className="min-w-0">
         <div className="text-sm font-medium text-gray-700">Request Order Link</div>
         <div className="text-xs text-gray-400">Shared with staff without an ERP login to submit purchase requests.</div>
@@ -242,6 +251,7 @@ function RequestOrderLinkPanel({ tenant, onUpdate }: { tenant: Tenant; onUpdate:
 export default function SuperAdminPage() {
   const { data: session, status } = useSession()
   const router = useRouter()
+  const confirm = useConfirm()
 
   const [tenants, setTenants] = useState<Tenant[]>([])
   const [selectedTenant, setSelectedTenant] = useState<Tenant | null>(null)
@@ -317,13 +327,14 @@ export default function SuperAdminPage() {
       fetchUsers(selectedTenant.id)
     } else {
       const err = await res.json()
-      alert(err.error || 'Failed to create user')
+      toast.error(err.error || 'Failed to create user')
     }
     setSavingUser(false)
   }
 
   async function deleteUser(email: string) {
-    if (!selectedTenant || !confirm(`Remove ${email} from ${selectedTenant.name}?`)) return
+    if (!selectedTenant) return
+    if (!(await confirm({ title: `Remove ${email}?`, description: `This user will be removed from ${selectedTenant.name}.`, confirmLabel: 'Remove', destructive: true }))) return
     await fetch('/api/super-admin/users', {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
@@ -334,34 +345,34 @@ export default function SuperAdminPage() {
 
   if (status === 'loading') return (
     <div className="min-h-screen bg-[#f0f4f8] flex items-center justify-center">
-      <div className="text-[#1e3a5f] font-medium">Loading...</div>
+      <div className="text-[#1e3a5f] font-medium">Loading…</div>
     </div>
   )
 
   return (
     <div className="min-h-screen bg-[#f0f4f8]">
       {/* Header */}
-      <header className="bg-[#1e3a5f] text-white px-6 py-4 flex items-center justify-between shadow">
-        <div className="flex items-center gap-3">
+      <header className="bg-[#1e3a5f] text-white px-4 sm:px-6 py-4 flex items-center justify-between gap-3 shadow">
+        <div className="flex items-center gap-3 shrink-0">
           <div>
             <div className="text-xs text-white/60 uppercase tracking-wider">System Administration</div>
             <div className="text-sm font-bold tracking-wide">Super Admin Dashboard</div>
           </div>
         </div>
-        <div className="flex items-center gap-4">
-          <span className="text-sm text-white/70">{session?.user?.email}</span>
+        <div className="flex items-center gap-4 min-w-0">
+          <span className="text-sm text-white/70 truncate">{session?.user?.email}</span>
           <button
             onClick={() => signOut({ callbackUrl: '/login' })}
-            className="text-xs bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded transition-colors"
+            className="shrink-0 text-xs bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded transition-colors"
           >
             Sign Out
           </button>
         </div>
       </header>
 
-      <div className="flex h-[calc(100vh-60px)]">
+      <div className="flex flex-col md:flex-row md:h-[calc(100vh-60px)]">
         {/* Sidebar — Tenant list */}
-        <aside className="w-72 bg-white border-r border-gray-200 flex flex-col">
+        <aside className="w-full md:w-72 shrink-0 max-h-72 md:max-h-none bg-white border-b md:border-b-0 md:border-r border-gray-200 flex flex-col">
           <div className="p-4 border-b border-gray-100 flex items-center justify-between">
             <h2 className="text-sm font-bold text-[#1e3a5f] uppercase tracking-wider">Tenants</h2>
             <button
@@ -373,15 +384,15 @@ export default function SuperAdminPage() {
           </div>
 
           {loadingTenants ? (
-            <div className="p-4 text-sm text-gray-400">Loading...</div>
+            <div className="p-4 text-sm text-gray-400">Loading…</div>
           ) : (
             <div className="flex-1 overflow-y-auto">
               {tenants.map(t => (
                 <button
                   key={t.id}
                   onClick={() => selectTenant(t)}
-                  className={`w-full text-left px-4 py-3 border-b border-gray-50 hover:bg-blue-50 transition-colors ${
-                    selectedTenant?.id === t.id ? 'bg-blue-50 border-l-4 border-l-[#1e3a5f]' : ''
+                  className={`w-full text-left px-4 py-3 border-b border-gray-50 hover:bg-info/10 transition-colors ${
+                    selectedTenant?.id === t.id ? 'bg-info/10 border-l-4 border-l-[#1e3a5f]' : ''
                   }`}
                 >
                   <div className="flex items-center justify-between">
@@ -390,11 +401,9 @@ export default function SuperAdminPage() {
                       <div className="text-xs text-gray-400 mt-0.5">/{t.slug}</div>
                     </div>
                     <div className="flex flex-col items-end gap-1">
-                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
-                        t.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
-                      }`}>
+                      <StatusBadge tone={t.isActive ? 'success' : 'neutral'} size="sm" className="py-0.5">
                         {t.isActive ? 'Active' : 'Inactive'}
-                      </span>
+                      </StatusBadge>
                       <span className="text-[10px] text-gray-400">{t._count?.users ?? 0} users</span>
                     </div>
                   </div>
@@ -405,7 +414,7 @@ export default function SuperAdminPage() {
         </aside>
 
         {/* Main content */}
-        <main className="flex-1 overflow-y-auto p-6">
+        <main className="flex-1 min-w-0 overflow-y-auto p-4 md:p-6">
           {!selectedTenant ? (
             <div className="flex items-center justify-center h-full text-gray-400 text-sm">
               Select a tenant to manage users
@@ -414,7 +423,7 @@ export default function SuperAdminPage() {
             <div>
               {/* Tenant header */}
               <div className="bg-white rounded-xl border border-gray-200 p-5 mb-5 shadow-sm">
-                <div className="flex items-center justify-between gap-4">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                   <div className="flex items-center gap-4 flex-1 min-w-0">
                     {selectedTenant.logoUrl && (
                       <img src={selectedTenant.logoUrl} alt={selectedTenant.name} className="h-12 w-auto object-contain shrink-0" />
@@ -425,10 +434,10 @@ export default function SuperAdminPage() {
                       <p className="text-xs text-gray-300 mt-1 font-mono truncate max-w-xl">{selectedTenant.databaseUrl}</p>
                     </div>
                   </div>
-                  <div className="flex flex-col items-end gap-2 shrink-0">
-                    <span className={`text-xs px-2 py-1 rounded-full font-medium ${selectedTenant.isActive ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>
+                  <div className="flex flex-col items-start sm:items-end gap-2 shrink-0">
+                    <StatusBadge tone={selectedTenant.isActive ? 'success' : 'neutral'} className="py-1">
                       {selectedTenant.isActive ? 'Active' : 'Inactive'}
-                    </span>
+                    </StatusBadge>
                     <LogoUrlEditor tenant={selectedTenant} onUpdate={fetchTenants} />
                   </div>
                 </div>
@@ -451,7 +460,7 @@ export default function SuperAdminPage() {
 
               {/* Users table */}
               <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
-                <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+                <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between gap-3">
                   <h2 className="text-sm font-bold text-[#1e3a5f]">Users</h2>
                   <button
                     onClick={() => setShowAddUser(true)}
@@ -462,10 +471,11 @@ export default function SuperAdminPage() {
                 </div>
 
                 {loadingUsers ? (
-                  <div className="p-6 text-sm text-gray-400 text-center">Loading users...</div>
+                  <div className="p-6 text-sm text-gray-400 text-center">Loading users…</div>
                 ) : users.length === 0 ? (
                   <div className="p-6 text-sm text-gray-400 text-center">No users yet</div>
                 ) : (
+                  <div className="overflow-x-auto">
                   <table className="w-full">
                     <thead>
                       <tr className="bg-gray-50 text-left">
@@ -473,7 +483,7 @@ export default function SuperAdminPage() {
                         <th className="px-5 py-3 text-xs font-semibold text-gray-500 uppercase">Email</th>
                         <th className="px-5 py-3 text-xs font-semibold text-gray-500 uppercase">Role</th>
                         <th className="px-5 py-3 text-xs font-semibold text-gray-500 uppercase">Status</th>
-                        <th className="px-5 py-3 text-xs font-semibold text-gray-500 uppercase"></th>
+                        <th className="px-5 py-3 text-xs font-semibold text-gray-500 uppercase"><span className="sr-only">Actions</span></th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
@@ -484,27 +494,25 @@ export default function SuperAdminPage() {
                           <td className="px-5 py-3.5">
                             {u.role && (
                               <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${
-                                u.role === 'ADMIN' ? 'bg-purple-100 text-purple-700' :
-                                u.role === 'FINANCE' ? 'bg-emerald-100 text-emerald-700' :
-                                u.role === 'SALES' ? 'bg-blue-100 text-blue-700' :
-                                u.role === 'MARKETING' ? 'bg-orange-100 text-orange-700' :
-                                u.role === 'SALES_MARKETING' ? 'bg-indigo-100 text-indigo-700' :
-                                u.role === 'FINANCE_DIRECTOR' ? 'bg-cyan-100 text-cyan-700' :
+                                u.role === 'ADMIN' ? 'bg-purple-100 text-purple-700 dark:bg-purple-500/15 dark:text-purple-300' :
+                                u.role === 'FINANCE' ? 'bg-success/15 text-success' :
+                                u.role === 'SALES' ? 'bg-info/15 text-info' :
+                                u.role === 'MARKETING' ? 'bg-warning/15 text-warning' :
+                                u.role === 'SALES_MARKETING' ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300' :
+                                u.role === 'FINANCE_DIRECTOR' ? 'bg-cyan-100 text-cyan-700 dark:bg-cyan-500/15 dark:text-cyan-300' :
                                 'bg-gray-100 text-gray-600'
                               }`}>{u.role}</span>
                             )}
                           </td>
                           <td className="px-5 py-3.5">
-                            <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${
-                              u.isActive !== false ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
-                            }`}>
+                            <StatusBadge tone={u.isActive !== false ? 'success' : 'neutral'} size="sm" className="text-[11px] px-2 py-0.5">
                               {u.isActive !== false ? 'Active' : 'Inactive'}
-                            </span>
+                            </StatusBadge>
                           </td>
                           <td className="px-5 py-3.5 text-right">
                             <button
                               onClick={() => deleteUser(u.email)}
-                              className="text-xs text-red-400 hover:text-red-600 transition-colors"
+                              className="text-xs text-destructive/70 hover:text-destructive transition-colors"
                             >
                               Remove
                             </button>
@@ -513,6 +521,7 @@ export default function SuperAdminPage() {
                       ))}
                     </tbody>
                   </table>
+                  </div>
                 )}
               </div>
             </div>
@@ -522,9 +531,9 @@ export default function SuperAdminPage() {
 
       {/* Modal: Add Tenant */}
       {showAddTenant && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
-            <h3 className="text-base font-bold text-[#1e3a5f] mb-4">Add New Tenant</h3>
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div role="dialog" aria-modal="true" aria-labelledby="sa-add-tenant-title" className="bg-white rounded-xl shadow-xl w-full max-w-md p-6 max-h-[90vh] overflow-y-auto">
+            <h3 id="sa-add-tenant-title" className="text-base font-bold text-[#1e3a5f] mb-4">Add New Tenant</h3>
             <div className="space-y-3">
               {[
                 { key: 'name', label: 'Company Name', placeholder: 'e.g. Samara Yachting' },
@@ -535,8 +544,9 @@ export default function SuperAdminPage() {
                 { key: 'directUrl', label: 'Direct URL (optional)', placeholder: 'postgresql://... (no pooler)' },
               ].map(f => (
                 <div key={f.key}>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1">{f.label}</label>
+                  <label htmlFor={`sa-tenant-${f.key}`} className="block text-xs font-semibold text-gray-600 mb-1">{f.label}</label>
                   <input
+                    id={`sa-tenant-${f.key}`}
                     className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#1e3a5f] transition-colors"
                     placeholder={f.placeholder}
                     value={tenantForm[f.key as keyof typeof tenantForm]}
@@ -557,7 +567,7 @@ export default function SuperAdminPage() {
                 disabled={savingTenant}
                 className="flex-1 bg-[#1e3a5f] text-white text-sm py-2 rounded-lg hover:bg-[#162d4a] disabled:opacity-50"
               >
-                {savingTenant ? 'Saving...' : 'Add Tenant'}
+                {savingTenant ? 'Saving…' : 'Add Tenant'}
               </button>
             </div>
           </div>
@@ -566,14 +576,15 @@ export default function SuperAdminPage() {
 
       {/* Modal: Add User */}
       {showAddUser && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6">
-            <h3 className="text-base font-bold text-[#1e3a5f] mb-1">Add User</h3>
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div role="dialog" aria-modal="true" aria-labelledby="sa-add-user-title" className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6 max-h-[90vh] overflow-y-auto">
+            <h3 id="sa-add-user-title" className="text-base font-bold text-[#1e3a5f] mb-1">Add User</h3>
             <p className="text-xs text-gray-400 mb-4">Tenant: {selectedTenant?.name}</p>
             <div className="space-y-3">
               <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">Email</label>
+                <label htmlFor="sa-user-email" className="block text-xs font-semibold text-gray-600 mb-1">Email</label>
                 <input
+                  id="sa-user-email"
                   className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#1e3a5f]"
                   placeholder="user@company.com"
                   value={userForm.email}
@@ -581,8 +592,9 @@ export default function SuperAdminPage() {
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">Name</label>
+                <label htmlFor="sa-user-name" className="block text-xs font-semibold text-gray-600 mb-1">Name</label>
                 <input
+                  id="sa-user-name"
                   className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#1e3a5f]"
                   placeholder="Full name"
                   value={userForm.name}
@@ -590,8 +602,9 @@ export default function SuperAdminPage() {
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">Password</label>
+                <label htmlFor="sa-user-password" className="block text-xs font-semibold text-gray-600 mb-1">Password</label>
                 <input
+                  id="sa-user-password"
                   type="password"
                   className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#1e3a5f]"
                   placeholder="Temporary password"
@@ -600,8 +613,9 @@ export default function SuperAdminPage() {
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">Role</label>
+                <label htmlFor="sa-user-role" className="block text-xs font-semibold text-gray-600 mb-1">Role</label>
                 <select
+                  id="sa-user-role"
                   className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-[#1e3a5f]"
                   value={userForm.role}
                   onChange={e => setUserForm(p => ({ ...p, role: e.target.value }))}
@@ -622,7 +636,7 @@ export default function SuperAdminPage() {
                 disabled={savingUser}
                 className="flex-1 bg-[#1e3a5f] text-white text-sm py-2 rounded-lg hover:bg-[#162d4a] disabled:opacity-50"
               >
-                {savingUser ? 'Creating...' : 'Create User'}
+                {savingUser ? 'Creating…' : 'Create User'}
               </button>
             </div>
           </div>

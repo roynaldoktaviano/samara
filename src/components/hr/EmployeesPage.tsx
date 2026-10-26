@@ -1,12 +1,22 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Plus, Pencil, Trash2, ToggleLeft, ToggleRight, X, IdCard, AlertTriangle, Search, Download, Upload, FileDown, CheckCircle2, AlertCircle, UserX, ChevronLeft, ChevronRight, Phone, MapPin, Cake, ImageIcon, FileText, Eye, EyeOff } from 'lucide-react'
+import { Plus, Pencil, Trash2, ToggleLeft, ToggleRight, X, IdCard, AlertTriangle, Search, Download, Upload, FileDown, CheckCircle2, AlertCircle, UserX, ChevronLeft, ChevronRight, ChevronsUpDown, Phone, MapPin, Cake, ImageIcon, FileText, Eye, EyeOff } from 'lucide-react'
+import { toast } from 'sonner'
 import { useFileDrop } from '@/hooks/useFileDrop'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { MultiFilePicker } from '@/components/ui/file-preview'
 import { RupiahInput } from '@/components/ui/rupiah-input'
 import { usePasswordGate } from '@/components/ui/password-gate'
+import { StatusBadge } from '@/components/ui/status-badge'
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { useConfirm } from '@/components/ui/confirm-dialog'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import { NativeSelect } from '@/components/ui/native-select'
+import { Label } from '@/components/ui/label'
+import { formatDate, formatMoney } from '@/lib/format'
 import { downloadDataUrl, extFromDataUrl } from '@/lib/fileUpload'
 import type { OtherIncomeItem } from '@/lib/payroll'
 import AddFreelanceModal, { type FreelanceEmployee } from './AddFreelanceModal'
@@ -75,6 +85,8 @@ const EMPLOYMENT_STATUSES = ['Probation', 'Internship', 'Freelance', 'Contract (
 const DEPARTMENTS = ['Management', 'Finance', 'Human Resources', 'Sales', 'Marketing', 'Kitchen', 'Bar', 'Housekeeping', 'Engineering', 'Deckhand']
 const MARITAL_STATUSES = ['TK', 'K0', 'K1', 'K2', 'K3']
 const LEAVE_ENTITLEMENT_POLICIES = ['12 hari', '20 hari', '2 bulan']
+// Display-only labels; the stored values above stay as-is.
+const LEAVE_POLICY_LABEL: Record<string, string> = { '12 hari': '12 days', '20 hari': '20 days', '2 bulan': '2 months' }
 
 /** Ensures an existing value not in the preset list still shows up as an option, so editing an old record doesn't silently blank it out. */
 function withCurrent(list: string[], current: string): string[] {
@@ -100,9 +112,6 @@ function formatServiceYear(joinDate: string | null, endDate: string | null): str
   }
   return `${years}Year${months}Months${days}Days`
 }
-
-const fmtMoney = (n: number) => 'Rp ' + new Intl.NumberFormat('id-ID').format(Math.round(n))
-const fmtDate = (s: string) => new Date(s).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
 
 function monthsRemaining(endDateStr: string): number {
   const end = new Date(endDateStr)
@@ -134,8 +143,8 @@ function downloadFile(content: string, filename: string, mime = 'text/csv;charse
   URL.revokeObjectURL(url)
 }
 
-function ManagerCombobox({ value, options, onChange }: {
-  value: string; options: { id: string; fullName: string; employeeNumber: string }[]; onChange: (id: string) => void
+function ManagerCombobox({ id, value, options, onChange }: {
+  id?: string; value: string; options: { id: string; fullName: string; employeeNumber: string }[]; onChange: (id: string) => void
 }) {
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
@@ -145,19 +154,20 @@ function ManagerCombobox({ value, options, onChange }: {
 
   return (
     <div className="relative">
-      <button type="button" onClick={() => { setOpen(o => !o); setSearch('') }}
-        className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-3 py-3 text-sm text-left flex items-center justify-between focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all">
-        <span className={selected ? '' : 'text-muted-foreground'}>{selected ? `${selected.fullName} (${selected.employeeNumber})` : '— No manager set —'}</span>
-      </button>
+      <Button type="button" variant="outline" role="combobox" aria-expanded={open} id={id} onClick={() => { setOpen(o => !o); setSearch('') }}
+        className="w-full justify-between px-3 font-normal">
+        <span className={`min-w-0 truncate ${selected ? '' : 'text-muted-foreground'}`}>{selected ? `${selected.fullName} (${selected.employeeNumber})` : '— No manager set —'}</span>
+        <ChevronsUpDown className="size-3.5 shrink-0 opacity-50" />
+      </Button>
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute left-0 right-0 top-full mt-1 bg-white border rounded-lg shadow-xl z-50 max-h-60 flex flex-col">
+          <div className="absolute left-0 right-0 top-full mt-1 bg-popover border rounded-lg shadow-xl z-50 max-h-60 flex flex-col">
             <div className="p-2 border-b shrink-0">
               <div className="relative">
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
-                <input autoFocus className="w-full h-8 border rounded px-2.5 pl-8 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
-                  placeholder="Search employee..." value={search} onChange={e => setSearch(e.target.value)} />
+                <Input autoFocus className="h-8 pl-8" aria-label="Search employee"
+                  placeholder="Search employee…" value={search} onChange={e => setSearch(e.target.value)} />
               </div>
             </div>
             <div className="overflow-y-auto">
@@ -172,7 +182,7 @@ function ManagerCombobox({ value, options, onChange }: {
               )}
               {opts.map(e => (
                 <button key={e.id} type="button" onClick={() => { onChange(e.id); setOpen(false); setSearch('') }}
-                  className="w-full text-left px-3 py-2 text-sm hover:bg-amber-50 transition-colors">
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-primary/10 transition-colors">
                   {e.fullName} <span className="text-muted-foreground">({e.employeeNumber})</span>
                 </button>
               ))}
@@ -184,8 +194,8 @@ function ManagerCombobox({ value, options, onChange }: {
   )
 }
 
-function UserCombobox({ value, options, onChange }: {
-  value: string; options: { id: string; name: string | null; email: string }[]; onChange: (id: string) => void
+function UserCombobox({ id, value, options, onChange }: {
+  id?: string; value: string; options: { id: string; name: string | null; email: string }[]; onChange: (id: string) => void
 }) {
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
@@ -195,19 +205,20 @@ function UserCombobox({ value, options, onChange }: {
 
   return (
     <div className="relative">
-      <button type="button" onClick={() => { setOpen(o => !o); setSearch('') }}
-        className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-3 py-3 text-sm text-left flex items-center justify-between focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all">
-        <span className={selected ? '' : 'text-muted-foreground'}>{selected ? (selected.name ? `${selected.name} (${selected.email})` : selected.email) : '— No login linked —'}</span>
-      </button>
+      <Button type="button" variant="outline" role="combobox" aria-expanded={open} id={id} onClick={() => { setOpen(o => !o); setSearch('') }}
+        className="w-full justify-between px-3 font-normal">
+        <span className={`min-w-0 truncate ${selected ? '' : 'text-muted-foreground'}`}>{selected ? (selected.name ? `${selected.name} (${selected.email})` : selected.email) : '— No login linked —'}</span>
+        <ChevronsUpDown className="size-3.5 shrink-0 opacity-50" />
+      </Button>
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute left-0 right-0 top-full mt-1 bg-white border rounded-lg shadow-xl z-50 max-h-60 flex flex-col">
+          <div className="absolute left-0 right-0 top-full mt-1 bg-popover border rounded-lg shadow-xl z-50 max-h-60 flex flex-col">
             <div className="p-2 border-b shrink-0">
               <div className="relative">
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
-                <input autoFocus className="w-full h-8 border rounded px-2.5 pl-8 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
-                  placeholder="Search login account..." value={search} onChange={e => setSearch(e.target.value)} />
+                <Input autoFocus className="h-8 pl-8" aria-label="Search login account"
+                  placeholder="Search login account…" value={search} onChange={e => setSearch(e.target.value)} />
               </div>
             </div>
             <div className="overflow-y-auto">
@@ -222,7 +233,7 @@ function UserCombobox({ value, options, onChange }: {
               )}
               {opts.map(u => (
                 <button key={u.id} type="button" onClick={() => { onChange(u.id); setOpen(false); setSearch('') }}
-                  className="w-full text-left px-3 py-2 text-sm hover:bg-amber-50 transition-colors">
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-primary/10 transition-colors">
                   {u.name ? `${u.name} (${u.email})` : u.email}
                 </button>
               ))}
@@ -252,7 +263,7 @@ function detailLeaveStatusLabel(r: LeaveRequestRow): string {
 
 const REVIEW_STATUS_LABEL: Record<string, string> = { REQUESTED: 'Requested', COMPLETED: 'Completed' }
 const RATING_LABEL: Record<string, string> = { NEEDS_IMPROVEMENT: 'Needs Improvement', GOOD: 'Good', VERY_GOOD: 'Very Good', EXCELLENT: 'Excellent' }
-const RATING_COLOR: Record<string, string> = { NEEDS_IMPROVEMENT: 'text-red-700', GOOD: 'text-amber-700', VERY_GOOD: 'text-blue-700', EXCELLENT: 'text-green-700' }
+const RATING_COLOR: Record<string, string> = { NEEDS_IMPROVEMENT: 'text-destructive', GOOD: 'text-warning', VERY_GOOD: 'text-info', EXCELLENT: 'text-success' }
 const DECISION_LABEL: Record<string, string> = { CONFIRM_PERMANENT: 'Confirmed as Permanent', EXTEND_PROBATION: 'Probation Extended', END_EMPLOYMENT: 'Employment Ended' }
 const REVIEW_CRITERIA: { key: keyof PerformanceReviewRow; label: string }[] = [
   { key: 'attendanceDiscipline', label: 'Attendance & Discipline' },
@@ -264,10 +275,10 @@ const REVIEW_CRITERIA: { key: keyof PerformanceReviewRow; label: string }[] = [
 ]
 
 const DOC_FIELDS: { key: 'seamanBookFiles' | 'bstFiles' | 'medicalCheckupFiles' | 'ijazahFiles' | 'certificateFiles'; label: string }[] = [
-  { key: 'seamanBookFiles', label: 'Buku Pelaut' },
+  { key: 'seamanBookFiles', label: 'Seaman Book' },
   { key: 'bstFiles', label: 'BST (Basic Safety Training)' },
   { key: 'medicalCheckupFiles', label: 'Medical Check Up' },
-  { key: 'ijazahFiles', label: 'Ijazah' },
+  { key: 'ijazahFiles', label: 'Diploma' },
   { key: 'certificateFiles', label: 'Certificates' },
 ]
 
@@ -295,7 +306,7 @@ function DetailSection({ title, children }: { title: string; children: React.Rea
 
 function DetailRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div className="flex items-center justify-between gap-4 py-2.5 text-sm border-b border-gray-100 last:border-0">
+    <div className="flex items-center justify-between gap-4 py-2.5 text-sm border-b border-border last:border-0">
       <span className="text-muted-foreground shrink-0">{label}</span>
       <span className="font-semibold text-right">{value ?? '—'}</span>
     </div>
@@ -308,37 +319,32 @@ function DetailEmpty({ children }: { children: React.ReactNode }) {
 
 function PrivateDataRevealButton({ revealed, onReveal, onHide, label = 'Show' }: { revealed: boolean; onReveal: () => void; onHide: () => void; label?: string }) {
   return (
-    <button
+    <Button
       type="button"
+      variant="outline"
+      size="sm"
       onClick={revealed ? onHide : onReveal}
-      className="inline-flex items-center gap-1.5 text-xs font-semibold text-muted-foreground hover:text-foreground border rounded-full px-3 py-1.5 transition-colors"
+      className="rounded-full text-muted-foreground"
     >
-      {revealed ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+      {revealed ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
       {revealed ? 'Hide' : label}
-    </button>
+    </Button>
   )
-}
-
-function DetailBadge({ tone, children }: { tone: 'green' | 'gray' | 'amber' | 'blue' | 'red'; children: React.ReactNode }) {
-  const TONES: Record<string, string> = {
-    green: 'bg-green-100 text-green-700', gray: 'bg-gray-100 text-gray-600',
-    amber: 'bg-amber-100 text-amber-700', blue: 'bg-blue-100 text-blue-700', red: 'bg-red-100 text-red-700',
-  }
-  return <span className={`inline-block px-2.5 py-1 rounded-full text-xs font-semibold ${TONES[tone]}`}>{children}</span>
 }
 
 function DocFileRow({ name, onDownload }: { name: string; onDownload: () => void }) {
   return (
-    <div className="flex items-center gap-3 border border-gray-100 rounded-xl px-4 py-3">
-      <span className="h-9 w-9 rounded-lg bg-amber-50 text-amber-700 flex items-center justify-center shrink-0">
+    <div className="flex items-center gap-3 border border-border rounded-xl px-4 py-3">
+      <span className="h-9 w-9 rounded-lg bg-primary/10 text-primary-strong flex items-center justify-center shrink-0">
         <FileText className="h-4 w-4" />
       </span>
       <div className="flex-1 min-w-0">
         <p className="text-sm font-semibold truncate">{name}</p>
       </div>
-      <button type="button" onClick={onDownload} className="p-1.5 text-muted-foreground hover:text-amber-700 shrink-0">
-        <Download className="h-3.5 w-3.5" />
-      </button>
+      <Button type="button" variant="ghost" size="icon" onClick={onDownload} aria-label={`Download ${name}`}
+        className="size-7 text-muted-foreground hover:text-primary-strong shrink-0">
+        <Download className="size-3.5" />
+      </Button>
     </div>
   )
 }
@@ -369,267 +375,261 @@ function EmployeeDetailModal({
   const pendingCount = leaveRequests.filter(r => r.status === 'PENDING' || r.status === 'PENDING_HR_APPROVAL').length
 
   return (
-    <>
-      <div className="fixed inset-0 bg-black/50 z-50" onClick={onClose} />
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
-        <div className="pointer-events-auto bg-white rounded-2xl shadow-2xl w-full max-w-4xl overflow-hidden">
-          <div className="flex items-start justify-between px-8 pt-7 pb-5">
-            <div className="flex items-center gap-4 min-w-0">
-              <span className="h-16 w-16 rounded-full bg-[#f5f0e0] text-[#8a744a] font-bold text-xl flex items-center justify-center shrink-0">
-                {initials(employee.fullName)}
-              </span>
-              <div className="min-w-0">
-                <h3 className="font-bold text-2xl leading-tight truncate">
-                  {employee.fullName}
-                  {employee.nickName && <span className="text-muted-foreground font-normal"> ({employee.nickName})</span>}
-                </h3>
-                <p className="text-sm text-muted-foreground mt-1 truncate">
-                  {employee.employeeNumber} · {employee.role?.title ?? 'No role'} · {employee.location?.name ?? 'No location'}
-                </p>
-              </div>
+    <Dialog open onOpenChange={o => { if (!o) onClose() }}>
+      <DialogContent className="sm:max-w-4xl p-0 gap-0 overflow-hidden">
+        <div className="flex items-start justify-between px-8 pt-7 pb-5 pr-14">
+          <div className="flex items-center gap-4 min-w-0">
+            <span className="h-16 w-16 rounded-full bg-primary/15 text-primary-strong font-bold text-xl flex items-center justify-center shrink-0">
+              {initials(employee.fullName)}
+            </span>
+            <div className="min-w-0">
+              <DialogTitle className="font-bold text-2xl leading-tight truncate">
+                {employee.fullName}
+                {employee.nickName && <span className="text-muted-foreground font-normal"> ({employee.nickName})</span>}
+              </DialogTitle>
+              <DialogDescription className="text-sm text-muted-foreground mt-1 truncate">
+                {employee.employeeNumber} · {employee.role?.title ?? 'No role'} · {employee.location?.name ?? 'No location'}
+              </DialogDescription>
             </div>
-            <button onClick={onClose} className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors shrink-0">
-              <X className="h-4 w-4" />
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1.5 px-8 border-b overflow-x-auto">
+          {DETAIL_TABS.map(t => (
+            <button key={t.value} type="button" onClick={() => onTabChange(t.value)}
+              className={`px-4 py-3 text-sm font-semibold border-b-2 -mb-px whitespace-nowrap transition-colors ${
+                tab === t.value ? 'border-primary text-primary-strong' : 'border-transparent text-muted-foreground hover:text-foreground'
+              }`}>
+              {t.label}
             </button>
-          </div>
+          ))}
+        </div>
 
-          <div className="flex items-center gap-1.5 px-8 border-b overflow-x-auto">
-            {DETAIL_TABS.map(t => (
-              <button key={t.value} type="button" onClick={() => onTabChange(t.value)}
-                className={`px-4 py-3 text-sm font-semibold border-b-2 -mb-px whitespace-nowrap transition-colors ${
-                  tab === t.value ? 'border-[#bdac7e] text-[#8a744a]' : 'border-transparent text-muted-foreground hover:text-foreground'
-                }`}>
-                {t.label}
-              </button>
-            ))}
-          </div>
-
-          <div className="px-8 py-7 space-y-7 max-h-[65vh] overflow-y-auto">
-            {tab === 'overview' && (
-              <div className="space-y-6">
-                <div className="grid grid-cols-2 gap-x-10 gap-y-6">
-                  <DetailSection title="Employment Assignment">
-                    <DetailRow label="Legal Entity" value={employee.legalEntity?.name} />
-                    <DetailRow label="Business Unit" value={employee.businessUnit?.name} />
-                    <DetailRow label="Work Location" value={employee.location?.name} />
-                    <DetailRow label="Department" value={employee.department} />
-                    <DetailRow label="Manager" value={employee.manager?.fullName} />
-                    <DetailRow label="Join Date" value={employee.joinDate ? `${fmtDate(employee.joinDate)} · ${years}` : null} />
-                    <DetailRow label="Status" value={<DetailBadge tone={employee.isActive ? 'green' : 'gray'}>{employee.isActive ? 'Active' : 'Inactive'}</DetailBadge>} />
-                  </DetailSection>
-                  <DetailSection title="Contact & Emergency">
-                    <DetailRow label="Phone" value={employee.phone} />
-                    <DetailRow label="Personal Email" value={employee.personalEmail} />
-                    <DetailRow label="NIK / Passport" value={employee.nikPassport} />
-                    <DetailRow label="Nationality" value={employee.nationality} />
-                    <DetailRow label="Emergency Contact" value={employee.emergencyContactName ? `${employee.emergencyContactName}${employee.emergencyContactRelation ? ` (${employee.emergencyContactRelation})` : ''}` : null} />
-                    <DetailRow label="Emergency Phone" value={employee.emergencyContactPhone} />
-                  </DetailSection>
+        <div className="px-8 py-7 space-y-7 max-h-[65vh] overflow-y-auto">
+          {tab === 'overview' && (
+            <div className="space-y-6">
+              <div className="grid grid-cols-2 gap-x-10 gap-y-6">
+                <DetailSection title="Employment Assignment">
+                  <DetailRow label="Legal Entity" value={employee.legalEntity?.name} />
+                  <DetailRow label="Business Unit" value={employee.businessUnit?.name} />
+                  <DetailRow label="Work Location" value={employee.location?.name} />
+                  <DetailRow label="Department" value={employee.department} />
+                  <DetailRow label="Manager" value={employee.manager?.fullName} />
+                  <DetailRow label="Join Date" value={employee.joinDate ? `${formatDate(employee.joinDate)} · ${years}` : null} />
+                  <DetailRow label="Status" value={<StatusBadge className="px-2.5 py-1 font-semibold" tone={employee.isActive ? 'success' : 'neutral'}>{employee.isActive ? 'Active' : 'Inactive'}</StatusBadge>} />
+                </DetailSection>
+                <DetailSection title="Contact & Emergency">
+                  <DetailRow label="Phone" value={employee.phone} />
+                  <DetailRow label="Personal Email" value={employee.personalEmail} />
+                  <DetailRow label="NIK / Passport" value={employee.nikPassport} />
+                  <DetailRow label="Nationality" value={employee.nationality} />
+                  <DetailRow label="Emergency Contact" value={employee.emergencyContactName ? `${employee.emergencyContactName}${employee.emergencyContactRelation ? ` (${employee.emergencyContactRelation})` : ''}` : null} />
+                  <DetailRow label="Emergency Phone" value={employee.emergencyContactPhone} />
+                </DetailSection>
+              </div>
+              {!employee.isActive && employee.resignedAt && (
+                <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3.5 text-sm text-destructive">
+                  <b>{RESIGN_STATUS_LABEL[employee.resignStatus ?? ''] ?? 'Left'}</b> on {formatDate(employee.resignedAt)}
+                  {employee.resignReason && <p className="mt-1.5 text-destructive">{employee.resignReason}</p>}
                 </div>
-                {!employee.isActive && employee.resignedAt && (
-                  <div className="rounded-xl border border-red-100 bg-red-50 px-4 py-3.5 text-sm text-red-800">
-                    <b>{RESIGN_STATUS_LABEL[employee.resignStatus ?? ''] ?? 'Left'}</b> on {fmtDate(employee.resignedAt)}
-                    {employee.resignReason && <p className="mt-1.5 text-red-700">{employee.resignReason}</p>}
+              )}
+            </div>
+          )}
+
+          {tab === 'contract' && (
+            <div className="space-y-6">
+              <div className="grid grid-cols-4 gap-3">
+                <DetailStat label="Contract Type" value={employee.employmentStatus ?? '—'} />
+                <DetailStat label="Start" value={formatDate(employee.contractStartDate)} />
+                <DetailStat label="End" value={employee.contractEndDate ? formatDate(employee.contractEndDate) : 'No end date'} />
+                <DetailStat label="Remaining" value={employee.contractEndDate ? `${monthsRemaining(employee.contractEndDate)} months` : 'Permanent'} />
+              </div>
+              <DetailSection title="Contract Documents">
+                {employee.contractFiles.length === 0 ? (
+                  <DetailEmpty>No contract documents uploaded.</DetailEmpty>
+                ) : (
+                  <div className="space-y-2.5">
+                    {employee.contractFiles.map((f, i) => (
+                      <DocFileRow key={i} name={`Contract${employee.contractFiles.length > 1 ? ` — file ${i + 1}` : ''}`}
+                        onDownload={() => downloadDataUrl(f, `${employee.fullName.replace(/[^a-z0-9]+/gi, '-')}-contract-${i + 1}.${extFromDataUrl(f)}`)} />
+                    ))}
                   </div>
                 )}
-              </div>
-            )}
+              </DetailSection>
+            </div>
+          )}
 
-            {tab === 'contract' && (
-              <div className="space-y-6">
-                <div className="grid grid-cols-4 gap-3">
-                  <DetailStat label="Contract Type" value={employee.employmentStatus ?? '—'} />
-                  <DetailStat label="Start" value={employee.contractStartDate ? fmtDate(employee.contractStartDate) : '—'} />
-                  <DetailStat label="End" value={employee.contractEndDate ? fmtDate(employee.contractEndDate) : 'No end date'} />
-                  <DetailStat label="Remaining" value={employee.contractEndDate ? `${monthsRemaining(employee.contractEndDate)} months` : 'Permanent'} />
+          {tab === 'compensation' && (
+            <div className="space-y-6">
+              <div className="flex justify-end">
+                <PrivateDataRevealButton revealed={privateGate.revealed} onReveal={privateGate.requestReveal} onHide={privateGate.hide} label="Show Amounts" />
+              </div>
+
+              {!privateGate.revealed ? (
+                <DetailEmpty>Salary figures are hidden. Click &quot;Show Amounts&quot; and enter your password to view them.</DetailEmpty>
+              ) : employee.employmentStatus === 'Freelance' ? (
+                <div className="grid grid-cols-2 gap-3">
+                  <DetailStat label="Freelance Fee" value={formatMoney(employee.freelanceFee)} />
+                  <DetailStat label="Fee Type" value={employee.freelanceFeeType ?? '—'} />
                 </div>
-                <DetailSection title="Contract Documents">
-                  {employee.contractFiles.length === 0 ? (
-                    <DetailEmpty>No contract documents uploaded.</DetailEmpty>
-                  ) : (
-                    <div className="space-y-2.5">
-                      {employee.contractFiles.map((f, i) => (
-                        <DocFileRow key={i} name={`Contract${employee.contractFiles.length > 1 ? ` — file ${i + 1}` : ''}`}
-                          onDownload={() => downloadDataUrl(f, `${employee.fullName.replace(/[^a-z0-9]+/gi, '-')}-contract-${i + 1}.${extFromDataUrl(f)}`)} />
+              ) : (
+                <>
+                  <div className="grid grid-cols-3 gap-3">
+                    <DetailStat label="Basic Salary" value={formatMoney(employee.basicSalary)} />
+                    <DetailStat label="Allowance" value={formatMoney(employee.allowance)} />
+                    <DetailStat label="Uang Layar (base)" value={formatMoney(employee.uangLayar)} />
+                    <DetailStat label="Meal Allowance (per day)" value={formatMoney(employee.uangMakan)} />
+                    <DetailStat label="THR" value={formatMoney(employee.thr)} />
+                    <DetailStat label="Other Income" value={formatMoney(otherIncomeTotal)} />
+                  </div>
+
+                  {employee.otherIncome.length > 0 && (
+                    <DetailSection title="Other Income Components">
+                      <div className="space-y-2.5">
+                        {employee.otherIncome.map(item => (
+                          <div key={item.id} className="flex items-center justify-between border border-border rounded-xl px-4 py-3">
+                            <div className="min-w-0">
+                              <p className="text-sm font-semibold truncate">{item.name || 'Untitled'}</p>
+                              {item.description && <p className="text-xs text-muted-foreground truncate mt-0.5">{item.description}</p>}
+                            </div>
+                            <span className="text-sm font-bold shrink-0">{formatMoney(item.amount)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </DetailSection>
+                  )}
+
+                  {employee.role && (
+                    <DetailSection title="Role Compensation Range">
+                      {compensationBand ? (
+                        <div className="border border-border rounded-xl px-5 py-4">
+                          <p className="text-sm font-bold">{formatMoney(compensationBand.minSalary)} — {formatMoney(compensationBand.maxSalary)}</p>
+                          <div className="relative h-2 bg-muted rounded-full mt-3.5">
+                            <div className="absolute top-1/2 -translate-y-1/2 h-3.5 w-3.5 rounded-full bg-primary border-2 border-card shadow" style={{ left: `calc(${rangePosition ?? 0}% - 7px)` }} />
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-2.5">
+                            {employee.basicSalary != null ? `Basic salary is positioned at ${Math.round(rangePosition ?? 0)}% of the approved range for ${employee.level?.toLowerCase() ?? 'unset'} level.` : 'No basic salary set.'}
+                          </p>
+                        </div>
+                      ) : (
+                        <DetailEmpty>No compensation band set for this role{employee.level ? ` at ${employee.level.toLowerCase()} level` : ''}.</DetailEmpty>
+                      )}
+                    </DetailSection>
+                  )}
+                </>
+              )}
+              {privateGate.dialog}
+            </div>
+          )}
+
+          {tab === 'leave' && (
+            <div className="space-y-5">
+              <div className="grid grid-cols-3 gap-3">
+                <DetailStat label="Entitlement Policy" value={employee.leaveEntitlementPolicy ? (LEAVE_POLICY_LABEL[employee.leaveEntitlementPolicy] ?? employee.leaveEntitlementPolicy) : '—'} />
+                <DetailStat label="Current Balance" value={employee.leaveBalance != null ? `${employee.leaveBalance} days` : '—'} />
+                <DetailStat label="Approved This Cycle" value={`${approvedDays} days`} />
+              </div>
+              {pendingCount > 0 && (
+                <p className="text-xs font-medium text-warning bg-warning/10 border border-warning/30 rounded-lg px-3.5 py-2.5">{pendingCount} request{pendingCount !== 1 ? 's' : ''} awaiting decision.</p>
+              )}
+              {leaveRequests.length === 0 ? (
+                <DetailEmpty>No leave requests yet.</DetailEmpty>
+              ) : (
+                <div className="rounded-xl border overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead className="bg-muted/50 text-xs text-muted-foreground">
+                      <tr>
+                        <th className="text-left px-4 py-3 font-semibold">Dates</th>
+                        <th className="text-left px-4 py-3 font-semibold">Reason</th>
+                        <th className="text-center px-4 py-3 font-semibold">Days</th>
+                        <th className="text-left px-4 py-3 font-semibold">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {leaveRequests.map(r => (
+                        <tr key={r.id}>
+                          <td className="px-4 py-3 whitespace-nowrap">{formatDate(r.startDate)} → {formatDate(r.endDate)}</td>
+                          <td className="px-4 py-3 text-muted-foreground truncate max-w-40">{r.reason ?? '—'}</td>
+                          <td className="px-4 py-3 text-center font-semibold">{r.days}</td>
+                          <td className="px-4 py-3"><StatusBadge className="px-2.5 py-1 font-semibold" tone={r.status === 'APPROVED' ? 'success' : r.status === 'REJECTED' ? 'destructive' : r.status === 'PENDING_HR_APPROVAL' ? 'info' : 'warning'}>{detailLeaveStatusLabel(r)}</StatusBadge></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
+          {tab === 'reviews' && (
+            <div className="space-y-3.5">
+              {performanceReviews.length === 0 ? (
+                <DetailEmpty>No performance review history yet.</DetailEmpty>
+              ) : performanceReviews.map(r => (
+                <div key={r.id} className="border border-border rounded-xl px-5 py-4">
+                  <div className="flex items-center justify-between gap-2">
+                    <StatusBadge className="px-2.5 py-1 font-semibold" tone={r.status === 'COMPLETED' ? 'success' : 'warning'}>{REVIEW_STATUS_LABEL[r.status]}</StatusBadge>
+                    <span className="text-xs text-muted-foreground">{formatDate(r.reviewDate ?? r.requestedAt)}</span>
+                  </div>
+                  {REVIEW_CRITERIA.some(c => r[c.key]) && (
+                    <div className="flex flex-wrap gap-2 mt-3">
+                      {REVIEW_CRITERIA.filter(c => r[c.key]).map(c => (
+                        <span key={c.key} className={`text-xs font-semibold bg-muted/60 rounded-full px-3 py-1.5 ${RATING_COLOR[r[c.key] as string]}`}>
+                          {c.label}: {RATING_LABEL[r[c.key] as string]}
+                        </span>
                       ))}
                     </div>
                   )}
-                </DetailSection>
-              </div>
-            )}
-
-            {tab === 'compensation' && (
-              <div className="space-y-6">
-                <div className="flex justify-end">
-                  <PrivateDataRevealButton revealed={privateGate.revealed} onReveal={privateGate.requestReveal} onHide={privateGate.hide} label="Show Amounts" />
+                  {r.decision && <p className="text-sm font-semibold mt-3">{DECISION_LABEL[r.decision]}</p>}
+                  {r.salaryIncrementApproved && r.newSalary != null && (
+                    <p className="text-xs font-medium text-success mt-1.5">Salary increment approved: {r.currentSalary != null ? `${formatMoney(r.currentSalary)} → ` : ''}{formatMoney(r.newSalary)}</p>
+                  )}
+                  {r.managerComments && <p className="text-sm text-muted-foreground mt-2.5">{r.managerComments}</p>}
+                  {r.reasonNotes && <p className="text-xs text-muted-foreground mt-2 italic">{r.reasonNotes}</p>}
                 </div>
+              ))}
+            </div>
+          )}
 
-                {!privateGate.revealed ? (
-                  <DetailEmpty>Salary figures are hidden. Click &quot;Show Amounts&quot; and enter your password to view them.</DetailEmpty>
-                ) : employee.employmentStatus === 'Freelance' ? (
-                  <div className="grid grid-cols-2 gap-3">
-                    <DetailStat label="Freelance Fee" value={employee.freelanceFee != null ? fmtMoney(employee.freelanceFee) : '—'} />
-                    <DetailStat label="Fee Type" value={employee.freelanceFeeType ?? '—'} />
-                  </div>
-                ) : (
-                  <>
-                    <div className="grid grid-cols-3 gap-3">
-                      <DetailStat label="Basic Salary" value={employee.basicSalary != null ? fmtMoney(employee.basicSalary) : '—'} />
-                      <DetailStat label="Allowance" value={employee.allowance != null ? fmtMoney(employee.allowance) : '—'} />
-                      <DetailStat label="Uang Layar (base)" value={employee.uangLayar != null ? fmtMoney(employee.uangLayar) : '—'} />
-                      <DetailStat label="Uang Makan (per day)" value={employee.uangMakan != null ? fmtMoney(employee.uangMakan) : '—'} />
-                      <DetailStat label="THR" value={employee.thr != null ? fmtMoney(employee.thr) : '—'} />
-                      <DetailStat label="Other Income" value={fmtMoney(otherIncomeTotal)} />
-                    </div>
-
-                    {employee.otherIncome.length > 0 && (
-                      <DetailSection title="Other Income Components">
-                        <div className="space-y-2.5">
-                          {employee.otherIncome.map(item => (
-                            <div key={item.id} className="flex items-center justify-between border border-gray-100 rounded-xl px-4 py-3">
-                              <div className="min-w-0">
-                                <p className="text-sm font-semibold truncate">{item.name || 'Untitled'}</p>
-                                {item.description && <p className="text-xs text-muted-foreground truncate mt-0.5">{item.description}</p>}
-                              </div>
-                              <span className="text-sm font-bold shrink-0">{fmtMoney(item.amount)}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </DetailSection>
-                    )}
-
-                    {employee.role && (
-                      <DetailSection title="Role Compensation Range">
-                        {compensationBand ? (
-                          <div className="border border-gray-100 rounded-xl px-5 py-4">
-                            <p className="text-sm font-bold">{fmtMoney(compensationBand.minSalary)} — {fmtMoney(compensationBand.maxSalary)}</p>
-                            <div className="relative h-2 bg-muted rounded-full mt-3.5">
-                              <div className="absolute top-1/2 -translate-y-1/2 h-3.5 w-3.5 rounded-full bg-[#bdac7e] border-2 border-white shadow" style={{ left: `calc(${rangePosition ?? 0}% - 7px)` }} />
-                            </div>
-                            <p className="text-xs text-muted-foreground mt-2.5">
-                              {employee.basicSalary != null ? `Basic salary is positioned at ${Math.round(rangePosition ?? 0)}% of the approved range for ${employee.level?.toLowerCase() ?? 'unset'} level.` : 'No basic salary set.'}
-                            </p>
-                          </div>
-                        ) : (
-                          <DetailEmpty>No compensation band set for this role{employee.level ? ` at ${employee.level.toLowerCase()} level` : ''}.</DetailEmpty>
-                        )}
-                      </DetailSection>
-                    )}
-                  </>
-                )}
-                {privateGate.dialog}
+          {tab === 'documents' && (
+            <div className="space-y-6">
+              <div className="flex justify-end">
+                <PrivateDataRevealButton revealed={privateGate.revealed} onReveal={privateGate.requestReveal} onHide={privateGate.hide} label="Show Documents" />
               </div>
-            )}
 
-            {tab === 'leave' && (
-              <div className="space-y-5">
-                <div className="grid grid-cols-3 gap-3">
-                  <DetailStat label="Entitlement Policy" value={employee.leaveEntitlementPolicy ?? '—'} />
-                  <DetailStat label="Current Balance" value={employee.leaveBalance != null ? `${employee.leaveBalance} days` : '—'} />
-                  <DetailStat label="Approved This Cycle" value={`${approvedDays} days`} />
-                </div>
-                {pendingCount > 0 && (
-                  <p className="text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3.5 py-2.5">{pendingCount} request{pendingCount !== 1 ? 's' : ''} awaiting decision.</p>
-                )}
-                {leaveRequests.length === 0 ? (
-                  <DetailEmpty>No leave requests yet.</DetailEmpty>
-                ) : (
-                  <div className="rounded-xl border overflow-hidden">
-                    <table className="w-full text-sm">
-                      <thead className="bg-muted/50 text-xs text-muted-foreground">
-                        <tr>
-                          <th className="text-left px-4 py-3 font-semibold">Dates</th>
-                          <th className="text-left px-4 py-3 font-semibold">Reason</th>
-                          <th className="text-center px-4 py-3 font-semibold">Days</th>
-                          <th className="text-left px-4 py-3 font-semibold">Status</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y">
-                        {leaveRequests.map(r => (
-                          <tr key={r.id}>
-                            <td className="px-4 py-3 whitespace-nowrap">{fmtDate(r.startDate)} → {fmtDate(r.endDate)}</td>
-                            <td className="px-4 py-3 text-muted-foreground truncate max-w-40">{r.reason ?? '—'}</td>
-                            <td className="px-4 py-3 text-center font-semibold">{r.days}</td>
-                            <td className="px-4 py-3"><DetailBadge tone={r.status === 'APPROVED' ? 'green' : r.status === 'REJECTED' ? 'red' : r.status === 'PENDING_HR_APPROVAL' ? 'blue' : 'amber'}>{detailLeaveStatusLabel(r)}</DetailBadge></td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {tab === 'reviews' && (
-              <div className="space-y-3.5">
-                {performanceReviews.length === 0 ? (
-                  <DetailEmpty>No performance review history yet.</DetailEmpty>
-                ) : performanceReviews.map(r => (
-                  <div key={r.id} className="border border-gray-100 rounded-xl px-5 py-4">
-                    <div className="flex items-center justify-between gap-2">
-                      <DetailBadge tone={r.status === 'COMPLETED' ? 'green' : 'amber'}>{REVIEW_STATUS_LABEL[r.status]}</DetailBadge>
-                      <span className="text-xs text-muted-foreground">{fmtDate(r.reviewDate ?? r.requestedAt)}</span>
-                    </div>
-                    {REVIEW_CRITERIA.some(c => r[c.key]) && (
-                      <div className="flex flex-wrap gap-2 mt-3">
-                        {REVIEW_CRITERIA.filter(c => r[c.key]).map(c => (
-                          <span key={c.key} className={`text-xs font-semibold bg-muted/60 rounded-full px-3 py-1.5 ${RATING_COLOR[r[c.key] as string]}`}>
-                            {c.label}: {RATING_LABEL[r[c.key] as string]}
-                          </span>
+              {!privateGate.revealed ? (
+                <DetailEmpty>Documents are hidden. Click &quot;Show Documents&quot; and enter your password to view &amp; download them.</DetailEmpty>
+              ) : (
+                DOC_FIELDS.map(f => (
+                  <DetailSection key={f.key} title={f.label}>
+                    {employee[f.key].length === 0 ? (
+                      <p className="text-sm text-muted-foreground">Not uploaded.</p>
+                    ) : (
+                      <div className="space-y-2.5">
+                        {employee[f.key].map((file, i) => (
+                          <DocFileRow key={i} name={`${f.label}${employee[f.key].length > 1 ? ` — file ${i + 1}` : ''}`}
+                            onDownload={() => downloadDataUrl(file, `${employee.fullName.replace(/[^a-z0-9]+/gi, '-')}-${f.key}-${i + 1}.${extFromDataUrl(file)}`)} />
                         ))}
                       </div>
                     )}
-                    {r.decision && <p className="text-sm font-semibold mt-3">{DECISION_LABEL[r.decision]}</p>}
-                    {r.salaryIncrementApproved && r.newSalary != null && (
-                      <p className="text-xs font-medium text-green-700 mt-1.5">Salary increment approved: {r.currentSalary != null ? `${fmtMoney(r.currentSalary)} → ` : ''}{fmtMoney(r.newSalary)}</p>
-                    )}
-                    {r.managerComments && <p className="text-sm text-muted-foreground mt-2.5">{r.managerComments}</p>}
-                    {r.reasonNotes && <p className="text-xs text-muted-foreground mt-2 italic">{r.reasonNotes}</p>}
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {tab === 'documents' && (
-              <div className="space-y-6">
-                <div className="flex justify-end">
-                  <PrivateDataRevealButton revealed={privateGate.revealed} onReveal={privateGate.requestReveal} onHide={privateGate.hide} label="Show Documents" />
-                </div>
-
-                {!privateGate.revealed ? (
-                  <DetailEmpty>Documents are hidden. Click &quot;Show Documents&quot; and enter your password to view &amp; download them.</DetailEmpty>
-                ) : (
-                  DOC_FIELDS.map(f => (
-                    <DetailSection key={f.key} title={f.label}>
-                      {employee[f.key].length === 0 ? (
-                        <p className="text-sm text-muted-foreground">Not uploaded.</p>
-                      ) : (
-                        <div className="space-y-2.5">
-                          {employee[f.key].map((file, i) => (
-                            <DocFileRow key={i} name={`${f.label}${employee[f.key].length > 1 ? ` — file ${i + 1}` : ''}`}
-                              onDownload={() => downloadDataUrl(file, `${employee.fullName.replace(/[^a-z0-9]+/gi, '-')}-${f.key}-${i + 1}.${extFromDataUrl(file)}`)} />
-                          ))}
-                        </div>
-                      )}
-                    </DetailSection>
-                  ))
-                )}
-                {privateGate.dialog}
-              </div>
-            )}
-          </div>
-
-          <div className="flex items-center justify-end gap-3 px-8 py-5 border-t bg-gray-50/80">
-            <button onClick={onClose} className="px-4 py-2.5 text-sm font-medium text-muted-foreground hover:text-foreground border rounded-xl hover:bg-white transition-all">
-              Close
-            </button>
-            <button onClick={onEdit} className="flex items-center gap-2 px-6 py-2.5 text-sm text-white rounded-xl font-semibold transition-colors shadow-sm bg-[#bdac7e] hover:bg-[#a89860]">
-              <Pencil className="h-3.5 w-3.5" /> Edit
-            </button>
-          </div>
+                  </DetailSection>
+                ))
+              )}
+              {privateGate.dialog}
+            </div>
+          )}
         </div>
-      </div>
-    </>
+
+        <DialogFooter className="gap-3 px-8 py-5 border-t bg-muted/50">
+          <Button variant="outline" onClick={onClose} className="text-muted-foreground">
+            Close
+          </Button>
+          <Button onClick={onEdit}>
+            <Pencil className="size-3.5" /> Edit
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 
@@ -662,10 +662,10 @@ export default function EmployeesPage() {
   const [modalTab, setModalTab] = useState<'details' | 'contact' | 'bank' | 'salary' | 'documents' | 'assets'>('details')
   const [editing, setEditing] = useState<Employee | null>(null)
   const privateGate = usePasswordGate()
+  const confirm = useConfirm()
   const [form, setForm] = useState({ ...BLANK })
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState('')
-  const [deleteConfirm, setDeleteConfirm] = useState<Employee | null>(null)
 
   const [freelanceModal, setFreelanceModal] = useState(false)
   const [editingFreelance, setEditingFreelance] = useState<Employee | null>(null)
@@ -795,9 +795,14 @@ export default function EmployeesPage() {
   }
 
   async function doDelete(emp: Employee) {
+    if (!(await confirm({
+      title: 'Delete Employee?',
+      description: <><span className="font-medium text-foreground">{emp.fullName}</span> ({emp.employeeNumber}) will be permanently deleted.</>,
+      destructive: true,
+    }))) return
     const res = await fetch(`/api/hr/employees/${emp.id}`, { method: 'DELETE' })
-    if (!res.ok) { const d = await res.json(); alert(d.error ?? 'Failed to delete') }
-    setDeleteConfirm(null); load()
+    if (!res.ok) { const d = await res.json(); toast.error(d.error ?? 'Failed to delete') }
+    load()
   }
 
   function exportCSV() {
@@ -826,7 +831,7 @@ export default function EmployeesPage() {
     const res = await fetch('/api/hr/employees/import', { method: 'POST', body: fd })
     const data = await res.json()
     setImporting(false)
-    if (!res.ok) { alert(data.error ?? 'Import failed'); return }
+    if (!res.ok) { toast.error(data.error ?? 'Import failed'); return }
     setImportResult(data)
     load()
   }
@@ -876,37 +881,41 @@ export default function EmployeesPage() {
           <p className="text-muted-foreground text-sm mt-1">Employee master data across legal entities and work locations</p>
         </div>
         <div className="flex items-center gap-2">
-          <button
+          <Button
+            variant="outline"
             onClick={downloadTemplate}
-            className="flex items-center gap-2 text-sm border rounded-md px-3 py-2 text-muted-foreground hover:bg-muted transition-colors"
+            className="text-muted-foreground"
             title="Download template CSV"
           >
             <FileDown className="h-4 w-4" /> Template
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="outline"
             onClick={exportCSV}
             disabled={employees.length === 0}
-            className="flex items-center gap-2 text-sm border rounded-md px-3 py-2 text-muted-foreground hover:bg-muted disabled:opacity-40 transition-colors"
+            className="text-muted-foreground"
           >
             <Download className="h-4 w-4" /> Export CSV
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="outline"
             onClick={() => importRef.current?.click()}
             disabled={importing}
-            className="flex items-center gap-2 text-sm border rounded-md px-3 py-2 text-muted-foreground hover:bg-muted disabled:opacity-40 transition-colors"
+            className="text-muted-foreground"
           >
-            <Upload className="h-4 w-4" /> {importing ? 'Importing...' : 'Import CSV'}
-          </button>
+            <Upload className="h-4 w-4" /> {importing ? 'Importing…' : 'Import CSV'}
+          </Button>
           <input ref={importRef} type="file" accept=".csv,text/csv" className="hidden" onChange={handleImportFile} />
-          <button onClick={openAdd} className="flex items-center gap-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium px-4 py-2 rounded-md transition-colors">
+          <Button onClick={openAdd}>
             <Plus className="h-4 w-4" /> Add Employee
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="outline"
             onClick={() => { setEditingFreelance(null); setFreelanceModal(true) }}
-            className="flex items-center gap-2 border border-amber-600 text-amber-700 hover:bg-amber-50 text-sm font-medium px-4 py-2 rounded-md transition-colors"
+            className="border-primary text-primary-strong hover:bg-primary/10 hover:text-primary-strong"
           >
             <Plus className="h-4 w-4" /> Add Freelance
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -915,7 +924,7 @@ export default function EmployeesPage() {
         {([['table', 'Table'], ['location', 'By Location']] as const).map(([key, label]) => (
           <button key={key} onClick={() => setViewMode(key)}
             className={`px-3 py-1.5 text-sm font-medium rounded-[5px] transition-colors ${
-              viewMode === key ? 'bg-white shadow-sm text-amber-700' : 'text-muted-foreground hover:text-foreground'
+              viewMode === key ? 'bg-card shadow-sm text-primary-strong' : 'text-muted-foreground hover:text-foreground'
             }`}>
             {label}
           </button>
@@ -926,58 +935,64 @@ export default function EmployeesPage() {
       <div className="flex flex-wrap items-center gap-2.5 rounded-lg border bg-muted/20 px-3 py-2.5">
         <div className="relative flex-1 min-w-45 max-w-xs">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-          <input
-            className="w-full h-9 pl-9 pr-3 text-sm border rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
-            placeholder="Search name or employee number..."
+          <Input
+            className="pl-9 bg-background"
+            aria-label="Search employees"
+            placeholder="Search name or employee number…"
             value={search} onChange={e => setSearch(e.target.value)}
           />
         </div>
 
-        <select
-          className="h-9 border rounded-md px-2.5 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
+        <NativeSelect
+          className="w-auto bg-background"
+          aria-label="Filter by legal entity"
           value={entityFilter} onChange={e => setEntityFilter(e.target.value)}
         >
           <option value="All">All Legal Entities</option>
           {legalEntities.map(le => <option key={le.id} value={le.id}>{le.name}</option>)}
-        </select>
+        </NativeSelect>
 
-        <select
-          className="h-9 border rounded-md px-2.5 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
+        <NativeSelect
+          className="w-auto bg-background"
+          aria-label="Filter by business unit"
           value={businessUnitFilter} onChange={e => setBusinessUnitFilter(e.target.value)}
         >
           <option value="All">All Business Units</option>
           {businessUnits.map(bu => <option key={bu.id} value={bu.id}>{bu.name}</option>)}
-        </select>
+        </NativeSelect>
 
-        <select
-          className="h-9 border rounded-md px-2.5 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
+        <NativeSelect
+          className="w-auto bg-background"
+          aria-label="Filter by work location"
           value={locationFilter} onChange={e => setLocationFilter(e.target.value)}
         >
           <option value="All">All Work Locations</option>
           {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
-        </select>
+        </NativeSelect>
 
-        <select
-          className="h-9 border rounded-md px-2.5 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
+        <NativeSelect
+          className="w-auto bg-background"
+          aria-label="Filter by role"
           value={roleFilter} onChange={e => setRoleFilter(e.target.value)}
         >
           <option value="All">All Roles</option>
           {roles.map(r => <option key={r.id} value={r.id}>{r.title}</option>)}
-        </select>
+        </NativeSelect>
 
-        <select
-          className="h-9 border rounded-md px-2.5 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
+        <NativeSelect
+          className="w-auto bg-background"
+          aria-label="Filter by status"
           value={statusFilter} onChange={e => setStatusFilter(e.target.value as 'All' | 'Active' | 'Inactive')}
         >
           <option value="All">All Statuses</option>
           <option value="Active">Active</option>
           <option value="Inactive">Inactive</option>
-        </select>
+        </NativeSelect>
 
         {hasActiveFilters && (
-          <button onClick={resetFilters} className="text-xs text-muted-foreground hover:text-foreground transition-colors ml-auto">
+          <Button variant="ghost" size="sm" onClick={resetFilters} className="text-xs text-muted-foreground ml-auto">
             Reset
-          </button>
+          </Button>
         )}
       </div>
 
@@ -1008,7 +1023,7 @@ export default function EmployeesPage() {
                         {emp.fullName}
                         {emp.nickName && <span className="text-muted-foreground font-normal">({emp.nickName})</span>}
                         {emp.userId && (
-                          <span title={`Linked to login: ${emp.user?.email ?? ''}`} className="inline-block h-1.5 w-1.5 rounded-full bg-green-500 shrink-0" />
+                          <span title={`Linked to login: ${emp.user?.email ?? ''}`} className="inline-block h-1.5 w-1.5 rounded-full bg-success shrink-0" />
                         )}
                       </p>
                       <p className="text-xs text-muted-foreground font-mono">{emp.employeeNumber}</p>
@@ -1016,9 +1031,9 @@ export default function EmployeesPage() {
                     <div className="flex items-center gap-4 shrink-0">
                       <span className="text-xs text-muted-foreground">{emp.role?.title ?? '—'}</span>
                       <span className="text-xs text-muted-foreground">{emp.department ?? '—'}</span>
-                      <button onClick={e => { e.stopPropagation(); toggleActive(emp) }} title={!emp.isActive ? 'Reactivate' : 'Deactivate'}>
+                      <button type="button" onClick={e => { e.stopPropagation(); toggleActive(emp) }} title={!emp.isActive ? 'Reactivate' : 'Deactivate'} aria-label={`${!emp.isActive ? 'Reactivate' : 'Deactivate'} ${emp.fullName}`}>
                         {emp.isActive
-                          ? <ToggleRight className="h-5 w-5 text-green-600" />
+                          ? <ToggleRight className="h-5 w-5 text-success" />
                           : <ToggleLeft className="h-5 w-5 text-muted-foreground" />}
                       </button>
                     </div>
@@ -1059,7 +1074,7 @@ export default function EmployeesPage() {
                       {emp.fullName}
                       {emp.nickName && <span className="text-muted-foreground font-normal">({emp.nickName})</span>}
                       {emp.userId && (
-                        <span title={`Linked to login: ${emp.user?.email ?? ''}`} className="inline-block h-1.5 w-1.5 rounded-full bg-green-500 shrink-0" />
+                        <span title={`Linked to login: ${emp.user?.email ?? ''}`} className="inline-block h-1.5 w-1.5 rounded-full bg-success shrink-0" />
                       )}
                     </p>
                     <p className="text-xs text-muted-foreground font-mono">{emp.employeeNumber}</p>
@@ -1070,40 +1085,44 @@ export default function EmployeesPage() {
                   <td className="px-4 py-3 text-muted-foreground text-xs">{emp.gender ?? '—'}</td>
                   <td className="px-4 py-3 text-xs">
                     {emp.employmentStatus === 'Freelance' ? (
-                      <span className="inline-block text-xs font-medium bg-amber-100 text-amber-800 rounded-full px-2 py-0.5">Freelance</span>
+                      <span className="inline-block text-xs font-medium bg-primary/15 text-primary-strong rounded-full px-2 py-0.5">Freelance</span>
                     ) : (
                       <span className="text-muted-foreground">{emp.employmentStatus ?? '—'}</span>
                     )}
                   </td>
                   <td className="px-4 py-3 text-muted-foreground text-xs text-center">{emp.leaveBalance ?? '—'}</td>
-                  <td className="px-4 py-3 text-muted-foreground text-xs whitespace-nowrap">{emp.joinDate ? new Date(emp.joinDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}</td>
+                  <td className="px-4 py-3 text-muted-foreground text-xs whitespace-nowrap">{formatDate(emp.joinDate)}</td>
                   <td className="px-4 py-3 text-muted-foreground text-xs whitespace-nowrap">{formatServiceYear(emp.joinDate, emp.resignedAt)}</td>
                   <td className="px-4 py-3 text-center" onClick={e => e.stopPropagation()}>
-                    <button onClick={() => toggleActive(emp)} title={!emp.isActive ? 'Reactivate' : 'Deactivate'}>
+                    <button type="button" onClick={() => toggleActive(emp)} title={!emp.isActive ? 'Reactivate' : 'Deactivate'} aria-label={`${!emp.isActive ? 'Reactivate' : 'Deactivate'} ${emp.fullName}`}>
                       {emp.isActive
-                        ? <ToggleRight className="h-5 w-5 text-green-600 mx-auto" />
+                        ? <ToggleRight className="h-5 w-5 text-success mx-auto" />
                         : <ToggleLeft className="h-5 w-5 text-muted-foreground mx-auto" />}
                     </button>
                     {!emp.isActive && emp.resignedAt && (
                       <div className="mt-1 text-[10px] text-muted-foreground leading-tight" title={emp.resignReason ?? undefined}>
-                        {RESIGN_STATUS_LABEL[emp.resignStatus ?? ''] ?? 'Left'} · {new Date(emp.resignedAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                        {RESIGN_STATUS_LABEL[emp.resignStatus ?? ''] ?? 'Left'} · {formatDate(emp.resignedAt)}
                       </div>
                     )}
                   </td>
                   <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                     <div className="flex items-center justify-end gap-1">
-                      <button
+                      <Button
+                        variant="ghost"
+                        size="icon"
                         onClick={() => {
                           if (emp.employmentStatus === 'Freelance') { setEditingFreelance(emp); setFreelanceModal(true) }
                           else openEdit(emp)
                         }}
-                        className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors"
+                        aria-label={`Edit ${emp.fullName}`}
+                        className="size-7 text-muted-foreground"
                       >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </button>
-                      <button onClick={() => setDeleteConfirm(emp)} className="p-1.5 text-muted-foreground hover:text-destructive hover:bg-red-50 rounded-lg transition-colors">
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
+                        <Pencil className="size-3.5" />
+                      </Button>
+                      <Button variant="ghost" size="icon" onClick={() => doDelete(emp)} aria-label={`Delete ${emp.fullName}`}
+                        className="size-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10">
+                        <Trash2 className="size-3.5" />
+                      </Button>
                     </div>
                   </td>
                 </tr>
@@ -1119,7 +1138,7 @@ export default function EmployeesPage() {
           <div className="flex items-center gap-2">
             <span className="text-xs">Rows per page</span>
             <Select value={String(pageSize)} onValueChange={v => { setPageSize(Number(v)); setPage(0) }}>
-              <SelectTrigger className="h-7 w-16 text-xs">
+              <SelectTrigger className="h-7 w-16 text-xs" aria-label="Rows per page">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -1135,621 +1154,648 @@ export default function EmployeesPage() {
           </span>
 
           <div className="flex items-center gap-1">
-            <button
+            <Button
+              variant="ghost"
+              size="icon"
               onClick={() => setPage(0)}
               disabled={safePage === 0}
-              className="p-1 rounded hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed"
+              className="size-6"
               title="First page"
+              aria-label="First page"
             >
-              <ChevronLeft className="h-3.5 w-3.5" />
-            </button>
-            <button
+              <ChevronLeft className="size-3.5" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
               onClick={() => setPage(p => Math.max(0, p - 1))}
               disabled={safePage === 0}
-              className="p-1 rounded hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed"
+              className="size-6"
+              aria-label="Previous page"
             >
-              <ChevronLeft className="h-3.5 w-3.5" />
-            </button>
+              <ChevronLeft className="size-3.5" />
+            </Button>
             <span className="text-xs px-1">Page {safePage + 1} / {totalPages}</span>
-            <button
+            <Button
+              variant="ghost"
+              size="icon"
               onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
               disabled={safePage >= totalPages - 1}
-              className="p-1 rounded hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed"
+              className="size-6"
+              aria-label="Next page"
             >
-              <ChevronRight className="h-3.5 w-3.5" />
-            </button>
-            <button
+              <ChevronRight className="size-3.5" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
               onClick={() => setPage(totalPages - 1)}
               disabled={safePage >= totalPages - 1}
-              className="p-1 rounded hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed"
+              className="size-6"
               title="Last page"
+              aria-label="Last page"
             >
-              <ChevronRight className="h-3.5 w-3.5" />
-            </button>
+              <ChevronRight className="size-3.5" />
+            </Button>
           </div>
         </div>
       )}
 
       {/* ── Add/Edit Modal ── */}
-      {modal && (
-        <>
-          <div className="fixed inset-0 bg-black/50 z-50" onClick={() => setModal(false)} />
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
-            <div className="pointer-events-auto bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden">
-              <div className="px-6 pt-6 pb-5" style={{ background: 'linear-gradient(135deg, #bdac7e 0%, #a89860 100%)' }}>
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2.5 bg-white/20 rounded-xl">
-                      <IdCard className="h-5 w-5 text-white" />
-                    </div>
-                    <div>
-                      <h3 className="font-bold text-white text-lg leading-tight">{editing ? 'Edit Employee' : 'Add Employee'}</h3>
-                      <p className="text-amber-100 text-xs mt-0.5">{editing ? 'Update this employee’s details' : 'Add a new employee to the master data'}</p>
-                    </div>
-                  </div>
-                  <button onClick={() => setModal(false)} className="p-1.5 text-white/70 hover:text-white hover:bg-white/20 rounded-lg transition-colors">
-                    <X className="h-4 w-4" />
-                  </button>
+      <Dialog open={modal} onOpenChange={o => { if (!o) setModal(false) }}>
+        <DialogContent className="sm:max-w-2xl p-0 gap-0 overflow-hidden" showCloseButton={false} onInteractOutside={e => e.preventDefault()}>
+          <div className="px-6 pt-6 pb-5" style={{ background: 'linear-gradient(135deg, var(--primary) 0%, var(--primary-hover) 100%)' }}>
+            <div className="flex items-start justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-primary-foreground/20 rounded-xl">
+                  <IdCard className="h-5 w-5 text-primary-foreground" />
+                </div>
+                <div>
+                  <DialogTitle className="font-bold text-primary-foreground text-lg leading-tight">{editing ? 'Edit Employee' : 'Add Employee'}</DialogTitle>
+                  <DialogDescription className="text-primary-foreground/80 text-xs mt-0.5">{editing ? 'Update this employee’s details' : 'Add a new employee to the master data'}</DialogDescription>
                 </div>
               </div>
-
-              {/* Tabs */}
-              <div className="flex items-center gap-1 px-6 pt-4 border-b bg-gray-50/50">
-                {([
-                  { value: 'details', label: 'Details' },
-                  { value: 'contact', label: 'Contact Info' },
-                  { value: 'bank', label: 'Bank & Tax' },
-                  { value: 'salary', label: 'Salary' },
-                  { value: 'documents', label: 'Documents' },
-                  { value: 'assets', label: 'Company Assets' },
-                ] as const).map(t => (
-                  <button key={t.value} type="button" onClick={() => setModalTab(t.value)}
-                    className={`px-3.5 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
-                      modalTab === t.value ? 'border-[#bdac7e] text-[#8a744a]' : 'border-transparent text-muted-foreground hover:text-foreground'
-                    }`}>
-                    {t.label}
-                  </button>
-                ))}
-              </div>
-
-              <div className="px-6 py-5 space-y-4 max-h-[70vh] overflow-y-auto">
-                {formError && (
-                  <div className="flex items-center gap-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
-                    <AlertTriangle className="h-4 w-4 shrink-0" /> {formError}
-                  </div>
-                )}
-
-                {modalTab === 'details' && (
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="col-span-2 space-y-1.5">
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                      Full Name <span className="text-red-500 normal-case">*</span>
-                    </label>
-                    <input
-                      className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-4 py-3 text-sm font-medium focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
-                      value={form.fullName} onChange={e => setForm(f => ({ ...f, fullName: e.target.value }))} autoFocus
-                    />
-                  </div>
-
-                  <div className="col-span-2 space-y-1.5">
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Nickname</label>
-                    <input
-                      className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
-                      value={form.nickName} onChange={e => setForm(f => ({ ...f, nickName: e.target.value }))}
-                    />
-                  </div>
-
-                  <div className="col-span-2 space-y-1.5">
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Employee Number</label>
-                    <input
-                      className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
-                      placeholder="Generated if blank"
-                      value={form.employeeNumber} onChange={e => setForm(f => ({ ...f, employeeNumber: e.target.value }))}
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Legal Entity</label>
-                    <select
-                      className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-3 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
-                      value={form.legalEntityId} onChange={e => setForm(f => ({ ...f, legalEntityId: e.target.value }))}
-                    >
-                      <option value="">—</option>
-                      {legalEntities.map(le => <option key={le.id} value={le.id}>{le.name}</option>)}
-                    </select>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Business Unit</label>
-                    <select
-                      className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-3 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
-                      value={form.businessUnitId} onChange={e => setForm(f => ({ ...f, businessUnitId: e.target.value }))}
-                    >
-                      <option value="">—</option>
-                      {businessUnits.map(bu => <option key={bu.id} value={bu.id}>{bu.name}</option>)}
-                    </select>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Work Location</label>
-                    <select
-                      className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-3 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
-                      value={form.locationId} onChange={e => setForm(f => ({ ...f, locationId: e.target.value }))}
-                    >
-                      <option value="">—</option>
-                      {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
-                    </select>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Department</label>
-                    <select
-                      className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-3 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
-                      value={form.department} onChange={e => setForm(f => ({ ...f, department: e.target.value }))}
-                    >
-                      <option value="">—</option>
-                      {withCurrent(DEPARTMENTS, form.department).map(d => <option key={d} value={d}>{d}</option>)}
-                    </select>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Role / Position</label>
-                    <select
-                      className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-3 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
-                      value={form.roleId} onChange={e => setForm(f => ({ ...f, roleId: e.target.value }))}
-                    >
-                      <option value="">—</option>
-                      {roles.map(r => <option key={r.id} value={r.id}>{r.title}</option>)}
-                    </select>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Level</label>
-                    <select
-                      className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-3 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
-                      value={form.level} onChange={e => setForm(f => ({ ...f, level: e.target.value }))}
-                    >
-                      <option value="">—</option>
-                      <option value="HIGH">High</option>
-                      <option value="MEDIUM">Medium</option>
-                      <option value="LOW">Low</option>
-                    </select>
-                    <p className="text-[11px] text-muted-foreground">Skill tier within the role — compared against the approved salary range on Roles &amp; Compensation.</p>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Employment Status</label>
-                    <select
-                      className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-3 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
-                      value={form.employmentStatus} onChange={e => setForm(f => ({ ...f, employmentStatus: e.target.value }))}
-                    >
-                      <option value="">—</option>
-                      {withCurrent(EMPLOYMENT_STATUSES, form.employmentStatus).map(s => <option key={s} value={s}>{s}</option>)}
-                    </select>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Gender</label>
-                    <select
-                      className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-3 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
-                      value={form.gender} onChange={e => setForm(f => ({ ...f, gender: e.target.value }))}
-                    >
-                      <option value="">—</option>
-                      {GENDERS.map(g => <option key={g} value={g}>{g}</option>)}
-                    </select>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Join Date</label>
-                    <input
-                      type="date"
-                      className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
-                      value={form.joinDate} onChange={e => setForm(f => ({ ...f, joinDate: e.target.value }))}
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Leave Balance (days)</label>
-                    <input
-                      type="number"
-                      className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
-                      placeholder="e.g. 12"
-                      value={form.leaveBalance} onChange={e => setForm(f => ({ ...f, leaveBalance: e.target.value }))}
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Contract Start</label>
-                    <input
-                      type="date"
-                      className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
-                      value={form.contractStartDate} onChange={e => setForm(f => ({ ...f, contractStartDate: e.target.value }))}
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Contract End</label>
-                    <input
-                      type="date"
-                      className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
-                      placeholder="Leave blank for permanent staff"
-                      value={form.contractEndDate} onChange={e => setForm(f => ({ ...f, contractEndDate: e.target.value }))}
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Leave Entitlement</label>
-                    <select
-                      className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-3 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
-                      value={form.leaveEntitlementPolicy} onChange={e => setForm(f => ({ ...f, leaveEntitlementPolicy: e.target.value }))}
-                    >
-                      <option value="">—</option>
-                      {withCurrent(LEAVE_ENTITLEMENT_POLICIES, form.leaveEntitlementPolicy).map(p => <option key={p} value={p}>{p}</option>)}
-                    </select>
-                  </div>
-
-                  <div className="col-span-2 space-y-1.5">
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Reports To (Manager)</label>
-                    <ManagerCombobox
-                      value={form.managerId}
-                      options={employees.filter(e => e.isActive && e.id !== editing?.id)}
-                      onChange={id => setForm(f => ({ ...f, managerId: id }))}
-                    />
-                    <p className="text-[11px] text-muted-foreground">Drives who approves this employee&apos;s purchase requests.</p>
-                  </div>
-
-                  <div className="col-span-2 space-y-1.5">
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Linked Login Account</label>
-                    <UserCombobox
-                      value={form.userId}
-                      options={users.filter(u => u.id === form.userId || !employees.some(e => e.userId === u.id && e.id !== editing?.id))}
-                      onChange={id => setForm(f => ({ ...f, userId: id }))}
-                    />
-                    <p className="text-[11px] text-muted-foreground">
-                      {users.length === 0 ? 'Only Admin/Super Admin can link login accounts.' : 'Required for this person to approve requests or receive notifications.'}
-                    </p>
-                  </div>
-                </div>
-                )}
-
-                {modalTab === 'contact' && (
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Phone Number</label>
-                    <div className="relative">
-                      <Phone className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
-                      <input
-                        className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl pl-10 pr-4 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all placeholder:text-gray-400"
-                        placeholder="e.g. 0812-3456-7890"
-                        value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Personal Email</label>
-                    <input
-                      className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all placeholder:text-gray-400"
-                      placeholder="personal@email.com"
-                      value={form.personalEmail} onChange={e => setForm(f => ({ ...f, personalEmail: e.target.value }))}
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Birth Date</label>
-                    <div className="relative">
-                      <Cake className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
-                      <input
-                        type="date"
-                        className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl pl-10 pr-4 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
-                        value={form.birthDate} onChange={e => setForm(f => ({ ...f, birthDate: e.target.value }))}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Place of Birth</label>
-                    <input
-                      className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
-                      value={form.placeOfBirth} onChange={e => setForm(f => ({ ...f, placeOfBirth: e.target.value }))}
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">NIK / Passport</label>
-                    <input
-                      className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
-                      value={form.nikPassport} onChange={e => setForm(f => ({ ...f, nikPassport: e.target.value }))}
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Nationality</label>
-                    <input
-                      className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
-                      placeholder="e.g. Indonesia"
-                      value={form.nationality} onChange={e => setForm(f => ({ ...f, nationality: e.target.value }))}
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Religion</label>
-                    <input
-                      className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
-                      value={form.religion} onChange={e => setForm(f => ({ ...f, religion: e.target.value }))}
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Marital Status (PTKP)</label>
-                    <select
-                      className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-3 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
-                      value={form.maritalStatus} onChange={e => setForm(f => ({ ...f, maritalStatus: e.target.value }))}
-                    >
-                      <option value="">—</option>
-                      {withCurrent(MARITAL_STATUSES, form.maritalStatus).map(m => <option key={m} value={m}>{m}</option>)}
-                    </select>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Mother&apos;s Name</label>
-                    <input
-                      className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
-                      value={form.motherName} onChange={e => setForm(f => ({ ...f, motherName: e.target.value }))}
-                    />
-                  </div>
-
-                  <div className="col-span-2 space-y-1.5">
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Address 1 (as per ID)</label>
-                    <div className="relative">
-                      <MapPin className="absolute left-3.5 top-3.5 h-4 w-4 text-gray-400 pointer-events-none" />
-                      <textarea
-                        className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl pl-10 pr-4 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all resize-none placeholder:text-gray-400"
-                        placeholder="Alamat lengkap sesuai KTP"
-                        rows={2}
-                        value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="col-span-2 space-y-1.5">
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Address 2 (current, if different)</label>
-                    <div className="relative">
-                      <MapPin className="absolute left-3.5 top-3.5 h-4 w-4 text-gray-400 pointer-events-none" />
-                      <textarea
-                        className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl pl-10 pr-4 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all resize-none placeholder:text-gray-400"
-                        placeholder="Alamat domisili saat ini, jika berbeda dari KTP"
-                        rows={2}
-                        value={form.addressCurrent} onChange={e => setForm(f => ({ ...f, addressCurrent: e.target.value }))}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="col-span-2 border-t border-dashed pt-4">
-                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Emergency Contact</p>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="col-span-2 space-y-1.5">
-                        <label className="text-xs text-muted-foreground">Name</label>
-                        <input
-                          className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
-                          value={form.emergencyContactName} onChange={e => setForm(f => ({ ...f, emergencyContactName: e.target.value }))}
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <label className="text-xs text-muted-foreground">Phone No.</label>
-                        <input
-                          className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
-                          value={form.emergencyContactPhone} onChange={e => setForm(f => ({ ...f, emergencyContactPhone: e.target.value }))}
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <label className="text-xs text-muted-foreground">Relation</label>
-                        <input
-                          className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
-                          placeholder="e.g. Spouse, Parent"
-                          value={form.emergencyContactRelation} onChange={e => setForm(f => ({ ...f, emergencyContactRelation: e.target.value }))}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                )}
-
-                {modalTab === 'bank' && (
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">NPWP</label>
-                    <input
-                      className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
-                      value={form.npwp} onChange={e => setForm(f => ({ ...f, npwp: e.target.value }))}
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">KK (Kartu Keluarga) No.</label>
-                    <input
-                      className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
-                      value={form.kkNumber} onChange={e => setForm(f => ({ ...f, kkNumber: e.target.value }))}
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">BPJS Kesehatan No.</label>
-                    <input
-                      className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
-                      value={form.bpjsKesehatanNumber} onChange={e => setForm(f => ({ ...f, bpjsKesehatanNumber: e.target.value }))}
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">BPJS Ketenagakerjaan No.</label>
-                    <input
-                      className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
-                      value={form.bpjsTkNumber} onChange={e => setForm(f => ({ ...f, bpjsTkNumber: e.target.value }))}
-                    />
-                  </div>
-
-                  <div className="col-span-2 border-t border-dashed pt-4">
-                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Bank Details</p>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-1.5">
-                        <label className="text-xs text-muted-foreground">Bank Name</label>
-                        <input
-                          className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
-                          placeholder="e.g. Bank Mandiri"
-                          value={form.bankName} onChange={e => setForm(f => ({ ...f, bankName: e.target.value }))}
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <label className="text-xs text-muted-foreground">Account No.</label>
-                        <input
-                          className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
-                          value={form.bankAccountNumber} onChange={e => setForm(f => ({ ...f, bankAccountNumber: e.target.value }))}
-                        />
-                      </div>
-                      <div className="col-span-2 space-y-1.5">
-                        <label className="text-xs text-muted-foreground">Account Holder Name</label>
-                        <input
-                          className="w-full border-2 border-gray-100 bg-gray-50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#bdac7e] focus:bg-white transition-all"
-                          value={form.bankAccountName} onChange={e => setForm(f => ({ ...f, bankAccountName: e.target.value }))}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                )}
-
-                {modalTab === 'salary' && (
-                <div className="space-y-5">
-                  <div className="flex justify-end">
-                    <PrivateDataRevealButton revealed={privateGate.revealed} onReveal={privateGate.requestReveal} onHide={privateGate.hide} label="Show Amounts" />
-                  </div>
-
-                  {!privateGate.revealed ? (
-                    <div className="border-2 border-dashed rounded-xl py-12 text-center text-sm text-muted-foreground">
-                      Salary figures are hidden. Click &quot;Show Amounts&quot; and enter your password to view &amp; edit.
-                    </div>
-                  ) : (
-                  <>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Basic Salary</label>
-                      <RupiahInput value={form.basicSalary} onChange={digits => setForm(f => ({ ...f, basicSalary: digits }))} />
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Allowance</label>
-                      <RupiahInput value={form.allowance} onChange={digits => setForm(f => ({ ...f, allowance: digits }))} />
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Uang Layar (base rate)</label>
-                      <RupiahInput value={form.uangLayar} onChange={digits => setForm(f => ({ ...f, uangLayar: digits }))} />
-                      <p className="text-[11px] text-muted-foreground">For crew stationed on a yacht (Work Location = yacht name), Payroll multiplies this by that yacht&apos;s trip days each period. Shore-based staff get this flat.</p>
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Uang Makan (per day)</label>
-                      <RupiahInput value={form.uangMakan} onChange={digits => setForm(f => ({ ...f, uangMakan: digits }))} />
-                      <p className="text-[11px] text-muted-foreground">Daily rate — Payroll multiplies this by days actually present (from Attendance Recap) each period.</p>
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">THR</label>
-                      <RupiahInput value={form.thr} onChange={digits => setForm(f => ({ ...f, thr: digits }))} />
-                      <p className="text-[11px] text-muted-foreground">Pre-fills the payslip&apos;s THR line at generation — still editable per period.</p>
-                    </div>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Other Income</label>
-                    <div className="space-y-2">
-                      {form.otherIncome.map(item => (
-                        <div key={item.id} className="flex items-start gap-2 border-2 border-gray-100 rounded-xl p-2.5">
-                          <div className="flex-1 space-y-1 min-w-0">
-                            <input value={item.name} onChange={e => updateOtherIncomeRow(item.id, { name: e.target.value })} placeholder="Name"
-                              className="w-full h-8 text-sm font-medium bg-transparent focus:outline-none" />
-                            <input value={item.description} onChange={e => updateOtherIncomeRow(item.id, { description: e.target.value })} placeholder="Description (optional)"
-                              className="w-full h-6 text-xs text-muted-foreground bg-transparent focus:outline-none" />
-                          </div>
-                          <div className="w-32 shrink-0">
-                            <RupiahInput value={String(item.amount)} onChange={digits => updateOtherIncomeRow(item.id, { amount: Number(digits) || 0 })} />
-                          </div>
-                          <button type="button" onClick={() => removeOtherIncomeRow(item.id)} className="p-1.5 text-muted-foreground hover:text-destructive shrink-0">
-                            <X className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                      ))}
-                      <button type="button" onClick={addOtherIncomeRow}
-                        className="w-full flex items-center justify-center gap-1.5 border-2 border-dashed rounded-xl py-2.5 text-sm text-muted-foreground hover:border-[#bdac7e] hover:text-foreground transition-colors">
-                        <Plus className="h-3.5 w-3.5" /> Add Other Income
-                      </button>
-                    </div>
-                  </div>
-                  </>
-                  )}
-                  {privateGate.dialog}
-                </div>
-                )}
-
-                {modalTab === 'documents' && (
-                <div className="space-y-5">
-                  <div className="flex justify-end">
-                    <PrivateDataRevealButton revealed={privateGate.revealed} onReveal={privateGate.requestReveal} onHide={privateGate.hide} label="Show Documents" />
-                  </div>
-
-                  {!privateGate.revealed ? (
-                    <div className="border-2 border-dashed rounded-xl py-12 text-center text-sm text-muted-foreground">
-                      Documents are hidden. Click &quot;Show Documents&quot; and enter your password to view &amp; upload.
-                    </div>
-                  ) : (
-                  <>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Buku Pelaut</label>
-                    <MultiFilePicker files={form.seamanBookFiles} onChange={files => setForm(f => ({ ...f, seamanBookFiles: files }))} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">BST (Basic Safety Training)</label>
-                    <MultiFilePicker files={form.bstFiles} onChange={files => setForm(f => ({ ...f, bstFiles: files }))} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Medical Check Up</label>
-                    <MultiFilePicker files={form.medicalCheckupFiles} onChange={files => setForm(f => ({ ...f, medicalCheckupFiles: files }))} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Ijazah</label>
-                    <MultiFilePicker files={form.ijazahFiles} onChange={files => setForm(f => ({ ...f, ijazahFiles: files }))} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Certificates</label>
-                    <MultiFilePicker files={form.certificateFiles} onChange={files => setForm(f => ({ ...f, certificateFiles: files }))} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Contract</label>
-                    <MultiFilePicker files={form.contractFiles} onChange={files => setForm(f => ({ ...f, contractFiles: files }))} />
-                    <p className="text-[11px] text-muted-foreground">Expiry is the Contract End date (Details tab, optional) — shows on HR Overview&apos;s Contracts Expiring Soon list.</p>
-                  </div>
-                  </>
-                  )}
-                  {privateGate.dialog}
-                </div>
-                )}
-
-                {modalTab === 'assets' && (
-                  editing ? <CompanyAssetsTab employeeId={editing.id} /> : (
-                    <div className="text-sm text-muted-foreground text-center py-8">Save this employee first, then come back to record the company items assigned to them.</div>
-                  )
-                )}
-              </div>
-
-              <div className="flex items-center justify-between px-6 py-4 border-t bg-gray-50/80">
-                <button onClick={() => setModal(false)} className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground border rounded-xl hover:bg-white transition-all">
-                  Cancel
-                </button>
-                <button onClick={save} disabled={saving} className="flex items-center gap-2 px-6 py-2.5 text-sm text-white rounded-xl font-semibold disabled:opacity-50 transition-colors shadow-sm bg-[#bdac7e] hover:bg-[#a89860]">
-                  {saving ? 'Saving...' : editing ? 'Save Changes' : 'Add Employee'}
-                </button>
-              </div>
+              <DialogClose asChild>
+                <Button variant="ghost" size="icon" aria-label="Close" className="size-7 text-primary-foreground/70 hover:text-primary-foreground hover:bg-primary-foreground/20">
+                  <X className="h-4 w-4" />
+                </Button>
+              </DialogClose>
             </div>
           </div>
-        </>
-      )}
+
+          {/* Tabs */}
+          <div className="flex items-center gap-1 px-6 pt-4 border-b bg-muted/30">
+            {([
+              { value: 'details', label: 'Details' },
+              { value: 'contact', label: 'Contact Info' },
+              { value: 'bank', label: 'Bank & Tax' },
+              { value: 'salary', label: 'Salary' },
+              { value: 'documents', label: 'Documents' },
+              { value: 'assets', label: 'Company Assets' },
+            ] as const).map(t => (
+              <button key={t.value} type="button" onClick={() => setModalTab(t.value)}
+                className={`px-3.5 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+                  modalTab === t.value ? 'border-primary text-primary-strong' : 'border-transparent text-muted-foreground hover:text-foreground'
+                }`}>
+                {t.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="px-6 py-5 space-y-4 max-h-[70vh] overflow-y-auto">
+            {formError && (
+              <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 border border-destructive/30 rounded-xl px-4 py-3">
+                <AlertTriangle className="h-4 w-4 shrink-0" /> {formError}
+              </div>
+            )}
+
+            {modalTab === 'details' && (
+            <div className="grid grid-cols-2 gap-4">
+              <div className="col-span-2 space-y-1.5">
+                <Label htmlFor="emp-full-name" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                  Full Name <span className="text-destructive normal-case">*</span>
+                </Label>
+                <Input
+                  id="emp-full-name"
+                  value={form.fullName} onChange={e => setForm(f => ({ ...f, fullName: e.target.value }))} autoFocus
+                />
+              </div>
+
+              <div className="col-span-2 space-y-1.5">
+                <Label htmlFor="emp-nick-name" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Nickname</Label>
+                <Input
+                  id="emp-nick-name"
+                  value={form.nickName} onChange={e => setForm(f => ({ ...f, nickName: e.target.value }))}
+                />
+              </div>
+
+              <div className="col-span-2 space-y-1.5">
+                <Label htmlFor="emp-employee-number" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Employee Number</Label>
+                <Input
+                  id="emp-employee-number"
+                  placeholder="Generated if blank"
+                  value={form.employeeNumber} onChange={e => setForm(f => ({ ...f, employeeNumber: e.target.value }))}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="emp-legal-entity-id" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Legal Entity</Label>
+                <NativeSelect
+                  id="emp-legal-entity-id"
+                  value={form.legalEntityId} onChange={e => setForm(f => ({ ...f, legalEntityId: e.target.value }))}
+                >
+                  <option value="">—</option>
+                  {legalEntities.map(le => <option key={le.id} value={le.id}>{le.name}</option>)}
+                </NativeSelect>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="emp-business-unit-id" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Business Unit</Label>
+                <NativeSelect
+                  id="emp-business-unit-id"
+                  value={form.businessUnitId} onChange={e => setForm(f => ({ ...f, businessUnitId: e.target.value }))}
+                >
+                  <option value="">—</option>
+                  {businessUnits.map(bu => <option key={bu.id} value={bu.id}>{bu.name}</option>)}
+                </NativeSelect>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="emp-location-id" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Work Location</Label>
+                <NativeSelect
+                  id="emp-location-id"
+                  value={form.locationId} onChange={e => setForm(f => ({ ...f, locationId: e.target.value }))}
+                >
+                  <option value="">—</option>
+                  {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                </NativeSelect>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="emp-department" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Department</Label>
+                <NativeSelect
+                  id="emp-department"
+                  value={form.department} onChange={e => setForm(f => ({ ...f, department: e.target.value }))}
+                >
+                  <option value="">—</option>
+                  {withCurrent(DEPARTMENTS, form.department).map(d => <option key={d} value={d}>{d}</option>)}
+                </NativeSelect>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="emp-role-id" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Role / Position</Label>
+                <NativeSelect
+                  id="emp-role-id"
+                  value={form.roleId} onChange={e => setForm(f => ({ ...f, roleId: e.target.value }))}
+                >
+                  <option value="">—</option>
+                  {roles.map(r => <option key={r.id} value={r.id}>{r.title}</option>)}
+                </NativeSelect>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="emp-level" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Level</Label>
+                <NativeSelect
+                  id="emp-level"
+                  value={form.level} onChange={e => setForm(f => ({ ...f, level: e.target.value }))}
+                >
+                  <option value="">—</option>
+                  <option value="HIGH">High</option>
+                  <option value="MEDIUM">Medium</option>
+                  <option value="LOW">Low</option>
+                </NativeSelect>
+                <p className="text-[11px] text-muted-foreground">Skill tier within the role — compared against the approved salary range on Roles &amp; Compensation.</p>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="emp-employment-status" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Employment Status</Label>
+                <NativeSelect
+                  id="emp-employment-status"
+                  value={form.employmentStatus} onChange={e => setForm(f => ({ ...f, employmentStatus: e.target.value }))}
+                >
+                  <option value="">—</option>
+                  {withCurrent(EMPLOYMENT_STATUSES, form.employmentStatus).map(s => <option key={s} value={s}>{s}</option>)}
+                </NativeSelect>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="emp-gender" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Gender</Label>
+                <NativeSelect
+                  id="emp-gender"
+                  value={form.gender} onChange={e => setForm(f => ({ ...f, gender: e.target.value }))}
+                >
+                  <option value="">—</option>
+                  {GENDERS.map(g => <option key={g} value={g}>{g}</option>)}
+                </NativeSelect>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="emp-join-date" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Join Date</Label>
+                <Input
+                  id="emp-join-date"
+                  type="date"
+                  value={form.joinDate} onChange={e => setForm(f => ({ ...f, joinDate: e.target.value }))}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="emp-leave-balance" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Leave Balance (days)</Label>
+                <Input
+                  id="emp-leave-balance"
+                  type="number"
+                  placeholder="e.g. 12"
+                  value={form.leaveBalance} onChange={e => setForm(f => ({ ...f, leaveBalance: e.target.value }))}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="emp-contract-start-date" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Contract Start</Label>
+                <Input
+                  id="emp-contract-start-date"
+                  type="date"
+                  value={form.contractStartDate} onChange={e => setForm(f => ({ ...f, contractStartDate: e.target.value }))}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="emp-contract-end-date" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Contract End</Label>
+                <Input
+                  id="emp-contract-end-date"
+                  type="date"
+                  placeholder="Leave blank for permanent staff"
+                  value={form.contractEndDate} onChange={e => setForm(f => ({ ...f, contractEndDate: e.target.value }))}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="emp-leave-entitlement-policy" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Leave Entitlement</Label>
+                <NativeSelect
+                  id="emp-leave-entitlement-policy"
+                  value={form.leaveEntitlementPolicy} onChange={e => setForm(f => ({ ...f, leaveEntitlementPolicy: e.target.value }))}
+                >
+                  <option value="">—</option>
+                  {withCurrent(LEAVE_ENTITLEMENT_POLICIES, form.leaveEntitlementPolicy).map(p => <option key={p} value={p}>{LEAVE_POLICY_LABEL[p] ?? p}</option>)}
+                </NativeSelect>
+              </div>
+
+              <div className="col-span-2 space-y-1.5">
+                <Label htmlFor="emp-manager-id" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Reports To (Manager)</Label>
+                <ManagerCombobox
+                  id="emp-manager-id"
+                  value={form.managerId}
+                  options={employees.filter(e => e.isActive && e.id !== editing?.id)}
+                  onChange={id => setForm(f => ({ ...f, managerId: id }))}
+                />
+                <p className="text-[11px] text-muted-foreground">Drives who approves this employee&apos;s purchase requests.</p>
+              </div>
+
+              <div className="col-span-2 space-y-1.5">
+                <Label htmlFor="emp-user-id" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Linked Login Account</Label>
+                <UserCombobox
+                  id="emp-user-id"
+                  value={form.userId}
+                  options={users.filter(u => u.id === form.userId || !employees.some(e => e.userId === u.id && e.id !== editing?.id))}
+                  onChange={id => setForm(f => ({ ...f, userId: id }))}
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  {users.length === 0 ? 'Only Admin/Super Admin can link login accounts.' : 'Required for this person to approve requests or receive notifications.'}
+                </p>
+              </div>
+            </div>
+            )}
+
+            {modalTab === 'contact' && (
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="emp-phone" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Phone Number</Label>
+                <div className="relative">
+                  <Phone className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/70 pointer-events-none" />
+                  <Input
+                    id="emp-phone"
+                    className="pl-10"
+                    placeholder="e.g. 0812-3456-7890"
+                    value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="emp-personal-email" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Personal Email</Label>
+                <Input
+                  id="emp-personal-email"
+                  placeholder="personal@email.com"
+                  value={form.personalEmail} onChange={e => setForm(f => ({ ...f, personalEmail: e.target.value }))}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="emp-birth-date" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Birth Date</Label>
+                <div className="relative">
+                  <Cake className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/70 pointer-events-none" />
+                  <Input
+                    id="emp-birth-date"
+                    type="date"
+                    className="pl-10"
+                    value={form.birthDate} onChange={e => setForm(f => ({ ...f, birthDate: e.target.value }))}
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="emp-place-of-birth" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Place of Birth</Label>
+                <Input
+                  id="emp-place-of-birth"
+                  value={form.placeOfBirth} onChange={e => setForm(f => ({ ...f, placeOfBirth: e.target.value }))}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="emp-nik-passport" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">NIK / Passport</Label>
+                <Input
+                  id="emp-nik-passport"
+                  value={form.nikPassport} onChange={e => setForm(f => ({ ...f, nikPassport: e.target.value }))}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="emp-nationality" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Nationality</Label>
+                <Input
+                  id="emp-nationality"
+                  placeholder="e.g. Indonesia"
+                  value={form.nationality} onChange={e => setForm(f => ({ ...f, nationality: e.target.value }))}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="emp-religion" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Religion</Label>
+                <Input
+                  id="emp-religion"
+                  value={form.religion} onChange={e => setForm(f => ({ ...f, religion: e.target.value }))}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="emp-marital-status" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Marital Status (PTKP)</Label>
+                <NativeSelect
+                  id="emp-marital-status"
+                  value={form.maritalStatus} onChange={e => setForm(f => ({ ...f, maritalStatus: e.target.value }))}
+                >
+                  <option value="">—</option>
+                  {withCurrent(MARITAL_STATUSES, form.maritalStatus).map(m => <option key={m} value={m}>{m}</option>)}
+                </NativeSelect>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="emp-mother-name" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Mother&apos;s Name</Label>
+                <Input
+                  id="emp-mother-name"
+                  value={form.motherName} onChange={e => setForm(f => ({ ...f, motherName: e.target.value }))}
+                />
+              </div>
+
+              <div className="col-span-2 space-y-1.5">
+                <Label htmlFor="emp-address" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Address 1 (as per ID)</Label>
+                <div className="relative">
+                  <MapPin className="absolute left-3.5 top-2.5 h-4 w-4 text-muted-foreground/70 pointer-events-none" />
+                  <Textarea
+                    id="emp-address"
+                    className="pl-10 resize-none"
+                    placeholder="Full address as per KTP"
+                    rows={2}
+                    value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))}
+                  />
+                </div>
+              </div>
+
+              <div className="col-span-2 space-y-1.5">
+                <Label htmlFor="emp-address-current" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Address 2 (current, if different)</Label>
+                <div className="relative">
+                  <MapPin className="absolute left-3.5 top-2.5 h-4 w-4 text-muted-foreground/70 pointer-events-none" />
+                  <Textarea
+                    id="emp-address-current"
+                    className="pl-10 resize-none"
+                    placeholder="Current address, if different from KTP"
+                    rows={2}
+                    value={form.addressCurrent} onChange={e => setForm(f => ({ ...f, addressCurrent: e.target.value }))}
+                  />
+                </div>
+              </div>
+
+              <div className="col-span-2 border-t border-dashed pt-4">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Emergency Contact</p>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="col-span-2 space-y-1.5">
+                    <Label htmlFor="emp-emergency-contact-name" className="text-xs font-normal text-muted-foreground">Name</Label>
+                    <Input
+                      id="emp-emergency-contact-name"
+                      value={form.emergencyContactName} onChange={e => setForm(f => ({ ...f, emergencyContactName: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="emp-emergency-contact-phone" className="text-xs font-normal text-muted-foreground">Phone No.</Label>
+                    <Input
+                      id="emp-emergency-contact-phone"
+                      value={form.emergencyContactPhone} onChange={e => setForm(f => ({ ...f, emergencyContactPhone: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="emp-emergency-contact-relation" className="text-xs font-normal text-muted-foreground">Relation</Label>
+                    <Input
+                      id="emp-emergency-contact-relation"
+                      placeholder="e.g. Spouse, Parent"
+                      value={form.emergencyContactRelation} onChange={e => setForm(f => ({ ...f, emergencyContactRelation: e.target.value }))}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+            )}
+
+            {modalTab === 'bank' && (
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="emp-npwp" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">NPWP</Label>
+                <Input
+                  id="emp-npwp"
+                  value={form.npwp} onChange={e => setForm(f => ({ ...f, npwp: e.target.value }))}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="emp-kk-number" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Family Card (KK) No.</Label>
+                <Input
+                  id="emp-kk-number"
+                  value={form.kkNumber} onChange={e => setForm(f => ({ ...f, kkNumber: e.target.value }))}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="emp-bpjs-kesehatan-number" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">BPJS Kesehatan No.</Label>
+                <Input
+                  id="emp-bpjs-kesehatan-number"
+                  value={form.bpjsKesehatanNumber} onChange={e => setForm(f => ({ ...f, bpjsKesehatanNumber: e.target.value }))}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="emp-bpjs-tk-number" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">BPJS Ketenagakerjaan No.</Label>
+                <Input
+                  id="emp-bpjs-tk-number"
+                  value={form.bpjsTkNumber} onChange={e => setForm(f => ({ ...f, bpjsTkNumber: e.target.value }))}
+                />
+              </div>
+
+              <div className="col-span-2 border-t border-dashed pt-4">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Bank Details</p>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="emp-bank-name" className="text-xs font-normal text-muted-foreground">Bank Name</Label>
+                    <Input
+                      id="emp-bank-name"
+                      placeholder="e.g. Bank Mandiri"
+                      value={form.bankName} onChange={e => setForm(f => ({ ...f, bankName: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="emp-bank-account-number" className="text-xs font-normal text-muted-foreground">Account No.</Label>
+                    <Input
+                      id="emp-bank-account-number"
+                      value={form.bankAccountNumber} onChange={e => setForm(f => ({ ...f, bankAccountNumber: e.target.value }))}
+                    />
+                  </div>
+                  <div className="col-span-2 space-y-1.5">
+                    <Label htmlFor="emp-bank-account-name" className="text-xs font-normal text-muted-foreground">Account Holder Name</Label>
+                    <Input
+                      id="emp-bank-account-name"
+                      value={form.bankAccountName} onChange={e => setForm(f => ({ ...f, bankAccountName: e.target.value }))}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+            )}
+
+            {modalTab === 'salary' && (
+            <div className="space-y-5">
+              <div className="flex justify-end">
+                <PrivateDataRevealButton revealed={privateGate.revealed} onReveal={privateGate.requestReveal} onHide={privateGate.hide} label="Show Amounts" />
+              </div>
+
+              {!privateGate.revealed ? (
+                <div className="border-2 border-dashed rounded-xl py-12 text-center text-sm text-muted-foreground">
+                  Salary figures are hidden. Click &quot;Show Amounts&quot; and enter your password to view &amp; edit.
+                </div>
+              ) : (
+              <>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="block space-y-1.5">
+                    <span className="block text-xs font-semibold text-muted-foreground uppercase tracking-wide">Basic Salary</span>
+                    <RupiahInput value={form.basicSalary} onChange={digits => setForm(f => ({ ...f, basicSalary: digits }))} />
+                  </label>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="block space-y-1.5">
+                    <span className="block text-xs font-semibold text-muted-foreground uppercase tracking-wide">Allowance</span>
+                    <RupiahInput value={form.allowance} onChange={digits => setForm(f => ({ ...f, allowance: digits }))} />
+                  </label>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="block space-y-1.5">
+                    <span className="block text-xs font-semibold text-muted-foreground uppercase tracking-wide">Uang Layar (base rate)</span>
+                    <RupiahInput value={form.uangLayar} onChange={digits => setForm(f => ({ ...f, uangLayar: digits }))} />
+                  </label>
+                  <p className="text-[11px] text-muted-foreground">For crew stationed on a yacht (Work Location = yacht name), Payroll multiplies this by that yacht&apos;s trip days each period. Shore-based staff get this flat.</p>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="block space-y-1.5">
+                    <span className="block text-xs font-semibold text-muted-foreground uppercase tracking-wide">Meal Allowance (per day)</span>
+                    <RupiahInput value={form.uangMakan} onChange={digits => setForm(f => ({ ...f, uangMakan: digits }))} />
+                  </label>
+                  <p className="text-[11px] text-muted-foreground">Daily rate — Payroll multiplies this by days actually present (from Attendance Recap) each period.</p>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="block space-y-1.5">
+                    <span className="block text-xs font-semibold text-muted-foreground uppercase tracking-wide">THR</span>
+                    <RupiahInput value={form.thr} onChange={digits => setForm(f => ({ ...f, thr: digits }))} />
+                  </label>
+                  <p className="text-[11px] text-muted-foreground">Pre-fills the payslip&apos;s THR line at generation — still editable per period.</p>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <p id="emp-other-income-label" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Other Income</p>
+                <div className="space-y-2" role="group" aria-labelledby="emp-other-income-label">
+                  {form.otherIncome.map(item => (
+                    <div key={item.id} className="flex items-start gap-2 border-2 border-border rounded-xl p-2.5">
+                      <div className="flex-1 space-y-1 min-w-0">
+                        <Input value={item.name} onChange={e => updateOtherIncomeRow(item.id, { name: e.target.value })} placeholder="Name"
+                          aria-label="Income name" className="h-8 font-medium" />
+                        <Input value={item.description} onChange={e => updateOtherIncomeRow(item.id, { description: e.target.value })} placeholder="Description (optional)"
+                          aria-label="Income description" className="h-8 text-muted-foreground" />
+                      </div>
+                      <label className="w-32 shrink-0">
+                        <span className="sr-only">Amount</span>
+                        <RupiahInput value={String(item.amount)} onChange={digits => updateOtherIncomeRow(item.id, { amount: Number(digits) || 0 })} />
+                      </label>
+                      <Button type="button" variant="ghost" size="icon" onClick={() => removeOtherIncomeRow(item.id)} aria-label="Remove income"
+                        className="size-7 text-muted-foreground hover:text-destructive shrink-0">
+                        <X className="size-3.5" />
+                      </Button>
+                    </div>
+                  ))}
+                  <Button type="button" variant="outline" onClick={addOtherIncomeRow}
+                    className="w-full gap-1.5 border-2 border-dashed rounded-xl text-muted-foreground shadow-none hover:border-primary hover:text-foreground">
+                    <Plus className="size-3.5" /> Add Other Income
+                  </Button>
+                </div>
+              </div>
+              </>
+              )}
+              {privateGate.dialog}
+            </div>
+            )}
+
+            {modalTab === 'documents' && (
+            <div className="space-y-5">
+              <div className="flex justify-end">
+                <PrivateDataRevealButton revealed={privateGate.revealed} onReveal={privateGate.requestReveal} onHide={privateGate.hide} label="Show Documents" />
+              </div>
+
+              {!privateGate.revealed ? (
+                <div className="border-2 border-dashed rounded-xl py-12 text-center text-sm text-muted-foreground">
+                  Documents are hidden. Click &quot;Show Documents&quot; and enter your password to view &amp; upload.
+                </div>
+              ) : (
+              <>
+              <div className="space-y-1.5" role="group" aria-labelledby="emp-seaman-book-files-label">
+                <p id="emp-seaman-book-files-label" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Seaman Book</p>
+                <MultiFilePicker files={form.seamanBookFiles} onChange={files => setForm(f => ({ ...f, seamanBookFiles: files }))} />
+              </div>
+              <div className="space-y-1.5" role="group" aria-labelledby="emp-bst-files-label">
+                <p id="emp-bst-files-label" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">BST (Basic Safety Training)</p>
+                <MultiFilePicker files={form.bstFiles} onChange={files => setForm(f => ({ ...f, bstFiles: files }))} />
+              </div>
+              <div className="space-y-1.5" role="group" aria-labelledby="emp-medical-checkup-files-label">
+                <p id="emp-medical-checkup-files-label" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Medical Check Up</p>
+                <MultiFilePicker files={form.medicalCheckupFiles} onChange={files => setForm(f => ({ ...f, medicalCheckupFiles: files }))} />
+              </div>
+              <div className="space-y-1.5" role="group" aria-labelledby="emp-ijazah-files-label">
+                <p id="emp-ijazah-files-label" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Diploma</p>
+                <MultiFilePicker files={form.ijazahFiles} onChange={files => setForm(f => ({ ...f, ijazahFiles: files }))} />
+              </div>
+              <div className="space-y-1.5" role="group" aria-labelledby="emp-certificate-files-label">
+                <p id="emp-certificate-files-label" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Certificates</p>
+                <MultiFilePicker files={form.certificateFiles} onChange={files => setForm(f => ({ ...f, certificateFiles: files }))} />
+              </div>
+              <div className="space-y-1.5" role="group" aria-labelledby="emp-contract-files-label">
+                <p id="emp-contract-files-label" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Contract</p>
+                <MultiFilePicker files={form.contractFiles} onChange={files => setForm(f => ({ ...f, contractFiles: files }))} />
+                <p className="text-[11px] text-muted-foreground">Expiry is the Contract End date (Details tab, optional) — shows on HR Overview&apos;s Contracts Expiring Soon list.</p>
+              </div>
+              </>
+              )}
+              {privateGate.dialog}
+            </div>
+            )}
+
+            {modalTab === 'assets' && (
+              editing ? <CompanyAssetsTab employeeId={editing.id} /> : (
+                <div className="text-sm text-muted-foreground text-center py-8">Save this employee first, then come back to record the company items assigned to them.</div>
+              )
+            )}
+          </div>
+
+          <DialogFooter className="sm:justify-between px-6 py-4 border-t bg-muted/50">
+            <Button variant="outline" onClick={() => setModal(false)} className="text-muted-foreground">
+              Cancel
+            </Button>
+            <Button onClick={save} loading={saving}>
+              {saving ? 'Saving…' : editing ? 'Save Changes' : 'Add Employee'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* ── Employee Detail (read-only) ── */}
       {detailEmployee && (
@@ -1780,113 +1826,97 @@ export default function EmployeesPage() {
         />
       )}
 
-      {/* ── Delete Confirm ── */}
-      {deleteConfirm && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6">
-            <h3 className="font-semibold mb-2">Delete Employee?</h3>
-            <p className="text-sm text-muted-foreground mb-4">
-              <span className="font-medium text-foreground">{deleteConfirm.fullName}</span> ({deleteConfirm.employeeNumber}) will be permanently deleted.
-            </p>
-            <div className="flex gap-3 justify-end">
-              <button onClick={() => setDeleteConfirm(null)} className="px-4 py-2 text-sm border rounded-md hover:bg-muted">Cancel</button>
-              <button onClick={() => doDelete(deleteConfirm)} className="px-4 py-2 text-sm bg-destructive text-white rounded-md hover:bg-destructive/90">Delete</button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* ── Deactivate / Resignation Modal ── */}
-      {deactivateTarget && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm overflow-hidden">
-            <div className="flex items-center gap-3 px-6 py-5 border-b">
-              <div className="p-2 rounded-full bg-red-50">
-                <UserX className="h-5 w-5 text-red-600" />
+      <Dialog open={!!deactivateTarget} onOpenChange={o => { if (!o) setDeactivateTarget(null) }}>
+        <DialogContent className="sm:max-w-sm p-0 gap-0 overflow-hidden" showCloseButton={false} onInteractOutside={e => e.preventDefault()}>
+          {deactivateTarget && (<>
+            <DialogHeader className="flex-row items-center gap-3 px-6 py-5 border-b text-left">
+              <div className="p-2 rounded-full bg-destructive/10 shrink-0">
+                <UserX className="h-5 w-5 text-destructive" />
               </div>
               <div>
-                <h3 className="font-semibold text-base leading-tight">Deactivate Employee</h3>
-                <p className="text-xs text-muted-foreground mt-0.5">
+                <DialogTitle className="font-semibold text-base leading-tight">Deactivate Employee</DialogTitle>
+                <DialogDescription className="text-xs text-muted-foreground mt-0.5">
                   <span className="font-medium text-foreground">{deactivateTarget.fullName}</span> ({deactivateTarget.employeeNumber})
-                </p>
+                </DialogDescription>
               </div>
-            </div>
+            </DialogHeader>
 
             <div className="px-6 py-5 space-y-4">
               <p className="text-sm text-muted-foreground">Is this employee resigning? Record the details below.</p>
 
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Status</label>
-                <select
-                  className="w-full border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
+                <Label htmlFor="emp-resign-status" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Status</Label>
+                <NativeSelect
+                  id="emp-resign-status"
                   value={resignForm.resignStatus} onChange={e => setResignForm(f => ({ ...f, resignStatus: e.target.value }))}
                 >
                   {RESIGN_STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
-                </select>
+                </NativeSelect>
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Resignation Date</label>
-                <input
+                <Label htmlFor="emp-resigned-at" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Resignation Date</Label>
+                <Input
+                  id="emp-resigned-at"
                   type="date"
-                  className="w-full border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
                   value={resignForm.resignedAt} onChange={e => setResignForm(f => ({ ...f, resignedAt: e.target.value }))}
                 />
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Reason</label>
-                <textarea
-                  className="w-full border rounded-md px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-amber-500"
+                <Label htmlFor="emp-resign-reason" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Reason</Label>
+                <Textarea
+                  id="emp-resign-reason"
+                  className="resize-none"
                   rows={3}
-                  placeholder="Optional notes on why this employee is leaving..."
+                  placeholder="Optional notes on why this employee is leaving…"
                   value={resignForm.resignReason} onChange={e => setResignForm(f => ({ ...f, resignReason: e.target.value }))}
                 />
               </div>
             </div>
 
-            <div className="flex gap-3 justify-end px-6 py-4 border-t bg-muted/20">
-              <button onClick={() => setDeactivateTarget(null)} className="px-4 py-2 text-sm border rounded-md hover:bg-muted">Cancel</button>
-              <button onClick={confirmDeactivate} disabled={deactivating} className="px-4 py-2 text-sm bg-destructive text-white rounded-md hover:bg-destructive/90 disabled:opacity-50">
-                {deactivating ? 'Deactivating...' : 'Deactivate'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+            <DialogFooter className="gap-3 px-6 py-4 border-t bg-muted/20">
+              <Button variant="outline" onClick={() => setDeactivateTarget(null)}>Cancel</Button>
+              <Button variant="destructive" onClick={confirmDeactivate} loading={deactivating}>
+                {deactivating ? 'Deactivating…' : 'Deactivate'}
+              </Button>
+            </DialogFooter>
+          </>)}
+        </DialogContent>
+      </Dialog>
 
       {/* ── Import Result Modal ── */}
-      {importResult && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
-            <div className="flex items-center justify-between p-6 border-b">
-              <h3 className="font-semibold text-lg">CSV Import Results</h3>
-              <button onClick={() => setImportResult(null)}><X className="h-5 w-5 text-muted-foreground" /></button>
-            </div>
+      <Dialog open={!!importResult} onOpenChange={o => { if (!o) setImportResult(null) }}>
+        <DialogContent className="sm:max-w-md p-0 gap-0 overflow-hidden" onInteractOutside={e => e.preventDefault()}>
+          {importResult && (<>
+            <DialogHeader className="p-6 pr-12 border-b">
+              <DialogTitle className="font-semibold text-lg">CSV Import Results</DialogTitle>
+            </DialogHeader>
             <div className="p-6 space-y-4">
               <div className="grid grid-cols-3 gap-3">
-                <div className="rounded-lg bg-green-50 border border-green-200 p-3 text-center">
-                  <p className="text-2xl font-bold text-green-700">{importResult.imported}</p>
-                  <p className="text-xs text-green-600 mt-0.5">New employees</p>
+                <div className="rounded-lg bg-success/10 border border-success/30 p-3 text-center">
+                  <p className="text-2xl font-bold text-success">{importResult.imported}</p>
+                  <p className="text-xs text-success mt-0.5">New employees</p>
                 </div>
-                <div className="rounded-lg bg-blue-50 border border-blue-200 p-3 text-center">
-                  <p className="text-2xl font-bold text-blue-700">{importResult.updated}</p>
-                  <p className="text-xs text-blue-600 mt-0.5">Updated</p>
+                <div className="rounded-lg bg-info/10 border border-info/30 p-3 text-center">
+                  <p className="text-2xl font-bold text-info">{importResult.updated}</p>
+                  <p className="text-xs text-info mt-0.5">Updated</p>
                 </div>
-                <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-center">
-                  <p className="text-2xl font-bold text-red-700">{importResult.errors.length}</p>
-                  <p className="text-xs text-red-600 mt-0.5">Errors</p>
+                <div className="rounded-lg bg-destructive/10 border border-destructive/30 p-3 text-center">
+                  <p className="text-2xl font-bold text-destructive">{importResult.errors.length}</p>
+                  <p className="text-xs text-destructive mt-0.5">Errors</p>
                 </div>
               </div>
 
               {importResult.errors.length === 0 ? (
-                <div className="flex items-center gap-2 text-green-700 bg-green-50 rounded-lg px-4 py-3">
+                <div className="flex items-center gap-2 text-success bg-success/10 rounded-lg px-4 py-3">
                   <CheckCircle2 className="h-4 w-4 shrink-0" />
                   <p className="text-sm font-medium">All {importResult.total} rows processed successfully</p>
                 </div>
               ) : (
                 <div className="space-y-2">
-                  <div className="flex items-center gap-2 text-amber-700 bg-amber-50 rounded-lg px-4 py-3">
+                  <div className="flex items-center gap-2 text-warning bg-warning/10 rounded-lg px-4 py-3">
                     <AlertCircle className="h-4 w-4 shrink-0" />
                     <p className="text-sm">{importResult.total} succeeded, {importResult.errors.length} rows failed:</p>
                   </div>
@@ -1894,7 +1924,7 @@ export default function EmployeesPage() {
                     {importResult.errors.map((e, i) => (
                       <div key={i} className="px-3 py-2 flex gap-3">
                         <span className="text-muted-foreground shrink-0">Row {e.row}</span>
-                        <span className="font-mono text-xs shrink-0 text-amber-700">{e.sku}</span>
+                        <span className="font-mono text-xs shrink-0 text-warning">{e.sku}</span>
                         <span className="text-destructive text-xs">{e.error}</span>
                       </div>
                     ))}
@@ -1902,14 +1932,14 @@ export default function EmployeesPage() {
                 </div>
               )}
             </div>
-            <div className="flex justify-end px-6 py-4 border-t bg-muted/30">
-              <button onClick={() => setImportResult(null)} className="px-4 py-2 text-sm bg-amber-600 text-white rounded-md hover:bg-amber-700 font-medium transition-colors">
+            <DialogFooter className="px-6 py-4 border-t bg-muted/30">
+              <Button onClick={() => setImportResult(null)}>
                 Done
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+              </Button>
+            </DialogFooter>
+          </>)}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
@@ -1992,9 +2022,9 @@ function CompanyAssetsTab({ employeeId }: { employeeId: string }) {
 
       <div className="space-y-2">
         {assets.map(a => (
-          <div key={a.id} className={`border-2 rounded-xl p-3 flex items-start gap-3 ${a.isReturned ? 'border-green-100 bg-green-50/40' : 'border-gray-100'}`}>
-            <button type="button" onClick={() => toggleReturned(a)} title={a.isReturned ? 'Mark as not returned' : 'Mark as returned'} className="mt-0.5 shrink-0">
-              {a.isReturned ? <ToggleRight className="h-6 w-6 text-green-600" /> : <ToggleLeft className="h-6 w-6 text-muted-foreground" />}
+          <div key={a.id} className={`border-2 rounded-xl p-3 flex items-start gap-3 ${a.isReturned ? 'border-success/30 bg-success/5' : 'border-border'}`}>
+            <button type="button" onClick={() => toggleReturned(a)} title={a.isReturned ? 'Mark as not returned' : 'Mark as returned'} aria-label={a.isReturned ? 'Mark as not returned' : 'Mark as returned'} className="mt-0.5 shrink-0">
+              {a.isReturned ? <ToggleRight className="h-6 w-6 text-success" /> : <ToggleLeft className="h-6 w-6 text-muted-foreground" />}
             </button>
             {a.photoUrl ? (
               <img src={a.photoUrl} alt={a.itemName} className="w-12 h-12 rounded-lg object-cover border shrink-0" />
@@ -2007,30 +2037,31 @@ function CompanyAssetsTab({ employeeId }: { employeeId: string }) {
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="font-medium text-sm">{a.itemName}</span>
                 {a.category && <span className="text-[10px] uppercase tracking-wide text-muted-foreground bg-muted px-1.5 py-0.5 rounded">{a.category}</span>}
-                {a.isReturned && <span className="text-[10px] font-semibold text-green-700">Returned</span>}
+                {a.isReturned && <span className="text-[10px] font-semibold text-success">Returned</span>}
               </div>
               <div className="text-xs text-muted-foreground mt-0.5">
                 {a.serialNumber && <>S/N {a.serialNumber} · </>}
-                Assigned {new Date(a.assignedDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                Assigned {formatDate(a.assignedDate)}
                 {a.condition && <> · Condition: {a.condition}</>}
               </div>
               {a.notes && <div className="text-xs text-muted-foreground mt-0.5">{a.notes}</div>}
             </div>
-            <button type="button" onClick={() => removeAsset(a.id)} className="p-1 text-muted-foreground hover:text-destructive shrink-0">
-              <X className="h-3.5 w-3.5" />
-            </button>
+            <Button type="button" variant="ghost" size="icon" onClick={() => removeAsset(a.id)} aria-label={`Remove ${a.itemName}`}
+              className="size-6 text-muted-foreground hover:text-destructive shrink-0">
+              <X className="size-3.5" />
+            </Button>
           </div>
         ))}
       </div>
 
       {adding ? (
-        <div className="border-2 border-gray-100 rounded-xl p-3 space-y-2">
-          <div {...assetPhotoDropProps} className={`flex items-center gap-3 rounded-lg p-1.5 -m-1.5 transition-colors ${isDraggingAssetPhoto ? 'ring-2 ring-amber-400 bg-amber-50' : ''}`}>
+        <div className="border-2 border-border rounded-xl p-3 space-y-2">
+          <div {...assetPhotoDropProps} className={`flex items-center gap-3 rounded-lg p-1.5 -m-1.5 transition-colors ${isDraggingAssetPhoto ? 'ring-2 ring-primary bg-primary/10' : ''}`}>
             {form.photoUrl ? (
               <div className="relative shrink-0">
                 <img src={form.photoUrl} alt="Asset" className="w-16 h-16 rounded-lg object-cover border" />
-                <button type="button" onClick={() => setForm(f => ({ ...f, photoUrl: null }))}
-                  className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-destructive text-white flex items-center justify-center text-xs">×</button>
+                <button type="button" onClick={() => setForm(f => ({ ...f, photoUrl: null }))} aria-label="Remove photo"
+                  className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center text-xs">×</button>
               </div>
             ) : (
               <div className="w-16 h-16 rounded-lg border-2 border-dashed border-muted flex items-center justify-center text-muted-foreground shrink-0">
@@ -2051,25 +2082,25 @@ function CompanyAssetsTab({ employeeId }: { employeeId: string }) {
             </label>
           </div>
           <div className="grid grid-cols-2 gap-2">
-            <input placeholder="Item name *" value={form.itemName} onChange={e => setForm(f => ({ ...f, itemName: e.target.value }))} className="border rounded-lg px-3 py-2 text-sm" autoFocus />
-            <input placeholder="Category (e.g. Laptop)" value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))} className="border rounded-lg px-3 py-2 text-sm" />
-            <input placeholder="Serial number" value={form.serialNumber} onChange={e => setForm(f => ({ ...f, serialNumber: e.target.value }))} className="border rounded-lg px-3 py-2 text-sm" />
-            <input placeholder="Condition (e.g. New)" value={form.condition} onChange={e => setForm(f => ({ ...f, condition: e.target.value }))} className="border rounded-lg px-3 py-2 text-sm" />
-            <input type="date" value={form.assignedDate} onChange={e => setForm(f => ({ ...f, assignedDate: e.target.value }))} className="border rounded-lg px-3 py-2 text-sm" />
+            <Input aria-label="Item name" placeholder="Item name *" value={form.itemName} onChange={e => setForm(f => ({ ...f, itemName: e.target.value }))} autoFocus />
+            <Input aria-label="Category" placeholder="Category (e.g. Laptop)" value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))} />
+            <Input aria-label="Serial number" placeholder="Serial number" value={form.serialNumber} onChange={e => setForm(f => ({ ...f, serialNumber: e.target.value }))} />
+            <Input aria-label="Condition" placeholder="Condition (e.g. New)" value={form.condition} onChange={e => setForm(f => ({ ...f, condition: e.target.value }))} />
+            <Input aria-label="Assigned date" type="date" value={form.assignedDate} onChange={e => setForm(f => ({ ...f, assignedDate: e.target.value }))} />
           </div>
-          <textarea placeholder="Notes (optional)" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={2} className="w-full border rounded-lg px-3 py-2 text-sm resize-none" />
+          <Textarea aria-label="Notes" placeholder="Notes (optional)" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={2} className="resize-none" />
           <div className="flex justify-end gap-2">
-            <button type="button" onClick={() => { setAdding(false); setForm(ASSET_BLANK) }} className="px-3 py-1.5 text-sm border rounded-lg">Cancel</button>
-            <button type="button" onClick={addAsset} disabled={saving || !form.itemName.trim()} className="px-3 py-1.5 text-sm bg-[#bdac7e] text-white rounded-lg disabled:opacity-50">
-              {saving ? 'Adding...' : 'Add Item'}
-            </button>
+            <Button type="button" variant="outline" size="sm" onClick={() => { setAdding(false); setForm(ASSET_BLANK) }}>Cancel</Button>
+            <Button type="button" size="sm" onClick={addAsset} disabled={!form.itemName.trim()} loading={saving}>
+              {saving ? 'Adding…' : 'Add Item'}
+            </Button>
           </div>
         </div>
       ) : (
-        <button type="button" onClick={() => setAdding(true)}
-          className="w-full flex items-center justify-center gap-1.5 border-2 border-dashed rounded-xl py-2.5 text-sm text-muted-foreground hover:border-[#bdac7e] hover:text-foreground transition-colors">
-          <Plus className="h-3.5 w-3.5" /> Add Company Asset
-        </button>
+        <Button type="button" variant="outline" onClick={() => setAdding(true)}
+          className="w-full gap-1.5 border-2 border-dashed rounded-xl text-muted-foreground shadow-none hover:border-primary hover:text-foreground">
+          <Plus className="size-3.5" /> Add Company Asset
+        </Button>
       )}
     </div>
   )

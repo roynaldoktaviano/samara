@@ -8,6 +8,7 @@ import {
   ResponsiveContainer, Cell, Legend,
 } from 'recharts'
 import { TrendingUp, Users, Ship, DollarSign, Calendar, Medal } from 'lucide-react'
+import { formatDate, formatMoney } from '@/lib/format'
 
 /* ── types ── */
 interface TopSale {
@@ -41,16 +42,9 @@ interface StatsData {
 const GOLD = '#bdac7e'
 const TEAL = '#1a5f6e'
 
-const fmtMoney = (n: number) =>
-  `$${n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
-
 const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
-const fmtMonth = (key: string) => {
-  const [y, m] = key.split('-')
-  return `${MONTH_NAMES[parseInt(m) - 1]} '${y.slice(2)}`
-}
 
-const RANK_COLORS = [GOLD, '#9ca3af', '#b45309', '#6b7280', '#6b7280']
+const RANK_COLORS = ['var(--primary)', '#9ca3af', '#b45309', '#6b7280', '#6b7280']
 
 const CURRENT_YEAR = new Date().getFullYear()
 const YEARS = Array.from({ length: 4 }, (_, i) => CURRENT_YEAR - i)
@@ -65,7 +59,7 @@ const MoneyTooltip = ({ active, payload, label }: { active?: boolean; payload?: 
         <div key={p.name} className="flex items-center gap-2">
           <span className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: p.color }} />
           <span className="text-muted-foreground capitalize">{p.name}:</span>
-          <span className="font-medium">{p.name === 'revenue' ? fmtMoney(p.value) : p.value}</span>
+          <span className="font-medium">{p.name === 'revenue' ? formatMoney(p.value, { currency: 'USD', decimals: 0 }) : p.value}</span>
         </div>
       ))}
     </div>
@@ -127,8 +121,9 @@ export default function Statistics() {
             <button
               key={y}
               onClick={() => setYear(y)}
+              aria-pressed={year === y}
               className="px-3 py-1 rounded-md text-sm font-medium transition-colors"
-              style={year === y ? { backgroundColor: GOLD, color: 'white' } : { color: '#6b7280' }}
+              style={year === y ? { backgroundColor: 'var(--primary)', color: 'var(--primary-foreground)' } : { color: 'var(--muted-foreground)' }}
             >
               {y}
             </button>
@@ -147,13 +142,13 @@ export default function Statistics() {
           },
           {
             title: 'Revenue',
-            value: loading ? null : fmtMoney(yearRevenue),
+            value: loading ? null : formatMoney(yearRevenue, { currency: 'USD', decimals: 0 }),
             sub:   `in ${year}`,
             icon:  <DollarSign className="h-4 w-4 text-muted-foreground" />,
           },
           {
             title: 'Peak Month',
-            value: loading ? null : (peakMonth ? fmtMonth(peakMonth.month) : '—'),
+            value: loading ? null : (peakMonth ? formatDate(`${peakMonth.month}-01`, 'monthYear', { utc: true }) : '—'),
             sub:   peakMonth ? `${peakMonth.total} bookings` : 'no data yet',
             icon:  <TrendingUp className="h-4 w-4 text-muted-foreground" />,
           },
@@ -184,7 +179,7 @@ export default function Statistics() {
         <CardHeader className="pb-2">
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <CardTitle className="text-base flex items-center gap-2">
-              <Calendar className="h-4 w-4" style={{ color: GOLD }} />
+              <Calendar className="h-4 w-4" style={{ color: 'var(--primary)' }} />
               Bookings per Month — {year}
             </CardTitle>
             {/* Filter toggle */}
@@ -193,10 +188,11 @@ export default function Statistics() {
                 <button
                   key={val}
                   onClick={() => setChartFilter(val)}
+                  aria-pressed={chartFilter === val}
                   className="px-3 py-1 rounded-md text-xs font-medium transition-colors"
                   style={chartFilter === val
-                    ? { backgroundColor: val === 'open' ? GOLD : val === 'private' ? TEAL : '#1e293b', color: 'white' }
-                    : { color: '#6b7280' }}
+                    ? { backgroundColor: val === 'open' ? 'var(--primary)' : val === 'private' ? 'var(--brand)' : 'var(--foreground)', color: val === 'open' ? 'var(--primary-foreground)' : val === 'private' ? 'var(--brand-foreground)' : 'var(--background)' }
+                    : { color: 'var(--muted-foreground)' }}
                 >
                   {label}
                 </button>
@@ -231,7 +227,7 @@ export default function Statistics() {
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-base flex items-center gap-2">
-            <DollarSign className="h-4 w-4" style={{ color: TEAL }} />
+            <DollarSign className="h-4 w-4" style={{ color: 'var(--brand)' }} />
             Revenue per Month — {year}
           </CardTitle>
         </CardHeader>
@@ -267,7 +263,7 @@ export default function Statistics() {
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-base flex items-center gap-2">
-              <Medal className="h-4 w-4" style={{ color: GOLD }} />
+              <Medal className="h-4 w-4" style={{ color: 'var(--primary)' }} />
               Top Sales
             </CardTitle>
           </CardHeader>
@@ -284,13 +280,13 @@ export default function Statistics() {
                   <div key={s.name} className="flex items-center gap-3 rounded-lg border px-3 py-2.5">
                     <span
                       className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white"
-                      style={{ backgroundColor: RANK_COLORS[i] ?? '#9ca3af' }}
+                      style={{ backgroundColor: RANK_COLORS[i] ?? '#9ca3af', color: i === 0 ? 'var(--primary-foreground)' : undefined }}
                     >
                       {i + 1}
                     </span>
                     <div className="flex-1 min-w-0">
                       <p className="font-medium text-sm truncate">{s.name}</p>
-                      <p className="text-xs text-muted-foreground">{fmtMoney(s.revenue)}</p>
+                      <p className="text-xs text-muted-foreground">{formatMoney(s.revenue, { currency: 'USD', decimals: 0 })}</p>
                     </div>
                     <div className="text-right shrink-0">
                       <span className="text-sm font-semibold">{s.count}</span>
@@ -307,7 +303,7 @@ export default function Statistics() {
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-base flex items-center gap-2">
-              <Ship className="h-4 w-4" style={{ color: TEAL }} />
+              <Ship className="h-4 w-4" style={{ color: 'var(--brand)' }} />
               Most Popular Yachts
             </CardTitle>
           </CardHeader>
@@ -324,13 +320,13 @@ export default function Statistics() {
                   <div key={y.yachtId} className="flex items-center gap-3 rounded-lg border px-3 py-2.5">
                     <span
                       className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white"
-                      style={{ backgroundColor: RANK_COLORS[i] ?? '#9ca3af' }}
+                      style={{ backgroundColor: RANK_COLORS[i] ?? '#9ca3af', color: i === 0 ? 'var(--primary-foreground)' : undefined }}
                     >
                       {i + 1}
                     </span>
                     <div className="flex-1 min-w-0">
                       <p className="font-medium text-sm truncate">{y.name}</p>
-                      <p className="text-xs text-muted-foreground">{fmtMoney(y.revenue)}</p>
+                      <p className="text-xs text-muted-foreground">{formatMoney(y.revenue, { currency: 'USD', decimals: 0 })}</p>
                     </div>
                     <div className="text-right shrink-0">
                       <span className="text-sm font-semibold">{y.count}</span>

@@ -96,7 +96,7 @@ export default function ItemTypesPage() {
 
   async function handleSave() {
     if (!form.label.trim() || (!editType && !form.code.trim())) {
-      toast.error('Semua field wajib diisi')
+      toast.error('All fields are required')
       return
     }
     setSaving(true)
@@ -105,8 +105,8 @@ export default function ItemTypesPage() {
       const method = editType ? 'PUT' : 'POST'
       const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error ?? 'Gagal menyimpan')
-      toast.success(editType ? 'Tipe diperbarui' : 'Tipe ditambahkan')
+      if (!res.ok) throw new Error(data.error ?? 'Failed to save')
+      toast.success(editType ? 'Type updated' : 'Type added')
       setDialogOpen(false)
       fetchTypes()
     } catch (e) {
@@ -121,8 +121,8 @@ export default function ItemTypesPage() {
     try {
       const res = await fetch(`/api/purchasing/item-types/${t.id}`, { method: 'DELETE' })
       const data = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(data.error ?? 'Gagal menghapus')
-      toast.success('Tipe dihapus')
+      if (!res.ok) throw new Error(data.error ?? 'Failed to delete')
+      toast.success('Type deleted')
       setConfirmDeleteType(null)
       fetchTypes()
     } catch (e) {
@@ -149,7 +149,7 @@ export default function ItemTypesPage() {
   async function handleSaveCat() {
     if (!categoriesFor) return
     if (!catForm.skuPrefix.trim() || (!editCat && !catForm.name.trim())) {
-      toast.error('Nama kategori dan SKU prefix wajib diisi')
+      toast.error('Category name and SKU prefix are required')
       return
     }
     setCatSaving(true)
@@ -163,8 +163,8 @@ export default function ItemTypesPage() {
         : { name: catForm.name, skuPrefix: catForm.skuPrefix }
       const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error ?? 'Gagal menyimpan')
-      toast.success(editCat ? 'Kategori diperbarui' : 'Kategori ditambahkan')
+      if (!res.ok) throw new Error(data.error ?? 'Failed to save')
+      toast.success(editCat ? 'Category updated' : 'Category added')
       setCatDialogOpen(false)
       refreshKeepingCategoriesPanel()
     } catch (e) {
@@ -179,8 +179,8 @@ export default function ItemTypesPage() {
     try {
       const res = await fetch(`/api/purchasing/item-types/${t.id}/categories/${c.id}`, { method: 'DELETE' })
       const data = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(data.error ?? 'Gagal menghapus')
-      toast.success('Kategori dihapus')
+      if (!res.ok) throw new Error(data.error ?? 'Failed to delete')
+      toast.success('Category deleted')
       setConfirmDeleteCat(null)
       refreshKeepingCategoriesPanel()
     } catch (e) {
@@ -203,7 +203,7 @@ export default function ItemTypesPage() {
                 Manage item types and their categories used across Item Master
               </CardDescription>
             </div>
-            <Button size="sm" onClick={openAdd} className="gap-1.5 bg-amber-600 hover:bg-amber-700">
+            <Button size="sm" onClick={openAdd} className="gap-1.5 bg-primary text-primary-foreground hover:bg-primary-hover">
               <Plus className="h-4 w-4" /> Add Type
             </Button>
           </div>
@@ -222,9 +222,9 @@ export default function ItemTypesPage() {
             <div className="space-y-2">
               {types.map(t => {
                 const deleteBlockedReason = t.isLocked
-                  ? 'Tipe bawaan sistem tidak bisa dihapus'
+                  ? 'Built-in system types cannot be deleted'
                   : t.itemCount > 0
-                  ? `Masih dipakai oleh ${t.itemCount} item`
+                  ? `Still used by ${t.itemCount} item${t.itemCount === 1 ? '' : 's'}`
                   : null
                 return (
                   <div key={t.id} className={`rounded-lg border p-3.5 ${!t.isActive ? 'opacity-50' : ''}`}>
@@ -261,7 +261,7 @@ export default function ItemTypesPage() {
                             <TooltipContent>{deleteBlockedReason}</TooltipContent>
                           </Tooltip>
                         ) : (
-                          <Button size="icon" variant="ghost" className="h-7 w-7 text-red-500 hover:text-red-600 hover:bg-red-50" onClick={() => setConfirmDeleteType(t)}>
+                          <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10" onClick={() => setConfirmDeleteType(t)}>
                             <Trash2 className="h-3.5 w-3.5" />
                           </Button>
                         )}
@@ -284,7 +284,7 @@ export default function ItemTypesPage() {
           <div className="space-y-3 py-1">
             {!editType && (
               <div className="space-y-1.5">
-                <Label className="text-xs">Code <span className="text-red-500">*</span></Label>
+                <Label className="text-xs">Code <span className="text-destructive">*</span></Label>
                 <Input
                   placeholder="e.g. MERCHANDISE"
                   className="uppercase font-mono"
@@ -295,7 +295,7 @@ export default function ItemTypesPage() {
               </div>
             )}
             <div className="space-y-1.5">
-              <Label className="text-xs">Label <span className="text-red-500">*</span></Label>
+              <Label className="text-xs">Label <span className="text-destructive">*</span></Label>
               <Input placeholder="e.g. Merchandise" value={form.label} onChange={e => setForm(f => ({ ...f, label: e.target.value }))} />
             </div>
             {editType && (
@@ -310,7 +310,7 @@ export default function ItemTypesPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={saving}>Cancel</Button>
-            <Button onClick={handleSave} disabled={saving} className="bg-amber-600 hover:bg-amber-700">
+            <Button onClick={handleSave} disabled={saving} className="bg-primary text-primary-foreground hover:bg-primary-hover">
               {saving && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
               {editType ? 'Save Changes' : 'Add Type'}
             </Button>
@@ -353,7 +353,7 @@ export default function ItemTypesPage() {
                 <div className="min-w-0">
                   <div className="flex items-center gap-1.5">
                     <p className="text-sm font-medium truncate">{c.name}</p>
-                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 shrink-0">SKU: {c.skuPrefix}</span>
+                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-warning/10 text-warning shrink-0">SKU: {c.skuPrefix}</span>
                   </div>
                   <p className="text-xs text-muted-foreground">{c.itemCount} items{!c.isActive ? ' · Inactive' : ''}</p>
                 </div>
@@ -370,10 +370,10 @@ export default function ItemTypesPage() {
                           </Button>
                         </span>
                       </TooltipTrigger>
-                      <TooltipContent>Masih dipakai oleh {c.itemCount} item</TooltipContent>
+                      <TooltipContent>Still used by {c.itemCount} item{c.itemCount === 1 ? '' : 's'}</TooltipContent>
                     </Tooltip>
                   ) : (
-                    <Button size="icon" variant="ghost" className="h-7 w-7 text-red-500 hover:text-red-600 hover:bg-red-50" onClick={() => setConfirmDeleteCat(c)}>
+                    <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10" onClick={() => setConfirmDeleteCat(c)}>
                       <Trash2 className="h-3.5 w-3.5" />
                     </Button>
                   )}
@@ -399,12 +399,12 @@ export default function ItemTypesPage() {
           <div className="space-y-3 py-1">
             {!editCat && (
               <div className="space-y-1.5">
-                <Label className="text-xs">Name <span className="text-red-500">*</span></Label>
+                <Label className="text-xs">Name <span className="text-destructive">*</span></Label>
                 <Input placeholder="e.g. General" value={catForm.name} onChange={e => setCatForm(f => ({ ...f, name: e.target.value }))} />
               </div>
             )}
             <div className="space-y-1.5">
-              <Label className="text-xs">SKU Prefix <span className="text-red-500">*</span></Label>
+              <Label className="text-xs">SKU Prefix <span className="text-destructive">*</span></Label>
               <Input placeholder="e.g. GEN" className="uppercase font-mono" value={catForm.skuPrefix} onChange={e => setCatForm(f => ({ ...f, skuPrefix: e.target.value }))} />
               <p className="text-xs text-muted-foreground">Used to auto-generate SKUs for items in this category, e.g. {catForm.skuPrefix || 'GEN'}-01</p>
             </div>
@@ -417,7 +417,7 @@ export default function ItemTypesPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCatDialogOpen(false)} disabled={catSaving}>Cancel</Button>
-            <Button onClick={handleSaveCat} disabled={catSaving} className="bg-amber-600 hover:bg-amber-700">
+            <Button onClick={handleSaveCat} disabled={catSaving} className="bg-primary text-primary-foreground hover:bg-primary-hover">
               {catSaving && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
               {editCat ? 'Save Changes' : 'Add Category'}
             </Button>

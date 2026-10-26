@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { UserPlus, Clock, History } from 'lucide-react'
 import { useWaitingList } from '@/hooks/useWaitingList'
+import { formatDate } from '@/lib/format'
 import WaitingListTable from './WaitingListTable'
 import AddToWaitingListDialog from './AddToWaitingListDialog'
 
@@ -48,10 +49,10 @@ export default function WaitingListManager({
             <div className="flex items-center justify-between gap-3">
               <div>
                 <DialogTitle className="flex items-center gap-2">
-                  <Clock className="h-5 w-5 text-amber-500" />
+                  <Clock className="h-5 w-5 text-warning" />
                   Waiting List
                   {waitingCount > 0 && (
-                    <Badge className="bg-amber-100 text-amber-700 border-amber-200 text-xs ml-1">
+                    <Badge className="bg-warning/15 text-warning border-warning/30 text-xs ml-1">
                       {waitingCount} waiting
                     </Badge>
                   )}
@@ -81,29 +82,29 @@ export default function WaitingListManager({
           </div>
 
           {history.length > 0 && (
-            <div className="mt-4 border border-red-200 rounded-lg overflow-hidden">
-              <div className="flex items-center gap-2 px-4 py-2.5 bg-red-50 border-b border-red-200">
-                <History className="h-3.5 w-3.5 text-red-500" />
-                <span className="text-xs font-semibold uppercase tracking-wider text-red-500">Slot Cancelled History</span>
+            <div className="mt-4 border border-destructive/30 rounded-lg overflow-hidden">
+              <div className="flex items-center gap-2 px-4 py-2.5 bg-destructive/10 border-b border-destructive/30">
+                <History className="h-3.5 w-3.5 text-destructive" />
+                <span className="text-xs font-semibold uppercase tracking-wider text-destructive">Slot Cancelled History</span>
               </div>
-              <div className="divide-y divide-red-100">
+              <div className="divide-y divide-destructive/30">
                 {history.map((h, i) => (
-                  <div key={h.id} className="flex items-start gap-3 px-4 py-3 bg-red-50/30">
-                    <span className="text-xs font-semibold text-red-300 w-4 pt-0.5">{i + 1}</span>
+                  <div key={h.id} className="flex items-start gap-3 px-4 py-3 bg-destructive/5">
+                    <span className="text-xs font-semibold text-destructive/60 w-4 pt-0.5">{i + 1}</span>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-red-700">{h.holderName}</p>
+                      <p className="text-sm font-semibold text-destructive">{h.holderName}</p>
                       {h.cancelReason && (
-                        <p className="text-xs text-red-400 mt-0.5">
-                          Reason: <span className="text-red-500">{h.cancelReason}</span>
+                        <p className="text-xs text-destructive/80 mt-0.5">
+                          Reason: <span className="text-destructive">{h.cancelReason}</span>
                         </p>
                       )}
                     </div>
                     <div className="text-right shrink-0">
-                      <p className="text-xs text-red-400">
-                        {new Date(h.cancelledAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                      <p className="text-xs text-destructive/80">
+                        {formatDate(h.cancelledAt)}
                       </p>
-                      <p className="text-xs text-red-400">
-                        {new Date(h.cancelledAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+                      <p className="text-xs text-destructive/80">
+                        {formatDate(h.cancelledAt, 'time')}
                       </p>
                     </div>
                   </div>

@@ -1,14 +1,16 @@
 'use client'
 
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { StatusBadge, type StatusTone } from '@/components/ui/status-badge'
+import { formatDate, formatMoney } from '@/lib/format'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { ArrowLeft, Anchor, ShieldCheck, Plus, ChevronDown, ChevronRight } from 'lucide-react'
 
-const ACCENT = '#bdac7e'
+const ACCENT = 'var(--primary)'
 
 // Mock "today" used to compute current / upcoming / past — this whole page is a mockup with
 // hardcoded example data, not wired to the real yacht/destination/cabin pricing yet.
@@ -36,16 +38,6 @@ interface TierUI {
 
 interface CabinUI { id: string; name: string; expanded: boolean; tiers: TierUI[] }
 
-function fmtDate(iso: string) {
-  const [y, m, d] = iso.split('-').map(Number)
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-  return `${months[m - 1]} ${d}, ${y}`
-}
-
-function fmtMoney(n: number) {
-  return '$' + Math.round(n).toLocaleString('en-US')
-}
-
 // Sorted oldest → newest with a status per entry. The entry with the latest validFrom that has
 // already started is "current"; everything before it is "past", everything after is "upcoming".
 function withStatus<T extends { validFrom: string }>(entries: T[]): (T & { status: Status })[] {
@@ -65,20 +57,20 @@ function pickCurrent<T extends { status: Status }>(ascending: T[]): T {
     ?? ascending[ascending.length - 1]
 }
 
-function StatusBadge({ status }: { status: Status }) {
-  if (status === 'current') {
-    return <Badge style={{ backgroundColor: ACCENT, color: 'white', borderColor: ACCENT }}>Current</Badge>
-  }
-  if (status === 'upcoming') {
-    return <Badge variant="outline" style={{ borderColor: ACCENT, color: ACCENT }}>Upcoming</Badge>
-  }
-  return <Badge variant="secondary" className="text-muted-foreground">Past</Badge>
+const PRICE_STATUS: Record<Status, { label: string; tone: StatusTone }> = {
+  current:  { label: 'Current',  tone: 'success' },
+  upcoming: { label: 'Upcoming', tone: 'info' },
+  past:     { label: 'Past',     tone: 'neutral' },
+}
+
+function PriceStatusBadge({ status }: { status: Status }) {
+  return <StatusBadge tone={PRICE_STATUS[status].tone}>{PRICE_STATUS[status].label}</StatusBadge>
 }
 
 function HistoryRow({ status, primary, secondary, date }: { status: Status; primary: string; secondary?: string; date: string }) {
   return (
     <div className="flex items-center gap-3 py-2.5 flex-wrap">
-      <StatusBadge status={status} />
+      <PriceStatusBadge status={status} />
       <div className="text-sm font-semibold">
         {primary}
         {secondary && <span className="font-normal text-muted-foreground"> · {secondary}</span>}
@@ -93,15 +85,17 @@ function AddPriceForm({ fields, onCancel, onSave }: {
   onCancel: () => void
   onSave: () => void
 }) {
+  const idPrefix = useId()
   return (
     <div className="flex items-end gap-3 flex-wrap rounded-lg bg-muted/40 p-3.5 mt-2">
-      {fields.map(f => (
+      {fields.map((f, i) => (
         <div key={f.label} className="space-y-1.5">
-          <Label className="text-xs">{f.label}</Label>
+          <Label htmlFor={`${idPrefix}-${i}`} className="text-xs">{f.label}</Label>
           {f.type === 'number' ? (
             <div className="relative">
               <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">$</span>
               <Input
+                id={`${idPrefix}-${i}`}
                 type="number"
                 placeholder="0"
                 className="w-28 pl-6"
@@ -111,6 +105,7 @@ function AddPriceForm({ fields, onCancel, onSave }: {
             </div>
           ) : (
             <Input
+              id={`${idPrefix}-${i}`}
               type={f.type}
               className="w-36"
               value={f.value}
@@ -121,7 +116,7 @@ function AddPriceForm({ fields, onCancel, onSave }: {
       ))}
       <div className="flex gap-2 ml-auto">
         <Button variant="outline" size="sm" onClick={onCancel}>Cancel</Button>
-        <Button size="sm" style={{ backgroundColor: ACCENT, color: 'white' }} className="hover:opacity-90" onClick={onSave}>Save</Button>
+        <Button size="sm" onClick={onSave}>Save</Button>
       </div>
     </div>
   )
@@ -246,11 +241,11 @@ export default function YachtPricingPage({ yacht, onBack }: { yacht: YachtLike; 
   return (
     <div className="space-y-6 max-w-4xl">
       <div>
-        <button onClick={onBack} className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors mb-3">
+        <Button variant="ghost" onClick={onBack} className="-ml-3 mb-3 gap-1.5 text-muted-foreground hover:text-foreground">
           <ArrowLeft className="h-3.5 w-3.5" /> Back to Fleet
-        </button>
+        </Button>
         <div className="flex items-center gap-3 flex-wrap">
-          <div className="h-10 w-10 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: `${ACCENT}22` }}>
+          <div className="h-10 w-10 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: 'color-mix(in srgb, var(--primary) 13%, transparent)' }}>
             <Anchor className="h-5 w-5" style={{ color: ACCENT }} />
           </div>
           <div>
@@ -276,11 +271,11 @@ export default function YachtPricingPage({ yacht, onBack }: { yacht: YachtLike; 
           <div className="flex items-end gap-8 flex-wrap pb-4 border-b">
             <div>
               <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Daily Rate</div>
-              <div className="text-2xl font-bold">{fmtMoney(baseCurrent.daily)}<span className="text-sm font-medium text-muted-foreground ml-1">/night</span></div>
+              <div className="text-2xl font-bold">{formatMoney(baseCurrent.daily, { currency: 'USD', decimals: 0 })}<span className="text-sm font-medium text-muted-foreground ml-1">/night</span></div>
             </div>
             <div className="flex items-center gap-2 ml-auto">
-              <StatusBadge status={baseCurrent.status} />
-              <span className="text-xs text-muted-foreground">since {fmtDate(baseCurrent.validFrom)}</span>
+              <PriceStatusBadge status={baseCurrent.status} />
+              <span className="text-xs text-muted-foreground">since {formatDate(baseCurrent.validFrom, 'medium', { utc: true })}</span>
             </div>
           </div>
 
@@ -288,7 +283,7 @@ export default function YachtPricingPage({ yacht, onBack }: { yacht: YachtLike; 
             <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Price Schedule</div>
             <div className="divide-y">
               {baseHistory.map(e => (
-                <HistoryRow key={e.id} status={e.status} primary={`${fmtMoney(e.daily)}/night`} date={fmtDate(e.validFrom)} />
+                <HistoryRow key={e.id} status={e.status} primary={`${formatMoney(e.daily, { currency: 'USD', decimals: 0 })}/night`} date={formatDate(e.validFrom, 'medium', { utc: true })} />
               ))}
             </div>
           </div>
@@ -323,18 +318,18 @@ export default function YachtPricingPage({ yacht, onBack }: { yacht: YachtLike; 
             const history = [...ascending].reverse()
             return (
               <div key={d.id} className="py-1">
-                <button onClick={() => toggleDest(d.id)} className="w-full flex items-center gap-2.5 py-2.5 text-left">
+                <button type="button" aria-expanded={d.expanded} onClick={() => toggleDest(d.id)} className="w-full flex flex-wrap items-center gap-x-2.5 gap-y-1 py-2.5 text-left">
                   {d.expanded ? <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" /> : <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />}
                   <span className="text-sm font-semibold">{d.name}</span>
-                  <span className="text-xs text-muted-foreground">{current.relocation ? `${fmtMoney(current.relocation)} relocation fee` : 'No relocation fee'}</span>
-                  <span className="ml-auto text-sm font-semibold">{fmtMoney(current.price)}/day</span>
+                  <span className="text-xs text-muted-foreground">{current.relocation ? `${formatMoney(current.relocation, { currency: 'USD', decimals: 0 })} relocation fee` : 'No relocation fee'}</span>
+                  <span className="ml-auto text-sm font-semibold">{formatMoney(current.price, { currency: 'USD', decimals: 0 })}/day</span>
                 </button>
                 {d.expanded && (
                   <div className="pl-6 pb-4">
                     <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Price Schedule</div>
                     <div className="divide-y">
                       {history.map(e => (
-                        <HistoryRow key={e.id} status={e.status} primary={`${fmtMoney(e.price)}/day`} secondary={e.relocation ? `${fmtMoney(e.relocation)} relocation` : 'no relocation fee'} date={fmtDate(e.validFrom)} />
+                        <HistoryRow key={e.id} status={e.status} primary={`${formatMoney(e.price, { currency: 'USD', decimals: 0 })}/day`} secondary={e.relocation ? `${formatMoney(e.relocation, { currency: 'USD', decimals: 0 })} relocation` : 'no relocation fee'} date={formatDate(e.validFrom, 'medium', { utc: true })} />
                       ))}
                     </div>
                     {!d.addOpen ? (
@@ -369,7 +364,7 @@ export default function YachtPricingPage({ yacht, onBack }: { yacht: YachtLike; 
         <CardContent className="divide-y">
           {cabins.map(c => (
             <div key={c.id} className="py-1">
-              <button onClick={() => toggleCabin(c.id)} className="w-full flex items-center gap-2.5 py-2.5 text-left">
+              <button type="button" aria-expanded={c.expanded} onClick={() => toggleCabin(c.id)} className="w-full flex items-center gap-2.5 py-2.5 text-left">
                 {c.expanded ? <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" /> : <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />}
                 <span className="text-sm font-semibold">{c.name}</span>
                 <span className="text-xs text-muted-foreground">{c.tiers.length} pricing tiers</span>
@@ -382,20 +377,20 @@ export default function YachtPricingPage({ yacht, onBack }: { yacht: YachtLike; 
                     const history = [...ascending].reverse()
                     return (
                       <div key={t.id} className="py-1">
-                        <button onClick={() => toggleTier(c.id, t.id)} className="w-full flex items-center gap-2.5 py-2 text-left hover:bg-muted/40 rounded-md px-1.5 -mx-1.5 transition-colors">
+                        <button type="button" aria-expanded={t.expanded} onClick={() => toggleTier(c.id, t.id)} className="w-full flex items-center gap-2.5 py-2 text-left hover:bg-muted/40 rounded-md px-1.5 -mx-1.5 transition-colors">
                           {t.expanded ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
                           <div>
                             <div className="text-sm font-semibold">{t.nights} Nights</div>
                             <div className="text-[11px] text-muted-foreground">{t.dest}</div>
                           </div>
-                          <span className="ml-auto text-sm font-semibold">{fmtMoney(current.price)}</span>
+                          <span className="ml-auto text-sm font-semibold">{formatMoney(current.price, { currency: 'USD', decimals: 0 })}</span>
                         </button>
                         {t.expanded && (
                           <div className="pl-6 pb-3 pt-1">
                             <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Price Schedule</div>
                             <div className="divide-y">
                               {history.map(e => (
-                                <HistoryRow key={e.id} status={e.status} primary={fmtMoney(e.price)} date={fmtDate(e.validFrom)} />
+                                <HistoryRow key={e.id} status={e.status} primary={formatMoney(e.price, { currency: 'USD', decimals: 0 })} date={formatDate(e.validFrom, 'medium', { utc: true })} />
                               ))}
                             </div>
                             {!t.addOpen ? (

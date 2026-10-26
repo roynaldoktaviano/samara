@@ -8,6 +8,22 @@ const __dirname = dirname(__filename);
 
 const eslintConfig = [...nextCoreWebVitals, ...nextTypescript, {
   rules: {
+    // Design-system guardrails (warn while modules are being migrated)
+    "no-restricted-globals": ["warn",
+      { name: "confirm", message: "Use useConfirm() from @/components/ui/confirm-dialog." },
+      { name: "alert", message: "Use toast from 'sonner' instead of alert()." },
+      { name: "prompt", message: "Use usePrompt() from @/components/ui/confirm-dialog." },
+    ],
+    "no-restricted-properties": ["warn",
+      { object: "window", property: "confirm", message: "Use useConfirm() from @/components/ui/confirm-dialog." },
+      { object: "window", property: "alert", message: "Use toast from 'sonner' instead of alert()." },
+      { object: "window", property: "prompt", message: "Use usePrompt() from @/components/ui/confirm-dialog." },
+    ],
+    "no-restricted-syntax": ["warn",
+      { selector: "Literal[value=/-\\[#[0-9a-fA-F]{3,8}\\]/]", message: "Hardcoded hex colour in a class — use a design token (bg-primary, text-muted-foreground, …)." },
+      { selector: "TemplateElement[value.raw=/-\\[#[0-9a-fA-F]{3,8}\\]/]", message: "Hardcoded hex colour in a class — use a design token (bg-primary, text-muted-foreground, …)." },
+    ],
+
     // TypeScript rules
     "@typescript-eslint/no-explicit-any": "off",
     "@typescript-eslint/no-unused-vars": "off",

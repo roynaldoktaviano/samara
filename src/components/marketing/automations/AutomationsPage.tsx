@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from '@/components/ui/alert-dialog'
 import { Zap, Plus, Trash2, Loader2, ChevronRight, Sparkles } from 'lucide-react'
 import { toast } from 'sonner'
-import { ACCENT, CARD_THEMES, PageHeader, ModuleHero } from '@/components/marketing/shared/MarketingUI'
+import { CARD_THEMES, PageHeader, ModuleHero } from '@/components/marketing/shared/MarketingUI'
 
 type TriggerType = 'BEFORE_TRIP' | 'AFTER_TRIP' | 'GUEST_BIRTHDAY'
 
@@ -154,13 +154,13 @@ export default function AutomationsPage() {
       <PageHeader
         eyebrow="MARKETING" title="Marketing Automations"
         subtitle="Build behavioural, lifecycle and trip-based journeys using live ERP data."
-        action={<Button onClick={openNew} className="bg-black text-white hover:bg-black/85"><Plus className="h-4 w-4 mr-2" /> Create new</Button>}
+        action={<Button onClick={openNew} className="bg-foreground text-background hover:bg-foreground/85"><Plus className="h-4 w-4 mr-2" /> Create new</Button>}
       />
 
       <ModuleHero icon={Zap} title="Marketing Automations" description="This module is included in the system structure and shares the same campaign, audience, content and attribution data." badge="Connected" />
 
       {loading ? (
-        <p className="text-sm text-muted-foreground p-6">Loading...</p>
+        <p className="text-sm text-muted-foreground p-6">Loading…</p>
       ) : automations.length === 0 ? (
         <div className="border rounded-xl border-dashed p-12 text-center text-muted-foreground">
           <Sparkles className="h-8 w-8 mx-auto mb-3 opacity-30" />
@@ -172,18 +172,18 @@ export default function AutomationsPage() {
           {automations.map((a, i) => {
             const theme = CARD_THEMES[i % CARD_THEMES.length]
             return (
-              <button key={a.id} onClick={() => openEdit(a)} className="text-left border rounded-xl bg-white p-4 hover:shadow-md hover:border-[#bdac7e]/50 transition-all">
+              <button key={a.id} onClick={() => openEdit(a)} className="text-left border rounded-xl bg-card p-4 hover:shadow-md hover:border-primary/50 transition-all">
                 <div className="flex items-start justify-between">
                   <span className="h-9 w-9 rounded-lg flex items-center justify-center" style={{ background: theme.bg, color: theme.fg }}>
                     <Zap className="h-4 w-4" />
                   </span>
-                  <Badge className={a.status === 'ACTIVE' ? 'bg-green-100 text-green-700 border-green-200' : 'bg-gray-100 text-gray-600 border-gray-200'}>
+                  <Badge className={a.status === 'ACTIVE' ? 'bg-success/15 text-success border-success/30' : 'bg-muted text-muted-foreground border-border'}>
                     {a.status === 'ACTIVE' ? 'Active' : 'Paused'}
                   </Badge>
                 </div>
                 <h3 className="font-semibold text-sm mt-3">{a.name}</h3>
                 <p className="text-xs text-muted-foreground mt-1">{TRIGGER_LABEL[a.triggerType]} · {offsetLabel(a.triggerType, a.offsetDays)}</p>
-                <div className="flex items-center gap-1 text-xs font-medium mt-3" style={{ color: ACCENT }}>
+                <div className="flex items-center gap-1 text-xs font-medium mt-3" style={{ color: 'var(--primary)' }}>
                   Open <ChevronRight className="h-3.5 w-3.5" />
                 </div>
               </button>
@@ -208,7 +208,7 @@ export default function AutomationsPage() {
               </div>
             )}
             <div className="space-y-1.5">
-              <Label>Name <span className="text-red-500">*</span></Label>
+              <Label>Name <span className="text-destructive">*</span></Label>
               <Input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Pre-trip guest journey" />
             </div>
             <div className="space-y-1.5">
@@ -233,22 +233,22 @@ export default function AutomationsPage() {
             <p className="text-[11px] text-muted-foreground -mt-2">{TRIGGER_LABEL[triggerType]} · {offsetLabel(triggerType, parseInt(offsetDays, 10) || 0)}</p>
 
             <div className="space-y-1.5">
-              <Label>Email template <span className="text-red-500">*</span></Label>
+              <Label>Email template <span className="text-destructive">*</span></Label>
               <Select value={templateId} onValueChange={setTemplateId}>
-                <SelectTrigger className="h-9"><SelectValue placeholder="Choose a template..." /></SelectTrigger>
+                <SelectTrigger className="h-9"><SelectValue placeholder="Choose a template…" /></SelectTrigger>
                 <SelectContent>
                   {templates.map(t => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
                 </SelectContent>
               </Select>
-              {templates.length === 0 && <p className="text-[11px] text-amber-600">No email templates yet — create one under Marketing → Email Templates first.</p>}
+              {templates.length === 0 && <p className="text-[11px] text-warning">No email templates yet — create one under Marketing → Email Templates first.</p>}
             </div>
             <div className="space-y-1.5">
-              <Label>Subject <span className="text-red-500">*</span></Label>
+              <Label>Subject <span className="text-destructive">*</span></Label>
               <Input value={subject} onChange={e => setSubject(e.target.value)} placeholder="What recipients see as the subject line" />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label>From email <span className="text-red-500">*</span></Label>
+                <Label>From email <span className="text-destructive">*</span></Label>
                 <Input value={fromEmail} onChange={e => setFromEmail(e.target.value)} placeholder="hello@samarayachting.com" />
               </div>
               <div className="space-y-1.5">
@@ -268,13 +268,13 @@ export default function AutomationsPage() {
 
             <div className="flex items-center justify-between gap-2 pt-2 border-t">
               {editingId ? (
-                <Button variant="ghost" className="text-red-600 hover:text-red-700 hover:bg-red-50" onClick={() => setDeleteTarget(automations.find(a => a.id === editingId) ?? null)}>
+                <Button variant="ghost" className="text-destructive hover:text-destructive hover:bg-destructive/10" onClick={() => setDeleteTarget(automations.find(a => a.id === editingId) ?? null)}>
                   <Trash2 className="h-4 w-4 mr-2" /> Delete
                 </Button>
               ) : <span />}
               <div className="flex gap-2">
                 <Button variant="outline" onClick={() => setEditorOpen(false)}>Cancel</Button>
-                <Button disabled={saving} onClick={save} style={{ backgroundColor: ACCENT, color: 'white' }} className="hover:opacity-90">
+                <Button disabled={saving} onClick={save} className="bg-primary text-primary-foreground hover:bg-primary-hover">
                   {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
                   {editingId ? 'Save changes' : 'Create automation'}
                 </Button>
@@ -292,7 +292,7 @@ export default function AutomationsPage() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmDelete} className="bg-red-600 hover:bg-red-700">Delete</AlertDialogAction>
+            <AlertDialogAction onClick={confirmDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">Delete</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

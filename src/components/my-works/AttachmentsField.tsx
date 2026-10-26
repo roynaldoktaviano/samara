@@ -5,6 +5,7 @@ import { Paperclip, X, FileText, FileSpreadsheet, FileArchive, File as FileIcon,
 import { useFileDrop } from '@/hooks/useFileDrop'
 import { uploadToR2WithProgress } from '@/lib/r2-client'
 import { fmtSize, type Attachment } from './shared'
+import { Button } from '@/components/ui/button'
 
 const MAX_SIZE = 25 * 1024 * 1024 // keep in sync with TODO_ATTACHMENT_MAX_SIZE (src/lib/todo.ts)
 const MAX_COUNT = 20
@@ -66,7 +67,7 @@ export default function AttachmentsField({ value, onChange, uploadPrefix, onBusy
   return (
     <div className="space-y-2">
       <button type="button" onClick={() => inputRef.current?.click()} {...dropProps}
-        className={`w-full border-2 border-dashed rounded-lg px-4 py-4 text-center text-sm transition-colors ${isDragging ? 'border-amber-500 bg-amber-50' : 'border-muted-foreground/25 hover:border-amber-400 hover:bg-muted/30'}`}>
+        className={`w-full border-2 border-dashed rounded-lg px-4 py-4 text-center text-sm transition-colors ${isDragging ? 'border-primary bg-primary/10' : 'border-muted-foreground/25 hover:border-primary/60 hover:bg-muted/30'}`}>
         <Upload className="h-5 w-5 mx-auto mb-1 text-muted-foreground" />
         <span className="font-medium">Drop files here</span> <span className="text-muted-foreground">or click to browse</span>
         <p className="text-xs text-muted-foreground mt-0.5">Any file type · max 25MB each</p>
@@ -85,31 +86,31 @@ export default function AttachmentsField({ value, onChange, uploadPrefix, onBusy
                   ? <img src={a.url} alt="" className="h-9 w-9 rounded object-cover border shrink-0" /> // eslint-disable-line @next/next/no-img-element
                   : <div className="h-9 w-9 rounded bg-muted flex items-center justify-center shrink-0"><Icon className="h-4 w-4 text-muted-foreground" /></div>}
                 <div className="flex-1 min-w-0">
-                  <a href={a.url} target="_blank" rel="noopener noreferrer" className="text-sm font-medium truncate block hover:text-amber-700 hover:underline">{a.name}</a>
+                  <a href={a.url} target="_blank" rel="noopener noreferrer" className="text-sm font-medium truncate block hover:text-primary-strong hover:underline">{a.name}</a>
                   <p className="text-xs text-muted-foreground">{fmtSize(a.size)}</p>
                 </div>
-                <a href={a.url} target="_blank" rel="noopener noreferrer" download={a.name} className="p-1.5 rounded hover:bg-muted text-muted-foreground" title="Open / download"><Download className="h-4 w-4" /></a>
+                <a href={a.url} target="_blank" rel="noopener noreferrer" download={a.name} className="p-1.5 rounded hover:bg-muted text-muted-foreground" title="Open / download" aria-label={`Open / download ${a.name}`}><Download className="h-4 w-4" /></a>
                 {!lockedUrls?.has(a.url) && (
-                  <button type="button" onClick={() => onChange(value.filter(x => x.url !== a.url))} className="p-1.5 rounded hover:bg-red-50 text-muted-foreground hover:text-red-600" title="Remove">
-                    <X className="h-4 w-4" />
-                  </button>
+                  <Button type="button" variant="ghost" size="icon" onClick={() => onChange(value.filter(x => x.url !== a.url))} className="size-8 text-muted-foreground hover:bg-destructive/10 hover:text-destructive dark:hover:bg-destructive/10" title="Remove" aria-label={`Remove ${a.name}`}>
+                    <X />
+                  </Button>
                 )}
               </div>
             )
           })}
           {uploading.map(u => (
-            <div key={u.id} className={`flex items-center gap-3 rounded-lg border px-2.5 py-2 ${u.error ? 'border-red-200 bg-red-50' : ''}`}>
+            <div key={u.id} className={`flex items-center gap-3 rounded-lg border px-2.5 py-2 ${u.error ? 'border-destructive/30 bg-destructive/10' : ''}`}>
               <div className="h-9 w-9 rounded bg-muted flex items-center justify-center shrink-0">
-                {u.error ? <Paperclip className="h-4 w-4 text-red-500" /> : <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+                {u.error ? <Paperclip className="h-4 w-4 text-destructive" /> : <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium truncate">{u.name}</p>
                 {u.error
-                  ? <p className="text-xs text-red-600">{u.error}</p>
-                  : <div className="h-1.5 mt-1 rounded-full bg-muted overflow-hidden"><div className="h-full bg-amber-500 transition-all" style={{ width: `${u.progress}%` }} /></div>}
+                  ? <p className="text-xs text-destructive">{u.error}</p>
+                  : <div className="h-1.5 mt-1 rounded-full bg-muted overflow-hidden"><div className="h-full bg-primary transition-all" style={{ width: `${u.progress}%` }} /></div>}
               </div>
               {u.error && (
-                <button type="button" onClick={() => setUploading(x => x.filter(y => y.id !== u.id))} className="p-1.5 rounded hover:bg-red-100 text-red-500"><X className="h-4 w-4" /></button>
+                <Button type="button" variant="ghost" size="icon" onClick={() => setUploading(x => x.filter(y => y.id !== u.id))} className="size-8 text-destructive hover:bg-destructive/15 hover:text-destructive dark:hover:bg-destructive/15" aria-label={`Dismiss ${u.name}`}><X /></Button>
               )}
             </div>
           ))}

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useSession } from 'next-auth/react'
-import { Plus, X, Search, Kanban, GanttChart, List, Filter, Trash2, ListTodo, CalendarDays, Mail } from 'lucide-react'
+import { Plus, Search, Kanban, GanttChart, List, Filter, Trash2, ListTodo, CalendarDays, Mail } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import ListView from './ListView'
 import KanbanView from './KanbanView'
@@ -13,6 +13,15 @@ import SubtasksField from './SubtasksField'
 import AssigneePicker from './AssigneePicker'
 import ActivityField from './ActivityField'
 import { STATUSES, PRIORITIES, RECURRENCES, dayKey, isOverdue, todayKey, type Todo, type Status, type Priority, type Recurrence, type Attachment, type Subtask, type WorkUser, WorksContext, canProgressTask, isOwnTask, userLabel } from './shared'
+import { formatDate } from '@/lib/format'
+import { toast } from 'sonner'
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import { NativeSelect } from '@/components/ui/native-select'
+import { Label } from '@/components/ui/label'
+import { useConfirm } from '@/components/ui/confirm-dialog'
 
 type ViewMode = 'kanban' | 'timeline' | 'list' | 'calendar'
 const VIEW_KEY = 'my-works:view'
@@ -35,7 +44,7 @@ function repeatHint(recurrence: Recurrence, day: string): string {
   const d = new Date(day + 'T00:00:00Z')
   const when = recurrence === 'WEEKLY' ? `every ${WEEKDAYS[d.getUTCDay()]}`
     : recurrence === 'MONTHLY' ? `on day ${d.getUTCDate()} of every month`
-    : `every ${d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', timeZone: 'UTC' })}`
+    : `every ${formatDate(d, 'short', { utc: true })}`
   return `A new copy of this task is created automatically ${when}, with the same dates, assignees and sub tasks.`
 }
 
@@ -45,6 +54,7 @@ function repeatHint(recurrence: Recurrence, day: string): string {
  */
 export default function MyWorksPage() {
   const meId = useSession().data?.user?.id ?? ''
+  const confirm = useConfirm()
   const [users, setUsers] = useState<WorkUser[]>([])
   const [source, setSource] = useState<Source>('all')
   const [loading, setLoading] = useState(true)
@@ -163,9 +173,10 @@ export default function MyWorksPage() {
   }
 
   async function remove(t: Todo) {
-    if (!confirm(`Delete "${t.title}"?`)) return
+    if (!(await confirm({ title: `Delete "${t.title}"?`, destructive: true }))) return
     const res = await fetch(`/api/my-works/${t.id}`, { method: 'DELETE' })
     if (res.ok) { setTodos(ts => ts.filter(x => x.id !== t.id)); setModalOpen(false) }
+    else toast.error((await res.json().catch(() => null))?.error ?? 'Failed to delete task')
   }
 
   async function changeStatus(t: Todo, status: Status) {
@@ -187,7 +198,7 @@ export default function MyWorksPage() {
     if (res.ok) { const { todo } = await res.json(); setTodos(ts => ts.map(x => x.id === t.id ? todo : x)) }
     else {
       setTodos(ts => ts.map(x => x.id === t.id ? t : x))
-      alert((await res.json().catch(() => null))?.error ?? 'Failed to save')
+      toast.error((await res.json().catch(() => null))?.error ?? 'Failed to save')
     }
   }
   const changeSubtasks = (t: Todo, subtasks: Subtask[]) => patchTodo(t, { subtasks })
@@ -221,61 +232,60 @@ export default function MyWorksPage() {
   }
 
   const toggle = <T,>(arr: T[], v: T) => arr.includes(v) ? arr.filter(x => x !== v) : [...arr, v]
-  const inputCls = 'w-full h-10 border rounded-lg px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500'
   const labelCls = 'text-xs font-semibold text-muted-foreground uppercase tracking-wide'
 
   // Open task belongs to someone else (assigned to me): progress-only modal.
   const ro = !!editing && !isOwnTask(editing, meId)
   const canProgress = !editing || canProgressTask(editing, meId)
-  const disabledCls = 'disabled:bg-muted/50 disabled:text-muted-foreground disabled:cursor-not-allowed'
+  const disabledCls = 'disabled:bg-muted/50 disabled:text-muted-foreground disabled:opacity-100 disabled:cursor-not-allowed'
 
   return (
     <WorksContext.Provider value={ctxValue}>
     <div className="space-y-5">
       {/* Title */}
       <div className="flex items-center gap-3">
-        <div className="h-11 w-11 rounded-xl bg-amber-600 text-white flex items-center justify-center shadow-sm">
+        <div className="h-11 w-11 rounded-xl bg-primary text-primary-foreground flex items-center justify-center shadow-sm">
           <ListTodo className="h-6 w-6" />
         </div>
         <div>
           <h2 className="text-2xl font-bold tracking-tight">My Works</h2>
           <p className="text-muted-foreground text-sm">
             Your tasks and tasks assigned to you
-            {assignedCount > 0 && <> · <button onClick={() => setSource(s => s === 'assigned' ? 'all' : 'assigned')} className="font-medium text-sky-700 hover:underline">{assignedCount} assigned to you</button></>}
-            {overdueCount > 0 && <> · <span className="font-medium text-red-600">{overdueCount} overdue</span></>}
+            {assignedCount > 0 && <> · <button onClick={() => setSource(s => s === 'assigned' ? 'all' : 'assigned')} className="font-medium text-info hover:underline">{assignedCount} assigned to you</button></>}
+            {overdueCount > 0 && <> · <span className="font-medium text-destructive">{overdueCount} overdue</span></>}
           </p>
         </div>
       </div>
 
       {/* View tabs + actions */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-3 border-b">
-        <div className="flex gap-1 -mb-px">
+        <div className="flex gap-1 -mb-px overflow-x-auto md:overflow-visible">
           {VIEWS.map(v => (
-            <button key={v.key} onClick={() => changeView(v.key)}
-              className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${view === v.key ? 'border-foreground text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}>
+            <button key={v.key} onClick={() => changeView(v.key)} aria-pressed={view === v.key}
+              className={`shrink-0 whitespace-nowrap flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${view === v.key ? 'border-foreground text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}>
               <v.icon className="h-4 w-4" />{v.label}
             </button>
           ))}
         </div>
-        <div className="flex items-center gap-2 pb-2">
-          <div className="relative">
+        <div className="flex flex-wrap items-center gap-2 pb-2">
+          <div className="relative w-full sm:w-auto sm:flex-1 md:flex-none">
             <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-            <input className="h-9 border rounded-lg pl-9 pr-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500 w-full md:w-48"
-              placeholder="Search..." value={search} onChange={e => setSearch(e.target.value)} />
+            <Input className="pl-9 w-full md:w-48" aria-label="Search tasks"
+              placeholder="Search…" value={search} onChange={e => setSearch(e.target.value)} />
           </div>
           <Popover>
             <PopoverTrigger asChild>
-              <button className={`h-9 flex items-center gap-2 px-3 rounded-lg border text-sm font-medium hover:bg-muted ${activeFilters ? 'border-amber-500 text-amber-700' : ''}`}>
-                <Filter className="h-4 w-4" />Filter{activeFilters > 0 && <span className="text-xs bg-amber-600 text-white rounded-full px-1.5">{activeFilters}</span>}
-              </button>
+              <Button variant="outline" className={activeFilters ? 'border-primary text-primary-strong' : ''}>
+                <Filter />Filter{activeFilters > 0 && <span className="text-xs bg-primary text-primary-foreground rounded-full px-1.5">{activeFilters}</span>}
+              </Button>
             </PopoverTrigger>
             <PopoverContent align="end" className="w-64 space-y-4">
               <div className="space-y-2">
                 <p className={labelCls}>Show</p>
                 <div className="flex flex-wrap gap-1.5">
                   {([['all', 'All'], ['mine', 'Created by me'], ['assigned', 'Assigned to me']] as const).map(([k, l]) => (
-                    <button key={k} onClick={() => setSource(k)}
-                      className={`px-2.5 py-1 rounded-md border text-xs font-medium ${source === k ? 'bg-amber-50 border-amber-300 text-amber-800' : 'text-muted-foreground hover:bg-muted'}`}>{l}</button>
+                    <button key={k} onClick={() => setSource(k)} aria-pressed={source === k}
+                      className={`px-2.5 py-1 rounded-md border text-xs font-medium ${source === k ? 'bg-primary/10 border-primary/40 text-primary-strong' : 'text-muted-foreground hover:bg-muted'}`}>{l}</button>
                   ))}
                 </div>
               </div>
@@ -283,7 +293,7 @@ export default function MyWorksPage() {
                 <p className={labelCls}>Priority</p>
                 <div className="flex flex-wrap gap-1.5">
                   {PRIORITIES.map(p => (
-                    <button key={p.key} onClick={() => setPriorityFilter(f => toggle(f, p.key))}
+                    <button key={p.key} onClick={() => setPriorityFilter(f => toggle(f, p.key))} aria-pressed={priorityFilter.includes(p.key)}
                       className={`px-2.5 py-1 rounded-md border text-xs font-medium ${priorityFilter.includes(p.key) ? p.cls : 'text-muted-foreground hover:bg-muted'}`}>{p.label}</button>
                   ))}
                 </div>
@@ -293,41 +303,41 @@ export default function MyWorksPage() {
                   <p className={labelCls}>Type</p>
                   <div className="flex flex-wrap gap-1.5">
                     {types.map(t => (
-                      <button key={t} onClick={() => setTypeFilter(f => toggle(f, t))}
-                        className={`px-2.5 py-1 rounded-md border text-xs font-medium ${typeFilter.includes(t) ? 'bg-amber-50 border-amber-300 text-amber-800' : 'text-muted-foreground hover:bg-muted'}`}>{t}</button>
+                      <button key={t} onClick={() => setTypeFilter(f => toggle(f, t))} aria-pressed={typeFilter.includes(t)}
+                        className={`px-2.5 py-1 rounded-md border text-xs font-medium ${typeFilter.includes(t) ? 'bg-primary/10 border-primary/40 text-primary-strong' : 'text-muted-foreground hover:bg-muted'}`}>{t}</button>
                     ))}
                   </div>
                 </div>
               )}
               <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
-                <input type="checkbox" className="h-4 w-4 accent-amber-600" checked={overdueOnly} onChange={e => setOverdueOnly(e.target.checked)} />
+                <input type="checkbox" className="h-4 w-4 accent-primary" checked={overdueOnly} onChange={e => setOverdueOnly(e.target.checked)} />
                 Overdue only
               </label>
               {activeFilters > 0 && (
-                <button onClick={() => { setPriorityFilter([]); setTypeFilter([]); setOverdueOnly(false); setSource('all') }} className="text-xs text-muted-foreground hover:text-foreground underline">Clear filters</button>
+                <Button variant="link" size="sm" onClick={() => { setPriorityFilter([]); setTypeFilter([]); setOverdueOnly(false); setSource('all') }} className="h-auto p-0 text-xs text-muted-foreground hover:text-foreground underline">Clear filters</Button>
               )}
             </PopoverContent>
           </Popover>
           {emailEnabled !== null && (
             <Popover>
               <PopoverTrigger asChild>
-                <button title="Email notifications" className={`h-9 w-9 flex items-center justify-center rounded-lg border hover:bg-muted ${emailEnabled ? '' : 'text-muted-foreground'}`}>
-                  <Mail className="h-4 w-4" />
-                </button>
+                <Button variant="outline" size="icon" title="Email notifications" aria-label="Email notifications" className={emailEnabled ? '' : 'text-muted-foreground'}>
+                  <Mail />
+                </Button>
               </PopoverTrigger>
               <PopoverContent align="end" className="w-72 space-y-2">
                 <p className={labelCls}>Email notifications</p>
                 <label className="flex items-start gap-2 text-sm cursor-pointer select-none">
-                  <input type="checkbox" className="h-4 w-4 mt-0.5 accent-amber-600" checked={emailEnabled} onChange={e => toggleEmail(e.target.checked)} />
+                  <input type="checkbox" className="h-4 w-4 mt-0.5 accent-primary" checked={emailEnabled} onChange={e => toggleEmail(e.target.checked)} />
                   <span>Email me when someone assigns me a task, or completes a task I assigned</span>
                 </label>
                 <p className="text-xs text-muted-foreground">Bell and push notifications are always on.</p>
               </PopoverContent>
             </Popover>
           )}
-          <button onClick={() => openCreate()} className="h-9 flex items-center gap-1.5 bg-foreground hover:bg-foreground/90 text-background text-sm font-medium px-4 rounded-lg transition-colors whitespace-nowrap">
-            <Plus className="h-4 w-4" />New Task
-          </button>
+          <Button onClick={() => openCreate()} className="gap-1.5 bg-foreground hover:bg-foreground/90 text-background">
+            <Plus />New Task
+          </Button>
         </div>
       </div>
 
@@ -345,125 +355,121 @@ export default function MyWorksPage() {
         <TimelineView todos={visible} onEdit={openEdit} />
       )}
 
-      {modalOpen && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onMouseDown={e => { if (e.target === e.currentTarget) setModalOpen(false) }}>
+      <Dialog open={modalOpen} onOpenChange={o => { if (!o) setModalOpen(false) }}>
           {/* Existing task = wide ClickUp-style layout: details left, Activity panel right. */}
-          <div className={`bg-white rounded-2xl shadow-2xl w-full overflow-hidden flex flex-col ${editing ? 'max-w-6xl h-[90vh]' : 'max-w-lg'}`}>
-            <div className="flex items-center justify-between px-6 py-4 border-b shrink-0">
-              <div className="flex items-center gap-2">
-                <ListTodo className="h-4 w-4 text-amber-600" />
-                <h3 className="font-bold text-sm">{ro ? 'Task' : editing ? 'Edit Task' : 'New Task'}</h3>
-                {ro && editing?.user && <span className="text-xs text-sky-700">Assigned by {userLabel(editing.user)}</span>}
+          <DialogContent aria-describedby={undefined} onInteractOutside={e => e.preventDefault()}
+            className={`p-0 gap-0 overflow-hidden flex flex-col ${editing ? 'sm:max-w-6xl h-[90vh]' : 'sm:max-w-lg'}`}>
+            <div className="flex items-center px-6 py-4 pr-12 border-b shrink-0">
+              <div className="flex flex-wrap items-center gap-2 min-w-0">
+                <ListTodo className="h-4 w-4 text-primary" />
+                <DialogTitle className="font-bold text-sm leading-normal">{ro ? 'Task' : editing ? 'Edit Task' : 'New Task'}</DialogTitle>
+                {ro && editing?.user && <span className="text-xs text-info">Assigned by {userLabel(editing.user)}</span>}
               </div>
-              <button onClick={() => setModalOpen(false)} className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors">
-                <X className="h-4 w-4" />
-              </button>
             </div>
             <div className={editing ? 'flex-1 min-h-0 flex flex-col md:flex-row overflow-y-auto md:overflow-hidden' : ''}>
             <div className={editing ? 'md:flex-1 md:min-w-0 md:min-h-0 flex flex-col' : ''}>
             <div className={`px-6 py-5 space-y-4 ${editing ? 'md:flex-1 md:overflow-y-auto' : 'max-h-[70vh] overflow-y-auto'}`}>
-              {formError && <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{formError}</p>}
+              {formError && <p className="text-xs text-destructive bg-destructive/10 border border-destructive/30 rounded-lg px-3 py-2">{formError}</p>}
               {ro && (
-                <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                <p className="text-xs text-warning bg-warning/10 border border-warning/30 rounded-lg px-3 py-2">
                   {canProgress ? 'You can update the status, estimation dates, add files and tick sub tasks. Other fields belong to the task owner. Date changes are logged in Activity.' : 'Only sub tasks are assigned to you — tick them or change their dates from the List view.'}
                 </p>
               )}
               {/* Owner-only fields; the disabled fieldset makes them read-only on the Assigned board. */}
               <fieldset disabled={ro} className="space-y-4 min-w-0">
               <div className="space-y-1.5">
-                <label className={labelCls}>Task Name</label>
-                <input autoFocus={!ro} className={`${inputCls} ${disabledCls} ${editing ? 'h-11 text-lg font-semibold' : ''}`} value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
+                <Label htmlFor="work-title" className={labelCls}>Task Name</Label>
+                <Input id="work-title" autoFocus={!ro} className={`${disabledCls} ${editing ? 'h-11 text-lg md:text-lg font-semibold' : ''}`} value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
                   onKeyDown={e => { if (e.key === 'Enter') save() }} />
               </div>
               <div className="space-y-1.5">
-                <label className={labelCls}>Description</label>
-                <textarea rows={3} className={`w-full border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500 resize-none ${disabledCls}`}
+                <Label htmlFor="work-notes" className={labelCls}>Description</Label>
+                <Textarea id="work-notes" rows={3} className={`resize-none ${disabledCls}`}
                   value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} />
               </div>
               </fieldset>
               {/* Estimation stays editable for assignees on the task. */}
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <label className={labelCls}>Start Date</label>
-                  <input type="date" disabled={!canProgress} className={`${inputCls} ${disabledCls}`} value={form.startDate} onChange={e => setForm(f => ({ ...f, startDate: e.target.value }))} />
+                  <Label htmlFor="work-start-date" className={labelCls}>Start Date</Label>
+                  <Input id="work-start-date" type="date" disabled={!canProgress} className={disabledCls} value={form.startDate} onChange={e => setForm(f => ({ ...f, startDate: e.target.value }))} />
                 </div>
                 <div className="space-y-1.5">
-                  <label className={labelCls}>End Date</label>
-                  <input type="date" disabled={!canProgress} className={`${inputCls} ${disabledCls}`} min={form.startDate || undefined} value={form.dueDate} onChange={e => setForm(f => ({ ...f, dueDate: e.target.value }))} />
+                  <Label htmlFor="work-end-date" className={labelCls}>End Date</Label>
+                  <Input id="work-end-date" type="date" disabled={!canProgress} className={disabledCls} min={form.startDate || undefined} value={form.dueDate} onChange={e => setForm(f => ({ ...f, dueDate: e.target.value }))} />
                 </div>
               </div>
               <div className="space-y-1.5">
-                <label className={labelCls}>Repeat</label>
+                <Label htmlFor="work-repeat" className={labelCls}>Repeat</Label>
                 {/* Picking a repeat on an undated task starts it today, since the series runs off the date. */}
-                <select disabled={ro} className={`${inputCls} ${disabledCls}`} value={form.recurrence}
+                <NativeSelect id="work-repeat" disabled={ro} className={disabledCls} value={form.recurrence}
                   onChange={e => { const recurrence = e.target.value as Recurrence | ''; setForm(f => ({ ...f, recurrence, ...(recurrence && !f.startDate && !f.dueDate ? { startDate: todayKey() } : {}) })) }}>
                   <option value="">Does not repeat</option>
                   {RECURRENCES.map(r => <option key={r.key} value={r.key}>{r.label}</option>)}
-                </select>
+                </NativeSelect>
                 {form.recurrence && (form.startDate || form.dueDate) && (
                   <p className="text-xs text-muted-foreground">{repeatHint(form.recurrence, form.startDate || form.dueDate)}</p>
                 )}
               </div>
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="space-y-1.5">
-                  <label className={labelCls}>Status</label>
-                  <select disabled={!canProgress} className={`${inputCls} ${disabledCls}`} value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value as Status }))}>
+                  <Label htmlFor="work-status" className={labelCls}>Status</Label>
+                  <NativeSelect id="work-status" disabled={!canProgress} className={disabledCls} value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value as Status }))}>
                     {STATUSES.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
-                  </select>
+                  </NativeSelect>
                 </div>
                 <div className="space-y-1.5">
-                  <label className={labelCls}>Priority</label>
-                  <select disabled={ro} className={`${inputCls} ${disabledCls}`} value={form.priority} onChange={e => setForm(f => ({ ...f, priority: e.target.value as Priority }))}>
+                  <Label htmlFor="work-priority" className={labelCls}>Priority</Label>
+                  <NativeSelect id="work-priority" disabled={ro} className={disabledCls} value={form.priority} onChange={e => setForm(f => ({ ...f, priority: e.target.value as Priority }))}>
                     {PRIORITIES.map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
-                  </select>
+                  </NativeSelect>
                 </div>
                 <div className="space-y-1.5">
-                  <label className={labelCls}>Type</label>
-                  <input list="my-works-types" disabled={ro} className={`${inputCls} ${disabledCls}`} placeholder="e.g. Report" value={form.type} onChange={e => setForm(f => ({ ...f, type: e.target.value }))} />
+                  <Label htmlFor="work-type" className={labelCls}>Type</Label>
+                  <Input id="work-type" list="my-works-types" disabled={ro} className={disabledCls} placeholder="e.g. Report" value={form.type} onChange={e => setForm(f => ({ ...f, type: e.target.value }))} />
                   <datalist id="my-works-types">{types.map(t => <option key={t} value={t} />)}</datalist>
                 </div>
               </div>
               <div className="space-y-1.5">
-                <label className={labelCls}>Assignees</label>
-                <div className="min-h-10 border rounded-lg px-3 flex items-center">
-                  <AssigneePicker value={form.assigneeIds} readOnly={ro} onChange={assigneeIds => setForm(f => ({ ...f, assigneeIds }))} />
+                <Label htmlFor="work-assignees" className={labelCls}>Assignees</Label>
+                <div className="min-h-9 border border-input rounded-md shadow-xs px-3 flex items-center">
+                  <AssigneePicker id="work-assignees" value={form.assigneeIds} readOnly={ro} onChange={assigneeIds => setForm(f => ({ ...f, assigneeIds }))} />
                 </div>
               </div>
-              {!ro && <div className="space-y-1.5">
-                <label className={labelCls}>Sub Tasks{form.subtasks.length > 0 && ` (${form.subtasks.filter(s => s.done).length}/${form.subtasks.length})`}</label>
+              {!ro && <div role="group" aria-labelledby="work-subtasks-label" className="space-y-1.5">
+                <p id="work-subtasks-label" className={labelCls}>Sub Tasks{form.subtasks.length > 0 && ` (${form.subtasks.filter(s => s.done).length}/${form.subtasks.length})`}</p>
                 <SubtasksField value={form.subtasks} onChange={subtasks => setForm(f => ({ ...f, subtasks }))} />
               </div>}
-              {canProgress && <div className="space-y-1.5">
-                <label className={labelCls}>Attachments{form.attachments.length > 0 && ` (${form.attachments.length})`}</label>
+              {canProgress && <div role="group" aria-labelledby="work-attachments-label" className="space-y-1.5">
+                <p id="work-attachments-label" className={labelCls}>Attachments{form.attachments.length > 0 && ` (${form.attachments.length})`}</p>
                 <AttachmentsField value={form.attachments} onChange={files => setForm(f => ({ ...f, attachments: files }))}
                   uploadPrefix={uploadPrefix} onBusyChange={setUploadBusy}
                   lockedUrls={ro ? new Set((editing?.attachments ?? []).map(a => a.url)) : undefined} />
               </div>}
             </div>
-            <div className="flex items-center gap-2 px-6 py-4 border-t bg-gray-50/80 shrink-0">
+            <div className="flex flex-wrap items-center gap-2 px-6 py-4 border-t bg-muted/40 shrink-0">
               {editing && !ro && (
-                <button onClick={() => remove(editing)} className="flex items-center gap-1.5 px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg transition-colors">
-                  <Trash2 className="h-4 w-4" />Delete
-                </button>
+                <Button variant="ghost" onClick={() => remove(editing)} className="gap-1.5 px-3 text-destructive hover:bg-destructive/10 hover:text-destructive dark:hover:bg-destructive/10">
+                  <Trash2 />Delete
+                </Button>
               )}
               <div className="ml-auto flex gap-2">
-                <button onClick={() => setModalOpen(false)} className="px-4 py-2 text-sm border rounded-lg hover:bg-white transition-colors">Cancel</button>
-                {canProgress && <button onClick={save} disabled={saving || uploadBusy} className="px-5 py-2 text-sm text-white rounded-lg font-semibold bg-amber-600 hover:bg-amber-700 disabled:opacity-50 transition-colors">
-                  {saving ? 'Saving...' : uploadBusy ? 'Uploading...' : editing ? 'Save' : 'Create Task'}
-                </button>}
+                <Button variant="outline" onClick={() => setModalOpen(false)}>Cancel</Button>
+                {canProgress && <Button onClick={save} loading={saving} disabled={uploadBusy} className="px-5 font-semibold">
+                  {saving ? 'Saving…' : uploadBusy ? 'Uploading…' : editing ? 'Save' : 'Create Task'}
+                </Button>}
               </div>
             </div>
             </div>
             {editing && (
-              <aside className="h-[75vh] md:h-auto md:w-[400px] shrink-0 border-t md:border-t-0 md:border-l bg-gray-50/60 min-h-0">
+              <aside className="h-[75vh] md:h-auto md:w-[400px] shrink-0 border-t md:border-t-0 md:border-l bg-muted/30 min-h-0">
                 <ActivityField todoId={editing.id} uploadPrefix={uploadPrefix} createdAt={editing.createdAt}
                   createdBy={{ id: editing.userId, user: editing.user ?? users.find(u => u.id === editing.userId) }} />
               </aside>
             )}
             </div>
-          </div>
-        </div>
-      )}
+          </DialogContent>
+      </Dialog>
     </div>
     </WorksContext.Provider>
   )

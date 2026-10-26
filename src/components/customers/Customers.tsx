@@ -3,19 +3,21 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useSession } from 'next-auth/react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
+import { Button, buttonVariants } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Badge } from '@/components/ui/badge'
+import { StatusBadge, BookingStatusBadge } from '@/components/ui/status-badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Users, Plus, Edit, Search, Mail, Phone, Ship, ChevronRight, ChevronLeft, Trash2, X, CreditCard, Calendar, RotateCw, Download, Target, Loader2 } from 'lucide-react'
+import { Users, Plus, Edit, Search, Mail, Phone, Ship, ChevronRight, ChevronLeft, Trash2, X, CreditCard, Calendar, RotateCw, Download, Target } from 'lucide-react'
 import GuestEditSheet from '@/components/customers/GuestEditSheet'
 import FreshsalesImportModal from '@/components/shared/FreshsalesImportModal'
 import { isHttpUrl } from '@/lib/url-safety'
+import { WebsiteJourney } from '@/components/shared/WebsiteJourney'
+import { formatDate, formatDateRange, formatMoney } from '@/lib/format'
 
 /* ─── Types ─────────────────────────────────────────────────────────────── */
 interface Guest {
@@ -101,14 +103,6 @@ interface PageView {
   referrer?: string | null
   title?: string | null
   occurredAt: string
-}
-
-const fmtDate = (d: string) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
-const statusColor: Record<string, string> = {
-  confirmed: 'bg-green-100 text-green-700',
-  pending:   'bg-yellow-100 text-yellow-700',
-  cancelled: 'bg-red-100 text-red-700',
-  completed: 'bg-blue-100 text-blue-700',
 }
 
 /* ─── Main Component ─────────────────────────────────────────────────────── */
@@ -271,28 +265,28 @@ export default function Guests() {
     <div className="space-y-6">
       {!detailOpen && <>
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
             <h3 className="text-2xl font-bold tracking-tight">Guest Management</h3>
-            <button onClick={() => fetchGuests()} title="Refresh" className="text-muted-foreground hover:text-foreground transition-colors mt-0.5">
+            <Button type="button" variant="ghost" size="icon" onClick={() => fetchGuests()} title="Refresh" aria-label="Refresh" className="size-8 text-muted-foreground hover:text-foreground">
               <RotateCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-            </button>
+            </Button>
           </div>
           <p className="text-muted-foreground">Manage guest profiles and view trip history</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {canExportGoogleAds && (
-            <Button variant="outline" disabled={exportingGoogleAds} onClick={handleExportGoogleAds} title="Guests who clicked a Google Ads ad (have a Google Click ID)">
-              {exportingGoogleAds ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
+            <Button variant="outline" loading={exportingGoogleAds} onClick={handleExportGoogleAds} title="Guests who clicked a Google Ads ad (have a Google Click ID)">
+              {!exportingGoogleAds && <Download className="h-4 w-4" />}
               Google Ads CSV
             </Button>
           )}
           <Button variant="outline" onClick={() => setImportOpen(true)}>
-            <Download className="mr-2 h-4 w-4" /> Import from Freshsales
+            <Download className="h-4 w-4" /> Import from Freshsales
           </Button>
           <Button onClick={() => { setSheetGuestId(null); setSheetOpen(true) }}>
-            <Plus className="mr-2 h-4 w-4" /> Add Guest
+            <Plus className="h-4 w-4" /> Add Guest
           </Button>
         </div>
       </div>
@@ -304,15 +298,22 @@ export default function Guests() {
           <CardDescription>{totalGuests} guest(s) registered</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="flex items-center gap-2 mb-4">
-            <Search className="h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search by name, email, phone, passport..."
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              className="max-w-sm"
-            />
-            {search && <button onClick={() => setSearch('')}><X className="h-4 w-4 text-muted-foreground" /></button>}
+          <div className="flex flex-wrap items-center gap-2 mb-4">
+            <div className="flex w-full sm:w-auto sm:flex-1 min-w-0 items-center gap-2">
+              <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <Input
+                placeholder="Search by name, email, phone, passport…"
+                aria-label="Search guests"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                className="max-w-sm"
+              />
+              {search && (
+                <Button type="button" variant="ghost" size="icon" onClick={() => setSearch('')} aria-label="Clear search" className="size-8 shrink-0 text-muted-foreground">
+                  <X className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
 
             {/* Bulk action bar */}
             {isAdmin && selectedIds.size > 0 && (
@@ -322,11 +323,11 @@ export default function Guests() {
                   variant="destructive" size="sm"
                   onClick={() => { setBulkErrors([]); setBulkDeleteOpen(true) }}
                 >
-                  <Trash2 className="h-3.5 w-3.5 mr-1.5" />
+                  <Trash2 className="h-3.5 w-3.5" />
                   Delete {selectedIds.size}
                 </Button>
                 <Button variant="ghost" size="sm" onClick={() => setSelectedIds(new Set())}>
-                  <X className="h-3.5 w-3.5 mr-1" /> Clear
+                  <X className="h-3.5 w-3.5" /> Clear
                 </Button>
               </div>
             )}
@@ -404,7 +405,7 @@ export default function Guests() {
                         <div>
                           <div className="flex items-center gap-1.5">
                             <p className="font-medium text-sm">{g.name}</p>
-                            {g.isChild && <span className="text-[9px] font-semibold bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full">Child</span>}
+                            {g.isChild && <span className="text-[9px] font-semibold bg-info/15 text-info px-1.5 py-0.5 rounded-full">Child</span>}
                           </div>
                           {g.gender && <p className="text-xs text-muted-foreground">{g.gender}</p>}
                         </div>
@@ -420,15 +421,15 @@ export default function Guests() {
                       {g.isSubscribed === null ? (
                         <span className="text-muted-foreground text-xs">—</span>
                       ) : g.isSubscribed ? (
-                        <Badge className="bg-green-100 text-green-700 hover:bg-green-100 border-transparent">Subscribed</Badge>
+                        <StatusBadge tone="success">Subscribed</StatusBadge>
                       ) : (
-                        <Badge className="bg-gray-100 text-gray-600 hover:bg-gray-100 border-transparent">Unsubscribed</Badge>
+                        <StatusBadge tone="neutral">Unsubscribed</StatusBadge>
                       )}
                     </TableCell>
                     <TableCell>
                       {g.passport ? <div className="flex items-center gap-1 text-xs"><CreditCard className="h-3 w-3 text-muted-foreground" />{g.passport}</div> : <span className="text-muted-foreground text-xs">—</span>}
                     </TableCell>
-                    <TableCell className="text-sm">{g.dateOfBirth ? fmtDate(g.dateOfBirth) : <span className="text-muted-foreground">—</span>}</TableCell>
+                    <TableCell className="text-sm">{g.dateOfBirth ? formatDate(g.dateOfBirth) : <span className="text-muted-foreground">—</span>}</TableCell>
                     <TableCell>
                       <div className="flex items-center gap-1.5">
                         <Ship className="h-3.5 w-3.5 text-muted-foreground" />
@@ -437,17 +438,18 @@ export default function Guests() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1">
-                        <Button variant="ghost" size="icon" onClick={e => openEdit(g, e)}><Edit className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" onClick={e => openEdit(g, e)} aria-label="Edit guest"><Edit className="h-4 w-4" /></Button>
                         {isAdmin && (
                           <Button
                             variant="ghost" size="icon"
                             className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                            aria-label="Delete guest"
                             onClick={e => { e.stopPropagation(); setDeleteError(''); setDeleteTarget(g) }}
                           >
                             <Trash2 className="h-4 w-4" />
                           </Button>
                         )}
-                        <Button variant="ghost" size="icon" onClick={e => { e.stopPropagation(); openDetail(g) }}><ChevronRight className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" onClick={e => { e.stopPropagation(); openDetail(g) }} aria-label="View guest details"><ChevronRight className="h-4 w-4" /></Button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -457,13 +459,13 @@ export default function Guests() {
           </div>
 
           {totalPages > 1 && (
-            <div className="flex items-center justify-between text-sm pt-4">
+            <div className="flex flex-wrap items-center justify-between gap-2 text-sm pt-4">
               <p className="text-muted-foreground text-xs">Page {page} of {totalPages} · {totalGuests} guest(s)</p>
-              <div className="flex items-center gap-1">
-                <Button variant="outline" size="icon" className="h-8 w-8" disabled={page <= 1} onClick={() => goToPage(1)}>
+              <div className="flex flex-wrap items-center gap-1">
+                <Button variant="outline" size="icon" className="size-8" disabled={page <= 1} onClick={() => goToPage(1)} aria-label="First page">
                   <ChevronLeft className="h-3 w-3" /><ChevronLeft className="h-3 w-3 -ml-2" />
                 </Button>
-                <Button variant="outline" size="icon" className="h-8 w-8" disabled={page <= 1} onClick={() => goToPage(page - 1)}>
+                <Button variant="outline" size="icon" className="size-8" disabled={page <= 1} onClick={() => goToPage(page - 1)} aria-label="Previous page">
                   <ChevronLeft className="h-4 w-4" />
                 </Button>
                 {Array.from({ length: totalPages }, (_, i) => i + 1)
@@ -480,17 +482,19 @@ export default function Guests() {
                       <Button
                         key={p}
                         variant={page === p ? 'default' : 'outline'}
-                        size="icon" className="h-8 w-8 text-xs"
+                        size="icon" className="size-8 text-xs"
+                        aria-label={`Page ${p}`}
+                        aria-current={page === p ? 'page' : undefined}
                         onClick={() => goToPage(p as number)}
                       >
                         {p}
                       </Button>
                     )
                   )}
-                <Button variant="outline" size="icon" className="h-8 w-8" disabled={page >= totalPages} onClick={() => goToPage(page + 1)}>
+                <Button variant="outline" size="icon" className="size-8" disabled={page >= totalPages} onClick={() => goToPage(page + 1)} aria-label="Next page">
                   <ChevronRight className="h-4 w-4" />
                 </Button>
-                <Button variant="outline" size="icon" className="h-8 w-8" disabled={page >= totalPages} onClick={() => goToPage(totalPages)}>
+                <Button variant="outline" size="icon" className="size-8" disabled={page >= totalPages} onClick={() => goToPage(totalPages)} aria-label="Last page">
                   <ChevronRight className="h-3 w-3" /><ChevronRight className="h-3 w-3 -ml-2" />
                 </Button>
               </div>
@@ -514,7 +518,7 @@ export default function Guests() {
       {detailOpen && (
         <>
           <div className="flex items-center gap-3">
-            <Button variant="outline" size="icon" onClick={closeDetail}>
+            <Button variant="outline" size="icon" onClick={closeDetail} aria-label="Back to guest list" className="shrink-0">
               <ChevronLeft className="h-4 w-4" />
             </Button>
             {detailLoading || !detail ? (
@@ -523,7 +527,7 @@ export default function Guests() {
                 <Skeleton className="h-4 w-32" />
               </div>
             ) : (
-              <div className="flex-1 flex items-start justify-between">
+              <div className="flex-1 min-w-0 flex items-start justify-between gap-2">
                 <div>
                   <h3 className="text-xl font-bold tracking-tight">{detail.name}</h3>
                   <p className="text-sm text-muted-foreground mt-0.5">
@@ -532,7 +536,7 @@ export default function Guests() {
                   </p>
                 </div>
                 <Button size="sm" variant="outline" onClick={e => openEdit(detail, e)}>
-                  <Edit className="h-3.5 w-3.5 mr-1.5" /> Edit
+                  <Edit className="h-3.5 w-3.5" /> Edit
                 </Button>
               </div>
             )}
@@ -559,12 +563,12 @@ export default function Guests() {
               ) : (
                 <div className="space-y-4">
                   {/* Info grid */}
-                  <div className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 text-sm">
                     {[
                       ['Email', detail.email],
                       ['Phone', detail.phone],
                       ['Passport / ID', detail.passport],
-                      ['Date of Birth', detail.dateOfBirth ? fmtDate(detail.dateOfBirth) : ''],
+                      ['Date of Birth', detail.dateOfBirth ? formatDate(detail.dateOfBirth) : ''],
                       ['Nationality', detail.nationality],
                       ['Address', detail.address],
                       ['Dietary Requirements', detail.dietaryRequirements],
@@ -574,7 +578,7 @@ export default function Guests() {
                     ].filter(([, v]) => v).map(([label, value]) => (
                       <div key={label}>
                         <p className="text-xs text-muted-foreground uppercase tracking-wide">{label}</p>
-                        <p className="font-medium mt-0.5">{value}</p>
+                        <p className="font-medium mt-0.5 break-words">{value}</p>
                       </div>
                     ))}
                   </div>
@@ -587,7 +591,7 @@ export default function Guests() {
                       <Ship className="h-4 w-4 text-muted-foreground" />
                       Trip History ({detail.tripHistory.filter(t => !t.isWaitingList).length})
                       {detail.tripHistory.some(t => t.isWaitingList) && (
-                        <span className="text-[10px] font-medium bg-amber-100 text-amber-700 border border-amber-200 rounded px-1.5 py-0.5">
+                        <span className="text-[10px] font-medium bg-warning/15 text-warning border border-warning/30 rounded px-1.5 py-0.5">
                           +{detail.tripHistory.filter(t => t.isWaitingList).length} waiting list
                         </span>
                       )}
@@ -597,40 +601,34 @@ export default function Guests() {
                     ) : (
                       <div className="space-y-2">
                         {detail.tripHistory.map(t => (
-                          <div key={t.id} className={`rounded-lg border p-3 text-sm ${t.isWaitingList ? 'border-amber-200 bg-amber-50/40' : ''}`}>
+                          <div key={t.id} className={`rounded-lg border p-3 text-sm ${t.isWaitingList ? 'border-warning/30 bg-warning/5' : ''}`}>
                             <div className="flex items-start justify-between gap-2">
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-2 flex-wrap">
                                   <span className="font-semibold font-mono text-xs bg-muted px-1.5 py-0.5 rounded">{t.bookingCode}</span>
                                   {t.isWaitingList && (
-                                    <span className="text-[10px] bg-amber-100 text-amber-700 border border-amber-200 rounded px-1.5 py-0.5 font-medium">Waiting List</span>
+                                    <span className="text-[10px] bg-warning/15 text-warning border border-warning/30 rounded px-1.5 py-0.5 font-medium">Waiting List</span>
                                   )}
-                                  {!t.isWaitingList && t.isLead && <span className="text-[10px] bg-[#bdac7e]/20 text-[#8a7040] rounded px-1.5 py-0.5 font-medium">Lead</span>}
+                                  {!t.isWaitingList && t.isLead && <span className="text-[10px] bg-primary/20 text-primary-strong rounded px-1.5 py-0.5 font-medium">Lead</span>}
                                   {t.cabin && <span className="text-[10px] text-muted-foreground">{t.cabin}</span>}
                                 </div>
                                 <p className="font-medium mt-1">{t.tripTitle || t.destination || '—'}</p>
                                 {t.yachtName && <p className="text-xs text-muted-foreground">{t.yachtName}</p>}
                                 <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
                                   <Calendar className="h-3 w-3" />
-                                  {fmtDate(t.startDate)} – {fmtDate(t.endDate)}
+                                  {formatDateRange(t.startDate, t.endDate)}
                                 </div>
                               </div>
                               <div className="text-right shrink-0">
                                 {t.isWaitingList ? (
-                                  <Badge variant="outline" className={`text-[10px] ${
-                                    t.wlStatus === 'waiting'   ? 'bg-yellow-50 text-yellow-700 border-yellow-200' :
-                                    t.wlStatus === 'promoted'  ? 'bg-green-50 text-green-700 border-green-200' :
-                                                                 'bg-slate-100 text-slate-500 border-slate-200'
-                                  }`}>
+                                  <StatusBadge size="sm" tone={t.wlStatus === 'waiting' ? 'warning' : t.wlStatus === 'promoted' ? 'success' : 'neutral'}>
                                     {t.wlStatus === 'waiting' ? 'Waiting' : t.wlStatus === 'promoted' ? 'Promoted' : 'Cancelled'}
-                                  </Badge>
+                                  </StatusBadge>
                                 ) : (
-                                  <Badge className={`text-[10px] ${statusColor[t.status] ?? 'bg-gray-100 text-gray-600'}`} variant="outline">
-                                    {t.status}
-                                  </Badge>
+                                  <BookingStatusBadge status={t.status} size="sm" />
                                 )}
                                 {!t.isWaitingList && (
-                                  <p className="text-xs text-muted-foreground mt-1.5">${t.totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                                  <p className="text-xs text-muted-foreground mt-1.5">{formatMoney(t.totalPrice, { currency: 'USD' })}</p>
                                 )}
                               </div>
                             </div>
@@ -655,13 +653,13 @@ export default function Guests() {
                           <div key={inq.id} className="rounded-lg border px-3 py-2 space-y-1 text-sm">
                             <div className="flex items-center justify-between gap-2">
                               <span className="text-xs font-medium">{inq.source}</span>
-                              <span className="text-[11px] text-muted-foreground">{new Date(inq.createdAt).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                              <span className="text-[11px] text-muted-foreground">{formatDate(inq.createdAt, 'datetime')}</span>
                             </div>
                             {(inq.checkInDate || inq.checkOutDate) && (
                               <p className="text-xs text-muted-foreground">
-                                {inq.checkInDate ? fmtDate(inq.checkInDate) : '—'}
+                                {inq.checkInDate ? formatDate(inq.checkInDate) : '—'}
                                 {' → '}
-                                {inq.checkOutDate ? fmtDate(inq.checkOutDate) : '—'}
+                                {inq.checkOutDate ? formatDate(inq.checkOutDate) : '—'}
                                 {inq.guestCount ? ` · ${inq.guestCount} guest${inq.guestCount > 1 ? 's' : ''}` : ''}
                                 {inq.tripType ? ` · ${inq.tripType}` : ''}
                               </p>
@@ -674,6 +672,7 @@ export default function Guests() {
                             )}
                             {(inq.utmSource || inq.utmMedium || inq.utmCampaign || inq.lastSource || inq.gclid || inq.fbclid) && (
                               <button
+                                type="button"
                                 onClick={() => setAttributionInquiry(inq)}
                                 className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground pt-0.5 transition-colors"
                               >
@@ -691,22 +690,7 @@ export default function Guests() {
                   {/* Website Journey */}
                   <div>
                     <p className="text-sm font-semibold mb-3">Website Journey</p>
-                    {pageViews === null ? (
-                      <p className="text-sm text-muted-foreground">Loading…</p>
-                    ) : pageViews.length === 0 ? (
-                      <p className="text-sm text-muted-foreground">No page views recorded yet</p>
-                    ) : (
-                      <div className="rounded-lg border divide-y max-h-64 overflow-y-auto">
-                        {pageViews.map(pv => (
-                          <div key={pv.id} className="flex items-center justify-between gap-3 px-3 py-1.5">
-                            <span className="text-xs font-mono truncate">
-                              {isHttpUrl(pv.url) ? <a href={pv.url} target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground">{pv.title || pv.url}</a> : (pv.title || pv.url)}
-                            </span>
-                            <span className="text-[11px] text-muted-foreground shrink-0">{new Date(pv.occurredAt).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
+                    <WebsiteJourney pageViews={pageViews} />
                   </div>
                 </div>
               )}
@@ -721,7 +705,7 @@ export default function Guests() {
           <DialogHeader>
             <DialogTitle>Attribution</DialogTitle>
             <DialogDescription>
-              {attributionInquiry && new Date(attributionInquiry.createdAt).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+              {attributionInquiry && formatDate(attributionInquiry.createdAt, 'datetime')}
             </DialogDescription>
           </DialogHeader>
           {attributionInquiry && (() => {
@@ -793,11 +777,11 @@ export default function Guests() {
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              className="bg-destructive hover:bg-destructive/90 text-white"
+              className={buttonVariants({ variant: 'destructive' })}
               disabled={deleting}
               onClick={e => { e.preventDefault(); confirmDelete() }}
             >
-              {deleting ? 'Deleting...' : 'Delete Guest'}
+              {deleting ? 'Deleting…' : 'Delete Guest'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -825,11 +809,11 @@ export default function Guests() {
             </AlertDialogCancel>
             {bulkErrors.length === 0 && (
               <AlertDialogAction
-                className="bg-destructive hover:bg-destructive/90 text-white"
+                className={buttonVariants({ variant: 'destructive' })}
                 disabled={bulkDeleting}
                 onClick={e => { e.preventDefault(); confirmBulkDelete() }}
               >
-                {bulkDeleting ? 'Deleting...' : `Delete ${selectedIds.size}`}
+                {bulkDeleting ? 'Deleting…' : `Delete ${selectedIds.size}`}
               </AlertDialogAction>
             )}
           </AlertDialogFooter>

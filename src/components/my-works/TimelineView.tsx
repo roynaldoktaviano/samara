@@ -3,6 +3,8 @@
 import { Fragment, useMemo, useState } from 'react'
 import { ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react'
 import { STATUSES, dayKey, todayKey, fmtRange, isOverdue, isSubOverdue, flattenWithDepth, PRIORITY_META, SubtaskCount, type Todo, type Status } from './shared'
+import { formatDate, formatDateRange } from '@/lib/format'
+import { Button } from '@/components/ui/button'
 
 const DAY_MS = 86400000
 const CELL = 36        // px per day
@@ -35,7 +37,7 @@ export default function TimelineView({ todos, onEdit }: Props) {
   const days = useMemo(() => Array.from({ length: DAYS }, (_, i) => {
     const ms = start + i * DAY_MS
     const d = new Date(ms)
-    return { ms, key: keyOf(ms), day: d.getUTCDate(), dow: d.getUTCDay(), month: d.toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' }) }
+    return { ms, key: keyOf(ms), day: d.getUTCDate(), dow: d.getUTCDay(), month: formatDate(d, 'monthYear', { utc: true }) }
   }), [start])
 
   // Month header spans.
@@ -67,14 +69,14 @@ export default function TimelineView({ todos, onEdit }: Props) {
     }
   }
 
-  const rangeLabel = `${new Date(start).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })} – ${new Date(end).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })}`
+  const rangeLabel = formatDateRange(start, end, { utc: true })
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center gap-2">
-        <button onClick={() => setStart(s => s - 14 * DAY_MS)} className="p-1.5 rounded-lg border hover:bg-muted" title="Previous 2 weeks"><ChevronLeft className="h-4 w-4" /></button>
-        <button onClick={() => setStart(mondayOf(todayMs) - 7 * DAY_MS)} className="px-3 py-1.5 rounded-lg border hover:bg-muted text-sm font-medium">Today</button>
-        <button onClick={() => setStart(s => s + 14 * DAY_MS)} className="p-1.5 rounded-lg border hover:bg-muted" title="Next 2 weeks"><ChevronRight className="h-4 w-4" /></button>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button variant="outline" size="icon" onClick={() => setStart(s => s - 14 * DAY_MS)} className="size-8" title="Previous 2 weeks" aria-label="Previous 2 weeks"><ChevronLeft /></Button>
+        <Button variant="outline" size="sm" onClick={() => setStart(mondayOf(todayMs) - 7 * DAY_MS)}>Today</Button>
+        <Button variant="outline" size="icon" onClick={() => setStart(s => s + 14 * DAY_MS)} className="size-8" title="Next 2 weeks" aria-label="Next 2 weeks"><ChevronRight /></Button>
         <span className="text-sm text-muted-foreground ml-2">{rangeLabel}</span>
       </div>
 
@@ -92,8 +94,8 @@ export default function TimelineView({ todos, onEdit }: Props) {
               <div className="flex">
                 {days.map(d => (
                   <div key={d.key} style={{ width: CELL }}
-                    className={`text-center py-1.5 text-[11px] border-l first:border-l-0 ${d.key === today ? 'text-white' : d.dow === 0 || d.dow === 6 ? 'text-muted-foreground/60 bg-muted/40' : 'text-muted-foreground'}`}>
-                    <span className={d.key === today ? 'inline-flex h-5 w-5 items-center justify-center rounded-full bg-amber-600 font-semibold' : ''}>{d.day}</span>
+                    className={`text-center py-1.5 text-[11px] border-l first:border-l-0 ${d.key === today ? 'text-primary-foreground' : d.dow === 0 || d.dow === 6 ? 'text-muted-foreground/60 bg-muted/40' : 'text-muted-foreground'}`}>
+                    <span className={d.key === today ? 'inline-flex h-5 w-5 items-center justify-center rounded-full bg-primary font-semibold' : ''}>{d.day}</span>
                   </div>
                 ))}
               </div>
@@ -108,7 +110,7 @@ export default function TimelineView({ todos, onEdit }: Props) {
                 <div key={d.key} className="absolute inset-y-0 bg-muted/30" style={{ left: i * CELL, width: CELL }} />
               ))}
               {todayIdx >= 0 && todayIdx < DAYS && (
-                <div className="absolute inset-y-0 w-px bg-amber-500 z-10" style={{ left: todayIdx * CELL + CELL / 2 }} />
+                <div className="absolute inset-y-0 w-px bg-primary z-10" style={{ left: todayIdx * CELL + CELL / 2 }} />
               )}
             </div>
 
@@ -118,7 +120,7 @@ export default function TimelineView({ todos, onEdit }: Props) {
               return (
                 <div key={s.key}>
                   <div className="flex border-b bg-muted/50 relative">
-                    <button onClick={() => setCollapsed(c => ({ ...c, [s.key]: open }))} style={{ width: LEFT }}
+                    <button onClick={() => setCollapsed(c => ({ ...c, [s.key]: open }))} style={{ width: LEFT }} aria-expanded={open}
                       className="shrink-0 sticky left-0 z-10 bg-muted flex items-center gap-2 px-3 py-2 text-sm font-semibold border-r">
                       <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${open ? '' : '-rotate-90'}`} />
                       <span className={`h-4 w-1 rounded-full ${s.bar}`} />{s.label}
@@ -135,11 +137,11 @@ export default function TimelineView({ todos, onEdit }: Props) {
                       <div className="flex border-b h-11 hover:bg-muted/20">
                         <div style={{ width: LEFT }} className="shrink-0 sticky left-0 z-10 bg-background border-r pl-2 pr-3 flex items-center gap-1.5">
                           {subs.length > 0 ? (
-                            <button onClick={() => toggleSubs(t.id)} className="p-0.5 rounded hover:bg-muted text-muted-foreground shrink-0" title={subsOpen ? 'Hide sub tasks' : 'Show sub tasks'}>
+                            <button onClick={() => toggleSubs(t.id)} className="p-0.5 rounded hover:bg-muted text-muted-foreground shrink-0" title={subsOpen ? 'Hide sub tasks' : 'Show sub tasks'} aria-label={subsOpen ? 'Hide sub tasks' : 'Show sub tasks'} aria-expanded={subsOpen}>
                               <ChevronDown className={`h-3.5 w-3.5 transition-transform ${subsOpen ? '' : '-rotate-90'}`} />
                             </button>
                           ) : <span className="w-[18px] shrink-0" />}
-                          <button onClick={() => onEdit(t)} className="flex-1 min-w-0 flex items-center gap-2 text-left text-sm hover:text-amber-700">
+                          <button onClick={() => onEdit(t)} className="flex-1 min-w-0 flex items-center gap-2 text-left text-sm hover:text-primary-strong">
                             <span className={`h-2 w-2 rounded-full shrink-0 ${PRIORITY_META[t.priority].dot}`} title={`${PRIORITY_META[t.priority].label} priority`} />
                             <span className={`truncate ${t.status === 'DONE' ? 'line-through text-muted-foreground' : ''}`}>{t.title}</span>
                           </button>
@@ -147,7 +149,7 @@ export default function TimelineView({ todos, onEdit }: Props) {
                         </div>
                         <div className="relative" style={{ width }}>
                           {!b ? (
-                            <button onClick={() => onEdit(t)} className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground hover:text-amber-700 hover:underline">
+                            <button onClick={() => onEdit(t)} className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground hover:text-primary-strong hover:underline">
                               No dates — set estimation
                             </button>
                           ) : 'offscreen' in b ? (
@@ -157,8 +159,8 @@ export default function TimelineView({ todos, onEdit }: Props) {
                           ) : (
                             <button onClick={() => onEdit(t)} title={`${t.title} · ${fmtRange(t)}`}
                               style={{ left: b.left + 2, width: Math.max(b.width - 4, 8) }}
-                              className={`absolute top-2 bottom-2 z-[5] px-2 flex items-center text-xs font-medium text-white shadow-sm hover:brightness-110 transition
-                                ${s.bar} ${overdue ? 'ring-2 ring-red-400' : ''} ${b.clipLeft ? 'rounded-l-none' : 'rounded-l-md'} ${b.clipRight ? 'rounded-r-none' : 'rounded-r-md'}`}>
+                              className={`absolute top-2 bottom-2 z-[5] px-2 flex items-center text-xs font-medium text-background shadow-sm hover:brightness-110 transition
+                                ${s.bar} ${overdue ? 'ring-2 ring-destructive/70' : ''} ${b.clipLeft ? 'rounded-l-none' : 'rounded-l-md'} ${b.clipRight ? 'rounded-r-none' : 'rounded-r-md'}`}>
                               <span className="truncate">{t.title}</span>
                             </button>
                           )}
@@ -170,7 +172,7 @@ export default function TimelineView({ todos, onEdit }: Props) {
                         return (
                           <div key={sub.id} className="flex border-b h-9 hover:bg-muted/20">
                             <button onClick={() => onEdit(t)} style={{ width: LEFT, paddingLeft: 26 + depth * 14 }}
-                              className="shrink-0 sticky left-0 z-10 bg-background border-r pr-3 flex items-center gap-2 text-left text-xs hover:text-amber-700">
+                              className="shrink-0 sticky left-0 z-10 bg-background border-r pr-3 flex items-center gap-2 text-left text-xs hover:text-primary-strong">
                               {sub.priority
                                 ? <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${PRIORITY_META[sub.priority].dot}`} />
                                 : <span className="h-1.5 w-1.5 rounded-full shrink-0 border border-muted-foreground/40" />}
@@ -185,8 +187,8 @@ export default function TimelineView({ todos, onEdit }: Props) {
                                 <button onClick={() => onEdit(t)} title={`${t.title} › ${sub.title} · ${fmtRange(sub)}`}
                                   style={{ left: sb.left + 2, width: Math.max(sb.width - 4, 8) }}
                                   className={`absolute top-2 bottom-2 z-[5] px-2 flex items-center text-[11px] font-medium shadow-sm hover:brightness-105 transition border
-                                    ${sub.done ? 'bg-emerald-100 text-emerald-800 border-emerald-200' : 'bg-background text-foreground/80 border-dashed border-muted-foreground/50'}
-                                    ${subOverdue ? 'ring-2 ring-red-400' : ''} ${sb.clipLeft ? 'rounded-l-none' : 'rounded-l-md'} ${sb.clipRight ? 'rounded-r-none' : 'rounded-r-md'}`}>
+                                    ${sub.done ? 'bg-success/15 text-success border-success/30' : 'bg-background text-foreground/80 border-dashed border-muted-foreground/50'}
+                                    ${subOverdue ? 'ring-2 ring-destructive/70' : ''} ${sb.clipLeft ? 'rounded-l-none' : 'rounded-l-md'} ${sb.clipRight ? 'rounded-r-none' : 'rounded-r-md'}`}>
                                   <span className={`truncate ${sub.done ? 'line-through' : ''}`}>{sub.title}</span>
                                 </button>
                               )}

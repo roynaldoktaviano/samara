@@ -17,6 +17,8 @@ import { renderLocationOptions } from '@/components/purchasing/LocationOptions'
 import { TripPicker, tripDates, tripShortLabel, tripLinkBody, type TripOption } from '@/components/purchasing/TripPicker'
 import { RupiahInput } from '@/components/ui/rupiah-input'
 import { TREATMENTS, TREATMENT_LABEL, type Treatment } from '@/lib/purchasing/treatment'
+import { formatDate, formatMoney } from '@/lib/format'
+import { StatusBadge, type StatusTone } from '@/components/ui/status-badge'
 
 type FileDropProps = ReturnType<typeof useFileDrop>['dropProps']
 
@@ -110,18 +112,18 @@ interface EscalationTarget { id: string; name: string | null }
 const STATUS_LABEL: Record<string, string> = {
   PENDING_APPROVAL: 'Pending Manager Approval', DRAFT: 'Draft', WAREHOUSE: 'Warehouse Check', ON_PROCESS: 'On Process', CONVERTED: 'Converted', REJECTED: 'Rejected', CANCELLED: 'Cancelled',
 }
-const STATUS_COLOR: Record<string, string> = {
-  PENDING_APPROVAL: 'bg-purple-100 text-purple-700', DRAFT: 'bg-blue-100 text-blue-700', ON_PROCESS: 'bg-amber-100 text-amber-700', CONVERTED: 'bg-green-100 text-green-700',
-  REJECTED: 'bg-red-100 text-red-700', CANCELLED: 'bg-muted text-muted-foreground',
+const STATUS_TONE: Record<string, StatusTone> = {
+  PENDING_APPROVAL: 'warning', DRAFT: 'info', ON_PROCESS: 'warning', CONVERTED: 'success',
+  REJECTED: 'destructive', CANCELLED: 'neutral',
 }
-// Mirrors OrdersPage's own STATUS_LABEL/STATUS_COLOR so a PO's status reads the same
+// Mirrors OrdersPage's own STATUS_LABEL/STATUS_TONE so a PO's status reads the same
 // wherever it shows up.
 const PO_STATUS_LABEL: Record<string, string> = {
   DRAFT: 'Draft', ORDERED: 'Ordered', IN_TRANSIT: 'On Delivery', PARTIALLY_RECEIVED: 'Partially Received', RECEIVED: 'Received', CANCELLED: 'Cancelled',
 }
-const PO_STATUS_COLOR: Record<string, string> = {
-  DRAFT: 'bg-muted text-muted-foreground', ORDERED: 'bg-blue-100 text-blue-700', IN_TRANSIT: 'bg-amber-100 text-amber-700',
-  PARTIALLY_RECEIVED: 'bg-orange-100 text-orange-700', RECEIVED: 'bg-green-100 text-green-700', CANCELLED: 'bg-red-100 text-red-700',
+const PO_STATUS_TONE: Record<string, StatusTone> = {
+  DRAFT: 'neutral', ORDERED: 'info', IN_TRANSIT: 'warning',
+  PARTIALLY_RECEIVED: 'warning', RECEIVED: 'success', CANCELLED: 'neutral',
 }
 // Ranks a PR's linked POs by progress so the list can surface the one bottlenecking the
 // whole request — a cancelled PO shouldn't hide that a sibling PO is still stuck at Ordered.
@@ -151,17 +153,9 @@ function toTitleCase(s: string) {
   return s.toLowerCase().replace(/\b\w/g, c => c.toUpperCase())
 }
 
-function fmtDate(s: string) {
-  return new Date(s).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
-}
-
-function fmtDateTime(s: string) {
-  return new Date(s).toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
-}
-
 function UrgentBadge() {
   return (
-    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-600 text-white animate-pulse">
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-destructive text-destructive-foreground animate-pulse">
       <AlertTriangle className="h-3 w-3" /> URGENT
     </span>
   )
@@ -172,7 +166,7 @@ const DIVISION_LABEL: Record<string, string> = { BOAT_OPERATION: 'Boat Operation
 function DivisionBadge({ division }: { division: 'BOAT_OPERATION' | 'BUILDING_MATERIAL' | null }) {
   if (!division) return null
   return (
-    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-600">
+    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-muted text-muted-foreground">
       {DIVISION_LABEL[division]}
     </span>
   )
@@ -204,7 +198,7 @@ function TransferBadge({ transfer, onOpen }: { transfer?: RequestLine['transfer'
         type="button" disabled={!clickable}
         onClick={e => { e.stopPropagation(); if (transfer && onOpen) onOpen(transfer.id) }}
         title={clickable ? 'Open transfer' : undefined}
-        className={`inline-flex items-center gap-1 text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-md px-2 py-1 whitespace-nowrap ${clickable ? 'hover:bg-blue-100 cursor-pointer' : 'cursor-default'}`}
+        className={`inline-flex items-center gap-1 text-xs font-medium text-info bg-info/10 border border-info/30 rounded-md px-2 py-1 whitespace-nowrap ${clickable ? 'hover:bg-info/20 cursor-pointer' : 'cursor-default'}`}
       >
         <ArrowRightLeft className="h-3 w-3" />
         {transfer?.transferNumber ?? 'Transfer from stock'}
@@ -220,7 +214,7 @@ function TransferBadge({ transfer, onOpen }: { transfer?: RequestLine['transfer'
 // Next to an ON_PROCESS status: Purchasing is on it, but Warehouse is still checking some lines.
 function WarehouseCheckTag({ r }: { r: { status: string; warehousePending?: boolean } }) {
   if (r.status !== 'ON_PROCESS' || !r.warehousePending) return null
-  return <span className="ml-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-blue-50 text-blue-700 whitespace-nowrap">+ Warehouse check</span>
+  return <StatusBadge tone="info" size="sm" className="ml-1">+ Warehouse check</StatusBadge>
 }
 
 // Warehouse still owns part of this PR: DRAFT, or ON_PROCESS while Purchasing works the direct
@@ -249,10 +243,10 @@ function lineQtyLabel(item: { unit?: string; itemUnit?: string; baseUnit?: strin
 function BackorderBadge({ item }: { item: Parameters<typeof lineQtyLabel>[0] & { backorderQty?: number } }) {
   if (!item.backorderQty || item.backorderQty <= 0) return null
   return (
-    <span className="inline-block text-[10px] font-medium text-red-700 bg-red-50 border border-red-200 rounded-full px-2 py-0.5 whitespace-nowrap"
+    <StatusBadge tone="destructive" size="sm"
       title="Shipped on a follow-up transfer once restock arrives at the warehouse">
       Backorder {lineQtyLabel(item, item.backorderQty)} · waiting restock
-    </span>
+    </StatusBadge>
   )
 }
 
@@ -1158,7 +1152,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
     // Same fallback the dropdown displays — the preselected most-stock warehouse counts
     // as a choice even if the user never touched the dropdown.
     const fromLocationId = warehouseFrom[item.id] ?? item.stockCheck?.locationId ?? item.warehouseStock?.slice().sort((a, b) => b.qty - a.qty)[0]?.locationId ?? ''
-    if (!fromLocationId) { toast.error('Pilih lokasi gudang dulu'); return }
+    if (!fromLocationId) { toast.error('Select a warehouse location first'); return }
     setWarehouseBusyItemId(item.id)
     const res = await fetch(`/api/purchasing/requests/${detail.id}/items/${item.id}/warehouse-check`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
@@ -1166,14 +1160,14 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
     })
     const data = await res.json().catch(() => ({}))
     setWarehouseBusyItemId(null)
-    if (!res.ok) { toast.error(data.error ?? 'Gagal memproses item'); return }
+    if (!res.ok) { toast.error(data.error ?? 'Failed to process item'); return }
     const restock = data.restockRequests?.length ? ` · To Be Order → ${data.restockRequests.join(', ')}` : ''
     toast.success(data.outcome === 'PURCHASE'
-      ? `${item.itemName} kosong di gudang — diteruskan ke Purchasing${restock}`
+      ? `${item.itemName} out of stock in warehouse — sent to Purchasing${restock}`
       : data.backorderQty > 0
-        ? `${item.itemName}: kirim ${lineQtyLabel(item, data.sendQty)} (${data.transferNumber}), backorder ${lineQtyLabel(item, data.backorderQty)}${restock}`
-        : `${item.itemName}: kirim ${lineQtyLabel(item, data.sendQty)} (${data.transferNumber})${restock}`)
-    if (data.finished) toast.success('Cek gudang selesai')
+        ? `${item.itemName}: sending ${lineQtyLabel(item, data.sendQty)} (${data.transferNumber}), backorder ${lineQtyLabel(item, data.backorderQty)}${restock}`
+        : `${item.itemName}: sending ${lineQtyLabel(item, data.sendQty)} (${data.transferNumber})${restock}`)
+    if (data.finished) toast.success('Warehouse check done')
     await fetchDetail(detail.id)
     if (data.finished || data.outcome === 'PURCHASE') load()
   }
@@ -1187,10 +1181,10 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
     const res = await fetch(`/api/purchasing/requests/${detail.id}/warehouse-forward`, { method: 'PATCH' })
     const data = await res.json().catch(() => ({}))
     setWarehouseForwarding(false)
-    if (!res.ok) { toast.error(data.error ?? 'Gagal meneruskan request'); return }
+    if (!res.ok) { toast.error(data.error ?? 'Failed to forward request'); return }
     if (data.status) setSelected(s => s ? { ...s, status: data.status } : s)
-    toast.success(data.remainingItems?.length ? 'Diteruskan ke Purchasing' : 'Request selesai — semua dari stok gudang')
-    if (data.restockRequests?.length) toast.success(`Restock gudang dibuat: ${data.restockRequests.join(', ')}`)
+    toast.success(data.remainingItems?.length ? 'Sent to Purchasing' : 'Request completed — all from warehouse stock')
+    if (data.restockRequests?.length) toast.success(`Warehouse restock created: ${data.restockRequests.join(', ')}`)
     await fetchDetail(detail.id)
     load()
   }
@@ -1239,7 +1233,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
     if (undecided.length > 0) return null
     return (
       <button onClick={warehouseForward} disabled={warehouseForwarding}
-        className="px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+        className="px-4 py-2 text-sm bg-success text-success-foreground rounded-lg hover:bg-success/90 font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
         Finish Warehouse Check
       </button>
     )
@@ -1277,7 +1271,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
           <h2 className="text-2xl font-bold tracking-tight">Purchase Request</h2>
           <p className="text-muted-foreground text-sm mt-1">Purchase requests to suppliers</p>
         </div>
-        <button onClick={() => setView('create')} className="flex items-center gap-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium px-4 py-2 rounded-md transition-colors">
+        <button onClick={() => setView('create')} className="flex items-center gap-2 bg-primary hover:bg-primary-hover text-primary-foreground text-sm font-medium px-4 py-2 rounded-md transition-colors">
           <Plus className="h-4 w-4" /> New PR
         </button>
       </div>
@@ -1290,11 +1284,11 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
           {([['MINE', DIVISION_LABEL[myDivision]], ['ALL', 'All Requests']] as const).map(([key, label]) => (
             <button key={key} onClick={() => { setDivisionScope(key); setFilterStatus('ALL'); setCardPage(1) }}
               className={`px-3 py-1.5 text-sm font-medium rounded-[5px] transition-colors flex items-center gap-1.5 ${
-                divisionScope === key ? 'bg-white shadow-sm text-amber-700' : 'text-muted-foreground hover:text-foreground'
+                divisionScope === key ? 'bg-card shadow-sm text-warning' : 'text-muted-foreground hover:text-foreground'
               }`}>
               {label}
               {key === 'MINE' && (
-                <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${divisionScope === key ? 'bg-amber-100 text-amber-700' : 'bg-muted text-muted-foreground'}`}>
+                <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${divisionScope === key ? 'bg-warning/15 text-warning' : 'bg-muted text-muted-foreground'}`}>
                   {myDivisionCount}
                 </span>
               )}
@@ -1311,11 +1305,11 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
           {([['ALL', 'All Requests'], ['MINE', 'Requested by Me']] as const).map(([key, label]) => (
             <button key={key} onClick={() => { setScopeFilter(key); setFilterStatus('ALL'); setCardPage(1) }}
               className={`px-3 py-1.5 text-sm font-medium rounded-[5px] transition-colors flex items-center gap-1.5 ${
-                scopeFilter === key ? 'bg-white shadow-sm text-amber-700' : 'text-muted-foreground hover:text-foreground'
+                scopeFilter === key ? 'bg-card shadow-sm text-warning' : 'text-muted-foreground hover:text-foreground'
               }`}>
               {label}
               {key === 'MINE' && mineCount > 0 && (
-                <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${scopeFilter === key ? 'bg-amber-100 text-amber-700' : 'bg-muted text-muted-foreground'}`}>
+                <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${scopeFilter === key ? 'bg-warning/15 text-warning' : 'bg-muted text-muted-foreground'}`}>
                   {mineCount}
                 </span>
               )}
@@ -1330,11 +1324,11 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
         {FILTER_TABS.filter(t => t.key === 'ALL' || counts[t.key] > 0).map(t => (
           <button key={t.key} onClick={() => { setFilterStatus(t.key); setCardPage(1) }}
             className={`shrink-0 whitespace-nowrap px-3 py-2 text-sm font-medium border-b-2 transition-colors -mb-px flex items-center gap-1.5 ${
-              filterStatus === t.key ? 'border-amber-500 text-amber-700' : 'border-transparent text-muted-foreground hover:text-foreground'
+              filterStatus === t.key ? 'border-primary text-primary-strong' : 'border-transparent text-muted-foreground hover:text-foreground'
             }`}>
             {t.label}
             {counts[t.key] > 0 && (
-              <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${filterStatus === t.key ? 'bg-amber-100 text-amber-700' : 'bg-muted text-muted-foreground'}`}>
+              <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${filterStatus === t.key ? 'bg-warning/15 text-warning' : 'bg-muted text-muted-foreground'}`}>
                 {counts[t.key]}
               </span>
             )}
@@ -1406,20 +1400,20 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                 <td className="px-4 py-3 text-center text-muted-foreground">{r.itemCount}</td>
                 <td className="px-4 py-3 text-right tabular-nums text-sm">
                   {r.totalBudget > 0
-                    ? <span className="font-medium">Rp {new Intl.NumberFormat('id-ID').format(r.totalBudget)}</span>
+                    ? <span className="font-medium">{formatMoney(r.totalBudget)}</span>
                     : <span className="text-muted-foreground/40">—</span>}
                 </td>
-                <td className="px-4 py-3 text-muted-foreground">{fmtDate(r.createdAt)}</td>
+                <td className="px-4 py-3 text-muted-foreground">{formatDate(r.createdAt)}</td>
                 <td className="px-4 py-3">
                   {(() => {
                     const least = r.status === 'CONVERTED' ? leastAdvancedPo(r.orders) : null
-                    if (!least) return <><span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLOR[r.status] ?? ''}`}>{STATUS_LABEL[r.status] ?? r.status}</span><WarehouseCheckTag r={r} /></>
+                    if (!least) return <><StatusBadge tone={STATUS_TONE[r.status]}>{STATUS_LABEL[r.status] ?? r.status}</StatusBadge><WarehouseCheckTag r={r} /></>
                     const { po, count } = least
                     return (
                       <div className="space-y-0.5">
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${PO_STATUS_COLOR[po.status] ?? ''}`}>
+                        <StatusBadge tone={PO_STATUS_TONE[po.status]}>
                           {po.currentLegLabel ?? PO_STATUS_LABEL[po.status] ?? po.status}{count > 1 && ` (+${count - 1})`}
-                        </span>
+                        </StatusBadge>
                         <p className="flex items-center gap-1 text-[11px] text-muted-foreground"><MapPin className="h-3 w-3 shrink-0" />{currentLocationLabel(po)}</p>
                       </div>
                     )
@@ -1430,7 +1424,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                     <button
                       onClick={() => changeStatus(r.id, 'ON_PROCESS')}
                       title="Skip Warehouse's stock check and send straight to Purchasing"
-                      className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium bg-amber-600 hover:bg-amber-700 text-white rounded-md transition-colors whitespace-nowrap">
+                      className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium bg-primary hover:bg-primary-hover text-primary-foreground rounded-md transition-colors whitespace-nowrap">
                       <CheckCircle2 className="h-3 w-3" /> Force Verify
                     </button>
                   ) : (
@@ -1475,16 +1469,16 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                     </span>
                     <div className="flex items-center gap-1.5 shrink-0">
                       {least ? (
-                        <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium whitespace-nowrap ${PO_STATUS_COLOR[least.po.status] ?? ''}`}>
+                        <StatusBadge tone={PO_STATUS_TONE[least.po.status]} size="sm">
                           {least.po.currentLegLabel ?? PO_STATUS_LABEL[least.po.status] ?? least.po.status}{least.count > 1 && ` (+${least.count - 1})`}
-                        </span>
+                        </StatusBadge>
                       ) : (
                         <>
-                          <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${STATUS_COLOR[r.status] ?? ''}`}>{STATUS_LABEL[r.status] ?? r.status}</span>
+                          <StatusBadge tone={STATUS_TONE[r.status]} size="sm">{STATUS_LABEL[r.status] ?? r.status}</StatusBadge>
                           <WarehouseCheckTag r={r} />
                         </>
                       )}
-                      <span className="text-xs text-muted-foreground">{fmtDate(r.createdAt)}</span>
+                      <span className="text-xs text-muted-foreground">{formatDate(r.createdAt)}</span>
                     </div>
                   </div>
                   <ItemNamesPreview names={r.itemNames} max={3} className="text-xs text-muted-foreground" />
@@ -1495,7 +1489,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                       {r.deliveryLocation && <> · {r.deliveryLocation.name}</>}
                     </span>
                     <span className="shrink-0 tabular-nums">
-                      {r.totalBudget > 0 ? `Rp ${new Intl.NumberFormat('id-ID').format(r.totalBudget)}` : `${r.itemCount} item${r.itemCount !== 1 ? 's' : ''}`}
+                      {r.totalBudget > 0 ? formatMoney(r.totalBudget) : `${r.itemCount} item${r.itemCount !== 1 ? 's' : ''}`}
                     </span>
                   </div>
                   {least && (
@@ -1596,16 +1590,16 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
               <DivisionBadge division={selected.division} />
             </h2>
             <p className="text-muted-foreground text-sm mt-0.5">
-              {fmtDate(selected.createdAt)} · created by {selected.createdBy?.name ?? '—'}
+              {formatDate(selected.createdAt)} · created by {selected.createdBy?.name ?? '—'}
               {selected.requestedByEmployee && <> · requested by {selected.requestedByEmployee.fullName}</>}
               {selected.verifiedBy && <> · verified by {selected.verifiedBy.name}</>}
               {' · '}
-              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLOR[selected.status] ?? ''}`}>
+              <StatusBadge tone={STATUS_TONE[selected.status]}>
                 {STATUS_LABEL[selected.status] ?? selected.status}
-              </span>
+              </StatusBadge>
             </p>
             {selected.isUrgent && selected.urgentReason && (
-              <p className="text-sm text-red-600 mt-1.5 bg-red-50 border border-red-200 rounded-md px-3 py-1.5 inline-block">
+              <p className="text-sm text-destructive mt-1.5 bg-destructive/10 border border-destructive/30 rounded-md px-3 py-1.5 inline-block">
                 <span className="font-semibold">Urgent:</span> {selected.urgentReason}
               </p>
             )}
@@ -1614,14 +1608,14 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
             {selected.status === 'DRAFT' && (
               <>
                 {isWarehouse && !canWarehouseCheck && (
-                  <span className="text-sm text-muted-foreground italic">Sedang dicek oleh Gudang</span>
+                  <span className="text-sm text-muted-foreground italic">Being checked by Warehouse</span>
                 )}
                 {!isWarehouse && (
                   <>
                     {isAdmin && !detail?.items.some(it => it.warehouseDecision || it.convertedAt) && (
                       <button onClick={() => changeStatus(selected.id, 'ON_PROCESS')}
                         title="Skip Warehouse's stock check and send straight to Purchasing"
-                        className="px-4 py-2 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700 font-medium transition-colors">
+                        className="px-4 py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary-hover font-medium transition-colors">
                         Force Verify
                       </button>
                     )}
@@ -1632,7 +1626,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                       </button>
                     )}
                     <button onClick={() => changeStatus(selected.id, 'REJECTED')}
-                      className="px-4 py-2 text-sm border rounded-lg text-muted-foreground hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-colors">
+                      className="px-4 py-2 text-sm border rounded-lg text-muted-foreground hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30 transition-colors">
                       Reject
                     </button>
                   </>
@@ -1644,7 +1638,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                     their crew's PRs for the yacht, which they must not be able to delete. */}
                 {!detail?.items.some(it => it.convertedAt) && (!isWarehouse || selected.createdBy?.id === session?.user?.id) && (
                   <button onClick={() => deleteReq(selected)}
-                    className="px-4 py-2 text-sm border rounded-lg text-muted-foreground hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-colors">
+                    className="px-4 py-2 text-sm border rounded-lg text-muted-foreground hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30 transition-colors">
                     Delete
                   </button>
                 )}
@@ -1666,13 +1660,13 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                   return (
                     <button onClick={convertToPO} disabled={disabled || converting}
                       title={nothingLeft ? 'Every item is already converted or rejected' : disabled ? `Set a supplier first for: ${missingSupplier.map(i => i.itemName).join(', ')}` : partial ? `Will convert the ready items now; still needs a supplier: ${missingSupplier.map(i => i.itemName).join(', ')}` : undefined}
-                      className="flex items-center gap-2 px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-green-600">
-                      <ShoppingCart className="h-4 w-4" /> {converting ? 'Converting...' : partial ? 'Convert Ready Items' : 'Convert to PO'}
+                      className="flex items-center gap-2 px-4 py-2 text-sm bg-success text-success-foreground rounded-lg hover:bg-success/90 font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-success">
+                      <ShoppingCart className="h-4 w-4" /> {converting ? 'Converting…' : partial ? 'Convert Ready Items' : 'Convert to PO'}
                     </button>
                   )
                 })()}
                 <button onClick={() => changeStatus(selected.id, 'REJECTED')}
-                  className="px-4 py-2 text-sm border rounded-lg text-muted-foreground hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-colors">
+                  className="px-4 py-2 text-sm border rounded-lg text-muted-foreground hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30 transition-colors">
                   Reject
                 </button>
               </>
@@ -1685,7 +1679,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                 <span className="text-sm text-muted-foreground italic">Converted to Purchase Order</span>
                 {onOpenPo && detail?.orders?.map(po => (
                   <button key={po.id} onClick={() => onOpenPo(po.id)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors">
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-success text-success-foreground rounded-md hover:bg-success/90 transition-colors">
                     <ShoppingCart className="h-3 w-3" /> Go to {po.poNumber}
                   </button>
                 ))}
@@ -1702,7 +1696,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
       )}
 
       {approveSummary && (approveSummary.poNumbers.length > 0 || approveSummary.transferNumbers.length > 0) && (
-        <div className="rounded-lg bg-green-50 border border-green-200 text-green-800 text-sm px-4 py-3 space-y-2">
+        <div className="rounded-lg bg-success/10 border border-success/30 text-success text-sm px-4 py-3 space-y-2">
           <p className="font-medium">
             {approveSummary.remainingItems.length > 0 ? 'Ready items converted — the rest is still waiting on approval.' : 'Request converted to Purchase Order.'}
           </p>
@@ -1716,7 +1710,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                     <button
                       key={poId}
                       onClick={() => onOpenPo(poId)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors"
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-success text-success-foreground rounded-md hover:bg-success/90 transition-colors"
                     >
                       <ShoppingCart className="h-3 w-3" /> Go to {poNumber}
                     </button>
@@ -1727,7 +1721,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
           )}
           {approveSummary.transferNumbers.length > 0 && <p>Transfer{approveSummary.transferNumbers.length > 1 ? 's' : ''} (fulfilled from warehouse stock): {approveSummary.transferNumbers.join(', ')}</p>}
           {approveSummary.remainingItems.length > 0 && (
-            <p className="text-amber-700">Not yet converted (still needs a supplier picked, or supplier-selection approval): {approveSummary.remainingItems.join(', ')} — the request stays On Process until these clear too, and can be converted again once they do.</p>
+            <p className="text-warning">Not yet converted (still needs a supplier picked, or supplier-selection approval): {approveSummary.remainingItems.join(', ')} — the request stays On Process until these clear too, and can be converted again once they do.</p>
           )}
         </div>
       )}
@@ -1765,7 +1759,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
               {detail.neededByDate && (
                 <div>
                   <p className="text-xs text-muted-foreground">Needed By</p>
-                  <p className="font-medium">{fmtDate(detail.neededByDate)}</p>
+                  <p className="font-medium">{formatDate(detail.neededByDate)}</p>
                 </div>
               )}
               {detail.notes && <div><p className="text-xs text-muted-foreground">Notes</p><p>{detail.notes}</p></div>}
@@ -1784,39 +1778,39 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
             const fulfilledFromStock = detail.status === 'CONVERTED' && (detail.orders?.length ?? 0) === 0
             const steps: TimelineStep[] = [
               {
-                key: 'created', done: true, label: 'PR Submitted', date: fmtDateTime(detail.createdAt),
+                key: 'created', done: true, label: 'PR Submitted', date: formatDate(detail.createdAt, 'datetime'),
                 sub: [detail.requestedByEmployee?.fullName ?? detail.createdBy?.name ?? null, detail.prNumber],
               },
               // Only PRs routed to a manager have this step (no manager on file → skipped).
               ...((detail.approverEmployeeId || detail.approvedAt) ? [{
                 key: 'approved', done: !!detail.approvedAt, label: 'Manager Approved',
-                date: detail.approvedAt ? fmtDateTime(detail.approvedAt) : null,
+                date: detail.approvedAt ? formatDate(detail.approvedAt, 'datetime') : null,
                 sub: [detail.approvedBy?.name ? `by ${detail.approvedBy.name}` : (detail.status === 'PENDING_APPROVAL' ? 'Waiting for manager' : null)],
               }] : []),
               ...(!skippedWarehouse ? [{
                 key: 'verified', done: !!detail.verifiedAt || fulfilledFromStock,
                 label: fulfilledFromStock ? 'Warehouse Check — All From Stock' : 'Warehouse Check — Sent to Purchasing',
-                date: detail.verifiedAt ? fmtDateTime(detail.verifiedAt) : (fulfilledFromStock && detail.convertedAt ? fmtDateTime(detail.convertedAt) : null),
+                date: detail.verifiedAt ? formatDate(detail.verifiedAt, 'datetime') : (fulfilledFromStock && detail.convertedAt ? formatDate(detail.convertedAt, 'datetime') : null),
                 sub: [
                   (detail.verifiedBy?.name ?? (fulfilledFromStock ? detail.convertedBy?.name : null)) ? `by ${detail.verifiedBy?.name ?? detail.convertedBy?.name}` : null,
-                  detail.status === 'DRAFT' ? 'Checking stock in Gudang' : null,
+                  detail.status === 'DRAFT' ? 'Checking stock in Warehouse' : null,
                 ],
               }] : []),
               ...(!fulfilledFromStock ? [{
                 key: 'converted', done: !!detail.convertedAt, label: 'Converted to PO',
-                date: detail.convertedAt ? fmtDateTime(detail.convertedAt) : null,
+                date: detail.convertedAt ? formatDate(detail.convertedAt, 'datetime') : null,
                 sub: [detail.convertedBy?.name ? `by ${detail.convertedBy.name}` : null],
               }] : []),
               // Items Gudang sent from stock — one Dispatched/Arrived pair per transfer.
               ...stockTransfers.flatMap((t): TimelineStep[] => [
                 {
                   key: `tr-${t.id}-dispatch`, done: !!t.dispatchedAt, label: `Dispatched from ${t.fromLocationName}`,
-                  date: t.dispatchedAt ? fmtDateTime(t.dispatchedAt) : null,
+                  date: t.dispatchedAt ? formatDate(t.dispatchedAt, 'datetime') : null,
                   sub: [t.transferNumber, `to ${t.toLocationName}`],
                 },
                 {
                   key: `tr-${t.id}-arrive`, done: !!t.receivedAt, label: `Arrived at ${t.toLocationName}`,
-                  date: t.receivedAt ? fmtDateTime(t.receivedAt) : null,
+                  date: t.receivedAt ? formatDate(t.receivedAt, 'datetime') : null,
                   sub: [t.transferNumber, t.receivedByName ? `by ${t.receivedByName}` : null],
                 },
               ]),
@@ -1854,11 +1848,11 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
               }),
               ...(detail.rejectedAt ? [{
                 key: 'rejected', done: true, cancelled: true, label: 'Rejected',
-                date: fmtDateTime(detail.rejectedAt), sub: [detail.rejectedBy?.name ? `by ${detail.rejectedBy.name}` : null],
+                date: formatDate(detail.rejectedAt, 'datetime'), sub: [detail.rejectedBy?.name ? `by ${detail.rejectedBy.name}` : null],
               }] : []),
               ...(detail.cancelledAt ? [{
                 key: 'cancelled', done: true, cancelled: true, label: 'Cancelled',
-                date: fmtDateTime(detail.cancelledAt), sub: [detail.cancelledBy?.name ? `by ${detail.cancelledBy.name}` : null],
+                date: formatDate(detail.cancelledAt, 'datetime'), sub: [detail.cancelledBy?.name ? `by ${detail.cancelledBy.name}` : null],
               }] : []),
             ]
             const poNumberMap = new Map((detail.orders ?? []).map(po => [po.id, po.poNumber]))
@@ -1897,7 +1891,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                         {(detail.restockFor ? [detail.restockFor] : detail.restockRequests!).map(r => (
                           <button key={r.id} type="button"
                             onClick={() => openLinkedRequest(r.id)}
-                            className="font-medium text-violet-700 bg-violet-50 border border-violet-200 rounded-md px-2 py-0.5 hover:bg-violet-100">
+                            className="font-medium text-violet-700 bg-violet-50 border border-violet-200 rounded-md px-2 py-0.5 hover:bg-violet-100 dark:text-violet-300 dark:bg-violet-500/10 dark:border-violet-500/30 dark:hover:bg-violet-500/20">
                             {r.prNumber}
                           </button>
                         ))}
@@ -1918,19 +1912,19 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                   <th className="text-right px-5 py-2.5 font-medium whitespace-nowrap">Requested</th>
                   {showStockCheck ? (
                     <>
-                      <th className="text-right pl-4 pr-3 py-2.5 font-medium whitespace-nowrap bg-slate-50 border-l">Availability</th>
-                      <th className="text-right px-3 py-2.5 font-medium whitespace-nowrap bg-slate-50">Reserve</th>
-                      <th className="text-right px-3 py-2.5 font-medium whitespace-nowrap bg-slate-50" title="Already ordered to this warehouse (open PR/PO), not yet received">On Order</th>
-                      <th className="text-right px-3 py-2.5 font-medium whitespace-nowrap bg-slate-50">Ending</th>
-                      <th className="text-right px-3 py-2.5 font-medium whitespace-nowrap bg-slate-50">Shortage</th>
-                      <th className="text-right px-3 py-2.5 font-medium whitespace-nowrap bg-slate-50">Min. Stock</th>
-                      <th className="text-right pl-3 pr-4 py-2.5 font-medium whitespace-nowrap bg-blue-50/60 text-blue-800 border-r">To Be Order</th>
+                      <th className="text-right pl-4 pr-3 py-2.5 font-medium whitespace-nowrap bg-muted/50 border-l">Availability</th>
+                      <th className="text-right px-3 py-2.5 font-medium whitespace-nowrap bg-muted/50">Reserve</th>
+                      <th className="text-right px-3 py-2.5 font-medium whitespace-nowrap bg-muted/50" title="Already ordered to this warehouse (open PR/PO), not yet received">On Order</th>
+                      <th className="text-right px-3 py-2.5 font-medium whitespace-nowrap bg-muted/50">Ending</th>
+                      <th className="text-right px-3 py-2.5 font-medium whitespace-nowrap bg-muted/50">Shortage</th>
+                      <th className="text-right px-3 py-2.5 font-medium whitespace-nowrap bg-muted/50">Min. Stock</th>
+                      <th className="text-right pl-3 pr-4 py-2.5 font-medium whitespace-nowrap bg-info/5 text-info border-r">To Be Order</th>
                     </>
                   ) : (
                     <th className="text-right px-5 py-2.5 font-medium">Current Stock</th>
                   )}
                   {['DRAFT', 'ON_PROCESS'].includes(detail.status) && <th className="text-left px-5 py-2.5 font-medium whitespace-nowrap">Decision</th>}
-                  {showStockCheck && <th className="text-left px-5 py-2.5 font-medium whitespace-nowrap">Cek Gudang</th>}
+                  {showStockCheck && <th className="text-left px-5 py-2.5 font-medium whitespace-nowrap">Warehouse Check</th>}
                   {detail.status === 'ON_PROCESS' && !isWarehouse && <th className="text-left px-5 py-2.5 font-medium">Fulfillment</th>}
                   {detail.status === 'ON_PROCESS' && !isWarehouse && detail.deliveryLocation?.type === 'VESSEL' && <th className="text-left px-5 py-2.5 font-medium whitespace-nowrap" title="Consumable = trip usage · Asset = ship Inventory (needs Room/Category) · Spare part = maintenance">On the ship</th>}
                   <th className="w-10" />
@@ -1940,7 +1934,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                 {sortedItems.map((item, i) => {
                   const stock = item.currentStock ?? null
                   const min = item.minStock ?? 0
-                  const stockColor = stock === null ? '' : stock === 0 ? 'text-red-600 font-semibold' : stock < min ? 'text-orange-500 font-semibold' : 'text-green-700'
+                  const stockColor = stock === null ? '' : stock === 0 ? 'text-destructive font-semibold' : stock < min ? 'text-warning font-semibold' : 'text-success'
                   const photos = Array.isArray(item.imageKeys) ? item.imageKeys : []
                   const editable = detail.status === 'ON_PROCESS' && !isWarehouse
                   const isCustom = !item.itemId
@@ -1957,7 +1951,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                   return (
                     <tr
                       key={item.id ?? i}
-                      className={`hover:bg-muted/20 ${isCustom ? 'cursor-pointer' : ''} ${isRejected ? 'opacity-50' : ''} ${isNewPoGroup ? 'border-t-2 border-t-slate-200' : ''}`}
+                      className={`hover:bg-muted/20 ${isCustom ? 'cursor-pointer' : ''} ${isRejected ? 'opacity-50' : ''} ${isNewPoGroup ? 'border-t-2 border-t-border' : ''}`}
                       onClick={() => isCustom && openEditItem(item)}
                     >
                       <td className="px-5 py-3 min-w-[180px]">
@@ -1967,13 +1961,13 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                               {photos.slice(0, 3).map((src, j) => (
                                 <img
                                   key={j} src={src} alt={`${item.itemName} reference ${j + 1}`}
-                                  className="w-9 h-9 rounded-md object-cover border-2 border-white shadow-sm cursor-zoom-in hover:opacity-80 transition-opacity"
+                                  className="w-9 h-9 rounded-md object-cover border-2 border-card shadow-sm cursor-zoom-in hover:opacity-80 transition-opacity"
                                   style={{ zIndex: 3 - j }}
                                   onClick={e => { e.stopPropagation(); openLightbox(photos, j, item.itemName) }}
                                 />
                               ))}
                               {photos.length > 3 && (
-                                <div className="w-9 h-9 rounded-md bg-muted border-2 border-white flex items-center justify-center text-[10px] font-semibold text-muted-foreground">
+                                <div className="w-9 h-9 rounded-md bg-muted border-2 border-card flex items-center justify-center text-[10px] font-semibold text-muted-foreground">
                                   +{photos.length - 3}
                                 </div>
                               )}
@@ -1981,13 +1975,13 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                           )}
                           <div className="min-w-0">
                             <p className={`font-medium ${isRejected ? 'line-through text-muted-foreground' : ''}`}>{item.itemName}</p>
-                            {isCustom && <span className="text-[10px] font-medium text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded-full">Custom request</span>}
+                            {isCustom && <span className="text-[10px] font-medium text-warning bg-warning/10 px-1.5 py-0.5 rounded-full">Custom request</span>}
                             {mixedRoute && (item.viaWarehouse
-                              ? <span className="text-[10px] font-medium text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded-full ml-1">Via Warehouse</span>
-                              : <span className="text-[10px] font-medium text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded-full ml-1">Direct</span>)}
-                            {item.requestType === 'REPLACEMENT' && <span className="text-[10px] font-medium text-red-700 bg-red-50 px-1.5 py-0.5 rounded-full ml-1">Replacement</span>}
+                              ? <span className="text-[10px] font-medium text-info bg-info/10 px-1.5 py-0.5 rounded-full ml-1">Via Warehouse</span>
+                              : <span className="text-[10px] font-medium text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full ml-1">Direct</span>)}
+                            {item.requestType === 'REPLACEMENT' && <span className="text-[10px] font-medium text-destructive bg-destructive/10 px-1.5 py-0.5 rounded-full ml-1">Replacement</span>}
                             {item.requestType === 'REPLACEMENT' && item.damageDetail && (
-                              <p className="text-xs text-red-700/80 mt-0.5 whitespace-pre-line"><span className="font-semibold">Damage:</span> {item.damageDetail}</p>
+                              <p className="text-xs text-destructive/80 mt-0.5 whitespace-pre-line"><span className="font-semibold">Damage:</span> {item.damageDetail}</p>
                             )}
                             {item.notes && <p className="text-xs text-muted-foreground mt-0.5">{item.notes}</p>}
                           </div>
@@ -1995,14 +1989,14 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                       </td>
                       <td className="px-5 py-3 text-muted-foreground" onClick={e => detail.status === 'ON_PROCESS' && !isWarehouse && e.stopPropagation()}>
                         {awaiting ? (
-                          <span className="text-[10px] font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-full px-2 py-0.5 whitespace-nowrap">Waiting for Warehouse</span>
+                          <StatusBadge tone="info" size="sm">Waiting for Warehouse</StatusBadge>
                         ) : transferred && !showStockCheck ? (
                           <TransferBadge transfer={item.transfer} onOpen={onOpenTransfer} />
                         ) : detail.status !== 'ON_PROCESS' || isWarehouse ? (
                           <>
                             {item.supplierName ?? <span className="text-muted-foreground/50 italic">—</span>}
                             {item.transferEligible && !item.convertedAt && !!item.warehouseStock?.length && detail.deliveryLocation?.type !== 'WAREHOUSE' && (
-                              <p className="text-[10px] text-blue-600 mt-0.5 whitespace-nowrap">
+                              <p className="text-[10px] text-info mt-0.5 whitespace-nowrap">
                                 Possible transfer from {item.warehouseStock[0].locationName}
                                 {item.warehouseStock.length > 1 ? ` +${item.warehouseStock.length - 1} more` : ''}
                               </p>
@@ -2015,20 +2009,20 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                             <button
                               onClick={() => openEditItem(item)}
                               className={`text-xs font-medium px-2.5 py-1 rounded-md border transition-colors ${
-                                item.supplierName ? 'bg-white text-foreground border-gray-300 hover:bg-muted' : 'bg-amber-50 text-amber-700 border-amber-300 hover:bg-amber-100'
+                                item.supplierName ? 'bg-card text-foreground border-border hover:bg-muted' : 'bg-warning/10 text-warning border-warning/30 hover:bg-warning/20'
                               }`}
                             >
-                              {item.supplierName ?? 'Select supplier...'}
+                              {item.supplierName ?? 'Select supplier…'}
                             </button>
                             {item.convertedAt ? (
-                              <span className="text-[10px] font-medium text-slate-600 bg-slate-100 border border-slate-300 rounded-full px-2 py-0.5 whitespace-nowrap">Converted</span>
+                              <StatusBadge tone="neutral" size="sm">Converted</StatusBadge>
                             ) : getBand(item.estimatedCost) !== 'A' && (
                               item.quotationApprovedAt ? (
-                                <span className="text-[10px] font-medium text-green-700 bg-green-50 border border-green-200 rounded-full px-2 py-0.5 whitespace-nowrap">Approved</span>
+                                <StatusBadge tone="success" size="sm">Approved</StatusBadge>
                               ) : item.quotationRejectedAt ? (
-                                <span className="text-[10px] font-medium text-red-700 bg-red-50 border border-red-200 rounded-full px-2 py-0.5 whitespace-nowrap">Rejected</span>
+                                <StatusBadge tone="destructive" size="sm">Rejected</StatusBadge>
                               ) : item.quotationSubmittedAt ? (
-                                <span className="text-[10px] font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5 whitespace-nowrap">Pending approval</span>
+                                <StatusBadge tone="warning" size="sm">Pending approval</StatusBadge>
                               ) : null
                             )}
                           </div>
@@ -2040,7 +2034,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                             onOpenPo ? (
                               <button
                                 onClick={() => onOpenPo(item.convertedPoId!)}
-                                className="text-xs font-medium text-green-700 bg-green-50 border border-green-200 rounded-md px-2 py-1 hover:bg-green-100 transition-colors whitespace-nowrap"
+                                className="text-xs font-medium text-success bg-success/10 border border-success/30 rounded-md px-2 py-1 hover:bg-success/20 transition-colors whitespace-nowrap"
                               >
                                 {poNumber}
                               </button>
@@ -2063,9 +2057,9 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                       {showStockCheck ? (() => {
                         const sc = item.stockCheck
                         const cell = 'px-3 py-3 text-right tabular-nums whitespace-nowrap'
-                        const bg = 'bg-slate-50/60'
+                        const bg = 'bg-muted/30'
                         if (!sc) return Array.from({ length: 7 }, (_, k) => (
-                          <td key={k} className={`${cell} text-muted-foreground/50 ${k === 6 ? 'border-r pr-4 bg-blue-50/40' : bg} ${k === 0 ? 'border-l pl-4' : ''}`}>—</td>
+                          <td key={k} className={`${cell} text-muted-foreground/50 ${k === 6 ? 'border-r pr-4 bg-info/5' : bg} ${k === 0 ? 'border-l pl-4' : ''}`}>—</td>
                         ))
                         const muted = (n: number) => n === 0 ? 'text-muted-foreground/60' : ''
                         // Shown in the unit the line was requested in: purchase unit with the base
@@ -2088,12 +2082,12 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                               {qty(sc.availability)}
                               {stockLocations.length > 1 && <p className="text-[10px] text-muted-foreground">{sc.locationName}</p>}
                             </td>
-                            <td className={`${cell} ${bg} ${sc.reserve > 0 ? 'text-amber-600 font-medium' : muted(0)}`}>{qty(sc.reserve)}</td>
-                            <td className={`${cell} ${bg} ${sc.onOrder > 0 ? 'text-violet-600 font-medium' : muted(0)}`}>{qty(sc.onOrder)}</td>
-                            <td className={`${cell} ${bg} font-semibold ${sc.ending < 0 ? 'text-red-600' : sc.ending < sc.minStock ? 'text-orange-500' : 'text-green-700'}`}>{qty(sc.ending)}</td>
-                            <td className={`${cell} ${bg} ${sc.shortage > 0 ? 'text-red-600 font-semibold' : muted(0)}`}>{qty(sc.shortage)}</td>
+                            <td className={`${cell} ${bg} ${sc.reserve > 0 ? 'text-warning font-medium' : muted(0)}`}>{qty(sc.reserve)}</td>
+                            <td className={`${cell} ${bg} ${sc.onOrder > 0 ? 'text-violet-600 dark:text-violet-400 font-medium' : muted(0)}`}>{qty(sc.onOrder)}</td>
+                            <td className={`${cell} ${bg} font-semibold ${sc.ending < 0 ? 'text-destructive' : sc.ending < sc.minStock ? 'text-warning' : 'text-success'}`}>{qty(sc.ending)}</td>
+                            <td className={`${cell} ${bg} ${sc.shortage > 0 ? 'text-destructive font-semibold' : muted(0)}`}>{qty(sc.shortage)}</td>
                             <td className={`${cell} ${bg} ${muted(sc.minStock) || 'text-muted-foreground'}`}>{qty(sc.minStock)}</td>
-                            <td className={`${cell} border-r pr-4 bg-blue-50/40 ${sc.toBeOrder > 0 ? 'text-blue-700 font-semibold' : muted(0)}`}>{qty(sc.toBeOrder)}</td>
+                            <td className={`${cell} border-r pr-4 bg-info/5 ${sc.toBeOrder > 0 ? 'text-info font-semibold' : muted(0)}`}>{qty(sc.toBeOrder)}</td>
                           </>
                         )
                       })() : (
@@ -2115,12 +2109,12 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                         <td className="px-5 py-3" onClick={e => e.stopPropagation()}>
                           {isRejected ? (
                             <div className="flex items-center gap-1.5">
-                              <span
-                                className="text-[10px] font-medium text-red-700 bg-red-50 border border-red-200 rounded-full px-2 py-0.5 whitespace-nowrap"
+                              <StatusBadge
+                                tone="destructive" size="sm"
                                 title={item.verifyRejectionReason || undefined}
                               >
                                 Rejected
-                              </span>
+                              </StatusBadge>
                               {canDecide && (
                                 <button onClick={() => setItemVerifyDecision(item, false)} className="text-[10px] text-muted-foreground hover:text-foreground underline underline-offset-2">
                                   Undo
@@ -2130,23 +2124,23 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                           ) : canDecide ? (
                             <button
                               onClick={() => openRejectItemModal(item)}
-                              className="text-[10px] font-medium text-muted-foreground hover:text-red-600 border border-dashed border-border hover:border-red-300 rounded-full px-2.5 py-0.5 transition-colors"
+                              className="text-[10px] font-medium text-muted-foreground hover:text-destructive border border-dashed border-border hover:border-destructive/30 rounded-full px-2.5 py-0.5 transition-colors"
                             >
                               Reject
                             </button>
                           ) : (
-                            <span className="text-[10px] font-medium text-green-700 bg-green-50 border border-green-200 rounded-full px-2 py-0.5 whitespace-nowrap">Accepted</span>
+                            <StatusBadge tone="success" size="sm">Accepted</StatusBadge>
                           )}
                         </td>
                       )}
                       {showStockCheck && (
                         <td className="px-5 py-3 min-w-[220px]" onClick={e => e.stopPropagation()}>
                           {isRejected ? (
-                            <span className="text-xs text-muted-foreground italic">Ditolak — tidak perlu dicek</span>
+                            <span className="text-xs text-muted-foreground italic">Rejected — no check needed</span>
                           ) : !item.viaWarehouse ? (
                             <span className="text-xs text-muted-foreground italic">{isCustom ? 'Custom' : 'Non-stock item'} — direct to Purchasing</span>
                           ) : item.warehouseDecision === 'PURCHASE' ? (
-                            <span className="text-[10px] font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5 whitespace-nowrap inline-block">Out of stock — sent to Purchasing</span>
+                            <StatusBadge tone="warning" size="sm">Out of stock — sent to Purchasing</StatusBadge>
                           ) : item.convertedAt && item.warehouseDecision === 'TRANSFER' ? (
                             <div className="space-y-1">
                               {item.transfer && <TransferBadge transfer={item.transfer} onOpen={onOpenTransfer} />}
@@ -2164,39 +2158,39 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                                 <div className="flex items-center gap-1.5 flex-wrap">
                                   <div className="relative inline-block">
                                     <select
-                                      className="appearance-none text-xs pl-2 pr-5 py-1 rounded-md border bg-white cursor-pointer focus:outline-none focus:ring-1 focus:ring-amber-500"
+                                      className="appearance-none text-xs pl-2 pr-5 py-1 rounded-md border bg-card cursor-pointer focus:outline-none focus:ring-1 focus:ring-ring"
                                       value={fromValue}
                                       onChange={e => setWarehouseFrom(f => ({ ...f, [item.id!]: e.target.value }))}
                                     >
-                                      <option value="">Pilih lokasi...</option>
+                                      <option value="">Select location…</option>
                                       {warehouseLocations.map(loc => {
                                         const hint = item.warehouseStock?.find(w => w.locationId === loc.id)
-                                        return <option key={loc.id} value={loc.id}>{loc.name}{hint ? ` (sistem: ${hint.qty})` : ''}</option>
+                                        return <option key={loc.id} value={loc.id}>{loc.name}{hint ? ` (system: ${hint.qty})` : ''}</option>
                                       })}
                                     </select>
                                     <ChevronDown className="h-3 w-3 absolute right-1 top-1/2 -translate-y-1/2 pointer-events-none text-muted-foreground" />
                                   </div>
                                   <button disabled={busy || !fromValue} onClick={() => warehouseCheckItem(item)}
-                                    className="text-xs font-medium px-2 py-1 rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap">
+                                    className="text-xs font-medium px-2 py-1 rounded-md bg-info text-info-foreground hover:bg-info/90 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap">
                                     Process
                                   </button>
                                 </div>
                                 {sc && (
                                   <p className="text-[10px] text-muted-foreground whitespace-nowrap">
                                     {sc.reserve > 0
-                                      ? <>Send <span className="font-semibold text-foreground">{lineQtyLabel(item, sc.reserve)}</span> now{sc.shortage > 0 && <> · backorder <span className="font-semibold text-red-600">{lineQtyLabel(item, sc.shortage)}</span></>}</>
-                                      : <span className="font-medium text-amber-700">Out of stock → to Purchasing</span>}
+                                      ? <>Send <span className="font-semibold text-foreground">{lineQtyLabel(item, sc.reserve)}</span> now{sc.shortage > 0 && <> · backorder <span className="font-semibold text-destructive">{lineQtyLabel(item, sc.shortage)}</span></>}</>
+                                      : <span className="font-medium text-warning">Out of stock → to Purchasing</span>}
                                     {(() => {
                                       // Out of stock: Requested is bought straight to the ship, so only the
                                       // Min. Stock top-up goes on the Restock PR.
                                       const order = sc.reserve > 0 ? sc.restockQty : Math.max(0, sc.toBeOrder - sc.requested)
-                                      return order > 0 && <> · restock <span className="font-semibold text-blue-700">{lineQtyLabel(item, order)}</span></>
+                                      return order > 0 && <> · restock <span className="font-semibold text-info">{lineQtyLabel(item, order)}</span></>
                                     })()}
                                   </p>
                                 )}
                                 <input
                                   type="text" placeholder="Note (optional)"
-                                  className="text-xs border rounded-md px-2 py-1 w-40 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                                  className="text-xs border rounded-md px-2 py-1 w-40 focus:outline-none focus:ring-1 focus:ring-ring"
                                   value={warehouseNote[item.id!] ?? ''}
                                   onChange={e => setWarehouseNote(n => ({ ...n, [item.id!]: e.target.value }))}
                                 />
@@ -2211,16 +2205,16 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                             <span className="text-xs text-muted-foreground italic">Warehouse is checking stock</span>
                           ) : transferred ? (
                             <div className="space-y-1">
-                              {item.transfer && <span className="block text-xs text-blue-700">Transfer from {item.transfer.fromLocationName}</span>}
+                              {item.transfer && <span className="block text-xs text-info">Transfer from {item.transfer.fromLocationName}</span>}
                               <BackorderBadge item={item} />
                             </div>
                           ) : item.warehouseDecision === 'PURCHASE' || !item.transferEligible || !item.warehouseStock?.length ? (
-                            <span className="text-xs text-muted-foreground" title={item.warehouseDecision === 'PURCHASE' ? 'Gudang sudah cek fisik — tidak ada stok' : undefined}>Purchase Order</span>
+                            <span className="text-xs text-muted-foreground" title={item.warehouseDecision === 'PURCHASE' ? 'Warehouse checked physically — no stock' : undefined}>Purchase Order</span>
                           ) : (
                             <div className="relative inline-block">
                               <select
-                                className={`appearance-none text-xs font-medium pl-2.5 pr-6 py-1.5 rounded-md border cursor-pointer transition-colors focus:outline-none focus:ring-1 focus:ring-amber-500 ${
-                                  chosenFromLocationId ? 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100' : 'bg-white text-muted-foreground border-gray-300 hover:bg-muted'
+                                className={`appearance-none text-xs font-medium pl-2.5 pr-6 py-1.5 rounded-md border cursor-pointer transition-colors focus:outline-none focus:ring-1 focus:ring-ring ${
+                                  chosenFromLocationId ? 'bg-info/10 text-info border-info/30 hover:bg-info/20' : 'bg-card text-muted-foreground border-border hover:bg-muted'
                                 }`}
                                 value={chosenFromLocationId ?? ''}
                                 onChange={e => setFulfillment(f => ({ ...f, [item.id!]: e.target.value || null }))}
@@ -2230,7 +2224,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                                   <option key={w.locationId} value={w.locationId}>Transfer from {w.locationName} ({w.qty})</option>
                                 ))}
                               </select>
-                              <ChevronDown className={`h-3 w-3 absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none ${chosenFromLocationId ? 'text-blue-700' : 'text-muted-foreground'}`} />
+                              <ChevronDown className={`h-3 w-3 absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none ${chosenFromLocationId ? 'text-info' : 'text-muted-foreground'}`} />
                             </div>
                           )}
                         </td>
@@ -2243,7 +2237,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                             <div className="space-y-1.5">
                               {isCustom ? (
                                 <select
-                                  className="text-xs border rounded-md px-2 py-1 focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white"
+                                  className="text-xs border rounded-md px-2 py-1 focus:outline-none focus:ring-1 focus:ring-ring bg-card"
                                   value={roomAssignment[item.id!]?.treatment ?? 'CONSUMABLE'}
                                   onChange={e => setRoomAssignment(a => ({ ...a, [item.id!]: { roomId: a[item.id!]?.roomId ?? '', categoryId: a[item.id!]?.categoryId ?? '', treatment: e.target.value as Treatment } }))}
                                 >
@@ -2255,20 +2249,20 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                               {lineTreatmentOf(item) === 'ASSET' && (
                             <div className="flex items-center gap-1.5">
                               <select
-                                className="text-xs border rounded-md px-2 py-1 focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white max-w-28"
+                                className="text-xs border rounded-md px-2 py-1 focus:outline-none focus:ring-1 focus:ring-ring bg-card max-w-28"
                                 value={roomAssignment[item.id!]?.roomId ?? ''}
                                 onChange={e => setRoomAssignment(a => ({ ...a, [item.id!]: { ...a[item.id!], roomId: e.target.value, categoryId: '' } }))}
                               >
-                                <option value="">Room...</option>
+                                <option value="">Room…</option>
                                 {invRooms.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
                               </select>
                               <select
-                                className="text-xs border rounded-md px-2 py-1 focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white max-w-28 disabled:opacity-50"
+                                className="text-xs border rounded-md px-2 py-1 focus:outline-none focus:ring-1 focus:ring-ring bg-card max-w-28 disabled:opacity-50"
                                 value={roomAssignment[item.id!]?.categoryId ?? ''}
                                 disabled={!roomAssignment[item.id!]?.roomId}
                                 onChange={e => setRoomAssignment(a => ({ ...a, [item.id!]: { ...a[item.id!], roomId: a[item.id!]?.roomId ?? '', categoryId: e.target.value } }))}
                               >
-                                <option value="">Category...</option>
+                                <option value="">Category…</option>
                                 {(invCategoriesByRoom[roomAssignment[item.id!]?.roomId ?? ''] ?? []).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                               </select>
                             </div>
@@ -2296,8 +2290,8 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                   return (
                     <div className="space-y-2">
                       {isOverdue && (
-                        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-                          This PR is overdue — needed by {fmtDate(detail.neededByDate!)}
+                        <div className="rounded-xl border border-warning/30 bg-warning/10 p-4 text-sm text-warning">
+                          This PR is overdue — needed by {formatDate(detail.neededByDate!)}
                         </div>
                       )}
                       <div className="flex items-center justify-between">
@@ -2314,17 +2308,17 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                             <div key={f.id} className="rounded-lg border p-3 text-sm">
                               <div className="flex items-start justify-between gap-3">
                                 <p className="flex-1">{f.note}</p>
-                                <button onClick={() => deleteFollowUp(f.id)} className="text-muted-foreground hover:text-red-600 transition-colors shrink-0" title="Delete">
+                                <button onClick={() => deleteFollowUp(f.id)} className="text-muted-foreground hover:text-destructive transition-colors shrink-0" title="Delete">
                                   <Trash2 className="h-3.5 w-3.5" />
                                 </button>
                               </div>
                               <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                                 {f.isEscalation && (
-                                  <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">
+                                  <StatusBadge tone="warning" size="sm">
                                     Escalated{f.escalatedTo?.name && ` → ${f.escalatedTo.name}`}
-                                  </span>
+                                  </StatusBadge>
                                 )}
-                                <span className="text-xs text-muted-foreground">by {f.createdBy.name ?? '—'} · {fmtDateTime(f.createdAt)}</span>
+                                <span className="text-xs text-muted-foreground">by {f.createdBy.name ?? '—'} · {formatDate(f.createdAt, 'datetime')}</span>
                               </div>
                             </div>
                           ))}
@@ -2348,7 +2342,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
         <>
           <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50" onClick={() => setFollowUpModal(false)} />
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
-            <div className="pointer-events-auto bg-white rounded-2xl shadow-2xl w-full max-w-md">
+            <div className="pointer-events-auto bg-card rounded-2xl shadow-2xl w-full max-w-md">
               <div className="flex items-center justify-between px-5 py-4 border-b">
                 <div>
                   <h3 className="font-semibold">Log Follow-up</h3>
@@ -2357,14 +2351,14 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                 <button onClick={() => setFollowUpModal(false)} className="text-muted-foreground hover:text-foreground text-xl leading-none">×</button>
               </div>
               <div className="p-5 space-y-4">
-                {followUpError && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2">{followUpError}</div>}
+                {followUpError && <div className="rounded-lg bg-destructive/10 border border-destructive/30 text-destructive text-sm px-3 py-2">{followUpError}</div>}
                 <div className="space-y-1.5">
-                  <label className="text-sm font-medium">Note <span className="text-red-500">*</span></label>
+                  <label className="text-sm font-medium">Note <span className="text-destructive">*</span></label>
                   <textarea
                     autoFocus
                     rows={3}
-                    className="w-full border rounded-xl px-3 py-2.5 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-amber-400"
-                    placeholder="e.g. Called supplier for a quotation, promised by Friday..."
+                    className="w-full border rounded-xl px-3 py-2.5 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring"
+                    placeholder="e.g. Called supplier for a quotation, promised by Friday…"
                     value={followUpNote}
                     onChange={e => setFollowUpNote(e.target.value)}
                   />
@@ -2377,7 +2371,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                   <div className="space-y-1.5">
                     <label className="text-sm font-medium">Escalate to (optional)</label>
                     <select
-                      className="w-full h-10 border rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                      className="w-full h-10 border rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                       value={followUpEscalatedToId}
                       onChange={e => setFollowUpEscalatedToId(e.target.value)}
                     >
@@ -2390,8 +2384,8 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
               <div className="flex justify-end gap-2 px-5 py-4 border-t">
                 <button onClick={() => setFollowUpModal(false)} className="px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">Cancel</button>
                 <button onClick={saveFollowUp} disabled={!followUpNote.trim() || followUpSaving}
-                  className="flex items-center gap-2 px-5 py-2 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-40 font-semibold transition-colors">
-                  {followUpSaving ? <><div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Saving...</> : 'Save'}
+                  className="flex items-center gap-2 px-5 py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary-hover disabled:opacity-40 font-semibold transition-colors">
+                  {followUpSaving ? <><div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Saving…</> : 'Save'}
                 </button>
               </div>
             </div>
@@ -2402,7 +2396,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
       {/* ── Edit Item Modal (est. price / supplier, plus full detail for custom requests) ── */}
       {editItemModal && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-3xl max-h-[92vh] flex flex-col overflow-hidden">
+          <div className="bg-card rounded-xl shadow-xl w-full max-w-3xl max-h-[92vh] flex flex-col overflow-hidden">
             <div className="flex items-center justify-between gap-3 px-6 py-4 border-b shrink-0">
               <div className="min-w-0">
                 <h3 className="font-semibold text-base">{editItemModal.itemId ? 'Edit Item' : 'Custom Request Detail'}</h3>
@@ -2414,7 +2408,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
             </div>
             <div className="px-6 py-5 space-y-4 flex-1 min-h-0 overflow-y-auto">
               {editItemError && (
-                <div className="flex items-center gap-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2.5">
+                <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 border border-destructive/30 rounded-lg px-3 py-2.5">
                   <AlertTriangle className="h-4 w-4 shrink-0" /> {editItemError}
                 </div>
               )}
@@ -2475,10 +2469,10 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                               disabled={supplierFieldDisabled}
                               onClick={() => { setSupplierModal('editItem'); setSupplierModalSearch(''); setSupplierFilterCity('All') }}
                               title={supplierFieldDisabled ? 'Set by the approver once they pick a quotation' : undefined}
-                              className="w-full h-9 border rounded-md px-3 text-sm text-left flex items-center justify-between gap-2 bg-background hover:bg-muted/40 focus:outline-none focus:ring-1 focus:ring-amber-500 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-background"
+                              className="w-full h-9 border rounded-md px-3 text-sm text-left flex items-center justify-between gap-2 bg-background hover:bg-muted/40 focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-background"
                             >
                               <span className={`truncate ${editItemSupplierId ? '' : 'text-muted-foreground'}`}>
-                                {suppliers.find(s => s.id === editItemSupplierId)?.name || (supplierFieldDisabled ? 'Set by approver once a quotation is chosen' : 'Select or add supplier...')}
+                                {suppliers.find(s => s.id === editItemSupplierId)?.name || (supplierFieldDisabled ? 'Set by approver once a quotation is chosen' : 'Select or add supplier…')}
                               </span>
                               <Search className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                             </button>
@@ -2493,7 +2487,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                         <select
                           value={editItemIsStockItem ? 'stock' : 'non-stock'}
                           onChange={e => setEditItemIsStockItem(e.target.value === 'stock')}
-                          className="w-full h-9 border rounded-md px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
+                          className="w-full h-9 border rounded-md px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-ring"
                         >
                           <option value="stock">Stock Item — tracked in inventory (warehouse, yacht, etc.)</option>
                           <option value="non-stock">Non-Stock Item — consumed directly, not tracked in stock</option>
@@ -2510,11 +2504,11 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                               key={i}
                               type="button"
                               onClick={() => useHistoryEntry(h)}
-                              title={`${h.poNumber} · ${new Date(h.orderedAt).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}`}
-                              className="flex items-center gap-1.5 border rounded-full pl-3 pr-2.5 py-1.5 text-xs hover:bg-amber-50 hover:border-amber-300 transition-colors"
+                              title={`${h.poNumber} · ${formatDate(h.orderedAt)}`}
+                              className="flex items-center gap-1.5 border rounded-full pl-3 pr-2.5 py-1.5 text-xs hover:bg-warning/10 hover:border-primary/40 transition-colors"
                             >
                               <span className="font-medium">{h.supplierName ?? 'Unknown supplier'}</span>
-                              <span className="text-muted-foreground">Rp {new Intl.NumberFormat('id-ID').format(h.price)}</span>
+                              <span className="text-muted-foreground">{formatMoney(h.price)}</span>
                             </button>
                           ))}
                         </div>
@@ -2528,7 +2522,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                     if (historyExempt) {
                       return (
                         <div className="flex items-start gap-2.5 rounded-lg border border-dashed px-3.5 py-3 text-xs text-muted-foreground bg-muted/20">
-                          <CheckCircle2 className="h-4 w-4 text-green-600 shrink-0 mt-0.5" />
+                          <CheckCircle2 className="h-4 w-4 text-success shrink-0 mt-0.5" />
                           <p>
                             <span className="font-medium text-foreground">{suppliers.find(s => s.id === editItemSupplierId)?.name}</span> has supplied this item before —
                             no quotation approval needed. Picking a different supplier will require quotations + approval.
@@ -2546,7 +2540,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                         </div>
 
                         {quoteError && (
-                          <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{quoteError}</div>
+                          <div className="text-xs text-destructive bg-destructive/10 border border-destructive/30 rounded-lg px-3 py-2">{quoteError}</div>
                         )}
 
                         <div className="space-y-1.5">
@@ -2559,7 +2553,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                               const isChosen = !!editItemSupplierId && q.supplierId === editItemSupplierId
                               const isDeselected = !!editItemSupplierId && !isChosen
                               return (
-                              <div key={q.id} className={`border rounded-md p-2 text-sm space-y-1.5 transition-opacity ${isChosen ? 'border-green-400 bg-green-50' : ''} ${isDeselected ? 'opacity-50 grayscale' : ''}`}>
+                              <div key={q.id} className={`border rounded-md p-2 text-sm space-y-1.5 transition-opacity ${isChosen ? 'border-success bg-success/10' : ''} ${isDeselected ? 'opacity-50 grayscale' : ''}`}>
                                 {q.fileKey ? (
                                   <div className="relative">
                                     <FilePreview
@@ -2571,12 +2565,12 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                                     <button
                                       onClick={() => downloadDataUrl(q.fileKey!, `${q.supplierName.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-quotation.${extFromDataUrl(q.fileKey!)}`)}
                                       title="Download quotation document"
-                                      className="absolute top-1 right-1 bg-white/90 hover:bg-white text-foreground rounded-full p-1 shadow transition-colors"
+                                      className="absolute top-1 right-1 bg-card/90 hover:bg-card text-foreground rounded-full p-1 shadow transition-colors"
                                     >
                                       <Download className="h-3 w-3" />
                                     </button>
                                     {isChosen && (
-                                      <span className="absolute top-1 left-1 flex items-center gap-1 text-[10px] font-semibold text-white bg-green-600 rounded-full px-2 py-0.5 shadow">
+                                      <span className="absolute top-1 left-1 flex items-center gap-1 text-[10px] font-semibold text-success-foreground bg-success rounded-full px-2 py-0.5 shadow">
                                         <CheckCircle2 className="h-3 w-3" /> Chosen
                                       </span>
                                     )}
@@ -2586,11 +2580,11 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                                 )}
                                 <div className="flex items-center justify-between gap-2 min-w-0">
                                   <p className={`truncate ${isChosen ? 'font-semibold' : 'font-medium'}`}>{q.supplierName}</p>
-                                  <span className="font-medium shrink-0">Rp {new Intl.NumberFormat('id-ID').format(q.price)}</span>
+                                  <span className="font-medium shrink-0">{formatMoney(q.price)}</span>
                                 </div>
                                 <div className="flex items-center justify-between gap-2">
-                                  <p className="text-xs text-muted-foreground">{new Date(q.submittedAt).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}</p>
-                                  <button onClick={() => deleteQuotation(q.id)} className="text-muted-foreground hover:text-red-600 transition-colors" title="Remove quotation">
+                                  <p className="text-xs text-muted-foreground">{formatDate(q.submittedAt)}</p>
+                                  <button onClick={() => deleteQuotation(q.id)} className="text-muted-foreground hover:text-destructive transition-colors" title="Remove quotation">
                                     <Trash2 className="h-3.5 w-3.5" />
                                   </button>
                                 </div>
@@ -2602,20 +2596,20 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                         </div>
 
                         {quotationHistory.length > 0 && (
-                          <div className="space-y-1.5 rounded-md border border-dashed border-amber-200 bg-amber-50/40 p-2.5">
-                            <p className="text-[11px] font-semibold text-amber-800 uppercase tracking-wide">Quotations from other requests</p>
+                          <div className="space-y-1.5 rounded-md border border-dashed border-warning/30 bg-warning/5 p-2.5">
+                            <p className="text-[11px] font-semibold text-warning uppercase tracking-wide">Quotations from other requests</p>
                             {quotationHistory.map((q, i) => (
-                              <div key={i} className="flex items-center justify-between text-sm bg-white border rounded-md px-3 py-2">
+                              <div key={i} className="flex items-center justify-between text-sm bg-card border rounded-md px-3 py-2">
                                 <div className="min-w-0">
                                   <p className="font-medium truncate">{q.supplierName}</p>
-                                  <p className="text-xs text-muted-foreground">{q.prNumber} · {new Date(q.submittedAt).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}</p>
+                                  <p className="text-xs text-muted-foreground">{q.prNumber} · {formatDate(q.submittedAt)}</p>
                                 </div>
                                 <div className="flex items-center gap-2 shrink-0">
-                                  <span className="font-medium">Rp {new Intl.NumberFormat('id-ID').format(q.price)}</span>
+                                  <span className="font-medium">{formatMoney(q.price)}</span>
                                   <button
                                     onClick={() => reuseQuotation(q)}
                                     disabled={reusingQuotation}
-                                    className="text-[11px] font-medium text-amber-700 hover:text-amber-900 border border-amber-200 rounded-md px-2 py-1 hover:bg-amber-50 transition-colors disabled:opacity-50 whitespace-nowrap"
+                                    className="text-[11px] font-medium text-warning hover:text-warning/80 border border-warning/30 rounded-md px-2 py-1 hover:bg-warning/10 transition-colors disabled:opacity-50 whitespace-nowrap"
                                   >
                                     Add
                                   </button>
@@ -2634,10 +2628,10 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                             <button
                               type="button"
                               onClick={() => { setSupplierModal('quotation'); setSupplierModalSearch(''); setSupplierFilterCity('All') }}
-                              className="w-full h-9 border rounded-md px-3 text-sm text-left bg-background hover:bg-muted/40 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                              className="w-full h-9 border rounded-md px-3 text-sm text-left bg-background hover:bg-muted/40 focus:outline-none focus:ring-1 focus:ring-ring"
                             >
                               <span className={`truncate block ${quoteForm.supplierName ? '' : 'text-muted-foreground'}`}>
-                                {quoteForm.supplierName || 'Select supplier...'}
+                                {quoteForm.supplierName || 'Select supplier…'}
                               </span>
                             </button>
                           </div>
@@ -2649,7 +2643,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                             onClick={addQuotation}
                             disabled={quoteSaving || !quoteForm.supplierName.trim() || !quoteForm.price || !quoteForm.fileKey}
                             title={!quoteForm.fileKey ? 'Attach the quotation document first' : undefined}
-                            className="h-9 px-3 text-xs font-medium bg-amber-600 text-white rounded-md hover:bg-amber-700 disabled:opacity-50 whitespace-nowrap"
+                            className="h-9 px-3 text-xs font-medium bg-primary text-primary-foreground rounded-md hover:bg-primary-hover disabled:opacity-50 whitespace-nowrap"
                           >
                             {quoteSaving ? '...' : '+ Add'}
                           </button>
@@ -2661,16 +2655,16 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                         />
                         {quoteForm.fileKey ? (
                           <div className="flex items-center gap-2 text-xs border rounded-md px-2.5 py-1.5 bg-muted/30 w-fit">
-                            {isPdfDataUrl(quoteForm.fileKey) ? <FileText className="h-3.5 w-3.5 text-red-500 shrink-0" /> : <ImagePlus className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
+                            {isPdfDataUrl(quoteForm.fileKey) ? <FileText className="h-3.5 w-3.5 text-destructive shrink-0" /> : <ImagePlus className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
                             <span className="text-muted-foreground">Quotation document attached</span>
-                            <button type="button" onClick={() => setQuoteForm(f => ({ ...f, fileKey: '' }))} className="text-muted-foreground hover:text-red-600">
+                            <button type="button" onClick={() => setQuoteForm(f => ({ ...f, fileKey: '' }))} className="text-muted-foreground hover:text-destructive">
                               <X className="h-3 w-3" />
                             </button>
                           </div>
                         ) : (
                           <label
                             htmlFor="quote-file-input"
-                            className={`inline-flex items-center gap-1.5 text-xs border border-dashed rounded-md px-2.5 py-1.5 w-fit cursor-pointer transition-colors ${quoteFileBusy ? 'opacity-50 pointer-events-none' : 'text-amber-700 border-amber-300 hover:text-amber-900 hover:border-amber-400'}`}
+                            className={`inline-flex items-center gap-1.5 text-xs border border-dashed rounded-md px-2.5 py-1.5 w-fit cursor-pointer transition-colors ${quoteFileBusy ? 'opacity-50 pointer-events-none' : 'text-warning border-warning/30 hover:text-warning/80 hover:border-warning'}`}
                           >
                             <Paperclip className="h-3.5 w-3.5" /> {quoteFileBusy ? 'Uploading…' : 'Attach quotation document — required'}
                           </label>
@@ -2687,8 +2681,8 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                         {exemptionChecked && (
                           <textarea
                             rows={2}
-                            placeholder="Exemption reason..."
-                            className="w-full border rounded-md px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-amber-500"
+                            placeholder="Exemption reason…"
+                            className="w-full border rounded-md px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-ring"
                             value={exemptionReasonText}
                             onChange={e => { setExemptionReasonText(e.target.value); setExemptionAutoSet(false) }}
                           />
@@ -2707,29 +2701,29 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
 
                           if (editItemModal.quotationApprovedAt) {
                             return (
-                              <div className="flex items-center gap-2 text-xs text-green-700 bg-green-50 border border-green-200 rounded-md px-3 py-2">
+                              <div className="flex items-center gap-2 text-xs text-success bg-success/10 border border-success/30 rounded-md px-3 py-2">
                                 <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
-                                Approved by {editItemModal.quotationApprovedBy?.name ?? '—'} on {new Date(editItemModal.quotationApprovedAt).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                Approved by {editItemModal.quotationApprovedBy?.name ?? '—'} on {formatDate(editItemModal.quotationApprovedAt)}
                               </div>
                             )
                           }
                           if (editItemModal.quotationRejectedAt) {
                             return (
                               <div className="space-y-2">
-                                <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2">
+                                <div className="text-xs text-destructive bg-destructive/10 border border-destructive/30 rounded-md px-3 py-2">
                                   <p className="font-semibold">Rejected by {editItemModal.quotationRejectedBy?.name ?? '—'}</p>
                                   {editItemModal.quotationRejectionReason && <p className="mt-0.5">{editItemModal.quotationRejectionReason}</p>}
                                 </div>
                                 <button onClick={submitForApproval} disabled={submitDisabled}
-                                  className="w-full h-9 text-xs font-medium bg-amber-600 text-white rounded-md hover:bg-amber-700 disabled:opacity-50">
-                                  {submittingApproval ? 'Submitting...' : 'Resubmit for Approval'}
+                                  className="w-full h-9 text-xs font-medium bg-primary text-primary-foreground rounded-md hover:bg-primary-hover disabled:opacity-50">
+                                  {submittingApproval ? 'Submitting…' : 'Resubmit for Approval'}
                                 </button>
                               </div>
                             )
                           }
                           if (editItemModal.quotationSubmittedAt) {
                             return (
-                              <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+                              <div className="flex items-center gap-2 text-xs text-warning bg-warning/10 border border-warning/30 rounded-md px-3 py-2">
                                 <Clock className="h-3.5 w-3.5 shrink-0" />
                                 Pending approval by {editItemModal.quotationApprover?.name ?? '—'}
                               </div>
@@ -2739,8 +2733,8 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                             <div className="space-y-1.5">
                               {quotations.length < required && <p className="text-[11px] text-muted-foreground italic">Gather {required - quotations.length} more quotation{required - quotations.length > 1 ? 's' : ''} first.</p>}
                               <button onClick={submitForApproval} disabled={submitDisabled}
-                                className="w-full h-9 text-xs font-medium bg-amber-600 text-white rounded-md hover:bg-amber-700 disabled:opacity-50">
-                                {submittingApproval ? 'Submitting...' : 'Submit for Approval'}
+                                className="w-full h-9 text-xs font-medium bg-primary text-primary-foreground rounded-md hover:bg-primary-hover disabled:opacity-50">
+                                {submittingApproval ? 'Submitting…' : 'Submit for Approval'}
                               </button>
                             </div>
                           )
@@ -2758,9 +2752,9 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
               <button
                 onClick={saveEditItem}
                 disabled={editItemSaving}
-                className="px-4 py-2 text-sm bg-amber-600 text-white rounded-md hover:bg-amber-700 disabled:opacity-50 font-medium"
+                className="px-4 py-2 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary-hover disabled:opacity-50 font-medium"
               >
-                {editItemSaving ? 'Saving...' : 'Save'}
+                {editItemSaving ? 'Saving…' : 'Save'}
               </button>
               )}
             </div>
@@ -2771,7 +2765,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
       {/* ── Reject Item modal — optional reason for excluding one item at verify triage ── */}
       {rejectItemModal && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm flex flex-col overflow-hidden">
+          <div className="bg-card rounded-xl shadow-xl w-full max-w-sm flex flex-col overflow-hidden">
             <div className="flex items-center justify-between gap-3 px-5 py-4 border-b shrink-0">
               <div className="min-w-0">
                 <h3 className="font-semibold text-base">Reject Item</h3>
@@ -2788,7 +2782,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                 onChange={e => setRejectItemReason(e.target.value)}
                 rows={3}
                 placeholder="e.g. Not needed this month"
-                className="w-full text-sm border rounded-md px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-amber-500"
+                className="w-full text-sm border rounded-md px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-ring"
                 autoFocus
               />
             </div>
@@ -2799,9 +2793,9 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
               <button
                 onClick={confirmRejectItem}
                 disabled={rejectItemSaving}
-                className="px-4 py-2 text-sm bg-red-600 text-white rounded-md hover:bg-red-700 font-medium disabled:opacity-50"
+                className="px-4 py-2 text-sm bg-destructive text-destructive-foreground rounded-md hover:bg-destructive/90 font-medium disabled:opacity-50"
               >
-                {rejectItemSaving ? 'Rejecting...' : 'Reject Item'}
+                {rejectItemSaving ? 'Rejecting…' : 'Reject Item'}
               </button>
             </div>
           </div>
@@ -2821,7 +2815,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
           <>
             <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm" onClick={() => setSupplierModal(null)} />
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
-              <div className="pointer-events-auto bg-white rounded-2xl shadow-2xl w-full max-w-lg flex flex-col max-h-[82vh]">
+              <div className="pointer-events-auto bg-card rounded-2xl shadow-2xl w-full max-w-lg flex flex-col max-h-[82vh]">
                 <div className="px-5 py-4 border-b flex items-center justify-between shrink-0">
                   <h3 className="font-semibold text-base">Select Supplier</h3>
                   <button onClick={() => setSupplierModal(null)} className="text-muted-foreground hover:text-foreground text-xl leading-none">×</button>
@@ -2829,15 +2823,15 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                 <div className="px-4 py-3 border-b shrink-0">
                   <div className="relative">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-                    <input autoFocus className="w-full h-10 border rounded-lg pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
-                      placeholder="Search or type a new supplier name..." value={supplierModalSearch} onChange={e => setSupplierModalSearch(e.target.value)} />
+                    <input autoFocus className="w-full h-10 border rounded-lg pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                      placeholder="Search or type a new supplier name…" value={supplierModalSearch} onChange={e => setSupplierModalSearch(e.target.value)} />
                   </div>
                 </div>
                 {allCities.length > 1 && (
                   <div className="px-4 py-2 border-b shrink-0 flex gap-1.5 flex-wrap">
                     {allCities.map(c => (
                       <button key={c} onClick={() => setSupplierFilterCity(c)}
-                        className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${supplierFilterCity === c ? 'bg-blue-500 text-white' : 'bg-muted text-muted-foreground hover:bg-muted/70'}`}>
+                        className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${supplierFilterCity === c ? 'bg-info text-info-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/70'}`}>
                         {c}
                       </button>
                     ))}
@@ -2852,31 +2846,31 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                   )}
                   {filtered.map(s => (
                     <button key={s.id} onClick={() => { selectSupplierForTarget(s); setSupplierModal(null) }}
-                      className="w-full text-left px-5 py-3.5 flex items-center gap-3 hover:bg-amber-50 border-b last:border-0 transition-colors">
-                      <div className="h-8 w-8 rounded-full bg-amber-100 flex items-center justify-center shrink-0">
-                        <Building2 className="h-4 w-4 text-amber-600" />
+                      className="w-full text-left px-5 py-3.5 flex items-center gap-3 hover:bg-warning/10 border-b last:border-0 transition-colors">
+                      <div className="h-8 w-8 rounded-full bg-warning/15 flex items-center justify-center shrink-0">
+                        <Building2 className="h-4 w-4 text-warning" />
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="font-medium text-sm">{s.name}</p>
                         <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                           {(s.locations ?? []).map((l, i) => (
-                            <span key={i} className="px-1.5 py-0.5 bg-blue-100 text-blue-600 text-xs rounded-full">{l.city}</span>
+                            <span key={i} className="px-1.5 py-0.5 bg-info/15 text-info text-xs rounded-full">{l.city}</span>
                           ))}
                           {s.contact && <span className="text-xs text-muted-foreground">{s.contact}</span>}
                         </div>
                       </div>
-                      {(supplierModal === 'editItem' ? editItemSupplierId === s.id : quoteForm.supplierId === s.id) && <Check className="h-4 w-4 text-amber-600 shrink-0" />}
+                      {(supplierModal === 'editItem' ? editItemSupplierId === s.id : quoteForm.supplierId === s.id) && <Check className="h-4 w-4 text-warning shrink-0" />}
                     </button>
                   ))}
                   {supplierModalSearch.trim() && !suppliers.some(s => s.name.toLowerCase() === supplierModalSearch.toLowerCase()) && (
                     <button onClick={() => quickAddSupplier(supplierModalSearch.trim()).then(() => setSupplierModal(null))}
-                      className="w-full text-left px-5 py-3.5 flex items-center gap-3 hover:bg-green-50 transition-colors border-t">
-                      <div className="h-8 w-8 rounded-full bg-green-100 flex items-center justify-center shrink-0">
-                        <Plus className="h-4 w-4 text-green-600" />
+                      className="w-full text-left px-5 py-3.5 flex items-center gap-3 hover:bg-success/10 transition-colors border-t">
+                      <div className="h-8 w-8 rounded-full bg-success/15 flex items-center justify-center shrink-0">
+                        <Plus className="h-4 w-4 text-success" />
                       </div>
                       <div>
-                        <p className="font-medium text-sm text-green-700">Add &quot;{supplierModalSearch.trim()}&quot;</p>
-                        <p className="text-xs text-green-600">Create as new supplier</p>
+                        <p className="font-medium text-sm text-success">Add &quot;{supplierModalSearch.trim()}&quot;</p>
+                        <p className="text-xs text-success">Create as new supplier</p>
                       </div>
                     </button>
                   )}
@@ -2928,7 +2922,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
             )}
             <button
               onClick={downloadLightboxImage}
-              className="flex items-center gap-1.5 bg-white text-foreground text-sm font-medium px-3 py-1.5 rounded-full hover:bg-white/90 transition-colors"
+              className="flex items-center gap-1.5 bg-card text-foreground text-sm font-medium px-3 py-1.5 rounded-full hover:bg-card/90 transition-colors"
             >
               <Download className="h-3.5 w-3.5" /> Download
             </button>
@@ -2941,10 +2935,10 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
         <div className="fixed inset-0 bg-black/70 z-[60] flex items-center justify-center p-4" onClick={() => setQuoteFileLightbox(null)}>
           <div className="relative inline-block" onClick={e => e.stopPropagation()}>
             {isPdfDataUrl(quoteFileLightbox) ? (
-              <div className="bg-white rounded-xl shadow-2xl overflow-hidden w-[90vw] max-w-2xl">
+              <div className="bg-card rounded-xl shadow-2xl overflow-hidden w-[90vw] max-w-2xl">
                 <embed src={quoteFileLightbox} type="application/pdf" className="w-full h-[75vh]" />
                 <div className="p-3 flex justify-center">
-                  <a href={quoteFileLightbox} target="_blank" rel="noopener noreferrer" className="text-sm text-amber-700 hover:text-amber-900 font-medium underline underline-offset-2">
+                  <a href={quoteFileLightbox} target="_blank" rel="noopener noreferrer" className="text-sm text-warning hover:text-warning/80 font-medium underline underline-offset-2">
                     Open PDF in new tab
                   </a>
                 </div>
@@ -3080,16 +3074,16 @@ function CreateRequestView({
         {/* ── Catalog ── */}
         <div className="space-y-3 min-w-0">
           {/* Toolbar — what to browse, search, and who the next items are for */}
-          <div className="bg-white border rounded-xl shadow-sm p-3 space-y-3">
+          <div className="bg-card border rounded-xl shadow-sm p-3 space-y-3">
             <div className="flex flex-col sm:flex-row gap-2">
               {canBrowseInventory && (
                 <div className="inline-flex gap-1 bg-muted rounded-lg p-1 shrink-0">
                   <button type="button" onClick={() => setCatalogSource('stock')}
-                    className={`flex-1 sm:flex-none px-3 h-8 text-xs font-semibold rounded-md transition-colors ${catalogSource === 'stock' ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
+                    className={`flex-1 sm:flex-none px-3 h-8 text-xs font-semibold rounded-md transition-colors ${catalogSource === 'stock' ? 'bg-card shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
                     Catalog
                   </button>
                   <button type="button" onClick={() => setCatalogSource('inventory')}
-                    className={`flex-1 sm:flex-none px-3 h-8 text-xs font-semibold rounded-md transition-colors ${catalogSource === 'inventory' ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
+                    className={`flex-1 sm:flex-none px-3 h-8 text-xs font-semibold rounded-md transition-colors ${catalogSource === 'inventory' ? 'bg-card shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
                     Vessel Inventory
                   </button>
                 </div>
@@ -3099,14 +3093,14 @@ function CreateRequestView({
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
                   {catalogSource === 'inventory' ? (
                     <input
-                      className="w-full h-10 pl-9 pr-3 text-sm border rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-amber-500"
-                      placeholder="Search inventory item..."
+                      className="w-full h-10 pl-9 pr-3 text-sm border rounded-lg bg-card focus:outline-none focus:ring-1 focus:ring-ring"
+                      placeholder="Search inventory item…"
                       value={invSearch} onChange={e => setInvSearch(e.target.value)}
                     />
                   ) : (
                     <input
-                      className="w-full h-10 pl-9 pr-3 text-sm border rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-amber-500"
-                      placeholder="Search item name or SKU..."
+                      className="w-full h-10 pl-9 pr-3 text-sm border rounded-lg bg-card focus:outline-none focus:ring-1 focus:ring-ring"
+                      placeholder="Search item name or SKU…"
                       value={catalogSearch} onChange={e => setCatalogSearch(e.target.value)}
                     />
                   )}
@@ -3114,7 +3108,7 @@ function CreateRequestView({
                 <button
                   onClick={() => setCustomModal(true)}
                   title="Request an item that isn't in the catalog"
-                  className="flex items-center justify-center gap-2 h-10 px-3 sm:px-4 rounded-lg border border-amber-300 bg-amber-50 text-amber-700 text-sm font-medium transition-colors hover:bg-amber-100 hover:border-amber-400 shrink-0"
+                  className="flex items-center justify-center gap-2 h-10 px-3 sm:px-4 rounded-lg border border-warning/30 bg-warning/10 text-warning text-sm font-medium transition-colors hover:bg-warning/20 hover:border-warning shrink-0"
                 >
                   <ImagePlus className="h-4 w-4" /> <span className="hidden sm:inline">Custom Item</span>
                 </button>
@@ -3145,7 +3139,7 @@ function CreateRequestView({
                     {categories.map(c => (
                       <button key={c} onClick={() => setCatalogCategory(c)}
                         className={`px-2.5 h-7 rounded-full text-xs font-medium border whitespace-nowrap transition-colors shrink-0 ${
-                          catalogCategory === c ? 'bg-amber-600 text-white border-amber-600' : 'bg-white text-muted-foreground border-border hover:border-amber-300 hover:text-foreground'
+                          catalogCategory === c ? 'bg-primary text-primary-foreground border-primary' : 'bg-card text-muted-foreground border-border hover:border-primary/40 hover:text-foreground'
                         }`}>
                         {c === 'All' ? c : toTitleCase(c)}
                       </button>
@@ -3163,10 +3157,10 @@ function CreateRequestView({
               requestedByEmployeeId={requestedByEmployeeId}
             />
           ) : filtered.length === 0 ? (
-            <div className="text-center py-16 text-muted-foreground bg-white border rounded-xl">
+            <div className="text-center py-16 text-muted-foreground bg-card border rounded-xl">
               <Package className="h-10 w-10 mx-auto mb-3 opacity-20" />
               <p className="text-sm">No items found.</p>
-              <button onClick={() => setCustomModal(true)} className="mt-3 text-sm font-medium text-amber-700 hover:underline">+ Request a custom item</button>
+              <button onClick={() => setCustomModal(true)} className="mt-3 text-sm font-medium text-warning hover:underline">+ Request a custom item</button>
             </div>
           ) : (
             <>
@@ -3198,7 +3192,7 @@ function CreateRequestView({
                   </span>
                   <div className="flex items-center gap-1">
                     <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}
-                      className="h-9 w-9 flex items-center justify-center rounded-md border bg-white hover:bg-muted disabled:opacity-40 disabled:pointer-events-none transition-colors">
+                      className="h-9 w-9 flex items-center justify-center rounded-md border bg-card hover:bg-muted disabled:opacity-40 disabled:pointer-events-none transition-colors">
                       <ChevronLeft className="h-4 w-4" />
                     </button>
                     {Array.from({ length: pageCount }, (_, i) => i + 1)
@@ -3213,13 +3207,13 @@ function CreateRequestView({
                       ) : (
                         <button key={n} onClick={() => setPage(n)}
                           className={`h-9 w-9 rounded-md text-xs font-semibold transition-colors ${
-                            n === currentPage ? 'bg-amber-600 text-white' : 'border bg-white hover:bg-muted text-muted-foreground'
+                            n === currentPage ? 'bg-primary text-primary-foreground' : 'border bg-card hover:bg-muted text-muted-foreground'
                           }`}>
                           {n}
                         </button>
                       ))}
                     <button onClick={() => setPage(p => Math.min(pageCount, p + 1))} disabled={currentPage === pageCount}
-                      className="h-9 w-9 flex items-center justify-center rounded-md border bg-white hover:bg-muted disabled:opacity-40 disabled:pointer-events-none transition-colors">
+                      className="h-9 w-9 flex items-center justify-center rounded-md border bg-card hover:bg-muted disabled:opacity-40 disabled:pointer-events-none transition-colors">
                       <ChevronRight className="h-4 w-4" />
                     </button>
                   </div>
@@ -3239,7 +3233,7 @@ function CreateRequestView({
       {/* ── Phone: floating bar → full-screen request sheet ── */}
       {!cartOpen && (
         <button onClick={() => setCartOpen(true)}
-          className="md:hidden fixed left-4 right-4 bottom-4 z-40 flex items-center justify-between gap-3 px-4 py-3.5 rounded-xl bg-amber-600 text-white shadow-lg shadow-amber-600/30">
+          className="md:hidden fixed left-4 right-4 bottom-4 z-40 flex items-center justify-between gap-3 px-4 py-3.5 rounded-xl bg-primary text-primary-foreground shadow-lg shadow-primary/30">
           <span className="flex items-center gap-2 text-sm font-semibold">
             <ShoppingCart className="h-4 w-4" />
             {cart.length === 0 ? 'Your request' : `${cart.length} item${cart.length > 1 ? 's' : ''} · ${totalQty} qty`}
@@ -3250,7 +3244,7 @@ function CreateRequestView({
       {cartOpen && (
         <div className="fixed inset-0 z-50 md:hidden">
           <div className="absolute inset-0 bg-black/40" onClick={() => setCartOpen(false)} />
-          <div className="absolute inset-x-0 bottom-0 top-12 bg-white rounded-t-2xl flex flex-col overflow-hidden">
+          <div className="absolute inset-x-0 bottom-0 top-12 bg-card rounded-t-2xl flex flex-col overflow-hidden">
             <div className="flex items-center justify-between px-4 py-3 border-b shrink-0">
               <button onClick={() => setCartOpen(false)} className="flex items-center gap-1 text-sm font-medium text-muted-foreground">
                 <ChevronLeft className="h-4 w-4" /> Add more items
@@ -3267,7 +3261,7 @@ function CreateRequestView({
       {/* ── Custom Request Modal ── */}
       {customModal && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center sm:p-4">
-          <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full max-w-2xl max-h-[92vh] flex flex-col overflow-hidden">
+          <div className="bg-card rounded-t-2xl sm:rounded-2xl shadow-2xl w-full max-w-2xl max-h-[92vh] flex flex-col overflow-hidden">
             <div className="flex items-start justify-between gap-3 px-5 sm:px-6 py-4 sm:py-5 border-b shrink-0">
               <div>
                 <h3 className="font-bold text-lg">Custom Item</h3>
@@ -3277,30 +3271,30 @@ function CreateRequestView({
             </div>
             <div className="px-5 sm:px-6 py-5 space-y-4 flex-1 min-h-0 overflow-y-auto">
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Description <span className="text-red-500">*</span></label>
+                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Description <span className="text-destructive">*</span></label>
                 <textarea
-                  className="w-full border rounded-lg px-3 py-2.5 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-amber-500"
-                  rows={3} placeholder="What do you need? Be as specific as possible..."
+                  className="w-full border rounded-lg px-3 py-2.5 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-ring"
+                  rows={3} placeholder="What do you need? Be as specific as possible…"
                   value={customForm.itemName} onChange={e => setCustomForm(f => ({ ...f, itemName: e.target.value }))} autoFocus
                 />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Quantity</label>
-                  <input type="number" min={1} className="w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  <input type="number" min={1} className="w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
                     value={customForm.quantity} onChange={e => setCustomForm(f => ({ ...f, quantity: Number(e.target.value) }))} />
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Unit</label>
-                  <input className="w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500" placeholder="pcs"
+                  <input className="w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring" placeholder="pcs"
                     value={customForm.unit} onChange={e => setCustomForm(f => ({ ...f, unit: e.target.value }))} />
                 </div>
               </div>
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Notes</label>
                 <textarea
-                  className="w-full border rounded-lg px-3 py-2.5 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-amber-500"
-                  rows={2} placeholder="Optional additional detail..."
+                  className="w-full border rounded-lg px-3 py-2.5 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-ring"
+                  rows={2} placeholder="Optional additional detail…"
                   value={customForm.notes} onChange={e => setCustomForm(f => ({ ...f, notes: e.target.value }))}
                 />
               </div>
@@ -3318,7 +3312,7 @@ function CreateRequestView({
                   <div className="relative aspect-square">
                     <button onClick={() => setCustomPhotoMenuOpen(o => !o)} disabled={compressingCustomImage} {...customImageDropProps}
                       className={`w-full h-full flex flex-col items-center justify-center gap-1.5 border-2 border-dashed rounded-lg transition-colors disabled:opacity-50 ${
-                        isDraggingCustomImage ? 'border-amber-500 bg-amber-50 text-amber-700' : 'text-muted-foreground hover:bg-muted/30'
+                        isDraggingCustomImage ? 'border-warning bg-warning/10 text-warning' : 'text-muted-foreground hover:bg-muted/30'
                       }`}>
                       <Camera className="h-5 w-5" />
                       <span className="text-[11px] text-center px-1">{compressingCustomImage ? 'Processing…' : isDraggingCustomImage ? 'Drop' : 'Add photo'}</span>
@@ -3331,7 +3325,7 @@ function CreateRequestView({
             <div className="flex gap-3 justify-end px-5 sm:px-6 py-4 border-t bg-muted/20 shrink-0">
               <button onClick={() => setCustomModal(false)} className="px-4 py-2 text-sm border rounded-lg hover:bg-muted">Cancel</button>
               <button onClick={addCustomToCart} disabled={!customForm.itemName.trim()}
-                className="px-5 py-2 text-sm text-white rounded-lg font-medium disabled:opacity-40 transition-colors bg-amber-600 hover:bg-amber-700">
+                className="px-5 py-2 text-sm text-primary-foreground rounded-lg font-medium disabled:opacity-40 transition-colors bg-primary hover:bg-primary-hover">
                 Add to Request
               </button>
             </div>
@@ -3349,13 +3343,13 @@ function ItemCard({ image, name, caption, sub, active, children }: {
   image?: string | null; name: string; caption: string; sub: string; active: boolean; children: React.ReactNode
 }) {
   return (
-    <div className={`bg-white rounded-xl border overflow-hidden flex flex-col transition-all ${active ? 'border-amber-500 ring-1 ring-amber-500' : 'hover:border-amber-300 hover:shadow-sm'}`}>
+    <div className={`bg-card rounded-xl border overflow-hidden flex flex-col transition-all ${active ? 'border-warning ring-1 ring-warning' : 'hover:border-primary/40 hover:shadow-sm'}`}>
       {/* Product shots (bottles, cans) are tall — contain + padding keeps them whole without a huge square */}
-      <div className="h-28 sm:h-32 bg-white flex items-center justify-center overflow-hidden border-b border-muted">
+      <div className="h-28 sm:h-32 bg-card flex items-center justify-center overflow-hidden border-b border-muted">
         {image ? <img src={image} alt={name} loading="lazy" className="max-w-full max-h-full object-contain p-2" /> : <Package className="h-7 w-7 text-muted-foreground/25" />}
       </div>
       <div className="p-2.5 flex flex-col flex-1">
-        <span className="text-[9px] font-semibold uppercase tracking-wide text-amber-700 truncate">{caption}</span>
+        <span className="text-[9px] font-semibold uppercase tracking-wide text-warning truncate">{caption}</span>
         <p className="text-xs font-medium leading-snug mt-0.5 line-clamp-2">{name}</p>
         <p className="text-[11px] text-muted-foreground mt-0.5 truncate">{sub}</p>
         <div className="mt-auto pt-2 space-y-1">{children}</div>
@@ -3368,7 +3362,7 @@ function AddButton({ label, outline = false, onClick }: { label: string; outline
   return (
     <button onClick={onClick}
       className={`w-full flex items-center justify-center gap-1 h-8 rounded-lg text-xs font-semibold transition-colors ${
-        outline ? 'border border-amber-500 text-amber-700 hover:bg-amber-50' : 'bg-amber-600 hover:bg-amber-700 text-white'
+        outline ? 'border border-primary text-primary-strong hover:bg-primary/10' : 'bg-primary hover:bg-primary-hover text-primary-foreground'
       }`}>
       <Plus className="h-3.5 w-3.5" /> {label}
     </button>
@@ -3376,9 +3370,9 @@ function AddButton({ label, outline = false, onClick }: { label: string; outline
 }
 
 function QtyStepper({ qty, unit, onChange, small = false }: { qty: number; unit?: string; onChange: (delta: number) => void; small?: boolean }) {
-  const btn = `${small ? 'w-7 h-7' : 'w-8 h-8'} rounded-md bg-white border flex items-center justify-center hover:bg-muted transition-colors shrink-0`
+  const btn = `${small ? 'w-7 h-7' : 'w-8 h-8'} rounded-md bg-card border flex items-center justify-center hover:bg-muted transition-colors shrink-0`
   return (
-    <div className={`flex items-center justify-between gap-1 ${small ? '' : 'bg-amber-50 rounded-lg'}`}>
+    <div className={`flex items-center justify-between gap-1 ${small ? '' : 'bg-warning/10 rounded-lg'}`}>
       <button onClick={() => onChange(-1)} className={btn}><Minus className="h-3.5 w-3.5" /></button>
       <span className={`text-xs font-semibold tabular-nums text-center ${small ? 'min-w-6' : ''}`}>{qty}{unit ? ` ${unit}` : ''}</span>
       <button onClick={() => onChange(1)} className={btn}><Plus className="h-3.5 w-3.5" /></button>
@@ -3399,7 +3393,7 @@ function InventoryFilters({
   invCategoryId: string; setInvCategoryId: (v: string) => void
   invRooms: { id: string; name: string }[]; invCategories: { id: string; name: string }[]
 }) {
-  const sel = 'w-full h-9 border rounded-md px-2.5 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500 disabled:opacity-50'
+  const sel = 'w-full h-9 border rounded-md px-2.5 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50'
   return (
     <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
       <select className={sel} value={invLocationId} onChange={e => setInvLocationId(e.target.value)}>
@@ -3429,13 +3423,13 @@ function InventoryPickerPanel({
   requestedByEmployeeId: string
 }) {
   const empty = (text: string) => (
-    <div className="text-center py-16 text-muted-foreground bg-white border rounded-xl">
+    <div className="text-center py-16 text-muted-foreground bg-card border rounded-xl">
       <Package className="h-10 w-10 mx-auto mb-3 opacity-20" />
       <p className="text-sm">{text}</p>
     </div>
   )
   if (!invLocationId) return empty('Select a vessel to browse its inventory.')
-  if (invLoading) return <div className="text-center py-16 text-muted-foreground text-sm">Loading...</div>
+  if (invLoading) return <div className="text-center py-16 text-muted-foreground text-sm">Loading…</div>
   if (invItems.length === 0) return empty('No inventory items found for this room/category.')
   return (
     <div className={CARD_GRID}>
@@ -3494,11 +3488,11 @@ function RequestCartPanel({
   const missing = [!deliveryLocationId && 'delivery location', cart.length === 0 && 'items', purpose === 'TRIP' && !trip && 'trip'].filter(Boolean) as string[]
 
   return (
-    <div className={`bg-white flex flex-col ${embedded ? 'h-full' : 'rounded-xl border shadow-sm max-h-[calc(100vh-5rem)]'}`}>
-      <div className={`flex items-center gap-2 px-4 py-3 border-b shrink-0 ${embedded ? '' : 'bg-amber-50/60 rounded-t-xl'}`}>
-        <ShoppingCart className="h-4 w-4 text-amber-700" />
+    <div className={`bg-card flex flex-col ${embedded ? 'h-full' : 'rounded-xl border shadow-sm max-h-[calc(100vh-5rem)]'}`}>
+      <div className={`flex items-center gap-2 px-4 py-3 border-b shrink-0 ${embedded ? '' : 'bg-warning/5 rounded-t-xl'}`}>
+        <ShoppingCart className="h-4 w-4 text-warning" />
         <h3 className="font-semibold text-sm flex-1">Your Request</h3>
-        {cart.length > 0 && <span className="text-xs font-semibold bg-amber-600 text-white rounded-full px-2 py-0.5">{cart.length}</span>}
+        {cart.length > 0 && <span className="text-xs font-semibold bg-primary text-primary-foreground rounded-full px-2 py-0.5">{cart.length}</span>}
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto">
@@ -3508,7 +3502,7 @@ function RequestCartPanel({
         <div className="px-4 pt-4 space-y-1">
           <label className={label}>Adding items for</label>
           <select
-            className="w-full h-10 border rounded-lg px-3 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-amber-500"
+            className="w-full h-10 border rounded-lg px-3 text-sm bg-card focus:outline-none focus:ring-1 focus:ring-ring"
             value={requestedByEmployeeId} onChange={e => setRequestedByEmployeeId(e.target.value)}
           >
             <option value="">Myself / general stock</option>
@@ -3540,7 +3534,7 @@ function RequestCartPanel({
               return (
                 <div key={empId || '__none__'} className="space-y-1.5">
                   {order.length > 1 && (
-                    <p className="text-[11px] font-semibold text-amber-700 uppercase tracking-wide flex items-center gap-1 pt-1">
+                    <p className="text-[11px] font-semibold text-warning uppercase tracking-wide flex items-center gap-1 pt-1">
                       <Users className="h-3 w-3" /> {who} <span className="font-normal text-muted-foreground normal-case">— own PR</span>
                     </p>
                   )}
@@ -3569,11 +3563,11 @@ function RequestCartPanel({
                         {/* New vs Replacement — replacement needs a damage description */}
                         <div className="flex gap-0.5 bg-muted rounded-md p-0.5 flex-1">
                           <button type="button" onClick={() => updateCartLine(line.key!, { requestType: 'NEW' })}
-                            className={`flex-1 px-1.5 h-6 text-[11px] font-medium rounded transition-colors ${line.requestType !== 'REPLACEMENT' ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
+                            className={`flex-1 px-1.5 h-6 text-[11px] font-medium rounded transition-colors ${line.requestType !== 'REPLACEMENT' ? 'bg-card shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
                             New
                           </button>
                           <button type="button" onClick={() => updateCartLine(line.key!, { requestType: 'REPLACEMENT' })}
-                            className={`flex-1 px-1.5 h-6 text-[11px] font-medium rounded transition-colors ${line.requestType === 'REPLACEMENT' ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
+                            className={`flex-1 px-1.5 h-6 text-[11px] font-medium rounded transition-colors ${line.requestType === 'REPLACEMENT' ? 'bg-card shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
                             Replace
                           </button>
                         </div>
@@ -3581,7 +3575,7 @@ function RequestCartPanel({
                       </div>
                       {line.requestType === 'REPLACEMENT' && (
                         <textarea
-                          className="w-full border rounded-md px-2 py-1.5 text-xs resize-none focus:outline-none focus:ring-1 focus:ring-amber-500"
+                          className="w-full border rounded-md px-2 py-1.5 text-xs resize-none focus:outline-none focus:ring-1 focus:ring-ring"
                           rows={2} placeholder="Damage details — what is broken, how it happened (required)"
                           value={line.damageDetail ?? ''} onChange={e => updateCartLine(line.key!, { damageDetail: e.target.value })}
                         />
@@ -3597,9 +3591,9 @@ function RequestCartPanel({
         {/* ── 2. Request details ── */}
         <div className="p-4 space-y-3.5 border-t bg-muted/20">
           <div className="space-y-1">
-            <label className={label}>Deliver to <span className="text-red-500">*</span></label>
+            <label className={label}>Deliver to <span className="text-destructive">*</span></label>
             <select
-              className={`w-full h-10 border rounded-lg px-3 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-amber-500 ${!deliveryLocationId && cart.length > 0 ? 'border-amber-400' : ''}`}
+              className={`w-full h-10 border rounded-lg px-3 text-sm bg-card focus:outline-none focus:ring-1 focus:ring-ring ${!deliveryLocationId && cart.length > 0 ? 'border-warning' : ''}`}
               value={deliveryLocationId} onChange={e => changeDeliveryLocation(e.target.value)}
             >
               <option value="">Select location…</option>
@@ -3610,14 +3604,14 @@ function RequestCartPanel({
           {/* Purpose — general restocking vs a specific upcoming trip. Trip requests link
               to the actual Booking so Purchasing knows which departure to have ready for. */}
           <div className="space-y-1.5">
-            <label className={label}>Purpose <span className="text-red-500">*</span></label>
+            <label className={label}>Purpose <span className="text-destructive">*</span></label>
             <div className="flex gap-1 bg-muted rounded-lg p-1">
               <button type="button" onClick={() => setPurpose('STOCK_INVENTORY')}
-                className={`flex-1 px-2 h-8 text-xs font-medium rounded-md transition-colors ${purpose === 'STOCK_INVENTORY' ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
+                className={`flex-1 px-2 h-8 text-xs font-medium rounded-md transition-colors ${purpose === 'STOCK_INVENTORY' ? 'bg-card shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
                 Stock & Inventory
               </button>
               <button type="button" onClick={() => setPurpose('TRIP')}
-                className={`flex-1 px-2 h-8 text-xs font-medium rounded-md transition-colors ${purpose === 'TRIP' ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
+                className={`flex-1 px-2 h-8 text-xs font-medium rounded-md transition-colors ${purpose === 'TRIP' ? 'bg-card shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
                 Trip
               </button>
             </div>
@@ -3630,7 +3624,7 @@ function RequestCartPanel({
             <label className={label}>Needed by</label>
             <input
               type="date"
-              className="w-full h-10 border rounded-lg px-3 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-amber-500"
+              className="w-full h-10 border rounded-lg px-3 text-sm bg-card focus:outline-none focus:ring-1 focus:ring-ring"
               value={neededByDate} onChange={e => setNeededByDate(e.target.value)}
             />
           </div>
@@ -3638,11 +3632,11 @@ function RequestCartPanel({
           <div className="space-y-2">
             <label className="flex items-center gap-2 text-sm font-medium cursor-pointer">
               <input type="checkbox" checked={isUrgent} onChange={e => setIsUrgent(e.target.checked)} className="h-4 w-4 accent-red-600" />
-              <span className="text-red-600">Urgent</span>
+              <span className="text-destructive">Urgent</span>
             </label>
             {isUrgent && (
               <textarea
-                className="w-full border border-red-300 rounded-lg px-3 py-2 text-sm resize-none bg-white focus:outline-none focus:ring-1 focus:ring-red-400"
+                className="w-full border border-destructive/30 rounded-lg px-3 py-2 text-sm resize-none bg-card focus:outline-none focus:ring-1 focus:ring-destructive"
                 rows={2} placeholder="Why is this urgent? (required)"
                 value={urgentReason} onChange={e => setUrgentReason(e.target.value)}
               />
@@ -3652,23 +3646,23 @@ function RequestCartPanel({
           <div className="space-y-1">
             <label className={label}>Notes</label>
             <textarea
-              className="w-full border rounded-lg px-3 py-2 text-sm resize-none bg-white focus:outline-none focus:ring-1 focus:ring-amber-500"
-              rows={2} placeholder="Optional notes for the purchasing team..."
+              className="w-full border rounded-lg px-3 py-2 text-sm resize-none bg-card focus:outline-none focus:ring-1 focus:ring-ring"
+              rows={2} placeholder="Optional notes for the purchasing team…"
               value={notes} onChange={e => setNotes(e.target.value)}
             />
           </div>
         </div>
       </div>
 
-      <div className="p-4 border-t shrink-0 space-y-2 bg-white rounded-b-xl">
+      <div className="p-4 border-t shrink-0 space-y-2 bg-card rounded-b-xl">
         {saveError ? (
-          <p className="text-xs text-red-600 flex items-start gap-1.5"><AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-px" /> {saveError}</p>
+          <p className="text-xs text-destructive flex items-start gap-1.5"><AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-px" /> {saveError}</p>
         ) : missing.length > 0 && (
           <p className="text-[11px] text-muted-foreground">Still needed: {missing.join(', ')}</p>
         )}
         <button
           onClick={submit} disabled={saving || cart.length === 0}
-          className="w-full flex items-center justify-center gap-2 h-11 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold disabled:opacity-40 transition-colors"
+          className="w-full flex items-center justify-center gap-2 h-11 rounded-lg bg-primary hover:bg-primary-hover text-primary-foreground text-sm font-semibold disabled:opacity-40 transition-colors"
         >
           {saving ? <div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Send className="h-4 w-4" />}
           {saving ? 'Saving…' : editingPrNumber ? 'Save Changes' : groupCount > 1 ? `Submit ${groupCount} Requests` : 'Submit Request'}

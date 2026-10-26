@@ -1,9 +1,15 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Banknote, X, Upload, MapPin } from 'lucide-react'
-import { isPdfDataUrl } from '@/lib/fileUpload'
+import { Banknote, Upload, MapPin } from 'lucide-react'
 import { FilePreview, MultiFilePicker } from '@/components/ui/file-preview'
+import { PhotoLightbox } from '@/components/purchasing/PhotoLightbox'
+import { formatDate, formatMoney } from '@/lib/format'
+import { StatusBadge, type StatusTone } from '@/components/ui/status-badge'
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } from '@/components/ui/dialog'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 
 interface Reimbursement {
   id: string
@@ -29,41 +35,13 @@ interface Reimbursement {
   }
 }
 
-const fmtDate = (s: string) => new Date(s).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
-const fmtMoney = (n: number) => 'Rp ' + new Intl.NumberFormat('id-ID').format(n)
-
 // A reimbursement that's individually PAID can still just be a DP — show the
 // PO's overall progress instead of a flat "Paid" so Finance knows a final
 // settlement request may still be coming for the same PO.
-function statusBadge(status: string, poPaymentStatus: string): { label: string; className: string } {
-  if (status !== 'PAID') return { label: 'Waiting for Payment', className: 'bg-amber-100 text-amber-700' }
-  if (poPaymentStatus === 'PARTIALLY_PAID') return { label: 'Partially Paid', className: 'bg-orange-100 text-orange-700' }
-  return { label: 'Paid', className: 'bg-green-100 text-green-700' }
-}
-
-function PhotoLightbox({ photoKey, onClose }: { photoKey: string; onClose: () => void }) {
-  const isPdf = isPdfDataUrl(photoKey)
-  return (
-    <div className="fixed inset-0 bg-black/70 z-[60] flex items-center justify-center p-4" onClick={onClose}>
-      <div className="relative max-w-2xl w-full" onClick={e => e.stopPropagation()}>
-        {isPdf ? (
-          <div className="bg-white rounded-xl shadow-2xl overflow-hidden">
-            <embed src={photoKey} type="application/pdf" className="w-full h-[75vh]" />
-            <div className="p-3 flex justify-center">
-              <a href={photoKey} target="_blank" rel="noopener noreferrer" className="text-sm text-amber-700 hover:text-amber-900 font-medium underline underline-offset-2">
-                Open PDF in new tab
-              </a>
-            </div>
-          </div>
-        ) : (
-          <img src={photoKey} alt="Proof" className="w-full rounded-xl shadow-2xl object-contain max-h-[80vh]" />
-        )}
-        <button onClick={onClose} className="absolute top-3 right-3 bg-black/50 text-white rounded-full p-1.5 hover:bg-black/70">
-          <X className="h-4 w-4" />
-        </button>
-      </div>
-    </div>
-  )
+function statusBadge(status: string, poPaymentStatus: string): { label: string; tone: StatusTone } {
+  if (status !== 'PAID') return { label: 'Waiting for Payment', tone: 'warning' }
+  if (poPaymentStatus === 'PARTIALLY_PAID') return { label: 'Partially Paid', tone: 'warning' }
+  return { label: 'Paid', tone: 'success' }
 }
 
 export default function POReimbursements({ deepLinkId, onDeepLinkHandled }: { deepLinkId?: string | null; onDeepLinkHandled?: () => void } = {}) {
@@ -127,14 +105,14 @@ export default function POReimbursements({ deepLinkId, onDeepLinkHandled }: { de
         <p className="text-muted-foreground text-sm mt-0.5">Review reimbursement requests from the purchasing team and confirm transfers.</p>
       </div>
 
-      <div className="flex gap-1.5">
+      <div className="flex flex-wrap gap-1.5">
         {([
           ['PENDING', `Waiting for Payment${pendingCount ? ` (${pendingCount})` : ''}`],
           ['PAID', 'Paid'],
           ['ALL', 'All'],
         ] as const).map(([key, label]) => (
           <button key={key} onClick={() => setFilterStatus(key)}
-            className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${filterStatus === key ? 'bg-amber-500 text-white' : 'bg-muted text-muted-foreground hover:bg-muted/70'}`}>
+            className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${filterStatus === key ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/70'}`}>
             {label}
           </button>
         ))}
@@ -149,7 +127,7 @@ export default function POReimbursements({ deepLinkId, onDeepLinkHandled }: { de
               <th className="text-left px-4 py-3 font-medium">Bank</th>
               <th className="text-left px-4 py-3 font-medium">Destination</th>
               <th className="text-right px-4 py-3 font-medium">Amount</th>
-              <th className="text-left px-4 py-3 font-medium">Nota Date</th>
+              <th className="text-left px-4 py-3 font-medium">Receipt Date</th>
               <th className="text-left px-4 py-3 font-medium">Status</th>
             </tr>
           </thead>
@@ -167,19 +145,19 @@ export default function POReimbursements({ deepLinkId, onDeepLinkHandled }: { de
               <tr key={r.id} className="hover:bg-muted/30 cursor-pointer" onClick={() => setSelected(r)}>
                 <td className="px-4 py-3 font-mono text-sm font-medium">
                   {r.order.poNumber}
-                  <span className="block font-sans text-[10px] text-muted-foreground mt-0.5">Created {fmtDate(r.order.createdAt)}</span>
+                  <span className="block font-sans text-[10px] text-muted-foreground mt-0.5">Created {formatDate(r.order.createdAt)}</span>
                 </td>
                 <td className="px-4 py-3">{r.requesterName}</td>
                 <td className="px-4 py-3 text-muted-foreground text-xs">{r.bankName} · {r.accountNumber}</td>
                 <td className="px-4 py-3 text-muted-foreground text-xs">
                   {r.order.deliveryLocation ? <span className="flex items-center gap-1"><MapPin className="h-3 w-3 shrink-0" />{r.order.deliveryLocation.name}</span> : '—'}
                 </td>
-                <td className="px-4 py-3 text-right font-medium">{fmtMoney(r.amount)}</td>
-                <td className="px-4 py-3 text-muted-foreground">{r.notaDate ? fmtDate(r.notaDate) : '—'}</td>
+                <td className="px-4 py-3 text-right font-medium">{formatMoney(r.amount)}</td>
+                <td className="px-4 py-3 text-muted-foreground">{formatDate(r.notaDate)}</td>
                 <td className="px-4 py-3">
-                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusBadge(r.status, r.poPaymentStatus).className}`}>
+                  <StatusBadge tone={statusBadge(r.status, r.poPaymentStatus).tone}>
                     {statusBadge(r.status, r.poPaymentStatus).label}
-                  </span>
+                  </StatusBadge>
                 </td>
               </tr>
             ))}
@@ -188,139 +166,125 @@ export default function POReimbursements({ deepLinkId, onDeepLinkHandled }: { de
       </div>
 
       {/* Detail modal */}
-      {selected && (
-        <>
-          <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50" onClick={() => setSelected(null)} />
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
-            <div className="pointer-events-auto bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[88vh] overflow-y-auto">
-              <div className="flex items-center justify-between px-5 py-4 border-b">
+      <Dialog open={!!selected} onOpenChange={o => { if (!o) setSelected(null) }}>
+        {selected && (
+          <DialogContent className="sm:max-w-lg p-0 gap-0 max-h-[88vh] overflow-y-auto"
+            onInteractOutside={e => { if (viewPhoto) e.preventDefault() }}>
+            <div className="px-5 py-4 pr-12 border-b">
+              <DialogTitle className="text-base leading-normal">{selected.order.poNumber}</DialogTitle>
+              <DialogDescription className="text-xs mt-0.5">{selected.order.supplierName ?? 'No supplier'}</DialogDescription>
+            </div>
+
+            <div className="p-5 space-y-4">
+              <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="font-semibold">{selected.order.poNumber}</h3>
-                  <p className="text-xs text-muted-foreground mt-0.5">{selected.order.supplierName ?? 'No supplier'}</p>
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide font-semibold">Amount</p>
+                  <p className="text-2xl font-bold mt-0.5">{formatMoney(selected.amount)}</p>
                 </div>
-                <button onClick={() => setSelected(null)} className="text-muted-foreground hover:text-foreground text-xl leading-none">×</button>
+                <StatusBadge tone={statusBadge(selected.status, selected.poPaymentStatus).tone} className="px-2.5 py-1">
+                  {statusBadge(selected.status, selected.poPaymentStatus).label}
+                </StatusBadge>
               </div>
 
-              <div className="p-5 space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-xs text-muted-foreground uppercase tracking-wide font-semibold">Amount</p>
-                    <p className="text-2xl font-bold mt-0.5">{fmtMoney(selected.amount)}</p>
-                  </div>
-                  <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${statusBadge(selected.status, selected.poPaymentStatus).className}`}>
-                    {statusBadge(selected.status, selected.poPaymentStatus).label}
-                  </span>
-                </div>
+              <div className="text-sm text-muted-foreground">
+                Requested {formatDate(selected.createdAt)}{selected.requestedBy?.name && ` · by ${selected.requestedBy.name}`}
+              </div>
 
+              {selected.order.requestedByName && (
                 <div className="text-sm text-muted-foreground">
-                  Requested {fmtDate(selected.createdAt)}{selected.requestedBy?.name && ` · by ${selected.requestedBy.name}`}
+                  PO Requested By <span className="font-medium text-foreground">{selected.order.requestedByName}</span>
+                  {(selected.order.requestedByOffice || selected.order.requestedByDepartment) && (
+                    <span> — {[selected.order.requestedByOffice, selected.order.requestedByDepartment, selected.order.requestedByRole].filter(Boolean).join(' · ')}</span>
+                  )}
                 </div>
+              )}
 
-                {selected.order.requestedByName && (
-                  <div className="text-sm text-muted-foreground">
-                    PO Requested By <span className="font-medium text-foreground">{selected.order.requestedByName}</span>
-                    {(selected.order.requestedByOffice || selected.order.requestedByDepartment) && (
-                      <span> — {[selected.order.requestedByOffice, selected.order.requestedByDepartment, selected.order.requestedByRole].filter(Boolean).join(' · ')}</span>
-                    )}
+              <div className="rounded-lg bg-muted/40 p-3 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                <div><p className="text-xs text-muted-foreground">Name</p><p className="font-medium break-words">{selected.requesterName}</p></div>
+                <div><p className="text-xs text-muted-foreground">Bank Name</p><p className="font-medium break-words">{selected.bankName}</p></div>
+                <div><p className="text-xs text-muted-foreground">Account Number</p><p className="font-medium font-mono break-all">{selected.accountNumber}</p></div>
+                <div><p className="text-xs text-muted-foreground">Account Holder Name</p><p className="font-medium break-words">{selected.accountHolderName}</p></div>
+              </div>
+
+              {selected.notes && (
+                <div className="rounded-lg bg-muted/40 px-3 py-2.5 text-sm">{selected.notes}</div>
+              )}
+
+              <div className={selected.status === 'PAID' && selected.transferProofKeys.length > 0 ? 'grid grid-cols-1 sm:grid-cols-2 gap-4' : ''}>
+                <div>
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Receipt{selected.notePhotoKeys.length > 1 ? ` (${selected.notePhotoKeys.length})` : ''}</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {selected.notePhotoKeys.map((k, i) => (
+                      <FilePreview key={i} src={k} alt={`Receipt ${i + 1}`} onClick={() => setViewPhoto(k)}
+                        className="w-full h-32 rounded-lg object-contain bg-muted/20 border cursor-zoom-in hover:opacity-90 transition-opacity" />
+                    ))}
                   </div>
-                )}
-
-                <div className="rounded-lg bg-muted/40 p-3 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-                  <div><p className="text-xs text-muted-foreground">Name</p><p className="font-medium">{selected.requesterName}</p></div>
-                  <div><p className="text-xs text-muted-foreground">Bank Name</p><p className="font-medium">{selected.bankName}</p></div>
-                  <div><p className="text-xs text-muted-foreground">Account Number</p><p className="font-medium font-mono">{selected.accountNumber}</p></div>
-                  <div><p className="text-xs text-muted-foreground">Account Holder Name</p><p className="font-medium">{selected.accountHolderName}</p></div>
                 </div>
 
-                {selected.notes && (
-                  <div className="rounded-lg bg-muted/40 px-3 py-2.5 text-sm">{selected.notes}</div>
-                )}
-
-                <div className={selected.status === 'PAID' && selected.transferProofKeys.length > 0 ? 'grid grid-cols-2 gap-4' : ''}>
+                {selected.status === 'PAID' && selected.transferProofKeys.length > 0 && (
                   <div>
-                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Receipt / Nota{selected.notePhotoKeys.length > 1 ? ` (${selected.notePhotoKeys.length})` : ''}</p>
+                    <p className="text-xs font-semibold text-success uppercase tracking-wide mb-1.5">Transfer Proof{selected.transferProofKeys.length > 1 ? ` (${selected.transferProofKeys.length})` : ''}</p>
                     <div className="grid grid-cols-2 gap-2">
-                      {selected.notePhotoKeys.map((k, i) => (
-                        <FilePreview key={i} src={k} alt={`Nota ${i + 1}`} onClick={() => setViewPhoto(k)}
+                      {selected.transferProofKeys.map((k, i) => (
+                        <FilePreview key={i} src={k} alt={`Transfer proof ${i + 1}`} onClick={() => setViewPhoto(k)}
                           className="w-full h-32 rounded-lg object-contain bg-muted/20 border cursor-zoom-in hover:opacity-90 transition-opacity" />
                       ))}
                     </div>
+                    <p className="text-xs text-success mt-1.5">
+                      Paid {selected.paidAt && formatDate(selected.paidAt)}{selected.paidBy?.name && ` · by ${selected.paidBy.name}`}
+                    </p>
+                    {selected.paidNotes && (
+                      <p className="text-xs text-muted-foreground mt-1.5 whitespace-pre-wrap">{selected.paidNotes}</p>
+                    )}
                   </div>
-
-                  {selected.status === 'PAID' && selected.transferProofKeys.length > 0 && (
-                    <div>
-                      <p className="text-xs font-semibold text-green-700 uppercase tracking-wide mb-1.5">Transfer Proof{selected.transferProofKeys.length > 1 ? ` (${selected.transferProofKeys.length})` : ''}</p>
-                      <div className="grid grid-cols-2 gap-2">
-                        {selected.transferProofKeys.map((k, i) => (
-                          <FilePreview key={i} src={k} alt={`Transfer proof ${i + 1}`} onClick={() => setViewPhoto(k)}
-                            className="w-full h-32 rounded-lg object-contain bg-muted/20 border cursor-zoom-in hover:opacity-90 transition-opacity" />
-                        ))}
-                      </div>
-                      <p className="text-xs text-green-700 mt-1.5">
-                        Paid {selected.paidAt && fmtDate(selected.paidAt)}{selected.paidBy?.name && ` · by ${selected.paidBy.name}`}
-                      </p>
-                      {selected.paidNotes && (
-                        <p className="text-xs text-muted-foreground mt-1.5 whitespace-pre-wrap">{selected.paidNotes}</p>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-2 px-5 py-4 border-t">
-                <button onClick={() => setSelected(null)} className="px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">Close</button>
-                {selected.status === 'PENDING' && (
-                  <button onClick={() => { setTransferProofs([]); setPayNotes(''); setPayError(''); setPayModal(true) }}
-                    className="flex items-center gap-2 px-5 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 font-semibold transition-colors">
-                    <Upload className="h-3.5 w-3.5" /> Upload Transfer Proof
-                  </button>
                 )}
               </div>
             </div>
-          </div>
-        </>
-      )}
+
+            <DialogFooter className="px-5 py-4 border-t">
+              <Button variant="outline" onClick={() => setSelected(null)}>Close</Button>
+              {selected.status === 'PENDING' && (
+                <Button variant="success" onClick={() => { setTransferProofs([]); setPayNotes(''); setPayError(''); setPayModal(true) }}>
+                  <Upload /> Upload Transfer Proof
+                </Button>
+              )}
+            </DialogFooter>
+          </DialogContent>
+        )}
+      </Dialog>
 
       {/* Mark as paid modal */}
-      {payModal && selected && (
-        <>
-          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[55]" onClick={() => setPayModal(false)} />
-          <div className="fixed inset-0 z-[55] flex items-center justify-center p-4 pointer-events-none">
-            <div className="pointer-events-auto bg-white rounded-2xl shadow-2xl w-full max-w-md">
-              <div className="flex items-center justify-between px-5 py-4 border-b">
-                <div>
-                  <h3 className="font-semibold">Confirm Payment</h3>
-                  <p className="text-xs text-muted-foreground mt-0.5">{selected.order.poNumber} · {selected.requesterName} · {fmtMoney(selected.amount)}</p>
-                </div>
-                <button onClick={() => setPayModal(false)} className="text-muted-foreground hover:text-foreground text-xl leading-none">×</button>
+      <Dialog open={payModal && !!selected} onOpenChange={o => { if (!o) setPayModal(false) }}>
+        {selected && (
+          <DialogContent className="sm:max-w-md p-0 gap-0 max-h-[90vh] overflow-y-auto" onInteractOutside={e => e.preventDefault()}>
+            <div className="px-5 py-4 pr-12 border-b">
+              <DialogTitle className="text-base leading-normal">Confirm Payment</DialogTitle>
+              <DialogDescription className="text-xs mt-0.5">{selected.order.poNumber} · {selected.requesterName} · {formatMoney(selected.amount)}</DialogDescription>
+            </div>
+            <div className="p-5 space-y-4">
+              {payError && <div className="rounded-lg bg-destructive/10 border border-destructive/30 text-destructive text-sm px-3 py-2">{payError}</div>}
+              <div className="rounded-lg bg-muted/40 p-3 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                <div><p className="text-xs text-muted-foreground">Bank Name</p><p className="font-medium break-words">{selected.bankName}</p></div>
+                <div><p className="text-xs text-muted-foreground">Account Number</p><p className="font-medium font-mono break-all">{selected.accountNumber}</p></div>
+                <div className="col-span-2"><p className="text-xs text-muted-foreground">Account Holder Name</p><p className="font-medium break-words">{selected.accountHolderName}</p></div>
               </div>
-              <div className="p-5 space-y-4">
-                {payError && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2">{payError}</div>}
-                <div className="rounded-lg bg-muted/40 p-3 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-                  <div><p className="text-xs text-muted-foreground">Bank Name</p><p className="font-medium">{selected.bankName}</p></div>
-                  <div><p className="text-xs text-muted-foreground">Account Number</p><p className="font-medium font-mono">{selected.accountNumber}</p></div>
-                  <div className="col-span-2"><p className="text-xs text-muted-foreground">Account Holder Name</p><p className="font-medium">{selected.accountHolderName}</p></div>
-                </div>
-                <p className="text-xs text-muted-foreground">JPG, PNG, or PDF — you can attach more than one file (e.g. multiple transfer receipts)</p>
-                <MultiFilePicker files={transferProofs} onChange={setTransferProofs} />
-                <div>
-                  <label className="text-xs font-medium text-muted-foreground mb-1 block">Notes (optional)</label>
-                  <textarea value={payNotes} onChange={e => setPayNotes(e.target.value)} rows={2}
-                    className="w-full border rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-amber-500"
-                    placeholder="Add a note for this payment..." />
-                </div>
-              </div>
-              <div className="flex justify-end gap-2 px-5 py-4 border-t">
-                <button onClick={() => setPayModal(false)} className="px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">Cancel</button>
-                <button onClick={confirmPaid} disabled={transferProofs.length === 0 || paySaving}
-                  className="flex items-center gap-2 px-5 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-40 font-semibold transition-colors">
-                  {paySaving ? <><div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Saving...</> : 'Mark as Paid'}
-                </button>
+              <p className="text-xs text-muted-foreground">JPG, PNG, or PDF — you can attach more than one file (e.g. multiple transfer receipts)</p>
+              <MultiFilePicker files={transferProofs} onChange={setTransferProofs} />
+              <div>
+                <Label htmlFor="po-reimb-pay-notes" className="text-xs text-muted-foreground mb-1.5">Notes (optional)</Label>
+                <Textarea id="po-reimb-pay-notes" value={payNotes} onChange={e => setPayNotes(e.target.value)} rows={2}
+                  className="resize-none" placeholder="Add a note for this payment…" />
               </div>
             </div>
-          </div>
-        </>
-      )}
+            <DialogFooter className="px-5 py-4 border-t">
+              <Button variant="outline" onClick={() => setPayModal(false)}>Cancel</Button>
+              <Button variant="success" onClick={confirmPaid} disabled={transferProofs.length === 0} loading={paySaving}>
+                {paySaving ? 'Saving…' : 'Mark as Paid'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        )}
+      </Dialog>
 
       {viewPhoto && <PhotoLightbox photoKey={viewPhoto} onClose={() => setViewPhoto(null)} />}
     </div>

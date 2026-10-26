@@ -5,6 +5,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { NativeSelect } from '@/components/ui/native-select'
+import { formatDate } from '@/lib/format'
 import {
   AreaChart, Area, LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ResponsiveContainer,
@@ -29,8 +33,8 @@ const GOLD    = '#bdac7e'
 // "Previous period" series color — deliberately not a muted grey: a comparison line/bar
 // needs to read clearly against the current-period series, not fade into the background.
 const COMPARE = '#8b5cf6'
-const GOOD  = '#16a34a'
-const BAD   = '#dc2626'
+const GOOD  = 'var(--success)'
+const BAD   = 'var(--destructive)'
 
 // WITA (Central Indonesia Time, UTC+8) — no DST, so a fixed offset is safe.
 const WITA_OFFSET_MS = 8 * 60 * 60 * 1000
@@ -59,14 +63,11 @@ function previousRange(from: string, to: string) {
   return { from: addDays(prevTo, -(lengthDays - 1)), to: prevTo }
 }
 
-// withYear is only meant for the compare charts, where "this period" and "previous
-// period" can straddle a year boundary (e.g. comparing early Jan against late Dec) —
-// otherwise the year is left off since it's implied by context (today's date).
-const fmtDate = (d: string, withYear = false) => {
-  const [y, m, day] = d.split('-')
-  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
-  return withYear ? `${day} ${MONTHS[parseInt(m) - 1]} '${y.slice(2)}` : `${day} ${MONTHS[parseInt(m) - 1]}`
-}
+// "YYYY-MM-DD" calendar dates → "24 Oct" (UTC so the day never shifts). withYear is only
+// meant for the compare charts, where "this period" and "previous period" can straddle a
+// year boundary (e.g. comparing early Jan against late Dec) — otherwise the year is left
+// off since it's implied by context (today's date).
+const dayLabel = (d: string, withYear = false) => formatDate(d, withYear ? 'medium' : 'short', { utc: true })
 const fmtHour = (h: number) => `${String(h).padStart(2, '0')}:00`
 // `day` is JS's Date.getUTCDay() convention (0=Sun..6=Sat) — the API returns it in that
 // same numbering, this just maps it to a short label for the axis/tooltip.
@@ -261,56 +262,61 @@ export default function LeadsStats() {
       {/* ── Controls ── */}
       <Card>
         <CardContent className="pt-6 flex flex-wrap items-center gap-4">
-          <div className="flex items-center gap-1 rounded-lg border p-1">
+          <div role="group" aria-label="Date range preset" className="flex items-center gap-1 rounded-lg border p-1">
             {PRESETS.map(r => (
               <button
                 key={r.value}
+                type="button"
+                aria-pressed={!useCustom && preset === r.value}
                 onClick={() => { setPreset(r.value); setUseCustom(false) }}
                 className="px-3 py-1 rounded-md text-sm font-medium transition-colors"
-                style={!useCustom && preset === r.value ? { backgroundColor: GOLD, color: 'white' } : { color: '#6b7280' }}
+                style={!useCustom && preset === r.value ? { backgroundColor: 'var(--primary)', color: 'var(--primary-foreground)' } : { color: 'var(--muted-foreground)' }}
               >
                 {r.label}
               </button>
             ))}
           </div>
 
-          <div className="flex items-center gap-1.5">
-            <input
+          <div className="flex w-full sm:w-auto items-center gap-1.5">
+            <Input
               type="date"
+              aria-label="Custom range start date"
               value={customFrom}
               max={customTo || undefined}
               onChange={e => { setUseCustom(true); setCustomFrom(e.target.value) }}
-              className="h-8 rounded-md border border-input bg-background px-2 text-xs text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+              className="flex-1 sm:w-auto sm:flex-none text-muted-foreground"
             />
             <span className="text-xs text-muted-foreground">–</span>
-            <input
+            <Input
               type="date"
+              aria-label="Custom range end date"
               value={customTo}
               min={customFrom || undefined}
               onChange={e => { setUseCustom(true); setCustomTo(e.target.value) }}
-              className="h-8 rounded-md border border-input bg-background px-2 text-xs text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+              className="flex-1 sm:w-auto sm:flex-none text-muted-foreground"
             />
             {useCustom && (
-              <button onClick={clearCustom} className="text-muted-foreground hover:text-foreground">
+              <Button type="button" variant="ghost" size="icon" onClick={clearCustom} aria-label="Clear custom range" className="size-8 text-muted-foreground hover:text-foreground">
                 <X className="h-3.5 w-3.5" />
-              </button>
+              </Button>
             )}
           </div>
 
           <div className="flex items-center gap-1.5">
             <Flag className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-            <select
+            <NativeSelect
+              aria-label="Filter by country"
               value={country}
               onChange={e => setCountry(e.target.value)}
-              className="h-8 rounded-md border border-input bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-ring max-w-40"
+              className="w-auto max-w-40"
             >
               <option value="">All countries</option>
               {countryOptions.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
+            </NativeSelect>
             {country && (
-              <button onClick={() => setCountry('')} className="text-muted-foreground hover:text-foreground">
+              <Button type="button" variant="ghost" size="icon" onClick={() => setCountry('')} aria-label="Clear country filter" className="size-8 text-muted-foreground hover:text-foreground">
                 <X className="h-3.5 w-3.5" />
-              </button>
+              </Button>
             )}
           </div>
 
@@ -324,8 +330,8 @@ export default function LeadsStats() {
         {compare && (
           <CardContent className="pt-0 -mt-2">
             <p className="text-xs text-muted-foreground">
-              This period: <span className="font-medium text-foreground">{fmtDate(activeFrom)} – {fmtDate(activeTo)}</span>
-              {' · '}Compared to: <span className="font-medium text-foreground">{fmtDate(prevR.from)} – {fmtDate(prevR.to)}</span>
+              This period: <span className="font-medium text-foreground">{dayLabel(activeFrom)} – {dayLabel(activeTo)}</span>
+              {' · '}Compared to: <span className="font-medium text-foreground">{dayLabel(prevR.from)} – {dayLabel(prevR.to)}</span>
             </p>
           </CardContent>
         )}
@@ -353,7 +359,7 @@ export default function LeadsStats() {
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-base flex items-center gap-2">
-            <TrendingUp className="h-4 w-4" style={{ color: TEAL }} />
+            <TrendingUp className="h-4 w-4" style={{ color: 'var(--brand)' }} />
             Leads per Day
           </CardTitle>
         </CardHeader>
@@ -366,9 +372,9 @@ export default function LeadsStats() {
             <ResponsiveContainer width="100%" height={220}>
               <LineChart data={dailyChart} margin={{ top: 4, right: 8, left: -10, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
-                <XAxis dataKey="date" tickFormatter={v => fmtDate(String(v), spansMultipleYears)} tick={{ fontSize: 10 }} axisLine={false} tickLine={false} minTickGap={20} />
+                <XAxis dataKey="date" tickFormatter={v => dayLabel(String(v), spansMultipleYears)} tick={{ fontSize: 10 }} axisLine={false} tickLine={false} minTickGap={20} />
                 <YAxis allowDecimals={false} tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
-                <Tooltip content={<SeriesTooltip formatLabel={l => fmtDate(String(l), spansMultipleYears)} />} />
+                <Tooltip content={<SeriesTooltip formatLabel={l => dayLabel(String(l), spansMultipleYears)} />} />
                 <Legend iconType="line" iconSize={12} wrapperStyle={{ fontSize: 12 }} />
                 <Line type="monotone" dataKey="current"  name="This period"     stroke={TEAL}  strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
                 <Line type="monotone" dataKey="previous" name="Previous period" stroke={COMPARE} strokeWidth={2} strokeDasharray="4 4" dot={false} activeDot={{ r: 4 }} />
@@ -384,9 +390,9 @@ export default function LeadsStats() {
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
-                <XAxis dataKey="date" tickFormatter={v => fmtDate(String(v))} tick={{ fontSize: 10 }} axisLine={false} tickLine={false} minTickGap={24} />
+                <XAxis dataKey="date" tickFormatter={v => dayLabel(String(v))} tick={{ fontSize: 10 }} axisLine={false} tickLine={false} minTickGap={24} />
                 <YAxis allowDecimals={false} tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
-                <Tooltip content={<SeriesTooltip formatLabel={l => fmtDate(String(l))} />} />
+                <Tooltip content={<SeriesTooltip formatLabel={l => dayLabel(String(l))} />} />
                 <Area type="monotone" dataKey="count" name="Leads" stroke={TEAL} strokeWidth={2} fill="url(#leadsDailyFill)" dot={false} activeDot={{ r: 4 }} />
               </AreaChart>
             </ResponsiveContainer>
@@ -399,7 +405,7 @@ export default function LeadsStats() {
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-base flex items-center gap-2">
-            <Clock className="h-4 w-4" style={{ color: GOLD }} />
+            <Clock className="h-4 w-4" style={{ color: 'var(--primary)' }} />
             Leads by Hour of Day <span className="text-xs font-normal text-muted-foreground">(WITA)</span>
           </CardTitle>
         </CardHeader>
@@ -435,7 +441,7 @@ export default function LeadsStats() {
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-base flex items-center gap-2">
-            <CalendarDays className="h-4 w-4" style={{ color: TEAL }} />
+            <CalendarDays className="h-4 w-4" style={{ color: 'var(--brand)' }} />
             Leads by Day of Week <span className="text-xs font-normal text-muted-foreground">(WITA)</span>
           </CardTitle>
         </CardHeader>
@@ -471,9 +477,9 @@ export default function LeadsStats() {
 
       {/* ── Website / Source / Country rankings ── */}
       <div className="grid gap-4 lg:grid-cols-3">
-        <RankCard title="By Website" icon={<Globe className="h-4 w-4" style={{ color: TEAL }} />} data={data?.byWebsite ?? []} compareData={showCompare ? prevData?.byWebsite : undefined} color={TEAL} loading={loading} emptyLabel="No website data yet" />
-        <RankCard title="By Source" icon={<Target className="h-4 w-4" style={{ color: GOLD }} />} data={data?.bySource ?? []} compareData={showCompare ? prevData?.bySource : undefined} color={GOLD} loading={loading} emptyLabel="No traffic source data yet" />
-        <RankCard title="By Country" icon={<Flag className="h-4 w-4" style={{ color: TEAL }} />} data={data?.byCountry ?? []} compareData={showCompare ? prevData?.byCountry : undefined} color={TEAL} loading={loading} emptyLabel="No nationality data yet" />
+        <RankCard title="By Website" icon={<Globe className="h-4 w-4" style={{ color: 'var(--brand)' }} />} data={data?.byWebsite ?? []} compareData={showCompare ? prevData?.byWebsite : undefined} color={TEAL} loading={loading} emptyLabel="No website data yet" />
+        <RankCard title="By Source" icon={<Target className="h-4 w-4" style={{ color: 'var(--primary)' }} />} data={data?.bySource ?? []} compareData={showCompare ? prevData?.bySource : undefined} color={GOLD} loading={loading} emptyLabel="No traffic source data yet" />
+        <RankCard title="By Country" icon={<Flag className="h-4 w-4" style={{ color: 'var(--brand)' }} />} data={data?.byCountry ?? []} compareData={showCompare ? prevData?.byCountry : undefined} color={TEAL} loading={loading} emptyLabel="No nationality data yet" />
       </div>
     </div>
   )

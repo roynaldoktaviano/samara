@@ -8,8 +8,9 @@ import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
+import { useConfirm } from '@/components/ui/confirm-dialog'
 import { toast } from 'sonner'
-import { FileText, Plus, Pencil, Trash2, Loader2, RefreshCw } from 'lucide-react'
+import { FileText, Plus, Pencil, Trash2, RefreshCw } from 'lucide-react'
 import { WHATSAPP_BRANDS, WHATSAPP_BRAND_LABELS, type WhatsappBrand } from '@/lib/whatsapp-brands'
 import { countTemplateParams } from '@/lib/whatsapp-templates'
 
@@ -31,6 +32,7 @@ export default function WhatsappTemplateSettings() {
   const [form, setForm] = useState<FormState | null>(null)
   const [saving, setSaving] = useState(false)
   const [syncing, setSyncing] = useState(false)
+  const confirm = useConfirm()
 
   const load = useCallback(async (forBrand: WhatsappBrand) => {
     setLoading(true)
@@ -88,7 +90,11 @@ export default function WhatsappTemplateSettings() {
   }
 
   async function remove(row: TemplateRow) {
-    if (!confirm(`Hapus template "${row.label}" dari ERP? (Template di Meta tidak ikut terhapus.)`)) return
+    if (!(await confirm({
+      title: `Delete template "${row.label}" from the ERP?`,
+      description: 'The template in Meta is not deleted.',
+      destructive: true,
+    }))) return
     const res = await fetch(`/api/whatsapp/templates/${row.id}`, { method: 'DELETE' })
     if (!res.ok) { toast.error('Failed to delete'); return }
     await load(brand)
@@ -101,24 +107,24 @@ export default function WhatsappTemplateSettings() {
           <FileText className="h-5 w-5" /> WhatsApp Templates
         </h2>
         <p className="text-sm text-muted-foreground mt-0.5">
-          Buat dan minta approval template dulu di Meta Business Manager (WhatsApp Manager › Message Templates) untuk
-          nomor brand tersebut, lalu daftarkan di sini dengan <b>nama</b> dan <b>bahasa</b> yang persis sama. Template
-          dipakai untuk mulai chat ke customer baru, atau membalas setelah lewat 24 jam.
+          First create the template and get it approved in Meta Business Manager (WhatsApp Manager › Message Templates) for
+          that brand number, then register it here with the exact same <b>name</b> and <b>language</b>. Templates are
+          used to start a chat with a new customer, or to reply after the 24h window has passed.
         </p>
       </div>
 
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <Tabs value={brand} onValueChange={v => setBrand(v as WhatsappBrand)}>
           <TabsList>
             {WHATSAPP_BRANDS.map(b => <TabsTrigger key={b} value={b}>{WHATSAPP_BRAND_LABELS[b]}</TabsTrigger>)}
           </TabsList>
         </Tabs>
-        <div className="flex items-center gap-2">
-          <Button size="sm" variant="outline" onClick={syncFromMeta} disabled={syncing}>
-            {syncing ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-1" />} Sync from Meta
+        <div className="flex flex-wrap items-center gap-2">
+          <Button size="sm" variant="outline" onClick={syncFromMeta} loading={syncing}>
+            {!syncing && <RefreshCw className="h-4 w-4" />} Sync from Meta
           </Button>
           <Button size="sm" onClick={() => setForm({ ...EMPTY_FORM })}>
-            <Plus className="h-4 w-4 mr-1" /> Tambah Template
+            <Plus className="h-4 w-4" /> Add Template
           </Button>
         </div>
       </div>
@@ -126,13 +132,13 @@ export default function WhatsappTemplateSettings() {
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Template — {WHATSAPP_BRAND_LABELS[brand]}</CardTitle>
-          <CardDescription>&quot;Hello World (sample)&quot; selalu tersedia untuk tes, tidak perlu didaftarkan.</CardDescription>
+          <CardDescription>&quot;Hello World (sample)&quot; is always available for testing and doesn&apos;t need to be registered.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-2">
           {loading ? (
             <p className="text-sm text-muted-foreground py-4 text-center">Loading…</p>
           ) : rows.length === 0 ? (
-            <p className="text-sm text-muted-foreground py-4 text-center">Belum ada template terdaftar untuk {WHATSAPP_BRAND_LABELS[brand]}.</p>
+            <p className="text-sm text-muted-foreground py-4 text-center">No templates registered for {WHATSAPP_BRAND_LABELS[brand]} yet.</p>
           ) : rows.map(row => (
             <div key={row.id} className="rounded-md border p-3 flex items-start gap-3">
               <div className="min-w-0 flex-1">
@@ -140,44 +146,44 @@ export default function WhatsappTemplateSettings() {
                 <p className="text-xs text-muted-foreground font-mono">{row.name} · {row.language}</p>
                 <p className="text-xs text-muted-foreground whitespace-pre-wrap mt-1.5 line-clamp-3">{row.bodyText}</p>
               </div>
-              <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => setForm({ ...row })}><Pencil className="h-3.5 w-3.5" /></Button>
-              <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive" onClick={() => remove(row)}><Trash2 className="h-3.5 w-3.5" /></Button>
+              <Button size="icon" variant="ghost" className="size-8 shrink-0" onClick={() => setForm({ ...row })} aria-label={`Edit template ${row.label}`}><Pencil className="size-3.5" /></Button>
+              <Button size="icon" variant="ghost" className="size-8 shrink-0 text-destructive hover:text-destructive hover:bg-destructive/10" onClick={() => remove(row)} aria-label={`Delete template ${row.label}`}><Trash2 className="size-3.5" /></Button>
             </div>
           ))}
         </CardContent>
       </Card>
 
       <Dialog open={!!form} onOpenChange={open => { if (!open) setForm(null) }}>
-        <DialogContent>
+        <DialogContent className="max-h-[90vh] overflow-y-auto" aria-describedby={undefined} onInteractOutside={e => e.preventDefault()}>
           <DialogHeader>
-            <DialogTitle>{form?.id ? 'Edit' : 'Tambah'} Template — {WHATSAPP_BRAND_LABELS[brand]}</DialogTitle>
+            <DialogTitle>{form?.id ? 'Edit' : 'Add'} Template — {WHATSAPP_BRAND_LABELS[brand]}</DialogTitle>
           </DialogHeader>
           {form && (
             <div className="space-y-3">
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <Label className="text-xs">Nama template (persis seperti di Meta)</Label>
-                  <Input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="follow_up_inquiry" className="h-9 font-mono" />
+                  <Label htmlFor="wa-tpl-name" className="text-xs">Template name (exactly as in Meta)</Label>
+                  <Input id="wa-tpl-name" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="follow_up_inquiry" className="h-9 font-mono" />
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-xs">Kode bahasa</Label>
-                  <Input value={form.language} onChange={e => setForm({ ...form, language: e.target.value })} placeholder="en / en_US / id" className="h-9 font-mono" />
+                  <Label htmlFor="wa-tpl-language" className="text-xs">Language code</Label>
+                  <Input id="wa-tpl-language" value={form.language} onChange={e => setForm({ ...form, language: e.target.value })} placeholder="en / en_US / id" className="h-9 font-mono" />
                 </div>
               </div>
               <div className="space-y-1">
-                <Label className="text-xs">Label (yang tampil ke sales)</Label>
-                <Input value={form.label} onChange={e => setForm({ ...form, label: e.target.value })} placeholder="Follow up inquiry" className="h-9" />
+                <Label htmlFor="wa-tpl-label" className="text-xs">Label (shown to sales)</Label>
+                <Input id="wa-tpl-label" value={form.label} onChange={e => setForm({ ...form, label: e.target.value })} placeholder="Follow up inquiry" className="h-9" />
               </div>
               <div className="space-y-1">
-                <Label className="text-xs">Isi pesan (salin dari Meta, termasuk {'{{1}}'}, {'{{2}}'}, …)</Label>
-                <Textarea value={form.bodyText} onChange={e => setForm({ ...form, bodyText: e.target.value })} rows={5}
+                <Label htmlFor="wa-tpl-body" className="text-xs">Message body (copy from Meta, including {'{{1}}'}, {'{{2}}'}, …)</Label>
+                <Textarea id="wa-tpl-body" value={form.bodyText} onChange={e => setForm({ ...form, bodyText: e.target.value })} rows={5}
                   placeholder={'Hi {{1}}, thank you for your interest in {{2}}...'} />
               </div>
               {paramCount > 0 && (
                 <div className="space-y-1.5">
-                  <Label className="text-xs">Label untuk tiap isian</Label>
+                  <Label htmlFor="wa-tpl-param-0" className="text-xs">Label for each placeholder</Label>
                   {Array.from({ length: paramCount }, (_, i) => (
-                    <Input key={i} value={form.paramLabels[i] ?? ''} placeholder={`{{${i + 1}}} — mis. Nama customer`} className="h-9"
+                    <Input key={i} id={`wa-tpl-param-${i}`} aria-label={`Label for placeholder {{${i + 1}}}`} value={form.paramLabels[i] ?? ''} placeholder={`{{${i + 1}}} — e.g. Customer name`} className="h-9"
                       onChange={e => { const next = [...form.paramLabels]; next[i] = e.target.value; setForm({ ...form, paramLabels: next }) }} />
                   ))}
                 </div>
@@ -185,8 +191,8 @@ export default function WhatsappTemplateSettings() {
             </div>
           )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setForm(null)}>Batal</Button>
-            <Button onClick={save} disabled={saving}>{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Simpan'}</Button>
+            <Button variant="outline" onClick={() => setForm(null)}>Cancel</Button>
+            <Button onClick={save} loading={saving}>Save</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

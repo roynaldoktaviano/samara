@@ -11,10 +11,11 @@ import { Input } from '@/components/ui/input'
 import { ArrowLeft, Eye, MousePointerClick, Loader2, Play, ChevronLeft, ChevronRight, Search, Bot } from 'lucide-react'
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import { UNSUBSCRIBE_URL_MARKER } from '@/lib/campaign-recipients'
+import { formatDate } from '@/lib/format'
+import { StatusBadge, type StatusTone } from '@/components/ui/status-badge'
 
 const GREEN = '#16a34a'
 const BLUE = '#2563eb'
-const RED = '#dc2626'
 const TZ = 'Asia/Jakarta'
 const PREVIEW_SCALE = 0.72
 const PAGE_SIZE = 20
@@ -99,24 +100,15 @@ const TAB_LABEL: Record<RecipientTab, string> = {
   BOUNCED: 'Bounced', FAILED: 'Failed', UNSUBSCRIBED: 'Unsubscribed',
 }
 
-const STATUS_STYLE: Record<Recipient['status'], string> = {
-  PENDING: 'bg-gray-100 text-gray-700 border-gray-200',
-  SENT: 'bg-green-100 text-green-700 border-green-200',
-  FAILED: 'bg-red-100 text-red-700 border-red-200',
-  BOUNCED: 'bg-orange-100 text-orange-700 border-orange-200',
-  SKIPPED_UNSUBSCRIBED: 'bg-gray-100 text-gray-500 border-gray-200',
-}
-
-const STATUS_LABEL: Record<Recipient['status'], string> = {
-  PENDING: 'Pending',
-  SENT: 'Sent',
-  FAILED: 'Failed',
-  BOUNCED: 'Bounced',
-  SKIPPED_UNSUBSCRIBED: 'Unsubscribed',
+const RECIPIENT_STATUS: Record<Recipient['status'], { label: string; tone: StatusTone }> = {
+  PENDING: { label: 'Pending', tone: 'neutral' },
+  SENT: { label: 'Sent', tone: 'success' },
+  FAILED: { label: 'Failed', tone: 'destructive' },
+  BOUNCED: { label: 'Bounced', tone: 'warning' },
+  SKIPPED_UNSUBSCRIBED: { label: 'Unsubscribed', tone: 'neutral' },
 }
 
 const fmt = (d: string | null) => d ? new Date(d).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: TZ }) : '-'
-const fmtDate = (d: string) => new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', timeZone: TZ })
 
 function StatTile({ label, value, suffix = '', color }: { label: string; value: number; suffix?: string; color?: string }) {
   return (
@@ -189,13 +181,13 @@ function LinkPerformance({ stats, totalRecipients, view, onViewChange, pending }
           <CardTitle className="text-base">Link performance</CardTitle>
           <div className="flex items-center gap-2">
             {pending && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
-            <div className="flex rounded-full border border-gray-200 p-0.5 text-xs">
+            <div className="flex rounded-full border border-border p-0.5 text-xs">
               {(['real', 'raw'] as const).map(v => (
                 <button
                   key={v}
                   onClick={() => onViewChange(v)}
                   className={`px-2.5 py-1 rounded-full font-medium capitalize transition-colors ${
-                    view === v ? 'bg-[#bdac7e] text-white' : 'text-muted-foreground hover:bg-gray-50'
+                    view === v ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-accent'
                   }`}
                 >
                   {v}
@@ -212,11 +204,11 @@ function LinkPerformance({ stats, totalRecipients, view, onViewChange, pending }
           return (
             <div key={s.url} className="space-y-1">
               <div className="flex items-center justify-between gap-3 text-xs">
-                <a href={s.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline truncate">{s.url}</a>
+                <a href={s.url} target="_blank" rel="noopener noreferrer" className="text-info hover:underline truncate">{s.url}</a>
                 <span className="text-muted-foreground shrink-0 tabular-nums">{s.clickers} ({pct}%)</span>
               </div>
-              <div className="h-1.5 rounded-full bg-blue-100 overflow-hidden">
-                <div className="h-full rounded-full bg-blue-600" style={{ width: `${Math.max(pct, s.clickers > 0 ? 2 : 0)}%` }} />
+              <div className="h-1.5 rounded-full bg-info/15 overflow-hidden">
+                <div className="h-full rounded-full bg-info" style={{ width: `${Math.max(pct, s.clickers > 0 ? 2 : 0)}%` }} />
               </div>
             </div>
           )
@@ -254,7 +246,7 @@ function dailyTrend(recipients: ChartRow[]) {
     new Date(todayUTC - (TREND_WINDOW_DAYS - 1 - i) * 86_400_000).toLocaleDateString('en-CA', { timeZone: TZ })
   )
   return keys.map(key => ({
-    date: fmtDate(key),
+    date: formatDate(key, 'short', { utc: true }),
     sent: sent.get(key) ?? 0,
     opened: opened.get(key) ?? 0,
     clicked: clicked.get(key) ?? 0,
@@ -316,22 +308,22 @@ function SendingBanner({ progress }: { progress: SendProgress }) {
   const etaSeconds = rate > 0 ? remaining / rate : remaining * FALLBACK_SECONDS_PER_EMAIL
 
   return (
-    <Card className="border-amber-200 bg-amber-50/50">
+    <Card className="border-warning/30 bg-warning/5">
       <CardContent className="pt-5 pb-4 space-y-2.5">
         <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2 text-sm font-medium text-amber-900">
+          <div className="flex items-center gap-2 text-sm font-medium text-warning">
             <Loader2 className="h-4 w-4 animate-spin" />
-            Sending campaign... {progress.done} of {progress.total} ({pct}%)
+            Sending campaign… {progress.done} of {progress.total} ({pct}%)
           </div>
           {remaining > 0 && (
-            <span className="text-xs text-amber-700 shrink-0">~{fmtDuration(etaSeconds)} remaining</span>
+            <span className="text-xs text-warning shrink-0">~{fmtDuration(etaSeconds)} remaining</span>
           )}
         </div>
-        <div className="h-2 rounded-full bg-amber-200/60 overflow-hidden">
-          <div className="h-full rounded-full bg-amber-500 transition-all duration-500" style={{ width: `${pct}%` }} />
+        <div className="h-2 rounded-full bg-warning/25 overflow-hidden">
+          <div className="h-full rounded-full bg-warning transition-all duration-500" style={{ width: `${pct}%` }} />
         </div>
         {progress.failed > 0 && (
-          <p className="text-xs text-amber-700">{progress.failed} failed so far</p>
+          <p className="text-xs text-warning">{progress.failed} failed so far</p>
         )}
       </CardContent>
     </Card>
@@ -531,7 +523,7 @@ export default function CampaignDetailView({ campaignId, onBack }: {
     return (
       <div className="p-4 md:p-6">
         <Button variant="ghost" size="sm" onClick={onBack} className="mb-4"><ArrowLeft className="h-4 w-4 mr-1.5" />Back</Button>
-        <p className="text-sm text-muted-foreground py-12 text-center">Loading...</p>
+        <p className="text-sm text-muted-foreground py-12 text-center">Loading…</p>
       </div>
     )
   }
@@ -564,9 +556,9 @@ export default function CampaignDetailView({ campaignId, onBack }: {
           <p className="text-sm text-muted-foreground">{campaign.subject}</p>
         </div>
         {campaign.status === 'PAUSED' && (
-          <Button size="sm" className="bg-orange-600 hover:bg-orange-700" disabled={continuing} onClick={continueSend}>
+          <Button size="sm" className="bg-warning text-warning-foreground hover:bg-warning/90" disabled={continuing} onClick={continueSend}>
             <Play className="h-3.5 w-3.5 mr-1.5" />
-            {continuing ? 'Resuming...' : `Continue sending (${counts.PENDING} left)`}
+            {continuing ? 'Resuming…' : `Continue sending (${counts.PENDING} left)`}
           </Button>
         )}
       </div>
@@ -576,14 +568,14 @@ export default function CampaignDetailView({ campaignId, onBack }: {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <RateTile label="Emails" value={total} suffix="" sub="Recipients" />
         <RateTile label="Delivery Rate" value={deliveryRate} sub={`${delivered} of ${total}`} />
-        <RateTile label="Open Rate" value={realOpenRate} sub={`${campaign.engagementStats.realOpened} of ${total} - ${opened} raw (${openRateRaw}%)`} color={GREEN} />
-        <RateTile label="Click Rate" value={realClickRate} sub={`${campaign.engagementStats.realClicked} of ${total} - ${clicked} raw (${clickRateRaw}%)`} color={BLUE} />
+        <RateTile label="Open Rate" value={realOpenRate} sub={`${campaign.engagementStats.realOpened} of ${total} - ${opened} raw (${openRateRaw}%)`} color="var(--success)" />
+        <RateTile label="Click Rate" value={realClickRate} sub={`${campaign.engagementStats.realClicked} of ${total} - ${clicked} raw (${clickRateRaw}%)`} color="var(--info)" />
       </div>
 
       <div className="grid grid-cols-3 gap-3">
-        <StatTile label="Bounce Rate" value={bounceRate} suffix="%" color={bounced > 0 ? RED : undefined} />
-        <StatTile label="Failed" value={failed} color={failed > 0 ? RED : undefined} />
-        <StatTile label="Unsubscribed" value={counts.UNSUBSCRIBED} color="#6b7280" />
+        <StatTile label="Bounce Rate" value={bounceRate} suffix="%" color={bounced > 0 ? 'var(--destructive)' : undefined} />
+        <StatTile label="Failed" value={failed} color={failed > 0 ? 'var(--destructive)' : undefined} />
+        <StatTile label="Unsubscribed" value={counts.UNSUBSCRIBED} color="var(--muted-foreground)" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
@@ -672,7 +664,7 @@ export default function CampaignDetailView({ campaignId, onBack }: {
               <Input
                 value={search}
                 onChange={e => changeSearch(e.target.value)}
-                placeholder="Search by email..."
+                placeholder="Search by email…"
                 className="h-8 pl-8 text-sm"
               />
             </div>
@@ -687,7 +679,7 @@ export default function CampaignDetailView({ campaignId, onBack }: {
                   key={t}
                   onClick={() => changeTab(t)}
                   className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
-                    tab === t ? 'bg-[#bdac7e] text-white border-[#bdac7e]' : 'bg-white text-muted-foreground border-gray-200 hover:bg-gray-50'
+                    tab === t ? 'bg-primary text-primary-foreground border-primary' : 'bg-card text-muted-foreground border-border hover:bg-accent'
                   }`}
                 >
                   {TAB_LABEL[t]} ({count})
@@ -699,40 +691,40 @@ export default function CampaignDetailView({ campaignId, onBack }: {
             <Button
               size="sm"
               variant="outline"
-              className="h-7 px-2 text-xs border-amber-300 text-amber-800 hover:bg-amber-50"
+              className="h-7 px-2 text-xs border-warning/30 text-warning hover:bg-warning/10"
               disabled={unsubscribingAll}
               onClick={() => unsubscribeAllByScope('clicked')}
             >
-              {unsubscribingAll ? 'Unsubscribing...' : `Unsubscribe all clicked (${campaign.pendingUnsubscribeCount})`}
+              {unsubscribingAll ? 'Unsubscribing…' : `Unsubscribe all clicked (${campaign.pendingUnsubscribeCount})`}
             </Button>
           )}
           {tab === 'BOUNCED' && counts.BOUNCED > 0 && (
             <Button
               size="sm"
               variant="outline"
-              className="h-7 px-2 text-xs border-amber-300 text-amber-800 hover:bg-amber-50"
+              className="h-7 px-2 text-xs border-warning/30 text-warning hover:bg-warning/10"
               disabled={unsubscribingAll}
               onClick={() => unsubscribeAllByScope('bounced')}
             >
-              {unsubscribingAll ? 'Unsubscribing...' : `Unsubscribe all bounced (${counts.BOUNCED})`}
+              {unsubscribingAll ? 'Unsubscribing…' : `Unsubscribe all bounced (${counts.BOUNCED})`}
             </Button>
           )}
           {tab === 'FAILED' && counts.FAILED > 0 && (
             <Button
               size="sm"
               variant="outline"
-              className="h-7 px-2 text-xs border-amber-300 text-amber-800 hover:bg-amber-50"
+              className="h-7 px-2 text-xs border-warning/30 text-warning hover:bg-warning/10"
               disabled={unsubscribingAll}
               onClick={() => unsubscribeAllByScope('failed')}
             >
-              {unsubscribingAll ? 'Unsubscribing...' : `Unsubscribe all failed (${counts.FAILED})`}
+              {unsubscribingAll ? 'Unsubscribing…' : `Unsubscribe all failed (${counts.FAILED})`}
             </Button>
           )}
           </div>
         </CardHeader>
         <CardContent className="p-0 relative">
           {recipientsLoading && (
-            <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/60">
+            <div className="absolute inset-0 z-10 flex items-center justify-center bg-card/60">
               <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
             </div>
           )}
@@ -763,23 +755,23 @@ export default function CampaignDetailView({ campaignId, onBack }: {
                   <TableCell className="text-sm">{r.name ?? '-'}</TableCell>
                   <TableCell className="text-sm">{r.email}</TableCell>
                   <TableCell>
-                    <Badge className={STATUS_STYLE[r.status]}>{STATUS_LABEL[r.status]}</Badge>
+                    <StatusBadge tone={RECIPIENT_STATUS[r.status].tone}>{RECIPIENT_STATUS[r.status].label}</StatusBadge>
                     {r.status !== 'SKIPPED_UNSUBSCRIBED' && clickedUnsubscribeLink && (
-                      <Badge className="ml-1 bg-amber-100 text-amber-700 border-amber-200">Clicked unsubscribe</Badge>
+                      <StatusBadge tone="warning" className="ml-1">Clicked unsubscribe</StatusBadge>
                     )}
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground">
                     {r.openedAt ? (
                       <Popover>
                         <PopoverTrigger asChild>
-                          <button type="button" className="flex items-center gap-1 text-blue-600 hover:underline">
+                          <button type="button" className="flex items-center gap-1 text-info hover:underline">
                             <Eye className="h-3 w-3" />
                             {fmt(r.openedAt)}{r.openCount > 1 ? ` (${r.openCount}x)` : ''}
-                            {r.likelyAutomated && <Bot className="h-3 w-3 text-orange-500 shrink-0"><title>Likely automated (security scanner), not a real click</title></Bot>}
+                            {r.likelyAutomated && <Bot className="h-3 w-3 text-warning shrink-0"><title>Likely automated (security scanner), not a real click</title></Bot>}
                           </button>
                         </PopoverTrigger>
                         <PopoverContent className="w-72 p-3" align="start">
-                          <p className="text-xs font-medium mb-2">Dibuka ({r.opens.length}x)</p>
+                          <p className="text-xs font-medium mb-2">Opens ({r.opens.length}x)</p>
                           <div className="space-y-2 max-h-64 overflow-y-auto">
                             {r.opens.map(o => (
                               <div key={o.id} className="text-xs border-b pb-1.5 last:border-0">
@@ -795,19 +787,19 @@ export default function CampaignDetailView({ campaignId, onBack }: {
                     {r.clickedAt ? (
                       <Popover>
                         <PopoverTrigger asChild>
-                          <button type="button" className="flex items-center gap-1 text-blue-600 hover:underline">
+                          <button type="button" className="flex items-center gap-1 text-info hover:underline">
                             <MousePointerClick className="h-3 w-3" />
                             {fmt(r.clickedAt)}{r.clickCount > 1 ? ` (${r.clickCount}x)` : ''}
-                            {r.likelyAutomated && <Bot className="h-3 w-3 text-orange-500 shrink-0"><title>Likely automated (security scanner), not a real click</title></Bot>}
+                            {r.likelyAutomated && <Bot className="h-3 w-3 text-warning shrink-0"><title>Likely automated (security scanner), not a real click</title></Bot>}
                           </button>
                         </PopoverTrigger>
                         <PopoverContent className="w-80 p-3" align="start">
-                          <p className="text-xs font-medium mb-2">Link yang diklik ({r.clicks.length})</p>
+                          <p className="text-xs font-medium mb-2">Clicked links ({r.clicks.length})</p>
                           <div className="space-y-2 max-h-64 overflow-y-auto">
                             {r.clicks.map(c => (
                               <div key={c.id} className="text-xs border-b pb-1.5 last:border-0">
                                 <div className="text-muted-foreground">{fmt(c.clickedAt)}{c.ipAddress ? ` - ${c.ipAddress}` : ''}</div>
-                                <a href={c.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline wrap-break-word block">{c.url}</a>
+                                <a href={c.url} target="_blank" rel="noopener noreferrer" className="text-info hover:underline wrap-break-word block">{c.url}</a>
                               </div>
                             ))}
                           </div>
@@ -833,12 +825,12 @@ export default function CampaignDetailView({ campaignId, onBack }: {
                       )}
                       {isAdmin && r.status === 'FAILED' && r.sourceId && (r.sourceType === 'CUSTOMER' || r.sourceType === 'LEAD') && (
                         deletedContactIds.has(r.sourceId) ? (
-                          <span className="text-red-600">{r.sourceType === 'CUSTOMER' ? 'Guest' : 'Lead'} deleted</span>
+                          <span className="text-destructive">{r.sourceType === 'CUSTOMER' ? 'Guest' : 'Lead'} deleted</span>
                         ) : (
                           <Button
                             size="sm"
                             variant="outline"
-                            className="h-7 px-2 text-xs border-red-300 text-red-700 hover:bg-red-50"
+                            className="h-7 px-2 text-xs border-destructive/30 text-destructive hover:bg-destructive/10"
                             disabled={deletingContactIds.has(r.sourceId)}
                             onClick={() => deleteContact(r.sourceType as 'CUSTOMER' | 'LEAD', r.sourceId!)}
                           >

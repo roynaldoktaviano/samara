@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback } from 'react'
 import { Wallet, X, Upload, MapPin } from 'lucide-react'
 import { isPdfDataUrl } from '@/lib/fileUpload'
 import { FilePreview, MultiFilePicker } from '@/components/ui/file-preview'
+import { formatDate, formatMoney } from '@/lib/format'
+import { StatusBadge } from '@/components/ui/status-badge'
 
 interface PaymentRequest {
   id: string
@@ -26,19 +28,16 @@ interface PaymentRequest {
   }
 }
 
-const fmtDate = (s: string) => new Date(s).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
-const fmtMoney = (n: number) => 'Rp ' + new Intl.NumberFormat('id-ID').format(n)
-
 function PhotoLightbox({ photoKey, onClose }: { photoKey: string; onClose: () => void }) {
   const isPdf = isPdfDataUrl(photoKey)
   return (
     <div className="fixed inset-0 bg-black/70 z-[60] flex items-center justify-center p-4" onClick={onClose}>
       <div className="relative max-w-2xl w-full" onClick={e => e.stopPropagation()}>
         {isPdf ? (
-          <div className="bg-white rounded-xl shadow-2xl overflow-hidden">
+          <div className="bg-card rounded-xl shadow-2xl overflow-hidden">
             <embed src={photoKey} type="application/pdf" className="w-full h-[75vh]" />
             <div className="p-3 flex justify-center">
-              <a href={photoKey} target="_blank" rel="noopener noreferrer" className="text-sm text-amber-700 hover:text-amber-900 font-medium underline underline-offset-2">
+              <a href={photoKey} target="_blank" rel="noopener noreferrer" className="text-sm text-primary-strong hover:text-primary-strong/80 font-medium underline underline-offset-2">
                 Open PDF in new tab
               </a>
             </div>
@@ -123,7 +122,7 @@ export default function DeliveryFeePayments({ deepLinkId, onDeepLinkHandled }: {
           ['ALL', 'All'],
         ] as const).map(([key, label]) => (
           <button key={key} onClick={() => setFilterStatus(key)}
-            className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${filterStatus === key ? 'bg-amber-500 text-white' : 'bg-muted text-muted-foreground hover:bg-muted/70'}`}>
+            className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${filterStatus === key ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/70'}`}>
             {label}
           </button>
         ))}
@@ -137,7 +136,7 @@ export default function DeliveryFeePayments({ deepLinkId, onDeepLinkHandled }: {
               <th className="text-left px-4 py-3 font-medium">PO / Supplier</th>
               <th className="text-left px-4 py-3 font-medium">Destination</th>
               <th className="text-right px-4 py-3 font-medium">Amount</th>
-              <th className="text-left px-4 py-3 font-medium">Nota Date</th>
+              <th className="text-left px-4 py-3 font-medium">Receipt Date</th>
               <th className="text-left px-4 py-3 font-medium">Requested By</th>
               <th className="text-left px-4 py-3 font-medium">Status</th>
             </tr>
@@ -159,20 +158,20 @@ export default function DeliveryFeePayments({ deepLinkId, onDeepLinkHandled }: {
                   {r.deliveryFee.purchaseOrder
                     ? <>
                         {r.deliveryFee.purchaseOrder.poNumber}{r.deliveryFee.purchaseOrder.supplierName ? ` · ${r.deliveryFee.purchaseOrder.supplierName}` : ''}
-                        <span className="block text-[10px] text-muted-foreground mt-0.5">Created {fmtDate(r.deliveryFee.purchaseOrder.createdAt)}</span>
+                        <span className="block text-[10px] text-muted-foreground mt-0.5">Created {formatDate(r.deliveryFee.purchaseOrder.createdAt)}</span>
                       </>
                     : <span className="italic">No PO — {r.deliveryFee.notes || 'consolidated/cargo'}</span>}
                 </td>
                 <td className="px-4 py-3 text-muted-foreground text-xs">
                   {r.deliveryFee.purchaseOrder?.deliveryLocation ? <span className="flex items-center gap-1"><MapPin className="h-3 w-3 shrink-0" />{r.deliveryFee.purchaseOrder.deliveryLocation.name}</span> : '—'}
                 </td>
-                <td className="px-4 py-3 text-right font-medium">{fmtMoney(r.amount)}</td>
-                <td className="px-4 py-3 text-muted-foreground">{r.notaDate ? fmtDate(r.notaDate) : '—'}</td>
+                <td className="px-4 py-3 text-right font-medium">{formatMoney(r.amount)}</td>
+                <td className="px-4 py-3 text-muted-foreground">{formatDate(r.notaDate)}</td>
                 <td className="px-4 py-3 text-muted-foreground">{r.requestedBy?.name ?? '—'}</td>
                 <td className="px-4 py-3">
-                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${r.status === 'PAID' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+                  <StatusBadge tone={r.status === 'PAID' ? 'success' : 'warning'}>
                     {r.status === 'PAID' ? 'Paid' : 'Waiting for Payment'}
-                  </span>
+                  </StatusBadge>
                   {r.paymentMethod === 'CARD' && (
                     <span className="block text-[10px] text-muted-foreground mt-0.5">Debit Paid · no action needed</span>
                   )}
@@ -188,7 +187,7 @@ export default function DeliveryFeePayments({ deepLinkId, onDeepLinkHandled }: {
         <>
           <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50" onClick={() => setSelected(null)} />
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
-            <div className="pointer-events-auto bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[88vh] overflow-y-auto">
+            <div className="pointer-events-auto bg-card rounded-2xl shadow-2xl w-full max-w-lg max-h-[88vh] overflow-y-auto">
               <div className="flex items-center justify-between px-5 py-4 border-b">
                 <div>
                   <h3 className="font-semibold">{selected.deliveryFee.feeNumber}</h3>
@@ -205,12 +204,12 @@ export default function DeliveryFeePayments({ deepLinkId, onDeepLinkHandled }: {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-xs text-muted-foreground uppercase tracking-wide font-semibold">Amount</p>
-                    <p className="text-2xl font-bold mt-0.5">{fmtMoney(selected.amount)}</p>
+                    <p className="text-2xl font-bold mt-0.5">{formatMoney(selected.amount)}</p>
                   </div>
                   <div className="text-right">
-                    <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${selected.status === 'PAID' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+                    <StatusBadge tone={selected.status === 'PAID' ? 'success' : 'warning'} className="px-2.5 py-1">
                       {selected.status === 'PAID' ? 'Paid' : 'Waiting for Payment'}
-                    </span>
+                    </StatusBadge>
                     {selected.paymentMethod === 'CARD' && (
                       <p className="text-[10px] text-muted-foreground mt-1">Debit Paid · no action needed</p>
                     )}
@@ -218,11 +217,11 @@ export default function DeliveryFeePayments({ deepLinkId, onDeepLinkHandled }: {
                 </div>
 
                 <div className="text-sm text-muted-foreground">
-                  {selected.paymentMethod === 'CARD' ? 'Paid' : 'Requested'} {fmtDate(selected.createdAt)}{selected.requestedBy?.name && ` · by ${selected.requestedBy.name}`}
+                  {selected.paymentMethod === 'CARD' ? 'Paid' : 'Requested'} {formatDate(selected.createdAt)}{selected.requestedBy?.name && ` · by ${selected.requestedBy.name}`}
                 </div>
 
                 {selected.paymentMethod === 'CARD' && (
-                  <div className="rounded-lg bg-green-50 border border-green-200 px-3 py-2.5 text-sm text-green-800">
+                  <div className="rounded-lg bg-success/10 border border-success/30 px-3 py-2.5 text-sm text-success">
                     Debit Paid directly by the purchasing team. No transfer or approval needed — this is for your records.
                   </div>
                 )}
@@ -233,10 +232,10 @@ export default function DeliveryFeePayments({ deepLinkId, onDeepLinkHandled }: {
 
                 <div className={selected.status === 'PAID' && selected.transferProofKeys.length > 0 ? 'grid grid-cols-2 gap-4' : ''}>
                   <div>
-                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Receipt / Nota{selected.notePhotoKeys.length > 1 ? ` (${selected.notePhotoKeys.length})` : ''}</p>
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Receipt{selected.notePhotoKeys.length > 1 ? ` (${selected.notePhotoKeys.length})` : ''}</p>
                     <div className="grid grid-cols-2 gap-2">
                       {selected.notePhotoKeys.map((k, i) => (
-                        <FilePreview key={i} src={k} alt={`Nota ${i + 1}`} onClick={() => setViewPhoto(k)}
+                        <FilePreview key={i} src={k} alt={`Receipt ${i + 1}`} onClick={() => setViewPhoto(k)}
                           className="w-full h-32 rounded-lg object-contain bg-muted/20 border cursor-zoom-in hover:opacity-90 transition-opacity" />
                       ))}
                     </div>
@@ -244,15 +243,15 @@ export default function DeliveryFeePayments({ deepLinkId, onDeepLinkHandled }: {
 
                   {selected.status === 'PAID' && selected.transferProofKeys.length > 0 && (
                     <div>
-                      <p className="text-xs font-semibold text-green-700 uppercase tracking-wide mb-1.5">Transfer Proof{selected.transferProofKeys.length > 1 ? ` (${selected.transferProofKeys.length})` : ''}</p>
+                      <p className="text-xs font-semibold text-success uppercase tracking-wide mb-1.5">Transfer Proof{selected.transferProofKeys.length > 1 ? ` (${selected.transferProofKeys.length})` : ''}</p>
                       <div className="grid grid-cols-2 gap-2">
                         {selected.transferProofKeys.map((k, i) => (
                           <FilePreview key={i} src={k} alt={`Transfer proof ${i + 1}`} onClick={() => setViewPhoto(k)}
                             className="w-full h-32 rounded-lg object-contain bg-muted/20 border cursor-zoom-in hover:opacity-90 transition-opacity" />
                         ))}
                       </div>
-                      <p className="text-xs text-green-700 mt-1.5">
-                        Paid {selected.paidAt && fmtDate(selected.paidAt)}{selected.paidBy?.name && ` · by ${selected.paidBy.name}`}
+                      <p className="text-xs text-success mt-1.5">
+                        Paid {selected.paidAt && formatDate(selected.paidAt)}{selected.paidBy?.name && ` · by ${selected.paidBy.name}`}
                       </p>
                       {selected.paidNotes && (
                         <p className="text-xs text-muted-foreground mt-1.5 whitespace-pre-wrap">{selected.paidNotes}</p>
@@ -266,7 +265,7 @@ export default function DeliveryFeePayments({ deepLinkId, onDeepLinkHandled }: {
                 <button onClick={() => setSelected(null)} className="px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">Close</button>
                 {selected.status === 'PENDING' && (
                   <button onClick={() => { setTransferProofs([]); setPayNotes(''); setPayError(''); setPayModal(true) }}
-                    className="flex items-center gap-2 px-5 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 font-semibold transition-colors">
+                    className="flex items-center gap-2 px-5 py-2 text-sm bg-success text-success-foreground rounded-lg hover:bg-success/90 font-semibold transition-colors">
                     <Upload className="h-3.5 w-3.5" /> Upload Transfer Proof
                   </button>
                 )}
@@ -281,30 +280,30 @@ export default function DeliveryFeePayments({ deepLinkId, onDeepLinkHandled }: {
         <>
           <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[55]" onClick={() => setPayModal(false)} />
           <div className="fixed inset-0 z-[55] flex items-center justify-center p-4 pointer-events-none">
-            <div className="pointer-events-auto bg-white rounded-2xl shadow-2xl w-full max-w-md">
+            <div className="pointer-events-auto bg-card rounded-2xl shadow-2xl w-full max-w-md">
               <div className="flex items-center justify-between px-5 py-4 border-b">
                 <div>
                   <h3 className="font-semibold">Confirm Payment</h3>
-                  <p className="text-xs text-muted-foreground mt-0.5">{selected.deliveryFee.feeNumber} · {fmtMoney(selected.amount)}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{selected.deliveryFee.feeNumber} · {formatMoney(selected.amount)}</p>
                 </div>
                 <button onClick={() => setPayModal(false)} className="text-muted-foreground hover:text-foreground text-xl leading-none">×</button>
               </div>
               <div className="p-5 space-y-4">
-                {payError && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2">{payError}</div>}
+                {payError && <div className="rounded-lg bg-destructive/10 border border-destructive/30 text-destructive text-sm px-3 py-2">{payError}</div>}
                 <p className="text-xs text-muted-foreground">JPG, PNG, or PDF — you can attach more than one file (e.g. multiple transfer receipts)</p>
                 <MultiFilePicker files={transferProofs} onChange={setTransferProofs} />
                 <div>
                   <label className="text-xs font-medium text-muted-foreground mb-1 block">Notes (optional)</label>
                   <textarea value={payNotes} onChange={e => setPayNotes(e.target.value)} rows={2}
-                    className="w-full border rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-amber-500"
-                    placeholder="Add a note for this payment..." />
+                    className="w-full border rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-ring"
+                    placeholder="Add a note for this payment…" />
                 </div>
               </div>
               <div className="flex justify-end gap-2 px-5 py-4 border-t">
                 <button onClick={() => setPayModal(false)} className="px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">Cancel</button>
                 <button onClick={confirmPaid} disabled={transferProofs.length === 0 || paySaving}
-                  className="flex items-center gap-2 px-5 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-40 font-semibold transition-colors">
-                  {paySaving ? <><div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Saving...</> : 'Mark as Paid'}
+                  className="flex items-center gap-2 px-5 py-2 text-sm bg-success text-success-foreground rounded-lg hover:bg-success/90 disabled:opacity-40 font-semibold transition-colors">
+                  {paySaving ? <><div className="h-4 w-4 border-2 border-success-foreground/30 border-t-success-foreground rounded-full animate-spin" />Saving…</> : 'Mark as Paid'}
                 </button>
               </div>
             </div>

@@ -1,6 +1,9 @@
 'use client'
 
+import { useId } from 'react'
 import { Plus, X } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 
 export interface FreelanceRecommendation { id: string; name: string; phone: string }
 
@@ -15,26 +18,30 @@ export function FreelanceRecommendationsField({ value, onChange }: {
   function updateRow(id: string, patch: Partial<FreelanceRecommendation>) { onChange(value.map(r => r.id === id ? { ...r, ...patch } : r)) }
   function removeRow(id: string) { onChange(value.filter(r => r.id !== id)) }
 
+  const headingId = useId()
+  const hintId = useId()
+
   return (
-    <div className="space-y-1.5">
-      <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Freelance Recommendation (optional)</label>
-      <p className="text-[11px] text-muted-foreground">Know someone who could cover your trips while you&apos;re out? List them so HR can reach out.</p>
+    <div role="group" aria-labelledby={headingId} aria-describedby={hintId} className="space-y-1.5">
+      <p id={headingId} className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Freelance Recommendation (optional)</p>
+      <p id={hintId} className="text-[11px] text-muted-foreground">Know someone who could cover your trips while you&apos;re out? List them so HR can reach out.</p>
       <div className="space-y-2">
         {value.map(r => (
-          <div key={r.id} className="flex items-center gap-2 border-2 border-gray-100 rounded-xl p-2.5">
-            <input value={r.name} onChange={e => updateRow(r.id, { name: e.target.value })} placeholder="Name"
-              className="flex-1 h-8 text-sm font-medium bg-transparent focus:outline-none min-w-0" />
-            <input value={r.phone} onChange={e => updateRow(r.id, { phone: e.target.value })} placeholder="Phone number"
-              className="w-36 h-8 text-sm bg-transparent focus:outline-none shrink-0" />
-            <button type="button" onClick={() => removeRow(r.id)} className="p-1.5 text-muted-foreground hover:text-destructive shrink-0">
-              <X className="h-3.5 w-3.5" />
-            </button>
+          <div key={r.id} className="flex items-center gap-2 border-2 border-border rounded-xl p-2.5">
+            <Input value={r.name} onChange={e => updateRow(r.id, { name: e.target.value })} placeholder="Name"
+              aria-label="Recommended person's name" className="flex-1 h-8 font-medium min-w-0" />
+            <Input value={r.phone} onChange={e => updateRow(r.id, { phone: e.target.value })} placeholder="Phone number"
+              aria-label="Recommended person's phone number" className="w-36 h-8 shrink-0" />
+            <Button type="button" variant="ghost" size="icon" onClick={() => removeRow(r.id)} aria-label="Remove recommendation"
+              className="size-7 text-muted-foreground hover:text-destructive shrink-0">
+              <X className="size-3.5" />
+            </Button>
           </div>
         ))}
-        <button type="button" onClick={addRow}
-          className="w-full flex items-center justify-center gap-1.5 border-2 border-dashed rounded-xl py-2 text-sm text-muted-foreground hover:border-[#bdac7e] hover:text-foreground transition-colors">
-          <Plus className="h-3.5 w-3.5" /> Add Recommendation
-        </button>
+        <Button type="button" variant="outline" onClick={addRow}
+          className="w-full gap-1.5 border-2 border-dashed rounded-xl text-muted-foreground shadow-none hover:border-primary hover:text-foreground">
+          <Plus className="size-3.5" /> Add Recommendation
+        </Button>
       </div>
     </div>
   )

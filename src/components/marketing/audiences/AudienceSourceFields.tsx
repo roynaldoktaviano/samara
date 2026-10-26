@@ -122,7 +122,7 @@ function GuestConditions({ audience, setAudience, yachts }: {
               const active = audience.customers.yachtIds.includes(y.id)
               return (
                 <button key={y.id} type="button" onClick={() => toggleYacht(y.id)}
-                  className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${active ? 'bg-[#bdac7e] text-white border-[#bdac7e]' : 'bg-white text-muted-foreground hover:border-[#bdac7e]/60'}`}>
+                  className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${active ? 'bg-primary text-primary-foreground border-primary' : 'bg-card text-muted-foreground hover:border-primary/60'}`}>
                   {y.name}
                 </button>
               )
@@ -172,9 +172,9 @@ function GuestConditionCount({ customers }: { customers: AudienceState['customer
   }, [customers.yachtIds.join(','), customers.minSpend, customers.search, customers.excludeIds.size])
 
   return (
-    <p className="text-xs font-medium flex items-center gap-1.5" style={{ color: '#7a6a3f' }}>
+    <p className="text-xs font-medium flex items-center gap-1.5" style={{ color: 'var(--primary-strong)' }}>
       {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : '→'}
-      {loading ? 'Counting guests...' : `${count ?? 0} guest${count === 1 ? '' : 's'} match${count === 1 ? 'es' : ''} this condition`}
+      {loading ? 'Counting guests…' : `${count ?? 0} guest${count === 1 ? '' : 's'} match${count === 1 ? 'es' : ''} this condition`}
     </p>
   )
 }
@@ -203,7 +203,7 @@ function LeadConditions({ audience, setAudience }: {
           const active = selected.includes(w)
           return (
             <button key={w} type="button" onClick={() => toggleWebsite(w)}
-              className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${active ? 'bg-[#bdac7e] text-white border-[#bdac7e]' : 'bg-white text-muted-foreground hover:border-[#bdac7e]/60'}`}>
+              className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${active ? 'bg-primary text-primary-foreground border-primary' : 'bg-card text-muted-foreground hover:border-primary/60'}`}>
               {w}
             </button>
           )

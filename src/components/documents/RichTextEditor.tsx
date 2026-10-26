@@ -8,6 +8,8 @@ import {
   Bold, Italic, Underline, Strikethrough, AlignLeft, AlignCenter, AlignRight, AlignJustify,
   List, ListOrdered, Quote, Link2, Unlink, Eraser, Undo2, Redo2, IndentIncrease, IndentDecrease,
 } from 'lucide-react'
+import { NativeSelect } from '@/components/ui/native-select'
+import { usePrompt } from '@/components/ui/confirm-dialog'
 
 type Mark = 'bold' | 'italic' | 'underline' | 'strikeThrough' | 'justifyLeft' | 'justifyCenter' | 'justifyRight' | 'justifyFull' | 'insertUnorderedList' | 'insertOrderedList'
 
@@ -88,10 +90,12 @@ function ToolbarButton({ active, onClick, title, children }: { active?: boolean;
     <button
       type="button"
       title={title}
+      aria-label={title}
+      aria-pressed={active === undefined ? undefined : active}
       // mousedown+preventDefault so the editor selection isn't lost before the command runs
       onMouseDown={e => e.preventDefault()}
       onClick={onClick}
-      className={`h-7 w-7 flex items-center justify-center rounded transition-colors ${active ? 'bg-[#bdac7e] text-white' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`}
+      className={`h-7 w-7 flex items-center justify-center rounded transition-colors ${active ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`}
     >
       {children}
     </button>
@@ -108,6 +112,7 @@ export default function RichTextEditor({ initialHtml, onChange, minHeightClass =
   const [heading, setHeading] = useState('P')
   const [font, setFont] = useState('')
   const [fontSize, setFontSize] = useState('3')
+  const prompt = usePrompt()
 
   // Uncontrolled by design: seeded once on mount so typing never fights a React re-render.
   useEffect(() => {
@@ -162,9 +167,20 @@ export default function RichTextEditor({ initialHtml, onChange, minHeightClass =
     exec('fontSize', value)
   }
 
-  function handleLink() {
-    const url = window.prompt('URL:')
-    if (url) exec('createLink', url)
+  // The prompt dialog takes focus away from the editor, so remember the selection and put it
+  // back before running createLink (window.prompt used to keep it because it was synchronous).
+  async function handleLink() {
+    const sel = window.getSelection()
+    const range = sel && sel.rangeCount > 0 && ref.current?.contains(sel.anchorNode) ? sel.getRangeAt(0).cloneRange() : null
+    const url = await prompt({ title: 'Insert link', label: 'URL' })
+    if (!url) return
+    ref.current?.focus()
+    if (range) {
+      const current = window.getSelection()
+      current?.removeAllRanges()
+      current?.addRange(range)
+    }
+    exec('createLink', url)
   }
 
   // Tab inside a list item nests it under the previous item (4 → 4.1); Shift+Tab un-nests it.
@@ -179,7 +195,7 @@ export default function RichTextEditor({ initialHtml, onChange, minHeightClass =
   }
 
   return (
-    <div className="border rounded-md overflow-hidden focus-within:ring-1 focus-within:ring-[#bdac7e]/50 focus-within:border-[#bdac7e] transition">
+    <div className="border rounded-md overflow-hidden focus-within:ring-1 focus-within:ring-ring/50 focus-within:border-ring transition">
       <style>{CLAUSE_LIST_STYLES}</style>
       <div className="flex flex-wrap items-center gap-0.5 px-2 py-1.5 border-b bg-muted/40">
         <ToolbarButton title="Undo" onClick={() => exec('undo')}><Undo2 className="h-3.5 w-3.5" /></ToolbarButton>
@@ -187,36 +203,41 @@ export default function RichTextEditor({ initialHtml, onChange, minHeightClass =
 
         <div className="w-px h-5 bg-border mx-1" />
 
-        <select
+        <NativeSelect
+          aria-label="Paragraph style"
           value={heading}
           onChange={e => handleHeadingChange(e.target.value)}
           onMouseDown={e => e.stopPropagation()}
-          className="h-7 text-xs border rounded-md bg-background px-1.5 mr-1 outline-none focus:ring-1 focus:ring-[#bdac7e]/50"
+          className="h-7 w-auto pl-1.5 pr-7 text-xs md:text-xs"
         >
           {HEADING_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-        </select>
+        </NativeSelect>
 
         <div className="w-px h-5 bg-border mx-1" />
 
-        <select
-          title="Font family"
-          value={font}
-          onChange={e => handleFontChange(e.target.value)}
-          onMouseDown={e => e.stopPropagation()}
-          className="h-7 text-xs border rounded-md bg-background px-1.5 mr-1 outline-none focus:ring-1 focus:ring-[#bdac7e]/50 max-w-[150px]"
-        >
-          {FONT_OPTIONS.map(opt => <option key={opt.label} value={opt.value} style={{ fontFamily: opt.value || DEFAULT_FONT }}>{opt.label}</option>)}
-        </select>
+        <div className="flex items-center gap-1">
+          <NativeSelect
+            title="Font family"
+            aria-label="Font family"
+            value={font}
+            onChange={e => handleFontChange(e.target.value)}
+            onMouseDown={e => e.stopPropagation()}
+            className="h-7 w-auto max-w-[150px] pl-1.5 pr-7 text-xs md:text-xs"
+          >
+            {FONT_OPTIONS.map(opt => <option key={opt.label} value={opt.value} style={{ fontFamily: opt.value || DEFAULT_FONT }}>{opt.label}</option>)}
+          </NativeSelect>
 
-        <select
-          title="Font size"
-          value={fontSize}
-          onChange={e => handleFontSizeChange(e.target.value)}
-          onMouseDown={e => e.stopPropagation()}
-          className="h-7 text-xs border rounded-md bg-background px-1.5 mr-1 outline-none focus:ring-1 focus:ring-[#bdac7e]/50"
-        >
-          {FONT_SIZE_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-        </select>
+          <NativeSelect
+            title="Font size"
+            aria-label="Font size"
+            value={fontSize}
+            onChange={e => handleFontSizeChange(e.target.value)}
+            onMouseDown={e => e.stopPropagation()}
+            className="h-7 w-auto pl-1.5 pr-7 text-xs md:text-xs"
+          >
+            {FONT_SIZE_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+          </NativeSelect>
+        </div>
 
         <div className="w-px h-5 bg-border mx-1" />
 
@@ -251,6 +272,8 @@ export default function RichTextEditor({ initialHtml, onChange, minHeightClass =
         ref={ref}
         contentEditable
         suppressContentEditableWarning
+        role="textbox"
+        aria-multiline="true"
         onInput={emitChange}
         onBlur={emitChange}
         onKeyUp={syncToolbarState}
@@ -264,8 +287,8 @@ export default function RichTextEditor({ initialHtml, onChange, minHeightClass =
           [&_h3]:text-sm [&_h3]:font-bold [&_h3]:mb-1.5 [&_h3]:mt-1
           [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:mb-2
           [&_ul_li]:mb-0.5
-          [&_blockquote]:border-l-2 [&_blockquote]:border-[#bdac7e] [&_blockquote]:pl-3 [&_blockquote]:italic [&_blockquote]:text-muted-foreground [&_blockquote]:mb-2
-          [&_a]:text-[#bdac7e] [&_a]:underline`}
+          [&_blockquote]:border-l-2 [&_blockquote]:border-primary [&_blockquote]:pl-3 [&_blockquote]:italic [&_blockquote]:text-muted-foreground [&_blockquote]:mb-2
+          [&_a]:text-primary [&_a]:underline`}
       />
     </div>
   )

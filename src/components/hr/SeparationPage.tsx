@@ -2,6 +2,12 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { UserX, X, Package, ToggleLeft, ToggleRight, FileText, CheckCircle2, ExternalLink, Search } from 'lucide-react'
+import { StatusBadge } from '@/components/ui/status-badge'
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import { formatDate } from '@/lib/format'
 
 interface SeparationRow {
   id: string
@@ -52,8 +58,6 @@ const RESIGN_STATUS_LABEL: Record<string, string> = {
   OTHER: 'Other',
 }
 
-const fmtDate = (d: string | null) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
-
 export default function SeparationPage() {
   const [rows, setRows] = useState<SeparationRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -74,15 +78,15 @@ export default function SeparationPage() {
       <div>
         <h2 className="text-2xl font-bold tracking-tight">Separation</h2>
         <p className="text-muted-foreground text-sm mt-1">
-          Offboarding checklist for resigned/terminated employees — return company assets and issue their paklaring (surat keterangan kerja).
+          Offboarding checklist for resigned/terminated employees — return company assets and issue their paklaring (certificate of employment).
         </p>
       </div>
 
       <div className="relative max-w-sm">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-        <input
-          value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by name or employee number..."
-          className="w-full pl-9 pr-3 py-2 text-sm border rounded-xl focus:outline-none focus:ring-1 focus:ring-amber-500"
+        <Input
+          type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by name or employee number…"
+          aria-label="Search by name or employee number" className="pl-9"
         />
       </div>
 
@@ -111,39 +115,39 @@ export default function SeparationPage() {
                     <div className="font-medium">{r.fullName}</div>
                     <div className="text-xs text-muted-foreground">{r.employeeNumber}{r.position ? ` · ${r.position}` : ''}</div>
                   </td>
-                  <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">{fmtDate(r.resignedAt)}</td>
+                  <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">{formatDate(r.resignedAt)}</td>
                   <td className="px-4 py-3">
-                    <span className="text-xs font-medium bg-red-50 text-red-700 px-2 py-0.5 rounded-full">
+                    <StatusBadge tone="destructive">
                       {RESIGN_STATUS_LABEL[r.resignStatus ?? ''] ?? 'Left'}
-                    </span>
+                    </StatusBadge>
                   </td>
                   <td className="px-4 py-3 text-center">
                     {r.assetsTotal === 0 ? (
                       <span className="text-muted-foreground/50 text-xs">No assets</span>
                     ) : (
-                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${r.assetsReturned === r.assetsTotal ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700'}`}>
+                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${r.assetsReturned === r.assetsTotal ? 'bg-success/10 text-success' : 'bg-warning/10 text-warning'}`}>
                         {r.assetsReturned}/{r.assetsTotal}
                       </span>
                     )}
                   </td>
                   <td className="px-4 py-3 text-center">
                     {r.clearanceCompletedAt ? (
-                      <CheckCircle2 className="h-4 w-4 text-green-600 inline-block" />
+                      <CheckCircle2 className="h-4 w-4 text-success inline-block" />
                     ) : (
                       <span className="text-xs text-muted-foreground">Pending</span>
                     )}
                   </td>
                   <td className="px-4 py-3 text-center">
                     {r.paklaringNumber ? (
-                      <span className="text-xs font-medium text-blue-700">Issued</span>
+                      <span className="text-xs font-medium text-info">Issued</span>
                     ) : (
                       <span className="text-xs text-muted-foreground">Not issued</span>
                     )}
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <button onClick={() => setSelected(r.id)} className="text-xs font-medium text-[#8a744a] hover:underline">
+                    <Button variant="link" size="sm" onClick={() => setSelected(r.id)} className="h-auto p-0 text-xs text-primary-strong">
                       View
-                    </button>
+                    </Button>
                   </td>
                 </tr>
               ))}
@@ -209,19 +213,19 @@ function SeparationDetailModal({ employeeId, onClose, onChanged }: { employeeId:
   const allReturned = data ? data.assets.length === 0 || data.assets.every(a => a.isReturned) : false
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="fixed inset-0 bg-black/50" onClick={onClose} />
-      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
-        <div className="px-6 pt-6 pb-5 shrink-0" style={{ background: 'linear-gradient(135deg, #bdac7e 0%, #a89860 100%)' }}>
+    <Dialog open onOpenChange={o => { if (!o) onClose() }}>
+      <DialogContent aria-describedby={undefined} showCloseButton={false} className="sm:max-w-2xl max-h-[85vh] p-0 gap-0 overflow-hidden flex flex-col">
+        <div className="px-6 pt-6 pb-5 shrink-0" style={{ background: 'linear-gradient(135deg, var(--primary) 0%, var(--primary-hover) 100%)' }}>
           <div className="flex items-start justify-between">
             <div className="flex items-center gap-3">
-              <div className="p-2.5 bg-white/20 rounded-xl"><UserX className="h-5 w-5 text-white" /></div>
+              <div className="p-2.5 bg-primary-foreground/20 rounded-xl"><UserX className="h-5 w-5 text-primary-foreground" /></div>
               <div>
-                <h3 className="font-bold text-white text-lg leading-tight">{data?.fullName ?? 'Loading…'}</h3>
-                <p className="text-amber-100 text-xs mt-0.5">{data ? `${data.employeeNumber}${data.position ? ` · ${data.position}` : ''}` : ''}</p>
+                <DialogTitle className="font-bold text-primary-foreground text-lg leading-tight">{data?.fullName ?? 'Loading…'}</DialogTitle>
+                <p className="text-primary-foreground/80 text-xs mt-0.5">{data ? `${data.employeeNumber}${data.position ? ` · ${data.position}` : ''}` : ''}</p>
               </div>
             </div>
-            <button onClick={onClose} className="p-1.5 text-white/70 hover:text-white hover:bg-white/20 rounded-lg transition-colors"><X className="h-4 w-4" /></button>
+            <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close"
+              className="size-7 text-primary-foreground/70 hover:text-primary-foreground hover:bg-primary-foreground/20"><X /></Button>
           </div>
         </div>
 
@@ -231,9 +235,9 @@ function SeparationDetailModal({ employeeId, onClose, onChanged }: { employeeId:
           ) : (
             <>
               <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-sm">
-                <div><span className="text-muted-foreground">Resigned:</span> <span className="font-medium">{fmtDate(data.resignedAt)}</span></div>
+                <div><span className="text-muted-foreground">Resigned:</span> <span className="font-medium">{formatDate(data.resignedAt)}</span></div>
                 <div><span className="text-muted-foreground">Status:</span> <span className="font-medium">{RESIGN_STATUS_LABEL[data.resignStatus ?? ''] ?? 'Left'}</span></div>
-                <div><span className="text-muted-foreground">Joined:</span> <span className="font-medium">{fmtDate(data.joinDate)}</span></div>
+                <div><span className="text-muted-foreground">Joined:</span> <span className="font-medium">{formatDate(data.joinDate)}</span></div>
                 <div><span className="text-muted-foreground">Department:</span> <span className="font-medium">{data.department ?? '—'}</span></div>
                 {data.resignReason && <div className="col-span-2"><span className="text-muted-foreground">Reason:</span> <span className="font-medium">{data.resignReason}</span></div>}
               </div>
@@ -245,21 +249,22 @@ function SeparationDetailModal({ employeeId, onClose, onChanged }: { employeeId:
                 ) : (
                   <div className="space-y-2">
                     {data.assets.map(a => (
-                      <div key={a.id} className={`border-2 rounded-xl p-3 flex items-center gap-3 ${a.isReturned ? 'border-green-100 bg-green-50/40' : 'border-gray-100'}`}>
-                        <button type="button" onClick={() => toggleAssetReturned(a)} className="shrink-0">
-                          {a.isReturned ? <ToggleRight className="h-6 w-6 text-green-600" /> : <ToggleLeft className="h-6 w-6 text-muted-foreground" />}
-                        </button>
+                      <div key={a.id} className={`border-2 rounded-xl p-3 flex items-center gap-3 ${a.isReturned ? 'border-success/30 bg-success/5' : 'border-border'}`}>
+                        <Button type="button" variant="ghost" size="icon" onClick={() => toggleAssetReturned(a)} className="size-8 shrink-0"
+                          aria-pressed={a.isReturned} aria-label={`${a.itemName} returned`}>
+                          {a.isReturned ? <ToggleRight className="size-6 text-success" /> : <ToggleLeft className="size-6 text-muted-foreground" />}
+                        </Button>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="font-medium text-sm">{a.itemName}</span>
                             {a.category && <span className="text-[10px] uppercase tracking-wide text-muted-foreground bg-muted px-1.5 py-0.5 rounded">{a.category}</span>}
                           </div>
                           <div className="text-xs text-muted-foreground mt-0.5">
-                            {a.serialNumber && <>S/N {a.serialNumber} · </>}Assigned {fmtDate(a.assignedDate)}
+                            {a.serialNumber && <>S/N {a.serialNumber} · </>}Assigned {formatDate(a.assignedDate)}
                           </div>
                         </div>
-                        <span className={`text-[11px] font-semibold shrink-0 ${a.isReturned ? 'text-green-700' : 'text-amber-700'}`}>
-                          {a.isReturned ? `Returned ${fmtDate(a.returnedAt)}` : 'Not returned'}
+                        <span className={`text-[11px] font-semibold shrink-0 ${a.isReturned ? 'text-success' : 'text-warning'}`}>
+                          {a.isReturned ? `Returned ${formatDate(a.returnedAt)}` : 'Not returned'}
                         </span>
                       </div>
                     ))}
@@ -269,49 +274,48 @@ function SeparationDetailModal({ employeeId, onClose, onChanged }: { employeeId:
 
               <div>
                 <h4 className="text-sm font-semibold flex items-center gap-1.5 mb-2"><CheckCircle2 className="h-4 w-4" /> Clearance</h4>
-                <textarea
-                  value={notes} onChange={e => setNotes(e.target.value)} onBlur={saveNotes} rows={2} placeholder="Clearance notes (optional)..."
-                  className="w-full border rounded-xl px-3 py-2 text-sm resize-none mb-2"
+                <Textarea
+                  value={notes} onChange={e => setNotes(e.target.value)} onBlur={saveNotes} rows={2} placeholder="Clearance notes (optional)…"
+                  aria-label="Clearance notes (optional)" className="resize-none mb-2"
                 />
                 {data.separation?.clearanceCompletedAt ? (
-                  <div className="flex items-center justify-between bg-green-50 border border-green-200 rounded-xl px-4 py-2.5">
-                    <span className="text-sm text-green-700">
-                      Clearance completed {fmtDate(data.separation.clearanceCompletedAt)}{data.separation.clearanceCompletedBy?.name ? ` by ${data.separation.clearanceCompletedBy.name}` : ''}
+                  <div className="flex items-center justify-between bg-success/10 border border-success/30 rounded-xl px-4 py-2.5">
+                    <span className="text-sm text-success">
+                      Clearance completed {formatDate(data.separation.clearanceCompletedAt)}{data.separation.clearanceCompletedBy?.name ? ` by ${data.separation.clearanceCompletedBy.name}` : ''}
                     </span>
-                    <button onClick={() => toggleClearance(false)} disabled={savingClearance} className="text-xs text-muted-foreground hover:text-foreground underline">Reopen</button>
+                    <Button variant="link" size="sm" onClick={() => toggleClearance(false)} disabled={savingClearance} className="h-auto p-0 text-xs text-muted-foreground hover:text-foreground underline">Reopen</Button>
                   </div>
                 ) : (
-                  <button onClick={() => toggleClearance(true)} disabled={savingClearance}
-                    className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold rounded-xl border-2 border-dashed hover:border-[#bdac7e] hover:text-foreground text-muted-foreground transition-colors disabled:opacity-50">
-                    {!allReturned && <span className="text-amber-600 text-xs">(items still outstanding)</span>}
-                    {savingClearance ? 'Saving...' : 'Mark Clearance Complete'}
-                  </button>
+                  <Button variant="outline" onClick={() => toggleClearance(true)} loading={savingClearance}
+                    className="w-full h-10 font-semibold border-2 border-dashed text-muted-foreground hover:border-primary hover:text-foreground">
+                    {!allReturned && <span className="text-warning text-xs">(items still outstanding)</span>}
+                    {savingClearance ? 'Saving…' : 'Mark Clearance Complete'}
+                  </Button>
                 )}
               </div>
 
               <div>
-                <h4 className="text-sm font-semibold flex items-center gap-1.5 mb-2"><FileText className="h-4 w-4" /> Paklaring (Surat Keterangan Kerja)</h4>
+                <h4 className="text-sm font-semibold flex items-center gap-1.5 mb-2"><FileText className="h-4 w-4" /> Paklaring (Certificate of Employment)</h4>
                 {data.separation?.paklaringNumber ? (
-                  <div className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-xl px-4 py-3">
+                  <div className="flex items-center justify-between bg-info/10 border border-info/30 rounded-xl px-4 py-3">
                     <div className="text-sm">
-                      <div className="font-medium text-blue-800">No. {data.separation.paklaringNumber}</div>
-                      <div className="text-xs text-blue-600 mt-0.5">Issued {fmtDate(data.separation.paklaringIssuedAt)}</div>
+                      <div className="font-medium text-info">No. {data.separation.paklaringNumber}</div>
+                      <div className="text-xs text-info mt-0.5">Issued {formatDate(data.separation.paklaringIssuedAt)}</div>
                     </div>
-                    <button onClick={generatePaklaring} className="flex items-center gap-1.5 text-xs font-medium text-blue-700 hover:underline">
-                      <ExternalLink className="h-3.5 w-3.5" /> Reprint
-                    </button>
+                    <Button variant="link" size="sm" onClick={generatePaklaring} className="h-auto p-0 gap-1.5 text-xs text-info">
+                      <ExternalLink className="size-3.5" /> Reprint
+                    </Button>
                   </div>
                 ) : (
-                  <button onClick={generatePaklaring} disabled={generating}
-                    className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold text-white rounded-xl bg-[#bdac7e] hover:bg-[#a89860] transition-colors disabled:opacity-50">
-                    <FileText className="h-4 w-4" /> {generating ? 'Generating...' : 'Generate Paklaring'}
-                  </button>
+                  <Button onClick={generatePaklaring} loading={generating} className="w-full h-10 font-semibold">
+                    {!generating && <FileText />} {generating ? 'Generating…' : 'Generate Paklaring'}
+                  </Button>
                 )}
               </div>
             </>
           )}
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   )
 }

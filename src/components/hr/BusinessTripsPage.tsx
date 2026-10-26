@@ -3,6 +3,11 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Plane, X, Check, ThumbsUp, ThumbsDown, ClipboardList, ArrowLeft, FileText, Printer } from 'lucide-react'
 import { FilePreview } from '@/components/ui/file-preview'
+import { StatusBadge, type StatusTone } from '@/components/ui/status-badge'
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } from '@/components/ui/dialog'
+import { Textarea } from '@/components/ui/textarea'
+import { formatDate, formatDateRange, formatMoney } from '@/lib/format'
 
 interface EmployeeLite { id: string; fullName: string; employeeNumber: string }
 interface BusinessTrip {
@@ -29,12 +34,12 @@ interface BusinessTrip {
   reimbursements: { id: string; amount: number; status: string }[]
 }
 
-const STATUS_COLOR: Record<string, string> = {
-  PENDING: 'bg-amber-100 text-amber-700',
-  PENDING_HR_APPROVAL: 'bg-blue-100 text-blue-700',
-  APPROVED: 'bg-green-100 text-green-700',
-  REJECTED: 'bg-red-100 text-red-700',
-  CLOSED: 'bg-gray-200 text-gray-700',
+const STATUS_TONE: Record<string, StatusTone> = {
+  PENDING: 'warning',
+  PENDING_HR_APPROVAL: 'info',
+  APPROVED: 'success',
+  REJECTED: 'destructive',
+  CLOSED: 'neutral',
 }
 
 function statusLabel(t: BusinessTrip): string {
@@ -42,9 +47,6 @@ function statusLabel(t: BusinessTrip): string {
   if (t.status === 'PENDING_HR_APPROVAL') return 'Awaiting HR'
   return t.status.charAt(0) + t.status.slice(1).toLowerCase()
 }
-
-const fmtDate = (s: string) => new Date(s).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
-const fmtMoney = (n: number) => 'Rp ' + new Intl.NumberFormat('id-ID').format(n)
 
 export default function BusinessTripsPage() {
   const [trips, setTrips] = useState<BusinessTrip[]>([])
@@ -97,9 +99,9 @@ export default function BusinessTripsPage() {
     <div className="space-y-6">
       {selected ? (
         <>
-          <button onClick={() => setSelected(null)} className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
-            <ArrowLeft className="h-4 w-4" /> Back to Business Trips
-          </button>
+          <Button variant="ghost" size="sm" onClick={() => setSelected(null)} className="-ml-2.5 text-muted-foreground">
+            <ArrowLeft /> Back to Business Trips
+          </Button>
 
           <div className="rounded-2xl border bg-card max-w-2xl">
             <div className="flex items-center justify-between px-5 py-4 border-b">
@@ -107,7 +109,7 @@ export default function BusinessTripsPage() {
                 <h2 className="text-xl font-bold tracking-tight">{selected.employee.fullName}</h2>
                 <p className="text-sm text-muted-foreground mt-0.5 font-mono">{selected.employee.employeeNumber}</p>
               </div>
-              <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${STATUS_COLOR[selected.status]}`}>{statusLabel(selected)}</span>
+              <StatusBadge tone={STATUS_TONE[selected.status]} className="px-2.5 py-1">{statusLabel(selected)}</StatusBadge>
             </div>
 
             <div className="p-5 space-y-4">
@@ -118,7 +120,7 @@ export default function BusinessTripsPage() {
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground uppercase tracking-wide font-semibold">Dates</p>
-                  <p className="text-sm font-medium mt-0.5">{fmtDate(selected.startDate)} – {fmtDate(selected.endDate)}</p>
+                  <p className="text-sm font-medium mt-0.5">{formatDateRange(selected.startDate, selected.endDate)}</p>
                 </div>
               </div>
 
@@ -139,30 +141,30 @@ export default function BusinessTripsPage() {
                   <p className="text-muted-foreground uppercase tracking-wide font-semibold mb-1">Manager Approval</p>
                   {selected.managerApprovedAt ? (
                     <div className="text-muted-foreground">
-                      Approved {fmtDate(selected.managerApprovedAt)}{selected.managerApprovedBy?.name && ` by ${selected.managerApprovedBy.name}`}
+                      Approved {formatDate(selected.managerApprovedAt)}{selected.managerApprovedBy?.name && ` by ${selected.managerApprovedBy.name}`}
                       {selected.managerDecisionNote && <p className="mt-1.5 rounded-lg bg-muted/40 px-3 py-2 text-foreground">{selected.managerDecisionNote}</p>}
                     </div>
                   ) : selected.status === 'REJECTED' ? (
                     <p className="text-muted-foreground">Rejected before reaching HR.</p>
                   ) : (
-                    <p className="text-amber-700">Waiting on the employee&apos;s manager to approve first.</p>
+                    <p className="text-warning">Waiting on the employee&apos;s manager to approve first.</p>
                   )}
                 </div>
               )}
 
               <div className="text-xs text-muted-foreground border-t pt-3">
-                Requested {fmtDate(selected.requestedAt)}{selected.requestedBy?.name && ` by ${selected.requestedBy.name}`}
+                Requested {formatDate(selected.requestedAt)}{selected.requestedBy?.name && ` by ${selected.requestedBy.name}`}
               </div>
 
               {(selected.status === 'APPROVED' || selected.status === 'REJECTED' || selected.status === 'CLOSED') && (
                 <div className="text-xs text-muted-foreground">
-                  {selected.status === 'REJECTED' ? 'Rejected' : 'Approved'}{selected.decidedAt && ` ${fmtDate(selected.decidedAt)}`}{selected.decidedBy?.name && ` by ${selected.decidedBy.name}`}
+                  {selected.status === 'REJECTED' ? 'Rejected' : 'Approved'}{selected.decidedAt && ` ${formatDate(selected.decidedAt)}`}{selected.decidedBy?.name && ` by ${selected.decidedBy.name}`}
                   {selected.decisionNote && <p className="mt-1.5 rounded-lg bg-muted/40 px-3 py-2 text-foreground">{selected.decisionNote}</p>}
                 </div>
               )}
 
               {selected.status === 'CLOSED' && selected.closedAt && (
-                <div className="text-xs text-muted-foreground">Closed by requester {fmtDate(selected.closedAt)}</div>
+                <div className="text-xs text-muted-foreground">Closed by requester {formatDate(selected.closedAt)}</div>
               )}
 
               {selected.report && (
@@ -185,10 +187,10 @@ export default function BusinessTripsPage() {
                   <div className="space-y-1">
                     {selected.reimbursements.map(r => (
                       <p key={r.id} className="text-sm flex items-center justify-between">
-                        <span>{fmtMoney(r.amount)}</span>
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${r.status === 'PAID' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+                        <span>{formatMoney(r.amount)}</span>
+                        <StatusBadge tone={r.status === 'PAID' ? 'success' : 'warning'}>
                           {r.status === 'PAID' ? 'Paid' : 'Waiting for Payment'}
-                        </span>
+                        </StatusBadge>
                       </p>
                     ))}
                   </div>
@@ -198,23 +200,21 @@ export default function BusinessTripsPage() {
 
             {(selected.status === 'PENDING_HR_APPROVAL' || (selected.status === 'PENDING' && !selected.requiresManagerApproval)) && (
               <div className="flex justify-end gap-2 px-5 py-4 border-t">
-                <button onClick={() => setDecision({ trip: selected, action: 'reject' })}
-                  className="flex items-center gap-2 px-4 py-2 text-sm border rounded-lg hover:bg-red-50 hover:text-destructive hover:border-red-200 font-medium transition-colors">
-                  <ThumbsDown className="h-3.5 w-3.5" /> Reject
-                </button>
-                <button onClick={() => setDecision({ trip: selected, action: 'approve' })}
-                  className="flex items-center gap-2 px-5 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 font-semibold transition-colors">
-                  <ThumbsUp className="h-3.5 w-3.5" /> Approve
-                </button>
+                <Button variant="outline" onClick={() => setDecision({ trip: selected, action: 'reject' })}
+                  className="hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30">
+                  <ThumbsDown className="size-3.5" /> Reject
+                </Button>
+                <Button variant="success" onClick={() => setDecision({ trip: selected, action: 'approve' })} className="font-semibold">
+                  <ThumbsUp className="size-3.5" /> Approve
+                </Button>
               </div>
             )}
 
             {(selected.status === 'APPROVED' || selected.status === 'CLOSED') && (
               <div className="flex justify-end px-5 py-4 border-t">
-                <button onClick={() => window.open(`/print/business-trip-assignment/${selected.id}`, '_blank')}
-                  className="flex items-center gap-2 px-4 py-2 text-sm border rounded-lg hover:bg-muted font-medium transition-colors">
-                  <Printer className="h-3.5 w-3.5" /> Print Assignment Letter
-                </button>
+                <Button variant="outline" onClick={() => window.open(`/print/business-trip-assignment/${selected.id}`, '_blank')}>
+                  <Printer className="size-3.5" /> Print Assignment Letter
+                </Button>
               </div>
             )}
           </div>
@@ -230,11 +230,11 @@ export default function BusinessTripsPage() {
             {(['All', 'PENDING', 'APPROVED', 'CLOSED', 'REJECTED'] as const).map(s => (
               <button key={s} onClick={() => setStatusFilter(s)}
                 className={`shrink-0 whitespace-nowrap px-3 py-2 text-sm font-medium border-b-2 transition-colors -mb-px flex items-center gap-1.5 ${
-                  statusFilter === s ? 'border-amber-500 text-amber-700' : 'border-transparent text-muted-foreground hover:text-foreground'
+                  statusFilter === s ? 'border-primary text-primary-strong' : 'border-transparent text-muted-foreground hover:text-foreground'
                 }`}>
                 {s === 'All' ? 'All' : s.charAt(0) + s.slice(1).toLowerCase()}
                 {counts[s] > 0 && (
-                  <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${statusFilter === s ? 'bg-amber-100 text-amber-700' : 'bg-muted text-muted-foreground'}`}>
+                  <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${statusFilter === s ? 'bg-primary/15 text-primary-strong' : 'bg-muted text-muted-foreground'}`}>
                     {counts[s]}
                   </span>
                 )}
@@ -272,9 +272,9 @@ export default function BusinessTripsPage() {
                         <p className="text-xs text-muted-foreground font-mono">{t.employee.employeeNumber}</p>
                       </td>
                       <td className="px-4 py-3 flex items-center gap-1.5"><Plane className="h-3.5 w-3.5 text-muted-foreground shrink-0" />{t.destination}</td>
-                      <td className="px-4 py-3 text-muted-foreground text-xs whitespace-nowrap">{fmtDate(t.startDate)} – {fmtDate(t.endDate)}</td>
+                      <td className="px-4 py-3 text-muted-foreground text-xs whitespace-nowrap">{formatDateRange(t.startDate, t.endDate)}</td>
                       <td className="px-4 py-3 text-center">
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLOR[t.status]}`}>{statusLabel(t)}</span>
+                        <StatusBadge tone={STATUS_TONE[t.status]}>{statusLabel(t)}</StatusBadge>
                       </td>
                       <td className="px-4 py-3 text-muted-foreground text-xs">{t.requestedBy?.name ?? '—'}</td>
                     </tr>
@@ -287,31 +287,34 @@ export default function BusinessTripsPage() {
       )}
 
       {/* ── Approve/Reject Modal ── */}
-      {decision && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
-            <div className="px-6 py-5 space-y-3">
-              <h3 className="font-bold text-sm flex items-center gap-2">
-                {decision.action === 'approve' ? <Check className="h-4 w-4 text-green-600" /> : <X className="h-4 w-4 text-red-600" />}
-                {decision.action === 'approve' ? 'Approve' : 'Reject'} business trip
-              </h3>
-              <p className="text-sm text-muted-foreground">
-                {decision.trip.employee.fullName} — {decision.trip.destination} ({fmtDate(decision.trip.startDate)} – {fmtDate(decision.trip.endDate)})
-              </p>
-              <textarea rows={2} placeholder={decision.action === 'reject' ? 'Reason (optional)' : 'Note (optional)'}
-                className="w-full border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500 resize-none"
-                value={decisionNote} onChange={e => setDecisionNote(e.target.value)} />
-            </div>
-            <div className="flex items-center justify-end gap-2 px-6 py-4 border-t bg-gray-50/80">
-              <button onClick={() => { setDecision(null); setDecisionNote('') }} className="px-4 py-2 text-sm border rounded-lg hover:bg-white transition-colors">Cancel</button>
-              <button onClick={decide} disabled={deciding}
-                className={`px-5 py-2 text-sm text-white rounded-lg font-semibold disabled:opacity-50 transition-colors ${decision.action === 'approve' ? 'bg-green-600 hover:bg-green-700' : 'bg-destructive hover:bg-destructive/90'}`}>
-                {deciding ? 'Saving...' : decision.action === 'approve' ? 'Approve' : 'Reject'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <Dialog open={!!decision} onOpenChange={o => { if (!o) { setDecision(null); setDecisionNote('') } }}>
+        <DialogContent className="sm:max-w-sm p-0 gap-0 overflow-hidden" onInteractOutside={e => e.preventDefault()}>
+          {decision && (
+            <>
+              <div className="px-6 py-5 space-y-3">
+                <DialogTitle className="font-bold text-sm flex items-center gap-2 pr-6">
+                  {decision.action === 'approve' ? <Check className="h-4 w-4 text-success" /> : <X className="h-4 w-4 text-destructive" />}
+                  {decision.action === 'approve' ? 'Approve' : 'Reject'} business trip
+                </DialogTitle>
+                <DialogDescription>
+                  {decision.trip.employee.fullName} — {decision.trip.destination} ({formatDateRange(decision.trip.startDate, decision.trip.endDate)})
+                </DialogDescription>
+                <Textarea rows={2} placeholder={decision.action === 'reject' ? 'Reason (optional)' : 'Note (optional)'}
+                  aria-label={decision.action === 'reject' ? 'Reason (optional)' : 'Note (optional)'}
+                  className="resize-none"
+                  value={decisionNote} onChange={e => setDecisionNote(e.target.value)} />
+              </div>
+              <DialogFooter className="px-6 py-4 border-t bg-muted/50">
+                <Button variant="outline" onClick={() => { setDecision(null); setDecisionNote('') }}>Cancel</Button>
+                <Button onClick={decide} loading={deciding}
+                  variant={decision.action === 'approve' ? 'success' : 'destructive'} className="font-semibold">
+                  {deciding ? 'Saving…' : decision.action === 'approve' ? 'Approve' : 'Reject'}
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

@@ -10,6 +10,8 @@ import { useSession } from 'next-auth/react'
 import { Plus, X, ChevronRight, CheckCircle2, PackagePlus, AlertTriangle, Trash2, CheckCheck, Search, Pencil, ArrowRightLeft } from 'lucide-react'
 import { renderLocationOptions } from '@/components/purchasing/LocationOptions'
 import InventoryQuickAdd from './InventoryQuickAdd'
+import { formatDate } from '@/lib/format'
+import { StatusBadge, type StatusTone } from '@/components/ui/status-badge'
 import { ItemFormFields, EMPTY_ITEM_FORM, newItemForm, type ItemForm, type ItemTypeConfig } from '@/components/purchasing/items/ItemFormFields'
 
 interface Location { id: string; name: string; type: string; parentId: string | null }
@@ -27,12 +29,10 @@ interface Opname {
   _count?: { items: number }
 }
 
-const STATUS_LABEL: Record<string, string> = { DRAFT: 'Draft', COMPLETED: 'Selesai' }
-const STATUS_COLOR: Record<string, string> = {
-  DRAFT: 'bg-muted text-muted-foreground',
-  COMPLETED: 'bg-green-100 text-green-700',
+const STATUS: Record<string, { label: string; tone: StatusTone }> = {
+  DRAFT:     { label: 'Draft',   tone: 'neutral' },
+  COMPLETED: { label: 'Completed', tone: 'success' },
 }
-const fmtDate = (s: string) => new Date(s).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })
 
 // Both popups reuse the Items & Pricing form (ItemFormFields) so a product created or
 // edited here looks and behaves exactly like one made in Items & Pricing. The type/catalog
@@ -49,14 +49,14 @@ function useOpnameCatalog() {
   return { typeConfigs, catalog, loaded }
 }
 
-const numInputCls = 'w-full h-9 border rounded-md px-3 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white tabular-nums [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none'
+const numInputCls = 'w-full h-9 border rounded-md px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring bg-card tabular-nums [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none'
 
 function ProductModalShell({ title, subtitle, onClose, error, footer, children }: {
   title: string; subtitle?: string; onClose: () => void; error: string; footer: React.ReactNode; children: React.ReactNode
 }) {
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+      <div className="bg-card rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between p-6 border-b">
           <div>
             <h3 className="font-semibold text-lg">{title}</h3>
@@ -120,30 +120,30 @@ function AddItemModal({ opnameId, existingItemIds, onClose, onAdded }: {
   return (
     <ProductModalShell title="Add Product" onClose={onClose} error={error} footer={<>
       <button onClick={onClose} className="px-4 py-2 text-sm border rounded-md hover:bg-muted transition-colors">Cancel</button>
-      <button onClick={submit} disabled={!canSubmit || saving} className="px-4 py-2 text-sm bg-amber-600 text-white rounded-md hover:bg-amber-700 disabled:opacity-50 transition-colors font-medium">
-        {saving ? 'Saving...' : 'Add Item'}
+      <button onClick={submit} disabled={!canSubmit || saving} className="px-4 py-2 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary-hover disabled:opacity-50 transition-colors font-medium">
+        {saving ? 'Saving…' : 'Add Item'}
       </button>
     </>}>
       <div className="flex gap-1.5 bg-muted/50 rounded-lg p-1">
-        <button onClick={() => setMode('existing')} className={`flex-1 text-sm py-1.5 rounded-md transition-colors ${mode === 'existing' ? 'bg-white shadow-sm font-medium' : 'text-muted-foreground'}`}>From Catalog</button>
-        <button onClick={switchToNew} disabled={!loaded} className={`flex-1 text-sm py-1.5 rounded-md transition-colors ${mode === 'new' ? 'bg-white shadow-sm font-medium' : 'text-muted-foreground'}`}>New Product</button>
+        <button onClick={() => setMode('existing')} className={`flex-1 text-sm py-1.5 rounded-md transition-colors ${mode === 'existing' ? 'bg-card shadow-sm font-medium' : 'text-muted-foreground'}`}>From Catalog</button>
+        <button onClick={switchToNew} disabled={!loaded} className={`flex-1 text-sm py-1.5 rounded-md transition-colors ${mode === 'new' ? 'bg-card shadow-sm font-medium' : 'text-muted-foreground'}`}>New Product</button>
       </div>
 
       {mode === 'existing' ? (
         <div className="space-y-2">
           <div className="relative">
             <Search className="h-4 w-4 absolute left-2.5 top-2.5 text-muted-foreground" />
-            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search product..."
-              className="w-full h-9 border rounded-md pl-8 pr-3 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500" />
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search product…"
+              className="w-full h-9 border rounded-md pl-8 pr-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring" />
           </div>
           <div className="max-h-64 overflow-y-auto border rounded-md divide-y">
             {!loaded ? (
-              <p className="text-xs text-muted-foreground text-center py-4">Loading...</p>
+              <p className="text-xs text-muted-foreground text-center py-4">Loading…</p>
             ) : filtered.length === 0 ? (
               <p className="text-xs text-muted-foreground text-center py-4">No products</p>
             ) : filtered.map(i => (
               <button key={i.id} onClick={() => setSelectedId(i.id)}
-                className={`w-full text-left px-3 py-2 text-sm hover:bg-muted/40 ${selectedId === i.id ? 'bg-amber-50' : ''}`}>
+                className={`w-full text-left px-3 py-2 text-sm hover:bg-muted/40 ${selectedId === i.id ? 'bg-warning/10' : ''}`}>
                 <p className="font-medium">{i.name}</p>
                 <p className="text-xs text-muted-foreground font-mono">{i.sku} · {i.category}</p>
               </button>
@@ -204,8 +204,8 @@ function EditItemModal({ opnameId, row, onClose, onSaved }: {
   return (
     <ProductModalShell title="Edit Item" subtitle={row.item?.sku} onClose={onClose} error={error} footer={<>
       <button onClick={onClose} className="px-4 py-2 text-sm border rounded-md hover:bg-muted transition-colors">Cancel</button>
-      <button onClick={submit} disabled={saving || !form.name.trim()} className="px-4 py-2 text-sm bg-amber-600 text-white rounded-md hover:bg-amber-700 disabled:opacity-50 transition-colors font-medium">
-        {saving ? 'Saving...' : 'Save Changes'}
+      <button onClick={submit} disabled={saving || !form.name.trim()} className="px-4 py-2 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary-hover disabled:opacity-50 transition-colors font-medium">
+        {saving ? 'Saving…' : 'Save Changes'}
       </button>
     </>}>
       {row.item ? (
@@ -225,7 +225,7 @@ function EditItemModal({ opnameId, row, onClose, onSaved }: {
         <div className="space-y-1.5">
           <label className="text-sm font-medium">Item Name *</label>
           <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-            className="w-full h-9 border rounded-md px-3 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white" />
+            className="w-full h-9 border rounded-md px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring bg-card" />
         </div>
       )}
     </ProductModalShell>
@@ -280,15 +280,15 @@ function ConvertToStockModal({ opnameId, row, onClose, onConverted }: {
   return (
     <ProductModalShell title="Convert to Stock Item" subtitle={row.item?.sku} onClose={onClose} error={error} footer={<>
       <button onClick={onClose} className="px-4 py-2 text-sm border rounded-md hover:bg-muted transition-colors">Cancel</button>
-      <button onClick={submit} disabled={!canSubmit || saving} className="px-4 py-2 text-sm bg-amber-600 text-white rounded-md hover:bg-amber-700 disabled:opacity-50 transition-colors font-medium">
-        {saving ? 'Converting...' : 'Convert to Stock'}
+      <button onClick={submit} disabled={!canSubmit || saving} className="px-4 py-2 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary-hover disabled:opacity-50 transition-colors font-medium">
+        {saving ? 'Converting…' : 'Convert to Stock'}
       </button>
     </>}>
       <p className="text-xs text-muted-foreground bg-muted/40 rounded-lg px-3 py-2.5">
         <span className="font-medium text-foreground">{row.itemName}</span> is currently a Non-Stock item. Complete the form below to turn it into a Stock Item — it will then be counted in this opname and tracked in Items & Pricing.
       </p>
       {!loaded ? (
-        <p className="text-xs text-muted-foreground text-center py-6">Loading...</p>
+        <p className="text-xs text-muted-foreground text-center py-6">Loading…</p>
       ) : (
         <ItemFormFields
           form={current}
@@ -465,7 +465,7 @@ export default function InitialStockOpnamePage() {
   async function save(finalize = false) {
     if (!detail) return
     setSaveError('')
-    if (finalize && !confirm('Selesaikan Stock Opname Awal ini? Stok akan langsung diterapkan ke sistem.')) return
+    if (finalize && !confirm('Finish this Initial Stock Opname? Stock will be applied to the system immediately.')) return
     setSaving(true)
     const res = await fetch(`/api/purchasing/initial-stock-opname/${detail.id}`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
@@ -480,13 +480,13 @@ export default function InitialStockOpnamePage() {
       load()
     } else {
       const err = await res.json()
-      setSaveError(err.error ?? 'Gagal menyimpan')
+      setSaveError(err.error ?? 'Failed to save')
     }
     setSaving(false)
   }
 
   async function doDelete(opname: Opname) {
-    if (!confirm(`Hapus Stock Opname Awal ${opname.countNumber}?`)) return
+    if (!confirm(`Delete Initial Stock Opname ${opname.countNumber}?`)) return
     await fetch(`/api/purchasing/initial-stock-opname/${opname.id}`, { method: 'DELETE' })
     if (detail?.id === opname.id) setDetail(null)
     load()
@@ -513,48 +513,48 @@ export default function InitialStockOpnamePage() {
     return (
       <div className="space-y-5">
         <div className="flex items-center gap-3">
-          <button onClick={() => setDetail(null)} className="text-muted-foreground hover:text-foreground text-sm">← Kembali</button>
+          <button onClick={() => setDetail(null)} className="text-muted-foreground hover:text-foreground text-sm">← Back</button>
           <ChevronRight className="h-4 w-4 text-muted-foreground" />
           <span className="text-sm font-mono font-medium">{detail.countNumber}</span>
-          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLOR[detail.status]}`}>{STATUS_LABEL[detail.status]}</span>
+          <StatusBadge tone={STATUS[detail.status]?.tone}>{STATUS[detail.status]?.label}</StatusBadge>
         </div>
 
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h2 className="text-xl font-bold">Stock Opname Awal — {detail.location.name}</h2>
-            <p className="text-sm text-muted-foreground mt-0.5">{fmtDate(detail.createdAt)} · Dibuat oleh {detail.countedBy.name}</p>
+            <h2 className="text-xl font-bold">Initial Stock Opname — {detail.location.name}</h2>
+            <p className="text-sm text-muted-foreground mt-0.5">{formatDate(detail.createdAt)} · Created by {detail.countedBy.name}</p>
           </div>
           {!readOnly && (
             <div className="flex gap-2 shrink-0">
               <button onClick={() => setAddItemOpen(true)} className="flex items-center gap-2 px-4 py-2 text-sm border rounded-md hover:bg-muted transition-colors">
-                <Plus className="h-4 w-4" /> Tambah Produk
+                <Plus className="h-4 w-4" /> Add Product
               </button>
               <button onClick={() => save(false)} disabled={saving}
                 className="px-4 py-2 text-sm border rounded-md hover:bg-muted disabled:opacity-50 transition-colors">
-                {saving ? 'Menyimpan...' : 'Simpan Draft'}
+                {saving ? 'Saving…' : 'Save Draft'}
               </button>
               <button onClick={() => save(true)} disabled={saving || !detail.items?.length}
-                className="flex items-center gap-2 px-4 py-2 text-sm bg-green-600 hover:bg-green-700 text-white rounded-md disabled:opacity-50 font-medium transition-colors">
-                <CheckCheck className="h-4 w-4" /> Selesaikan Opname
+                className="flex items-center gap-2 px-4 py-2 text-sm bg-success hover:bg-success/90 text-success-foreground rounded-md disabled:opacity-50 font-medium transition-colors">
+                <CheckCheck className="h-4 w-4" /> Finish Opname
               </button>
             </div>
           )}
         </div>
 
         {isCompleted && isCreator && (
-          <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
-            <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
-            <p className="text-sm text-amber-800">Opname ini sudah selesai. Karena Anda pembuatnya, Anda masih bisa mengoreksi data di bawah — perubahan langsung diterapkan ke stok.</p>
+          <div className="flex items-start gap-3 bg-warning/10 border border-warning/30 rounded-lg px-4 py-3">
+            <AlertTriangle className="h-4 w-4 text-warning shrink-0 mt-0.5" />
+            <p className="text-sm text-warning">This opname is completed. As its creator, you can still correct the data below — changes are applied to stock immediately.</p>
           </div>
         )}
         {readOnly && (
           <div className="flex items-start gap-3 bg-muted/40 border rounded-lg px-4 py-3">
-            <CheckCircle2 className="h-4 w-4 text-green-600 shrink-0 mt-0.5" />
-            <p className="text-sm text-muted-foreground">Opname ini sudah selesai dan diterapkan ke stok. Hanya <span className="font-medium">{detail.countedBy.name}</span> yang bisa mengoreksinya.</p>
+            <CheckCircle2 className="h-4 w-4 text-success shrink-0 mt-0.5" />
+            <p className="text-sm text-muted-foreground">This opname is completed and applied to stock. Only <span className="font-medium">{detail.countedBy.name}</span> can correct it.</p>
           </div>
         )}
         {saveError && (
-          <div className="flex items-center gap-2 text-sm bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-red-700">
+          <div className="flex items-center gap-2 text-sm bg-destructive/10 border border-destructive/30 rounded-lg px-4 py-3 text-destructive">
             <AlertTriangle className="h-4 w-4 shrink-0" /> {saveError}
           </div>
         )}
@@ -562,7 +562,7 @@ export default function InitialStockOpnamePage() {
         {(() => {
           const stockRows = (detail.items ?? []).filter(ci => !isNonStock(ci))
           const nonStockRows = (detail.items ?? []).filter(isNonStock)
-          const inputCls = 'w-24 border rounded-md px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-1 focus:ring-[#bdac7e]/50 focus:border-[#bdac7e] tabular-nums [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none'
+          const inputCls = 'w-24 border rounded-md px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-1 focus:ring-ring/50 focus:border-ring tabular-nums [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none'
           const skeleton = [...Array(3)].map((_, i) => (
             <tr key={i}>{[...Array(4)].map((_, j) => <td key={j} className="px-4 py-3"><div className="h-4 rounded bg-muted animate-pulse" /></td>)}</tr>
           ))
@@ -576,15 +576,15 @@ export default function InitialStockOpnamePage() {
                 <div className="overflow-x-auto"><table className="w-full text-sm">
                   <thead className="bg-muted/30 text-xs text-muted-foreground border-b">
                     <tr>
-                      <th className="text-left px-4 py-2.5 font-medium">Produk</th>
-                      <th className="text-left px-4 py-2.5 font-medium">Kategori</th>
-                      <th className="text-right px-4 py-2.5 font-medium">Stok Sekarang</th>
+                      <th className="text-left px-4 py-2.5 font-medium">Product</th>
+                      <th className="text-left px-4 py-2.5 font-medium">Category</th>
+                      <th className="text-right px-4 py-2.5 font-medium">Current Stock</th>
                       {!readOnly && <th className="px-4 py-2.5" />}
                     </tr>
                   </thead>
                   <tbody className="divide-y">
                     {detailLoading ? skeleton : !stockRows.length ? (
-                      <tr><td colSpan={4} className="text-center py-10 text-muted-foreground text-sm">Belum ada produk stok. Klik "Tambah Produk" untuk mulai.</td></tr>
+                      <tr><td colSpan={4} className="text-center py-10 text-muted-foreground text-sm">No stock products yet. Click "Add Product" to get started.</td></tr>
                     ) : stockRows.map(ci => {
                       const unit = ci.item?.baseUnit ?? ''
                       return (
@@ -607,8 +607,8 @@ export default function InitialStockOpnamePage() {
                           {!readOnly && (
                             <td className="px-4 py-3 text-right">
                               <div className="flex items-center justify-end gap-3">
-                                <button onClick={() => setEditRow(ci)} title="Edit produk" className="text-muted-foreground hover:text-foreground"><Pencil className="h-4 w-4" /></button>
-                                <button onClick={() => removeItem(ci.id)} title="Hapus" className="text-muted-foreground hover:text-destructive"><Trash2 className="h-4 w-4" /></button>
+                                <button onClick={() => setEditRow(ci)} title="Edit product" className="text-muted-foreground hover:text-foreground"><Pencil className="h-4 w-4" /></button>
+                                <button onClick={() => removeItem(ci.id)} title="Delete" className="text-muted-foreground hover:text-destructive"><Trash2 className="h-4 w-4" /></button>
                               </div>
                             </td>
                           )}
@@ -626,14 +626,14 @@ export default function InitialStockOpnamePage() {
                       <h3 className="text-sm font-semibold">Non-Stock Items</h3>
                       <span className="text-xs text-muted-foreground">({nonStockRows.length})</span>
                     </div>
-                    <p className="text-xs text-muted-foreground mt-0.5">Tidak ikut dihitung ke stok saat opname diselesaikan. Klik "Convert to Stock" untuk menjadikannya Stock Item.</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">Not counted toward stock when the opname is finished. Click "Convert to Stock" to make it a Stock Item.</p>
                   </div>
                   <div className="overflow-x-auto"><table className="w-full text-sm">
                     <thead className="bg-muted/30 text-xs text-muted-foreground border-b">
                       <tr>
-                        <th className="text-left px-4 py-2.5 font-medium">Produk</th>
-                        <th className="text-left px-4 py-2.5 font-medium">Kategori</th>
-                        <th className="text-right px-4 py-2.5 font-medium">Qty Tercatat</th>
+                        <th className="text-left px-4 py-2.5 font-medium">Product</th>
+                        <th className="text-left px-4 py-2.5 font-medium">Category</th>
+                        <th className="text-right px-4 py-2.5 font-medium">Recorded Qty</th>
                         {!readOnly && <th className="px-4 py-2.5" />}
                       </tr>
                     </thead>
@@ -650,10 +650,10 @@ export default function InitialStockOpnamePage() {
                             <td className="px-4 py-3 text-right">
                               <div className="flex items-center justify-end gap-3">
                                 <button onClick={() => setConvertRow(ci)}
-                                  className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium border border-amber-300 text-amber-700 bg-amber-50 rounded-md hover:bg-amber-100 transition-colors">
+                                  className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium border border-warning/30 text-warning bg-warning/10 rounded-md hover:bg-warning/15 transition-colors">
                                   <ArrowRightLeft className="h-3.5 w-3.5" /> Convert to Stock
                                 </button>
-                                <button onClick={() => removeItem(ci.id)} title="Hapus" className="text-muted-foreground hover:text-destructive"><Trash2 className="h-4 w-4" /></button>
+                                <button onClick={() => removeItem(ci.id)} title="Delete" className="text-muted-foreground hover:text-destructive"><Trash2 className="h-4 w-4" /></button>
                               </div>
                             </td>
                           )}
@@ -700,12 +700,12 @@ export default function InitialStockOpnamePage() {
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight">Stock Opname Awal</h2>
-          <p className="text-muted-foreground text-sm mt-1">Setup baseline stok atau inventory pertama kali per lokasi (gudang & kapal)</p>
+          <h2 className="text-2xl font-bold tracking-tight">Initial Stock Opname</h2>
+          <p className="text-muted-foreground text-sm mt-1">Set up the first stock or inventory baseline per location (warehouse & vessel)</p>
         </div>
         <button onClick={openCreate}
-          className="flex items-center gap-2 bg-[#bdac7e] hover:bg-[#a89860] text-white text-sm font-medium px-4 py-2 rounded-md transition-colors">
-          <Plus className="h-4 w-4" /> Setup Awal Baru
+          className="flex items-center gap-2 bg-primary hover:bg-primary-hover text-primary-foreground text-sm font-medium px-4 py-2 rounded-md transition-colors">
+          <Plus className="h-4 w-4" /> New Initial Setup
         </button>
       </div>
 
@@ -722,19 +722,19 @@ export default function InitialStockOpnamePage() {
       ) : opnames.length === 0 ? (
         <div className="rounded-xl border border-dashed p-14 text-center">
           <PackagePlus className="h-10 w-10 mx-auto mb-3 opacity-20" />
-          <p className="text-sm font-medium text-muted-foreground">Belum ada Stock Opname Awal</p>
-          <p className="text-xs text-muted-foreground mt-1">Klik "Setup Awal Baru" untuk mulai setup lokasi pertama kali.</p>
+          <p className="text-sm font-medium text-muted-foreground">No Initial Stock Opname yet</p>
+          <p className="text-xs text-muted-foreground mt-1">Click "New Initial Setup" to set up a location for the first time.</p>
         </div>
       ) : (
         <div className="rounded-xl border overflow-hidden">
           <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead className="bg-muted/50 text-xs text-muted-foreground">
               <tr>
-                <th className="text-left px-4 py-3 font-medium">No. Opname</th>
-                <th className="text-left px-4 py-3 font-medium">Lokasi</th>
-                <th className="text-left px-4 py-3 font-medium">Tanggal</th>
-                <th className="text-left px-4 py-3 font-medium">Dibuat oleh</th>
-                <th className="text-center px-4 py-3 font-medium">Produk</th>
+                <th className="text-left px-4 py-3 font-medium">Opname No.</th>
+                <th className="text-left px-4 py-3 font-medium">Location</th>
+                <th className="text-left px-4 py-3 font-medium">Date</th>
+                <th className="text-left px-4 py-3 font-medium">Created By</th>
+                <th className="text-center px-4 py-3 font-medium">Products</th>
                 <th className="text-center px-4 py-3 font-medium">Status</th>
                 <th className="px-4 py-3" />
               </tr>
@@ -744,11 +744,11 @@ export default function InitialStockOpnamePage() {
                 <tr key={o.id} className="hover:bg-muted/20 cursor-pointer" onClick={() => openDetail(o)}>
                   <td className="px-4 py-3 font-mono font-medium text-xs">{o.countNumber}</td>
                   <td className="px-4 py-3 font-medium">{o.location.name}</td>
-                  <td className="px-4 py-3 text-muted-foreground">{fmtDate(o.createdAt)}</td>
+                  <td className="px-4 py-3 text-muted-foreground">{formatDate(o.createdAt)}</td>
                   <td className="px-4 py-3 text-muted-foreground">{o.countedBy.name}</td>
                   <td className="px-4 py-3 text-center text-muted-foreground">{o._count?.items ?? 0}</td>
                   <td className="px-4 py-3 text-center">
-                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLOR[o.status]}`}>{STATUS_LABEL[o.status]}</span>
+                    <StatusBadge tone={STATUS[o.status]?.tone}>{STATUS[o.status]?.label}</StatusBadge>
                   </td>
                   <td className="px-4 py-3 text-right" onClick={e => e.stopPropagation()}>
                     {o.status !== 'COMPLETED' && (
@@ -764,28 +764,28 @@ export default function InitialStockOpnamePage() {
 
       {createOpen && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
+          <div className="bg-card rounded-xl shadow-xl w-full max-w-md">
             <div className="flex items-center justify-between p-6 border-b">
               <div className="flex items-center gap-2">
-                <PackagePlus className="h-5 w-5 text-[#bdac7e]" />
-                <h3 className="font-semibold text-lg">Setup Awal Baru</h3>
+                <PackagePlus className="h-5 w-5 text-primary" />
+                <h3 className="font-semibold text-lg">New Initial Setup</h3>
               </div>
               <button onClick={() => setCreateOpen(false)}><X className="h-5 w-5 text-muted-foreground" /></button>
             </div>
             <div className="p-6 space-y-4">
               <div className="flex gap-1.5 bg-muted/50 rounded-lg p-1">
-                <button onClick={() => switchCreateMode('STOCK')} className={`flex-1 text-sm py-1.5 rounded-md transition-colors ${createMode === 'STOCK' ? 'bg-white shadow-sm font-medium' : 'text-muted-foreground'}`}>Stok Barang</button>
-                <button onClick={() => switchCreateMode('INVENTORY')} className={`flex-1 text-sm py-1.5 rounded-md transition-colors ${createMode === 'INVENTORY' ? 'bg-white shadow-sm font-medium' : 'text-muted-foreground'}`}>Inventory</button>
+                <button onClick={() => switchCreateMode('STOCK')} className={`flex-1 text-sm py-1.5 rounded-md transition-colors ${createMode === 'STOCK' ? 'bg-card shadow-sm font-medium' : 'text-muted-foreground'}`}>Stock Items</button>
+                <button onClick={() => switchCreateMode('INVENTORY')} className={`flex-1 text-sm py-1.5 rounded-md transition-colors ${createMode === 'INVENTORY' ? 'bg-card shadow-sm font-medium' : 'text-muted-foreground'}`}>Inventory</button>
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-sm font-medium">Lokasi *</label>
+                <label className="text-sm font-medium">Location *</label>
                 {createMode === 'STOCK' && eligibleLocations.length === 0 ? (
-                  <p className="text-xs text-muted-foreground bg-muted/40 rounded-lg px-3 py-2.5">Semua lokasi sudah punya Stock Opname Awal (selesai atau sedang draft) — buka baris di list untuk lanjutkan drafnya.</p>
+                  <p className="text-xs text-muted-foreground bg-muted/40 rounded-lg px-3 py-2.5">All locations already have an Initial Stock Opname (completed or in draft) — open its row in the list to continue the draft.</p>
                 ) : (
-                  <select className="w-full h-9 border rounded-md px-3 text-sm focus:outline-none focus:ring-1 focus:ring-[#bdac7e]/50 focus:border-[#bdac7e] bg-white"
+                  <select className="w-full h-9 border rounded-md px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring/50 focus:border-ring bg-card"
                     value={createLocationId} onChange={e => changeCreateLocation(e.target.value)}>
-                    <option value="" disabled>— Pilih lokasi —</option>
+                    <option value="" disabled>— Select location —</option>
                     {renderLocationOptions(createMode === 'STOCK' ? eligibleLocations : locations, { renderLabel: l => `${l.name} (${l.type})` })}
                   </select>
                 )}
@@ -793,41 +793,41 @@ export default function InitialStockOpnamePage() {
 
               {createMode === 'STOCK' ? (
                 <div className="text-xs text-muted-foreground bg-muted/40 rounded-lg px-3 py-2.5">
-                  Produk yang sudah ada stoknya di lokasi ini akan otomatis muncul. Produk baru bisa ditambah langsung saat opname.
+                  Products already in stock at this location will appear automatically. New products can be added directly during the opname.
                 </div>
               ) : (
                 <div className="space-y-1.5">
-                  <label className="text-sm font-medium">Ruangan *</label>
+                  <label className="text-sm font-medium">Room *</label>
                   {createRooms.length > 0 && (
-                    <select className="w-full h-9 border rounded-md px-3 text-sm focus:outline-none focus:ring-1 focus:ring-[#bdac7e]/50 focus:border-[#bdac7e] bg-white"
+                    <select className="w-full h-9 border rounded-md px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring/50 focus:border-ring bg-card"
                       value={createRoomId} onChange={e => setCreateRoomId(e.target.value)}>
                       {createRooms.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
                     </select>
                   )}
                   {createRooms.length === 0 && !addingRoom && (
-                    <p className="text-xs text-muted-foreground">Belum ada ruangan di lokasi ini.</p>
+                    <p className="text-xs text-muted-foreground">No rooms at this location yet.</p>
                   )}
                   {!addingRoom ? (
-                    <button onClick={() => setAddingRoom(true)} className="text-xs text-[#bdac7e] hover:underline">+ Ruangan baru</button>
+                    <button onClick={() => setAddingRoom(true)} className="text-xs text-primary hover:underline">+ New room</button>
                   ) : (
                     <div className="flex items-center gap-2">
-                      <input value={newRoomName} onChange={e => setNewRoomName(e.target.value)} placeholder="Nama ruangan baru"
-                        className="flex-1 h-9 border rounded-md px-3 text-sm focus:outline-none focus:ring-1 focus:ring-[#bdac7e]/50 focus:border-[#bdac7e]" />
-                      <button onClick={addCreateRoom} disabled={!newRoomName.trim() || savingRoom} className="px-3 py-1.5 text-sm bg-[#bdac7e] text-white rounded-md hover:bg-[#a89860] disabled:opacity-50">
-                        {savingRoom ? '...' : 'Tambah'}
+                      <input value={newRoomName} onChange={e => setNewRoomName(e.target.value)} placeholder="New room name"
+                        className="flex-1 h-9 border rounded-md px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring/50 focus:border-ring" />
+                      <button onClick={addCreateRoom} disabled={!newRoomName.trim() || savingRoom} className="px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary-hover disabled:opacity-50">
+                        {savingRoom ? '...' : 'Add'}
                       </button>
-                      <button onClick={() => { setAddingRoom(false); setNewRoomName('') }} className="text-xs text-muted-foreground hover:underline">Batal</button>
+                      <button onClick={() => { setAddingRoom(false); setNewRoomName('') }} className="text-xs text-muted-foreground hover:underline">Cancel</button>
                     </div>
                   )}
-                  <p className="text-xs text-muted-foreground bg-muted/40 rounded-lg px-3 py-2.5">Barang yang sudah ada di ruangan ini akan otomatis muncul. Tidak perlu isi jumlah stok — cukup nama & kategori barangnya.</p>
+                  <p className="text-xs text-muted-foreground bg-muted/40 rounded-lg px-3 py-2.5">Items already in this room will appear automatically. No stock quantity needed — just the item name & category.</p>
                 </div>
               )}
             </div>
             <div className="flex justify-end gap-3 px-6 py-4 border-t bg-muted/30">
-              <button onClick={() => setCreateOpen(false)} className="px-4 py-2 text-sm border rounded-md hover:bg-muted">Batal</button>
+              <button onClick={() => setCreateOpen(false)} className="px-4 py-2 text-sm border rounded-md hover:bg-muted">Cancel</button>
               <button onClick={submitCreate} disabled={creating || !createLocationId || (createMode === 'INVENTORY' && !createRoomId)}
-                className="px-4 py-2 text-sm bg-[#bdac7e] text-white rounded-md hover:bg-[#a89860] disabled:opacity-50 font-medium">
-                {creating ? 'Membuat...' : createMode === 'STOCK' ? 'Buat Opname' : 'Mulai'}
+                className="px-4 py-2 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary-hover disabled:opacity-50 font-medium">
+                {creating ? 'Creating…' : createMode === 'STOCK' ? 'Create Opname' : 'Start'}
               </button>
             </div>
           </div>

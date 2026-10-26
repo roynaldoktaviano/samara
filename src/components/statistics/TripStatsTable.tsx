@@ -3,7 +3,10 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { Skeleton } from '@/components/ui/skeleton'
 import { RotateCw, Download } from 'lucide-react'
+import { formatDate, formatMoney, formatNumber } from '@/lib/format'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Button } from '@/components/ui/button'
+import { NativeSelect } from '@/components/ui/native-select'
 
 /* ── types ── */
 interface TripPayment { type: 'DP' | 'PELUNASAN'; amountUsd: number; month: string }
@@ -53,23 +56,26 @@ const dateLabel = (iso: string) => {
   const d = new Date(iso)
   return `${d.getDate()}-${MONTHS[d.getMonth()]}-${String(d.getFullYear()).slice(2)}`
 }
-const num = (n: number | null | undefined, digits = 0) =>
-  !n ? '-' : n.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits })
+// On-screen cells show "-" for zero/missing, like the source spreadsheet.
+const num = (n: number | null | undefined, digits = 0) => (!n ? '-' : formatNumber(n, { decimals: digits }))
+const usd = (n: number | null | undefined, digits = 0) => (!n ? '-' : formatMoney(n, { currency: 'USD', decimals: digits }))
+const idr = (n: number | null | undefined) => (!n ? '-' : formatMoney(n))
+// Payment Status / Monthly Recap summary cells showed "$ -" for zero.
+const usdSum = (n: number | null | undefined, digits = 0) => (!n ? '$ -' : usd(n, digits))
+/** "2026-03" → "Mar 2026" for on-screen cells (the CSV keeps `period`). */
+const periodLabel = (key: string | null) => (key ? formatDate(`${key}-01`, 'monthYear', { utc: true }) : '')
 
-const usd = (n: number | null | undefined, digits = 0) => (!n ? '-' : `$ ${num(n, digits)}`)
-const idr = (n: number | null | undefined) => (!n ? '-' : `Rp ${num(n)}`)
-
-const th  = 'px-2 py-1.5 text-center text-[11px] font-bold border border-gray-300 whitespace-nowrap'
-const td  = 'px-2 py-1 text-[11px] border border-gray-200 whitespace-nowrap'
+const th  = 'px-2 py-1.5 text-center text-[11px] font-bold border border-border whitespace-nowrap'
+const td  = 'px-2 py-1 text-[11px] border border-border whitespace-nowrap'
 const tdR = `${td} text-right tabular-nums`
-const tot = 'px-2 py-1.5 text-right text-[11px] font-bold border border-gray-300 whitespace-nowrap tabular-nums text-red-600'
+const tot = 'px-2 py-1.5 text-right text-[11px] font-bold border border-border whitespace-nowrap tabular-nums text-destructive'
 
 const GROUP_STYLE = {
-  trip:    'bg-slate-100',
-  revenue: 'bg-blue-100',
-  usd:     'bg-emerald-100',
-  idr:     'bg-amber-100',
-  cost:    'bg-rose-100',
+  trip:    'bg-muted',
+  revenue: 'bg-info/15',
+  usd:     'bg-success/15',
+  idr:     'bg-warning/15',
+  cost:    'bg-destructive/15',
 }
 
 /* ══════════════════════════════════════════
@@ -207,13 +213,13 @@ export default function TripStatsTable() {
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-2">
         <h2 className="text-lg font-bold mr-auto">Trip Stats — {yachtName.toUpperCase()} {year}</h2>
-        <select value={yachtId} onChange={e => setYachtId(e.target.value)} className="h-9 rounded-md border px-2 text-sm bg-background">
+        <NativeSelect aria-label="Yacht" value={yachtId} onChange={e => setYachtId(e.target.value)} className="w-auto">
           {data?.yachts.map(y => <option key={y.id} value={y.id}>{y.name}</option>)}
-        </select>
-        <select value={year} onChange={e => setYear(Number(e.target.value))} className="h-9 rounded-md border px-2 text-sm bg-background">
+        </NativeSelect>
+        <NativeSelect aria-label="Year" value={year} onChange={e => setYear(Number(e.target.value))} className="w-auto">
           {YEARS.map(y => <option key={y} value={y}>{y}</option>)}
-        </select>
-        <label className="h-9 flex items-center gap-1.5 rounded-md border px-2 text-sm bg-background" title="USD → IDR rate used to convert IDR trip cost to USD for Gross Profit (a trip booked in IDR uses its own rate)">
+        </NativeSelect>
+        <label className="h-9 flex items-center gap-1.5 rounded-md border border-input px-2 text-sm bg-background shadow-xs focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50" title="USD → IDR rate used to convert IDR trip cost to USD for Gross Profit (a trip booked in IDR uses its own rate)">
           <span className="text-muted-foreground text-xs">USD rate</span>
           <input
             type="number" inputMode="decimal" value={forexInput} onChange={e => setForexInput(e.target.value)}
@@ -221,17 +227,17 @@ export default function TripStatsTable() {
             className="w-20 bg-transparent outline-none tabular-nums"
           />
         </label>
-        <button onClick={() => fetchData(true)} className="h-9 px-3 rounded-md border text-sm flex items-center gap-1.5 hover:bg-muted">
-          <RotateCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} /> Refresh
-        </button>
-        <button onClick={exportCSV} disabled={!trips.length} className="h-9 px-3 rounded-md border text-sm flex items-center gap-1.5 hover:bg-muted disabled:opacity-50">
-          <Download className="w-3.5 h-3.5" /> CSV
-        </button>
+        <Button variant="outline" onClick={() => fetchData(true)} className="gap-1.5">
+          <RotateCw className={`size-3.5 ${refreshing ? 'animate-spin' : ''}`} /> Refresh
+        </Button>
+        <Button variant="outline" onClick={exportCSV} disabled={!trips.length} className="gap-1.5">
+          <Download className="size-3.5" /> CSV
+        </Button>
       </div>
 
       {/* Main per-trip table */}
-      <div className="rounded-lg border overflow-hidden shadow-sm bg-white">
-        <p className="sm:hidden text-xs text-muted-foreground px-3 py-1.5 border-b bg-gray-50">← Swipe to see all columns</p>
+      <div className="rounded-lg border overflow-hidden shadow-sm bg-card">
+        <p className="sm:hidden text-xs text-muted-foreground px-3 py-1.5 border-b bg-muted/50">← Swipe to see all columns</p>
         <div className="overflow-x-auto">
           <table className="text-[11px] border-collapse">
             <thead>
@@ -325,25 +331,25 @@ export default function TripStatsTable() {
                 // One line per booking; trip-level cells (number, dates, D/N, days, period) span them.
                 const lines: (TripLine & { bookingCode?: string })[] = t.lines.length ? t.lines : [t]
                 const span = lines.length
-                const tripCell = `${td} align-middle bg-white`
+                const tripCell = `${td} align-middle bg-card`
                 return lines.map((l, i) => (
-                  <tr key={`${t.id}-${i}`} className={`hover:bg-muted/40 ${t.closed ? 'text-muted-foreground' : ''} ${i === 0 ? 'border-t-2 border-gray-300' : ''}`}>
+                  <tr key={`${t.id}-${i}`} className={`hover:bg-muted/40 ${t.closed ? 'text-muted-foreground' : ''} ${i === 0 ? 'border-t-2 border-border' : ''}`}>
                     {i === 0 && <>
                       <td rowSpan={span} className={`${tripCell} text-center font-semibold`}>{t.tripNumber ?? '—'}</td>
-                      <td rowSpan={span} className={tripCell}>{dateLabel(t.startDate)}</td>
-                      <td rowSpan={span} className={tripCell}>{dateLabel(t.endDate)}</td>
+                      <td rowSpan={span} className={tripCell}>{formatDate(t.startDate)}</td>
+                      <td rowSpan={span} className={tripCell}>{formatDate(t.endDate)}</td>
                       <td rowSpan={span} className={tripCell}>{t.dn}</td>
                     </>}
                     <td className={`${td} max-w-[220px] truncate`} title={l.bookingCode ? `${l.client} · ${l.bookingCode}` : l.client}>
                       {l.client || <span className="italic text-muted-foreground">{t.closed ? 'Closed' : 'No bookings yet'}</span>}
-                      {t.kind === 'PRIVATE_CHARTER' && <span className="ml-1 text-[9px] font-bold text-orange-600">PC</span>}
+                      {t.kind === 'PRIVATE_CHARTER' && <span className="ml-1 text-[9px] font-bold text-warning">PC</span>}
                     </td>
                     <td className={`${td} text-center`}>{l.pax || ''}</td>
                     {i === 0 && <td rowSpan={span} className={`${tripCell} text-center`}>{t.days}</td>}
                     <td className={`${td} text-center`}>{l.rooms || ''}</td>
                     <td className={td}>{l.salesman}</td>
                     <td className={td}>{l.source}</td>
-                    {i === 0 && <td rowSpan={span} className={tripCell}>{t.client ? period(t.period) : ''}</td>}
+                    {i === 0 && <td rowSpan={span} className={tripCell}>{t.client ? periodLabel(t.period) : ''}</td>}
                     <td className={tdR}>{usd(l.amount)}</td>
                     <td className={tdR}>{usd(l.tnk)}</td>
                     <td className={tdR}>{usd(l.total)}</td>
@@ -351,16 +357,16 @@ export default function TripStatsTable() {
                     <td className={tdR}>{usd(l.net)}</td>
                     <td className={tdR}>{l.forex ? idr(l.forex) : ''}</td>
                     <td className={tdR}>{l.rupiah ? idr(l.rupiah) : ''}</td>
-                    <td className={td}>{period(l.usd.dpPeriod)}</td>
+                    <td className={td}>{periodLabel(l.usd.dpPeriod)}</td>
                     <td className={tdR}>{l.usd.dp ? usd(l.usd.dp) : ''}</td>
-                    <td className={td}>{period(l.usd.pelPeriod)}</td>
+                    <td className={td}>{periodLabel(l.usd.pelPeriod)}</td>
                     <td className={tdR}>{l.usd.pel ? usd(l.usd.pel) : ''}</td>
-                    <td className={`${tdR} ${l.usd.balance > 0 ? 'text-blue-600 font-semibold' : ''}`}>{l.currency === 'USD' && l.client ? usd(l.usd.balance) : ''}</td>
+                    <td className={`${tdR} ${l.usd.balance > 0 ? 'text-info font-semibold' : ''}`}>{l.currency === 'USD' && l.client ? usd(l.usd.balance) : ''}</td>
                     <td className={tdR}>{l.idr.dp ? idr(l.idr.dp) : ''}</td>
-                    <td className={td}>{period(l.idr.dpPeriod)}</td>
+                    <td className={td}>{periodLabel(l.idr.dpPeriod)}</td>
                     <td className={tdR}>{l.idr.pel ? idr(l.idr.pel) : ''}</td>
-                    <td className={td}>{period(l.idr.pelPeriod)}</td>
-                    <td className={`${tdR} ${l.idr.balance > 0 ? 'text-blue-600 font-semibold' : ''}`}>{l.currency === 'IDR' ? idr(l.idr.balance) : ''}</td>
+                    <td className={td}>{periodLabel(l.idr.pelPeriod)}</td>
+                    <td className={`${tdR} ${l.idr.balance > 0 ? 'text-info font-semibold' : ''}`}>{l.currency === 'IDR' ? idr(l.idr.balance) : ''}</td>
                     <td className={`${td} max-w-[160px] truncate`} title={l.remark}>{l.remark}</td>
                     <td className={tdR}>{l.idr.paidUsd ? usd(l.idr.paidUsd, 2) : ''}</td>
                     <td className={tdR}>{l.idr.balanceUsd ? usd(l.idr.balanceUsd, 2) : ''}</td>
@@ -370,11 +376,11 @@ export default function TripStatsTable() {
                         {USAGE_COLS.map(c => <td key={c.key} rowSpan={span} className={`${tripCell} text-right tabular-nums`}>{idr(t.cost[c.key])}</td>)}
                         <td rowSpan={span} className={`${tripCell} text-right tabular-nums font-semibold`}>
                           {t.costItems.length
-                            ? <button onClick={() => setCostTrip(t)} className="underline decoration-dotted hover:text-blue-600">{idr(t.cost.total)}</button>
+                            ? <button onClick={() => setCostTrip(t)} className="underline decoration-dotted hover:text-info">{idr(t.cost.total)}</button>
                             : '-'}
                         </td>
                         <td rowSpan={span} className={`${tripCell} text-right tabular-nums`}>{usd(t.net)}</td>
-                        <td rowSpan={span} className={`${tripCell} text-right tabular-nums font-semibold ${gp != null && gp < 0 ? 'text-red-600' : ''}`}>
+                        <td rowSpan={span} className={`${tripCell} text-right tabular-nums font-semibold ${gp != null && gp < 0 ? 'text-destructive' : ''}`}>
                           {gp == null ? <span className="text-muted-foreground font-normal" title="Set a USD rate">?</span> : `${gp < 0 ? '-' : ''}${usd(Math.abs(gp))}`}
                         </td>
                       </>
@@ -385,8 +391,8 @@ export default function TripStatsTable() {
             </tbody>
             {trips.length > 0 && (
               <tfoot>
-                <tr className="bg-gray-50">
-                  <td colSpan={5} className={`${td} font-bold text-red-600`}>GRAND TOTAL</td>
+                <tr className="bg-muted/50">
+                  <td colSpan={5} className={`${td} font-bold text-destructive`}>GRAND TOTAL</td>
                   <td className={tot}>{num(totals.pax)}</td>
                   <td className={tot}>{num(totals.days)}</td>
                   <td className={tot}>{num(totals.rooms)}</td>
@@ -431,22 +437,23 @@ export default function TripStatsTable() {
         Trip cost = usage at moving-average cost, in IDR. Gross Profit (USD) = Net To Samara − trip cost ÷ USD rate. Usage is charged to the trip picked on the Transfer / PO;
         without one, it goes to the trip running that day on this yacht, else the next one to depart. PO payments are cash flow and not counted here.
         {!forex && ' Set a USD rate to see Gross Profit for USD trips.'}
-        {!!unassigned?.total && <span className="ml-1 font-semibold text-amber-700">Unassigned usage this year (no matching trip): {idr(unassigned.total)}.</span>}
+        {!!unassigned?.total && <span className="ml-1 font-semibold text-warning">Unassigned usage this year (no matching trip): {idr(unassigned.total)}.</span>}
       </p>
 
       <Dialog open={!!costTrip} onOpenChange={o => !o && setCostTrip(null)}>
-        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-2xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Trip Cost — #{costTrip?.tripNumber ?? '—'} {costTrip?.label}</DialogTitle>
           </DialogHeader>
           {costTrip && (
+            <div className="overflow-x-auto">
             <table className="w-full text-xs border-collapse">
               <thead>
                 <tr>
-                  <th className={`${th} bg-gray-50 text-left`}>Item</th>
-                  <th className={`${th} bg-gray-50`}>Type</th>
-                  <th className={`${th} bg-gray-50`}>Qty</th>
-                  <th className={`${th} bg-gray-50`}>Cost</th>
+                  <th className={`${th} bg-muted/50 text-left`}>Item</th>
+                  <th className={`${th} bg-muted/50`}>Type</th>
+                  <th className={`${th} bg-muted/50`}>Qty</th>
+                  <th className={`${th} bg-muted/50`}>Cost</th>
                 </tr>
               </thead>
               <tbody>
@@ -454,29 +461,31 @@ export default function TripStatsTable() {
                   <tr key={i}>
                     <td className={td}>
                       {it.name}
-                      {it.byDate && <span className="ml-1 text-[9px] font-semibold text-amber-600" title="Not linked to a trip on its Transfer/PO — allocated by date">BY DATE</span>}
+                      {it.byDate && <span className="ml-1 text-[9px] font-semibold text-warning" title="Not linked to a trip on its Transfer/PO — allocated by date">BY DATE</span>}
                     </td>
                     <td className={td}>{USAGE_LABEL[it.usageType]}</td>
                     <td className={tdR}>{num(it.qty, it.qty % 1 ? 2 : 0)} {it.unit}</td>
-                    <td className={`${tdR} ${it.cost < 0 ? 'text-red-600' : ''}`}>{it.cost < 0 ? '-' : ''}{idr(Math.abs(it.cost))}</td>
+                    <td className={`${tdR} ${it.cost < 0 ? 'text-destructive' : ''}`}>{it.cost < 0 ? '-' : ''}{idr(Math.abs(it.cost))}</td>
                   </tr>
                 ))}
               </tbody>
               <tfoot>
-                <tr className="bg-gray-50">
+                <tr className="bg-muted/50">
                   <td colSpan={3} className={`${td} font-bold`}>Total</td>
                   <td className={`${tdR} font-bold`}>{idr(costTrip.cost.total)}</td>
                 </tr>
               </tfoot>
             </table>
+            </div>
           )}
         </DialogContent>
       </Dialog>
 
       {/* Summaries */}
       <div className="grid gap-6 lg:grid-cols-2">
-        <div className="rounded-lg border overflow-hidden shadow-sm bg-white self-start">
-          <div className="px-4 py-2 font-bold text-sm bg-slate-100 border-b">Payment Status (USD, Net To Samara)</div>
+        <div className="rounded-lg border overflow-hidden shadow-sm bg-card self-start">
+          <div className="px-4 py-2 font-bold text-sm bg-muted border-b">Payment Status (USD, Net To Samara)</div>
+          <div className="overflow-x-auto">
           <table className="w-full text-xs border-collapse">
             <tbody>
               {[
@@ -487,33 +496,34 @@ export default function TripStatsTable() {
                 <tr key={label as string}>
                   <td className={td}>{label}</td>
                   <td className={`${tdR} text-muted-foreground`}>{count} {count === 1 ? 'trip' : 'trips'}</td>
-                  <td className={tdR}>$ {num(amount as number, 2)}</td>
+                  <td className={tdR}>{usdSum(amount as number, 2)}</td>
                 </tr>
               ))}
               <tr>
                 <td className={`${td} font-semibold`}>AR (outstanding)</td>
                 <td className={td} />
-                <td className={`${tdR} font-semibold text-blue-600`}>$ {num(status.ar, 2)}</td>
+                <td className={`${tdR} font-semibold text-info`}>{usdSum(status.ar, 2)}</td>
               </tr>
-              <tr className="bg-gray-50">
+              <tr className="bg-muted/50">
                 <td className={`${td} font-bold`}>Total</td>
                 <td className={td} />
-                <td className={`${tdR} font-bold`}>$ {num(status.total, 2)}</td>
+                <td className={`${tdR} font-bold`}>{usdSum(status.total, 2)}</td>
               </tr>
             </tbody>
           </table>
+          </div>
         </div>
 
-        <div className="rounded-lg border overflow-hidden shadow-sm bg-white">
-          <div className="px-4 py-2 font-bold text-sm bg-slate-100 border-b">Monthly Recap (USD)</div>
+        <div className="rounded-lg border overflow-hidden shadow-sm bg-card">
+          <div className="px-4 py-2 font-bold text-sm bg-muted border-b">Monthly Recap (USD)</div>
           <div className="overflow-x-auto">
             <table className="w-full text-xs border-collapse">
               <thead>
                 <tr>
-                  <th className={`${th} bg-gray-50`}>Period</th>
-                  <th className={`${th} bg-emerald-50`}>DP Received</th>
-                  <th className={`${th} bg-emerald-50`}>Final Payment Received</th>
-                  <th className={`${th} bg-blue-50`}>Balance Due</th>
+                  <th className={`${th} bg-muted/50`}>Period</th>
+                  <th className={`${th} bg-success/10`}>DP Received</th>
+                  <th className={`${th} bg-success/10`}>Final Payment Received</th>
+                  <th className={`${th} bg-info/10`}>Balance Due</th>
                 </tr>
               </thead>
               <tbody>
@@ -522,9 +532,9 @@ export default function TripStatsTable() {
                 )}
                 {monthly.months.map(m => (
                   <tr key={m.key}>
-                    <td className={td}>{period(m.key)}</td>
-                    <td className={tdR}>{m.dp ? `$ ${num(m.dp)}` : ''}</td>
-                    <td className={tdR}>{m.pel ? `$ ${num(m.pel)}` : ''}</td>
+                    <td className={td}>{periodLabel(m.key)}</td>
+                    <td className={tdR}>{m.dp ? usd(m.dp) : ''}</td>
+                    <td className={tdR}>{m.pel ? usd(m.pel) : ''}</td>
                     <td className={tdR}>{m.due ? usd(m.due) : ''}</td>
                   </tr>
                 ))}
@@ -532,18 +542,18 @@ export default function TripStatsTable() {
               {monthly.years.length > 0 && (
                 <tfoot>
                   {monthly.years.map(y => (
-                    <tr key={y.year} className="bg-gray-50">
+                    <tr key={y.year} className="bg-muted/50">
                       <td className={`${td} font-semibold`}>{y.year}</td>
-                      <td className={`${tdR} font-semibold`}>$ {num(y.dp)}</td>
-                      <td className={`${tdR} font-semibold`}>$ {num(y.pel)}</td>
-                      <td className={`${tdR} font-semibold`}>{y.due ? `$ ${num(y.due)}` : ''}</td>
+                      <td className={`${tdR} font-semibold`}>{usdSum(y.dp)}</td>
+                      <td className={`${tdR} font-semibold`}>{usdSum(y.pel)}</td>
+                      <td className={`${tdR} font-semibold`}>{y.due ? usd(y.due) : ''}</td>
                     </tr>
                   ))}
-                  <tr className="bg-gray-100">
+                  <tr className="bg-muted">
                     <td className={`${td} font-bold`}>Total</td>
-                    <td className={`${tdR} font-bold`}>$ {num(monthly.years.reduce((s, y) => s + y.dp, 0))}</td>
-                    <td className={`${tdR} font-bold`}>$ {num(monthly.years.reduce((s, y) => s + y.pel, 0))}</td>
-                    <td className={`${tdR} font-bold`}>$ {num(monthly.years.reduce((s, y) => s + y.due, 0))}</td>
+                    <td className={`${tdR} font-bold`}>{usdSum(monthly.years.reduce((s, y) => s + y.dp, 0))}</td>
+                    <td className={`${tdR} font-bold`}>{usdSum(monthly.years.reduce((s, y) => s + y.pel, 0))}</td>
+                    <td className={`${tdR} font-bold`}>{usdSum(monthly.years.reduce((s, y) => s + y.due, 0))}</td>
                   </tr>
                 </tfoot>
               )}

@@ -11,11 +11,11 @@ import { useMarketingTeam, ownerOptionNames } from '@/components/marketing/share
 // Same modal chrome as CampaignHubEditor (mirrors proto-3's create-modal look) — dark
 // near-black primary action, dense small type, 2-column form-grid. Scoped to this dialog only.
 function label(text: string) {
-  return <label className="block text-[9px] text-[#5f656c] mb-1.5">{text}</label>
+  return <label className="block text-[9px] text-muted-foreground mb-1.5">{text}</label>
 }
 
 function inputCls() {
-  return 'block w-full h-[38px] rounded-md border border-[#dce0e4] px-2.5 text-[11px] text-[#2a2d31] bg-white focus:outline-none focus:ring-1 focus:ring-[#22262b]'
+  return 'block w-full h-[38px] rounded-md border border-input px-2.5 text-[11px] text-foreground bg-card focus:outline-none focus:ring-1 focus:ring-ring'
 }
 
 export default function ContentEditor({ open, onOpenChange, onCreated, campaignId, defaultFormat }: {
@@ -69,13 +69,13 @@ export default function ContentEditor({ open, onOpenChange, onCreated, campaignI
   return (
     <Dialog open={open} onOpenChange={o => !o && close()}>
       <DialogContent showCloseButton={false} className="p-0 gap-0 rounded-xl overflow-hidden border-0 shadow-[0_20px_60px_rgba(0,0,0,.23)] w-[min(560px,95vw)] sm:max-w-[560px]">
-        <div className="min-h-[86px] flex items-center justify-between px-[21px] py-[17px] border-b border-[#e6e8eb]">
+        <div className="min-h-[86px] flex items-center justify-between px-[21px] py-[17px] border-b border-border">
           <div>
-            <div className="text-[10px] tracking-[.12em] font-bold text-[#9b7c43] mb-1.5">NEW CONTENT</div>
-            <DialogTitle className="text-[17px] font-semibold text-[#1c1e21] m-0">Add a content idea</DialogTitle>
-            <DialogDescription className="text-[9px] text-[#80858d] m-0 mt-1">It starts in the Idea column of Content Studio.</DialogDescription>
+            <div className="text-[10px] tracking-[.12em] font-bold text-primary-strong mb-1.5">NEW CONTENT</div>
+            <DialogTitle className="text-[17px] font-semibold text-foreground m-0">Add a content idea</DialogTitle>
+            <DialogDescription className="text-[9px] text-muted-foreground m-0 mt-1">It starts in the Idea column of Content Studio.</DialogDescription>
           </div>
-          <button onClick={close} className="h-[30px] w-[30px] rounded-full bg-[#f1f3f4] grid place-items-center text-[#5b6067] shrink-0">
+          <button onClick={close} className="h-[30px] w-[30px] rounded-full bg-muted grid place-items-center text-muted-foreground shrink-0">
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -111,18 +111,18 @@ export default function ContentEditor({ open, onOpenChange, onCreated, campaignI
             )}
             <div className="sm:col-span-2">
               {label('CAPTION / COPY (OPTIONAL)')}
-              <textarea className={`${inputCls()} h-[70px] py-2.5 resize-none`} value={caption} onChange={e => setCaption(e.target.value)} placeholder="Draft caption or ad copy..." />
+              <textarea className={`${inputCls()} h-[70px] py-2.5 resize-none`} value={caption} onChange={e => setCaption(e.target.value)} placeholder="Draft caption or ad copy…" />
             </div>
           </div>
         </div>
 
-        <div className="h-[62px] border-t border-[#e3e6e9] px-[22px] flex items-center justify-end gap-2">
-          <button onClick={close} className="h-[35px] px-3.5 rounded-md border border-[#dfe3e7] bg-white text-[#444950] text-[11px] font-semibold">Cancel</button>
+        <div className="h-[62px] border-t border-border px-[22px] flex items-center justify-end gap-2">
+          <button onClick={close} className="h-[35px] px-3.5 rounded-md border border-border bg-card text-foreground/80 text-[11px] font-semibold">Cancel</button>
           <button
             onClick={submit} disabled={saving}
-            className="h-[35px] px-3.5 rounded-md bg-[#22262b] hover:bg-[#0d0f11] text-white text-[11px] font-semibold disabled:opacity-40 disabled:cursor-not-allowed"
+            className="h-[35px] px-3.5 rounded-md bg-foreground hover:bg-foreground/90 text-background text-[11px] font-semibold disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            {saving ? 'Creating...' : 'Create'}
+            {saving ? 'Creating…' : 'Create'}
           </button>
         </div>
       </DialogContent>

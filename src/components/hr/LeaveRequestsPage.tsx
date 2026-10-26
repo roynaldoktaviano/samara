@@ -2,6 +2,13 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { Plus, Search, X, CalendarDays, Check, ThumbsUp, ThumbsDown, ClipboardList, Ship, ArrowLeft } from 'lucide-react'
+import { StatusBadge, type StatusTone } from '@/components/ui/status-badge'
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import { Label } from '@/components/ui/label'
+import { formatDate, formatDateRange } from '@/lib/format'
 import { FreelanceRecommendationsField, type FreelanceRecommendation } from './FreelanceRecommendationsField'
 
 interface EmployeeLite { id: string; fullName: string; employeeNumber: string; leaveBalance: number | null; employmentStatus: string | null; isCrew: boolean }
@@ -34,11 +41,11 @@ interface LeaveRequest {
   crewDecisionNote: string | null
 }
 
-const STATUS_COLOR: Record<string, string> = {
-  PENDING: 'bg-amber-100 text-amber-700',
-  PENDING_HR_APPROVAL: 'bg-blue-100 text-blue-700',
-  APPROVED: 'bg-green-100 text-green-700',
-  REJECTED: 'bg-red-100 text-red-700',
+const STATUS_TONE: Record<string, StatusTone> = {
+  PENDING: 'warning',
+  PENDING_HR_APPROVAL: 'info',
+  APPROVED: 'success',
+  REJECTED: 'destructive',
 }
 
 function statusLabel(r: LeaveRequest): string {
@@ -47,10 +54,10 @@ function statusLabel(r: LeaveRequest): string {
   return r.status.charAt(0) + r.status.slice(1).toLowerCase()
 }
 
-const fmtDate = (s: string) => new Date(s).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
-
-function EmployeeCombobox({ value, options, onChange }: {
-  value: string; options: EmployeeLite[]; onChange: (id: string) => void
+// `id` goes on the trigger; the field's <Label> must use `${id}-label` as its id so the
+// trigger is announced as "<label> <selected employee>".
+function EmployeeCombobox({ id, value, options, onChange }: {
+  id: string; value: string; options: EmployeeLite[]; onChange: (id: string) => void
 }) {
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
@@ -60,26 +67,26 @@ function EmployeeCombobox({ value, options, onChange }: {
 
   return (
     <div className="relative">
-      <button type="button" onClick={() => { setOpen(o => !o); setSearch('') }}
-        className="w-full h-10 border rounded-lg px-3 text-sm text-left flex items-center justify-between bg-background focus:outline-none focus:ring-1 focus:ring-amber-500 transition-colors">
+      <button type="button" id={id} aria-labelledby={`${id}-label ${id}`} aria-expanded={open} onClick={() => { setOpen(o => !o); setSearch('') }}
+        className="w-full h-9 border border-input rounded-md px-3 text-sm text-left flex items-center justify-between bg-transparent dark:bg-input/30 shadow-xs outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50">
         <span className={selected ? '' : 'text-muted-foreground'}>{selected ? `${selected.fullName} (${selected.employeeNumber})` : '— Select employee —'}</span>
       </button>
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute left-0 right-0 top-full mt-1 bg-white border rounded-lg shadow-xl z-50 max-h-60 flex flex-col">
+          <div className="absolute left-0 right-0 top-full mt-1 bg-popover border rounded-lg shadow-xl z-50 max-h-60 flex flex-col">
             <div className="p-2 border-b shrink-0">
               <div className="relative">
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
-                <input autoFocus className="w-full h-8 border rounded px-2.5 pl-8 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
-                  placeholder="Search employee..." value={search} onChange={e => setSearch(e.target.value)} />
+                <Input autoFocus className="h-8 pl-8" aria-label="Search employee"
+                  placeholder="Search employee…" value={search} onChange={e => setSearch(e.target.value)} />
               </div>
             </div>
             <div className="overflow-y-auto">
               {opts.length === 0 && <p className="px-3 py-3 text-sm text-muted-foreground">No employees found</p>}
               {opts.map(e => (
                 <button key={e.id} type="button" onClick={() => { onChange(e.id); setOpen(false); setSearch('') }}
-                  className="w-full text-left px-3 py-2 text-sm hover:bg-amber-50 transition-colors">
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-primary/10 transition-colors">
                   {e.fullName} <span className="text-muted-foreground">({e.employeeNumber})</span>
                 </button>
               ))}
@@ -186,24 +193,24 @@ export default function LeaveRequestsPage() {
     <div className="space-y-6">
       {selected ? (
         <>
-          <button onClick={() => setSelected(null)} className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
-            <ArrowLeft className="h-4 w-4" /> Back to Leave Requests
-          </button>
+          <Button variant="ghost" onClick={() => setSelected(null)} className="-ml-3 gap-1.5 text-muted-foreground hover:text-foreground">
+            <ArrowLeft /> Back to Leave Requests
+          </Button>
 
           <div className="rounded-2xl border bg-card max-w-2xl">
             <div className="flex items-center justify-between px-5 py-4 border-b">
               <div>
                 <h2 className="text-xl font-bold tracking-tight">{selected.employee.fullName}</h2>
-                <p className="text-sm text-muted-foreground mt-0.5 font-mono">{selected.employee.employeeNumber} · <span className="font-sans font-medium">{selected.type === 'WFH' ? 'Work From Home' : 'Leave (Cuti)'}</span></p>
+                <p className="text-sm text-muted-foreground mt-0.5 font-mono">{selected.employee.employeeNumber} · <span className="font-sans font-medium">{selected.type === 'WFH' ? 'Work From Home' : 'Leave'}</span></p>
               </div>
-              <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${STATUS_COLOR[selected.status]}`}>{statusLabel(selected)}</span>
+              <StatusBadge tone={STATUS_TONE[selected.status]} className="px-2.5 py-1">{statusLabel(selected)}</StatusBadge>
             </div>
 
             <div className="p-5 space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <p className="text-xs text-muted-foreground uppercase tracking-wide font-semibold">Dates</p>
-                  <p className="text-sm font-medium mt-0.5">{fmtDate(selected.startDate)} – {fmtDate(selected.endDate)}</p>
+                  <p className="text-sm font-medium mt-0.5">{formatDateRange(selected.startDate, selected.endDate)}</p>
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground uppercase tracking-wide font-semibold">Days</p>
@@ -224,7 +231,7 @@ export default function LeaveRequestsPage() {
                   <div className="space-y-1">
                     {selected.trips.map(t => (
                       <p key={t.bookingCode} className="text-sm text-muted-foreground">
-                        <span className="font-mono text-foreground">{t.bookingCode}</span> — {fmtDate(t.startDate)} to {fmtDate(t.endDate)}{t.destination ? ` · ${t.destination}` : ''}
+                        <span className="font-mono text-foreground">{t.bookingCode}</span> — {formatDate(t.startDate)} to {formatDate(t.endDate)}{t.destination ? ` · ${t.destination}` : ''}
                       </p>
                     ))}
                   </div>
@@ -235,7 +242,7 @@ export default function LeaveRequestsPage() {
                 <div>
                   <p className="text-xs text-muted-foreground uppercase tracking-wide font-semibold mb-1.5">Freelance Recommendation</p>
                   {selected.freelanceRecommendations.length === 0 ? (
-                    <p className="text-sm text-amber-700">Flagged as needing a freelance replacement — requester hasn&apos;t suggested anyone yet.</p>
+                    <p className="text-sm text-warning">Flagged as needing a freelance replacement — requester hasn&apos;t suggested anyone yet.</p>
                   ) : (
                     <div className="space-y-1">
                       {selected.freelanceRecommendations.map(fr => (
@@ -251,24 +258,24 @@ export default function LeaveRequestsPage() {
                   <p className="text-muted-foreground uppercase tracking-wide font-semibold mb-1">Cruise Director/Captain Approval</p>
                   {selected.crewApprovedAt ? (
                     <div className="text-muted-foreground">
-                      Approved {fmtDate(selected.crewApprovedAt)}{selected.crewApprovedBy?.name && ` by ${selected.crewApprovedBy.name}`}
+                      Approved {formatDate(selected.crewApprovedAt)}{selected.crewApprovedBy?.name && ` by ${selected.crewApprovedBy.name}`}
                       {selected.crewDecisionNote && <p className="mt-1.5 rounded-lg bg-muted/40 px-3 py-2 text-foreground">{selected.crewDecisionNote}</p>}
                     </div>
                   ) : selected.status === 'REJECTED' ? (
                     <p className="text-muted-foreground">Rejected before reaching HR.</p>
                   ) : (
-                    <p className="text-amber-700">Waiting on the Cruise Director/Captain to approve first.</p>
+                    <p className="text-warning">Waiting on the Cruise Director/Captain to approve first.</p>
                   )}
                 </div>
               )}
 
               <div className="text-xs text-muted-foreground border-t pt-3">
-                Requested {fmtDate(selected.requestedAt)}{selected.requestedBy?.name && ` by ${selected.requestedBy.name}`}
+                Requested {formatDate(selected.requestedAt)}{selected.requestedBy?.name && ` by ${selected.requestedBy.name}`}
               </div>
 
               {(selected.status === 'APPROVED' || selected.status === 'REJECTED') && (
                 <div className="text-xs text-muted-foreground">
-                  {selected.status === 'APPROVED' ? 'Approved' : 'Rejected'}{selected.decidedAt && ` ${fmtDate(selected.decidedAt)}`}{selected.decidedBy?.name && ` by ${selected.decidedBy.name}`}
+                  {selected.status === 'APPROVED' ? 'Approved' : 'Rejected'}{selected.decidedAt && ` ${formatDate(selected.decidedAt)}`}{selected.decidedBy?.name && ` by ${selected.decidedBy.name}`}
                   {selected.decisionNote && <p className="mt-1.5 rounded-lg bg-muted/40 px-3 py-2 text-foreground">{selected.decisionNote}</p>}
                 </div>
               )}
@@ -276,14 +283,13 @@ export default function LeaveRequestsPage() {
 
             {(selected.status === 'PENDING_HR_APPROVAL' || (selected.status === 'PENDING' && !selected.requiresCrewApproval)) && (
               <div className="flex justify-end gap-2 px-5 py-4 border-t">
-                <button onClick={() => setDecision({ req: selected, action: 'reject' })}
-                  className="flex items-center gap-2 px-4 py-2 text-sm border rounded-lg hover:bg-red-50 hover:text-destructive hover:border-red-200 font-medium transition-colors">
-                  <ThumbsDown className="h-3.5 w-3.5" /> Reject
-                </button>
-                <button onClick={() => setDecision({ req: selected, action: 'approve' })}
-                  className="flex items-center gap-2 px-5 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 font-semibold transition-colors">
-                  <ThumbsUp className="h-3.5 w-3.5" /> Approve
-                </button>
+                <Button variant="outline" onClick={() => setDecision({ req: selected, action: 'reject' })}
+                  className="hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30 dark:hover:bg-destructive/10">
+                  <ThumbsDown /> Reject
+                </Button>
+                <Button variant="success" onClick={() => setDecision({ req: selected, action: 'approve' })}>
+                  <ThumbsUp /> Approve
+                </Button>
               </div>
             )}
           </div>
@@ -295,20 +301,20 @@ export default function LeaveRequestsPage() {
               <h2 className="text-2xl font-bold tracking-tight">Leave Requests</h2>
               <p className="text-muted-foreground text-sm mt-1">Employee leave requests and approvals</p>
             </div>
-            <button onClick={openAdd} className="flex items-center gap-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium px-4 py-2 rounded-md transition-colors">
-              <Plus className="h-4 w-4" /> New Leave Request
-            </button>
+            <Button onClick={openAdd}>
+              <Plus /> New Leave Request
+            </Button>
           </div>
 
           <div className="flex gap-1 border-b overflow-x-auto">
             {(['All', 'PENDING', 'APPROVED', 'REJECTED'] as const).map(s => (
               <button key={s} onClick={() => setStatusFilter(s)}
                 className={`shrink-0 whitespace-nowrap px-3 py-2 text-sm font-medium border-b-2 transition-colors -mb-px flex items-center gap-1.5 ${
-                  statusFilter === s ? 'border-amber-500 text-amber-700' : 'border-transparent text-muted-foreground hover:text-foreground'
+                  statusFilter === s ? 'border-primary text-primary-strong' : 'border-transparent text-muted-foreground hover:text-foreground'
                 }`}>
                 {s === 'All' ? 'All' : s.charAt(0) + s.slice(1).toLowerCase()}
                 {counts[s] > 0 && (
-                  <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${statusFilter === s ? 'bg-amber-100 text-amber-700' : 'bg-muted text-muted-foreground'}`}>
+                  <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${statusFilter === s ? 'bg-primary/15 text-primary-strong' : 'bg-muted text-muted-foreground'}`}>
                     {counts[s]}
                   </span>
                 )}
@@ -348,21 +354,21 @@ export default function LeaveRequestsPage() {
                         <p className="font-medium">{r.employee.fullName}</p>
                         <p className="text-xs text-muted-foreground font-mono">{r.employee.employeeNumber}</p>
                       </td>
-                      <td className="px-4 py-3"><span className={`inline-block mb-0.5 px-1.5 py-0.5 rounded text-[10px] font-semibold ${r.type === 'WFH' ? 'bg-sky-100 text-sky-700' : 'bg-purple-100 text-purple-700'}`}>{r.type === 'WFH' ? 'WFH' : 'Leave'}</span></td>
-                      <td className="px-4 py-3 text-muted-foreground text-xs whitespace-nowrap">{fmtDate(r.startDate)} – {fmtDate(r.endDate)}</td>
+                      <td className="px-4 py-3"><span className={`inline-block mb-0.5 px-1.5 py-0.5 rounded text-[10px] font-semibold ${r.type === 'WFH' ? 'bg-info/15 text-info' : 'bg-purple-100 text-purple-700 dark:bg-purple-500/15 dark:text-purple-300'}`}>{r.type === 'WFH' ? 'WFH' : 'Leave'}</span></td>
+                      <td className="px-4 py-3 text-muted-foreground text-xs whitespace-nowrap">{formatDateRange(r.startDate, r.endDate)}</td>
                       <td className="px-4 py-3 text-center font-semibold">{r.days}</td>
                       <td className="px-4 py-3 text-xs">
                         {r.trips.length === 0 ? (
                           <span className="text-muted-foreground">—</span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-medium">
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-info/15 text-info font-medium">
                             <Ship className="h-3 w-3" /> {r.trips.length} trip{r.trips.length !== 1 ? 's' : ''}
                           </span>
                         )}
                       </td>
                       <td className="px-4 py-3 text-muted-foreground text-xs max-w-48 truncate" title={r.reason ?? undefined}>{r.reason ?? '—'}</td>
                       <td className="px-4 py-3 text-center">
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLOR[r.status]}`}>{statusLabel(r)}</span>
+                        <StatusBadge tone={STATUS_TONE[r.status]}>{statusLabel(r)}</StatusBadge>
                       </td>
                       <td className="px-4 py-3 text-muted-foreground text-xs">{r.requestedBy?.name ?? '—'}</td>
                     </tr>
@@ -375,109 +381,102 @@ export default function LeaveRequestsPage() {
       )}
 
       {/* ── New Leave Request Modal ── */}
-      {modal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
-            <div className="flex items-center justify-between px-6 py-4 border-b">
-              <div className="flex items-center gap-2">
-                <CalendarDays className="h-4 w-4 text-amber-600" />
-                <h3 className="font-bold text-sm">{form.type === 'WFH' ? 'New WFH Request' : 'New Leave Request'}</h3>
-              </div>
-              <button onClick={() => setModal(false)} className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors">
-                <X className="h-4 w-4" />
-              </button>
+      <Dialog open={modal} onOpenChange={o => { if (!o) setModal(false) }}>
+        <DialogContent className="sm:max-w-md p-0 gap-0 overflow-hidden" aria-describedby={undefined} onInteractOutside={e => e.preventDefault()}>
+          <DialogHeader className="flex-row items-center gap-2 px-6 py-4 pr-12 border-b text-left">
+            <CalendarDays className="h-4 w-4 text-primary-strong" />
+            <DialogTitle className="text-sm font-bold">{form.type === 'WFH' ? 'New WFH Request' : 'New Leave Request'}</DialogTitle>
+          </DialogHeader>
+          <div className="px-6 py-5 space-y-4">
+            {formError && <p className="text-xs text-destructive bg-destructive/10 border border-destructive/30 rounded-lg px-3 py-2">{formError}</p>}
+            <div role="group" aria-label="Request type" className="grid grid-cols-2 gap-1 p-1 rounded-lg bg-muted">
+              {(['LEAVE', 'WFH'] as const).map(t => (
+                <button key={t} type="button" aria-pressed={form.type === t} onClick={() => setForm(f => ({ ...f, type: t, needsFreelance: t === 'WFH' ? false : f.needsFreelance, freelanceRecommendations: t === 'WFH' ? [] : f.freelanceRecommendations }))}
+                  className={`h-8 rounded-md text-sm font-medium transition-colors ${form.type === t ? 'bg-card shadow-sm text-primary-strong' : 'text-muted-foreground hover:text-foreground'}`}>
+                  {t === 'LEAVE' ? 'Leave' : 'Work From Home'}
+                </button>
+              ))}
             </div>
-            <div className="px-6 py-5 space-y-4">
-              {formError && <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{formError}</p>}
-              <div className="grid grid-cols-2 gap-1 p-1 rounded-lg bg-muted">
-                {(['LEAVE', 'WFH'] as const).map(t => (
-                  <button key={t} type="button" onClick={() => setForm(f => ({ ...f, type: t, needsFreelance: t === 'WFH' ? false : f.needsFreelance, freelanceRecommendations: t === 'WFH' ? [] : f.freelanceRecommendations }))}
-                    className={`h-8 rounded-md text-sm font-medium transition-colors ${form.type === t ? 'bg-white shadow-sm text-amber-700' : 'text-muted-foreground hover:text-foreground'}`}>
-                    {t === 'LEAVE' ? 'Leave (Cuti)' : 'Work From Home'}
-                  </button>
-                ))}
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Employee</label>
-                <EmployeeCombobox value={form.employeeId} options={employees} onChange={id => setForm(f => ({ ...f, employeeId: id }))} />
-                {selectedEmployee && selectedEmployee.leaveBalance != null && (
-                  <p className="text-xs text-muted-foreground">{selectedEmployee.leaveBalance} day{selectedEmployee.leaveBalance !== 1 ? 's' : ''} remaining</p>
-                )}
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Start Date</label>
-                  <input type="date" className="w-full h-10 border rounded-lg px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
-                    value={form.startDate} onChange={e => setForm(f => ({ ...f, startDate: e.target.value }))} />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">End Date</label>
-                  <input type="date" className="w-full h-10 border rounded-lg px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
-                    value={form.endDate} onChange={e => setForm(f => ({ ...f, endDate: e.target.value }))} />
-                </div>
-              </div>
-              {days > 0 && (
-                <p className={`text-xs ${overBalance ? 'text-red-700 font-medium' : 'text-muted-foreground'}`}>
-                  {days} day{days !== 1 ? 's' : ''} {form.type === 'WFH' ? 'of WFH — does not use leave balance' : 'of leave'}
-                  {overBalance && ' — exceeds remaining balance'}
-                </p>
-              )}
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Reason</label>
-                <textarea rows={2} className="w-full border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500 resize-none"
-                  value={form.reason} onChange={e => setForm(f => ({ ...f, reason: e.target.value }))} />
-              </div>
-              {form.type === 'LEAVE' && <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
-                <input type="checkbox" className="h-4 w-4 accent-amber-600" checked={form.needsFreelance}
-                  onChange={e => setForm(f => ({ ...f, needsFreelance: e.target.checked, freelanceRecommendations: e.target.checked ? f.freelanceRecommendations : [] }))} />
-                Need a freelance replacement for the trips missed?
-              </label>}
-              {form.needsFreelance && (
-                <FreelanceRecommendationsField value={form.freelanceRecommendations} onChange={v => setForm(f => ({ ...f, freelanceRecommendations: v }))} />
+            <div className="space-y-1.5">
+              <Label id="leave-employee-label" htmlFor="leave-employee" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Employee</Label>
+              <EmployeeCombobox id="leave-employee" value={form.employeeId} options={employees} onChange={id => setForm(f => ({ ...f, employeeId: id }))} />
+              {selectedEmployee && selectedEmployee.leaveBalance != null && (
+                <p className="text-xs text-muted-foreground">{selectedEmployee.leaveBalance} day{selectedEmployee.leaveBalance !== 1 ? 's' : ''} remaining</p>
               )}
             </div>
-            <div className="flex items-center justify-end gap-2 px-6 py-4 border-t bg-gray-50/80">
-              <button onClick={() => setModal(false)} className="px-4 py-2 text-sm border rounded-lg hover:bg-white transition-colors">Cancel</button>
-              <button onClick={save} disabled={saving || overBalance} className="px-5 py-2 text-sm text-white rounded-lg font-semibold bg-amber-600 hover:bg-amber-700 disabled:opacity-50 transition-colors">
-                {saving ? 'Submitting...' : 'Submit'}
-              </button>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="leave-start-date" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Start Date</Label>
+                <Input id="leave-start-date" type="date"
+                  value={form.startDate} onChange={e => setForm(f => ({ ...f, startDate: e.target.value }))} />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="leave-end-date" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">End Date</Label>
+                <Input id="leave-end-date" type="date"
+                  value={form.endDate} onChange={e => setForm(f => ({ ...f, endDate: e.target.value }))} />
+              </div>
             </div>
+            {days > 0 && (
+              <p className={`text-xs ${overBalance ? 'text-destructive font-medium' : 'text-muted-foreground'}`}>
+                {days} day{days !== 1 ? 's' : ''} {form.type === 'WFH' ? 'of WFH — does not use leave balance' : 'of leave'}
+                {overBalance && ' — exceeds remaining balance'}
+              </p>
+            )}
+            <div className="space-y-1.5">
+              <Label htmlFor="leave-reason" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Reason</Label>
+              <Textarea id="leave-reason" rows={2} className="resize-none"
+                value={form.reason} onChange={e => setForm(f => ({ ...f, reason: e.target.value }))} />
+            </div>
+            {form.type === 'LEAVE' && <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+              <input type="checkbox" className="h-4 w-4 accent-primary" checked={form.needsFreelance}
+                onChange={e => setForm(f => ({ ...f, needsFreelance: e.target.checked, freelanceRecommendations: e.target.checked ? f.freelanceRecommendations : [] }))} />
+              Need a freelance replacement for the trips missed?
+            </label>}
+            {form.needsFreelance && (
+              <FreelanceRecommendationsField value={form.freelanceRecommendations} onChange={v => setForm(f => ({ ...f, freelanceRecommendations: v }))} />
+            )}
           </div>
-        </div>
-      )}
+          <DialogFooter className="px-6 py-4 border-t bg-muted/50">
+            <Button variant="outline" onClick={() => setModal(false)}>Cancel</Button>
+            <Button onClick={save} loading={saving} disabled={overBalance}>
+              {saving ? 'Submitting…' : 'Submit'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* ── Approve/Reject Modal ── */}
-      {decision && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
+      <Dialog open={!!decision} onOpenChange={o => { if (!o) { setDecision(null); setDecisionNote('') } }}>
+        {decision && (
+          <DialogContent className="sm:max-w-sm p-0 gap-0 overflow-hidden" showCloseButton={false} onInteractOutside={e => e.preventDefault()}>
             <div className="px-6 py-5 space-y-3">
-              <h3 className="font-bold text-sm flex items-center gap-2">
-                {decision.action === 'approve' ? <Check className="h-4 w-4 text-green-600" /> : <X className="h-4 w-4 text-red-600" />}
+              <DialogTitle className="text-sm font-bold flex items-center gap-2">
+                {decision.action === 'approve' ? <Check className="h-4 w-4 text-success" /> : <X className="h-4 w-4 text-destructive" />}
                 {decision.action === 'approve' ? 'Approve' : 'Reject'} {decision.req.type === 'WFH' ? 'WFH' : 'leave'} request
-              </h3>
-              <p className="text-sm text-muted-foreground">
-                {decision.req.employee.fullName} — {decision.req.days} day{decision.req.days !== 1 ? 's' : ''} ({fmtDate(decision.req.startDate)} – {fmtDate(decision.req.endDate)})
-              </p>
+              </DialogTitle>
+              <DialogDescription className="text-sm text-muted-foreground">
+                {decision.req.employee.fullName} — {decision.req.days} day{decision.req.days !== 1 ? 's' : ''} ({formatDateRange(decision.req.startDate, decision.req.endDate)})
+              </DialogDescription>
               {decision.action === 'approve' && decision.req.type === 'WFH' && (
                 <p className="text-xs text-muted-foreground">Marked as WFH in Attendance Recap — leave balance is not affected.</p>
               )}
               {decision.action === 'approve' && decision.req.type !== 'WFH' && (
                 <p className="text-xs text-muted-foreground">Leave balance will go from {decision.req.employee.leaveBalance ?? 0} to {(decision.req.employee.leaveBalance ?? 0) - decision.req.days} days.</p>
               )}
-              <textarea rows={2} placeholder={decision.action === 'reject' ? 'Reason (optional)' : 'Note (optional)'}
-                className="w-full border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500 resize-none"
+              <Textarea rows={2} placeholder={decision.action === 'reject' ? 'Reason (optional)' : 'Note (optional)'}
+                aria-label={decision.action === 'reject' ? 'Reason (optional)' : 'Note (optional)'} className="resize-none"
                 value={decisionNote} onChange={e => setDecisionNote(e.target.value)} />
             </div>
-            <div className="flex items-center justify-end gap-2 px-6 py-4 border-t bg-gray-50/80">
-              <button onClick={() => { setDecision(null); setDecisionNote('') }} className="px-4 py-2 text-sm border rounded-lg hover:bg-white transition-colors">Cancel</button>
-              <button onClick={decide} disabled={deciding}
-                className={`px-5 py-2 text-sm text-white rounded-lg font-semibold disabled:opacity-50 transition-colors ${decision.action === 'approve' ? 'bg-green-600 hover:bg-green-700' : 'bg-destructive hover:bg-destructive/90'}`}>
-                {deciding ? 'Saving...' : decision.action === 'approve' ? 'Approve' : 'Reject'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+            <DialogFooter className="px-6 py-4 border-t bg-muted/50">
+              <Button variant="outline" onClick={() => { setDecision(null); setDecisionNote('') }}>Cancel</Button>
+              <Button onClick={decide} loading={deciding}
+                variant={decision.action === 'approve' ? 'success' : 'destructive'}>
+                {deciding ? 'Saving…' : decision.action === 'approve' ? 'Approve' : 'Reject'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        )}
+      </Dialog>
     </div>
   )
 }

@@ -17,8 +17,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   const db = await getDb(session)
   const body = await req.json()
   const { name, type, yachtId, parentId, manager, address, storageClass, managedBy, isActive, consumptionMode, isPosBar } = body
-  if (!name?.trim() || !type) return NextResponse.json({ error: 'name dan type wajib diisi' }, { status: 400 })
-  if (type === 'VESSEL' && !yachtId) return NextResponse.json({ error: 'Pilih kapal untuk lokasi tipe Kapal' }, { status: 400 })
+  if (!name?.trim() || !type) return NextResponse.json({ error: 'Name and type are required' }, { status: 400 })
+  if (type === 'VESSEL' && !yachtId) return NextResponse.json({ error: 'Select a vessel for a Vessel-type location' }, { status: 400 })
   if (consumptionMode && !CONSUMPTION_MODES.includes(consumptionMode)) return NextResponse.json({ error: 'Invalid consumption mode' }, { status: 400 })
   // Both fields are optional on PUT (e.g. the active toggle doesn't send them) — only touched when sent.
   // A non-VESSEL location can never be a POS bar.
@@ -52,7 +52,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
   const inUse = await db.stockLot.findFirst({ where: { locationId: id, quantity: { gt: 0 } } })
-  if (inUse) return NextResponse.json({ error: 'Lokasi masih memiliki stok, tidak bisa dihapus' }, { status: 409 })
+  if (inUse) return NextResponse.json({ error: 'Location still has stock and cannot be deleted' }, { status: 409 })
   await db.stockLocation.delete({ where: { id } })
   return NextResponse.json({ ok: true })
 }

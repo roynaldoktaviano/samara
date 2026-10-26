@@ -29,6 +29,8 @@ import { FilePreview } from '@/components/ui/file-preview'
 import { useFileDrop } from '@/hooks/useFileDrop'
 import TripSheet from './TripSheet'
 import { getAgentCommissionPct } from '@/lib/agent-commission'
+import { formatDate, formatMoney, formatNumber } from '@/lib/format'
+import { StatusBadge, type StatusTone } from '@/components/ui/status-badge'
 
 interface Bank {
   id: string
@@ -99,22 +101,19 @@ interface Payment {
   }
 }
 
-const STATUS_CONFIG: Record<string, { label: string; color: string; icon: React.ElementType }> = {
-  requested:            { label: 'Needs Invoice',    color: 'bg-blue-100 text-blue-700 border-blue-200',     icon: FilePlus },
-  invoice_ready:        { label: 'Invoice Ready',    color: 'bg-violet-100 text-violet-700 border-violet-200', icon: FileText },
-  pending_confirmation: { label: 'Proof Submitted',  color: 'bg-amber-100 text-amber-700 border-amber-200',   icon: Clock },
-  confirmed:            { label: 'Confirmed',        color: 'bg-green-100 text-green-700 border-green-200',   icon: CheckCircle2 },
-  rejected:             { label: 'Rejected',         color: 'bg-red-100 text-red-700 border-red-200',         icon: XCircle },
-  cancelled:            { label: 'Cancelled',        color: 'bg-slate-100 text-slate-600 border-slate-200',    icon: XCircle },
-  refunded:             { label: 'Refunded',         color: 'bg-blue-100 text-blue-700 border-blue-200',       icon: XCircle },
+const STATUS_CONFIG: Record<string, { label: string; tone: StatusTone; icon: React.ElementType }> = {
+  requested:            { label: 'Needs Invoice',    tone: 'info',        icon: FilePlus },
+  invoice_ready:        { label: 'Invoice Ready',    tone: 'primary',     icon: FileText },
+  pending_confirmation: { label: 'Proof Submitted',  tone: 'warning',     icon: Clock },
+  confirmed:            { label: 'Confirmed',        tone: 'success',     icon: CheckCircle2 },
+  rejected:             { label: 'Rejected',         tone: 'destructive', icon: XCircle },
+  cancelled:            { label: 'Cancelled',        tone: 'neutral',     icon: XCircle },
+  refunded:             { label: 'Refunded',         tone: 'info',        icon: XCircle },
 }
 
 
 const CONVERT_CURRENCIES = ['EUR', 'IDR', 'SGD', 'AUD', 'GBP'] as const
 
-const fmt = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-const fmtDate = (d: string) => new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
-const fmtDateTime = (d: string) => new Date(d).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 
 /** Total price net of agent commission and clawback. Commission applies only to the TRIP portion (price excl. additional services). */
 function netOfCommission(booking: {
@@ -360,11 +359,11 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
             {...changeProofDropProps}
             onClick={() => changeProofInputRef.current?.click()}
             className={`flex flex-col items-center justify-center gap-1.5 border-2 border-dashed rounded-lg py-4 cursor-pointer transition-colors ${
-              changeProofDragging ? 'border-blue-400 bg-blue-50 text-blue-700' : 'text-muted-foreground hover:bg-muted/30'
+              changeProofDragging ? 'border-info bg-info/10 text-info' : 'text-muted-foreground hover:bg-muted/30'
             }`}
           >
             {changeProofUploading ? <Loader2 className="h-5 w-5 animate-spin" /> : <FilePlus className="h-5 w-5" />}
-            <span className="text-xs">{changeProofUploading ? 'Uploading...' : 'Tap or drag to upload image/PDF'}</span>
+            <span className="text-xs">{changeProofUploading ? 'Uploading…' : 'Tap or drag to upload image/PDF'}</span>
           </div>
         )}
         <input
@@ -613,10 +612,10 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
-          { label: 'Pending Action', value: counts.requested + counts.invoice_ready + counts.pending_confirmation, icon: AlertCircle, color: 'text-amber-600', bg: 'bg-amber-50' },
-          { label: 'Confirmed',      value: counts.confirmed,            icon: CheckCircle2,  color: 'text-green-600',  bg: 'bg-green-50' },
-          { label: 'Rejected',       value: counts.rejected,             icon: XCircle,       color: 'text-red-600',    bg: 'bg-red-50' },
-          { label: 'Total Paid',     value: `$${fmt(totalConfirmed)}`,   icon: TrendingUp,    color: 'text-blue-600',   bg: 'bg-blue-50' },
+          { label: 'Pending Action', value: counts.requested + counts.invoice_ready + counts.pending_confirmation, icon: AlertCircle, color: 'text-warning', bg: 'bg-warning/10' },
+          { label: 'Confirmed',      value: counts.confirmed,            icon: CheckCircle2,  color: 'text-success',  bg: 'bg-success/10' },
+          { label: 'Rejected',       value: counts.rejected,             icon: XCircle,       color: 'text-destructive',    bg: 'bg-destructive/10' },
+          { label: 'Total Paid',     value: formatMoney(totalConfirmed, { currency: 'USD' }),   icon: TrendingUp,    color: 'text-info',   bg: 'bg-info/10' },
         ].map(s => (
           <Card key={s.label} className="overflow-hidden">
             <CardContent className="pt-4 pb-3 px-4">
@@ -634,13 +633,13 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
 
       {/* ── Pending Refund Decisions (Finance only) ── */}
       {isFinance && (refundLoading || refundBookings.length > 0) && (
-        <Card className="border-orange-200 bg-orange-50/30">
+        <Card className="border-warning/30 bg-warning/5">
           <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-orange-700">
+            <CardTitle className="flex items-center gap-2 text-warning">
               <AlertCircle className="h-4 w-4" />
               Pending Refund Decisions
               {refundBookings.length > 0 && (
-                <span className="ml-1 text-xs font-bold bg-orange-100 text-orange-700 border border-orange-200 rounded-full px-2 py-0.5">{refundBookings.length}</span>
+                <span className="ml-1 text-xs font-bold bg-warning/15 text-warning border border-warning/30 rounded-full px-2 py-0.5">{refundBookings.length}</span>
               )}
             </CardTitle>
             <CardDescription>Cancelled bookings with confirmed payments awaiting refund decision</CardDescription>
@@ -655,21 +654,21 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                     <div className="min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-mono text-xs font-semibold bg-muted px-1.5 py-0.5 rounded">{b.bookingCode}</span>
-                        <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full border ${
-                          b.refundStatus === 'pending_decision'  ? 'bg-orange-50 text-orange-700 border-orange-200' :
-                          b.refundStatus === 'refund_pending'    ? 'bg-blue-50 text-blue-700 border-blue-200' :
-                          b.refundStatus === 'refund_uploaded'   ? 'bg-violet-50 text-violet-700 border-violet-200' :
-                          'bg-gray-50 text-gray-500 border-gray-200'
-                        }`}>
+                        <StatusBadge size="sm" tone={
+                          b.refundStatus === 'pending_decision'  ? 'warning' :
+                          b.refundStatus === 'refund_pending'    ? 'info' :
+                          b.refundStatus === 'refund_uploaded'   ? 'info' :
+                          'neutral'
+                        }>
                           {b.refundStatus === 'pending_decision' ? 'Decision Needed' :
                            b.refundStatus === 'refund_pending'   ? 'Refund Approved — Awaiting Proof' :
                            b.refundStatus === 'refund_uploaded'  ? 'Proof Uploaded — Awaiting Sales Confirm' :
                            b.refundStatus}
-                        </span>
+                        </StatusBadge>
                       </div>
                       {b.cancelReason && <p className="text-xs text-muted-foreground mt-0.5">Cancel reason: {b.cancelReason}</p>}
                       <p className="text-xs text-muted-foreground">
-                        Confirmed payments: {b.payments.map(p => `${p.invoiceNumber} ($${p.amount.toLocaleString()})`).join(', ')}
+                        Confirmed payments: {b.payments.map(p => `${p.invoiceNumber} (${formatMoney(p.amount, { currency: 'USD' })})`).join(', ')}
                       </p>
                     </div>
                     <Button size="sm" variant="outline" className="shrink-0" onClick={() => { setRefundSelected(b); setRefundDecision(b.refundDecision as 'no_refund' | 'refund' | null ?? null); setRefundReason(b.refundReason ?? ''); setRefundProof('') }}>
@@ -722,7 +721,7 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
               <div className="relative w-full">
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                 <Input
-                  placeholder="Search invoice, booking, name..."
+                  placeholder="Search invoice, booking, name…"
                   value={search}
                   onChange={e => setSearch(e.target.value)}
                   className="pl-8 w-full h-8 text-sm"
@@ -763,7 +762,7 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                     className={[
                       'px-3 py-1 rounded-full text-xs font-medium transition-colors border',
                       filter === f
-                        ? 'bg-[#1a5f6e] text-white border-[#1a5f6e]'
+                        ? 'bg-brand text-brand-foreground border-brand'
                         : 'text-muted-foreground border-border hover:bg-muted',
                     ].join(' ')}
                   >
@@ -842,11 +841,11 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                   <TableBody>
                     {refundHistory.map(r => {
                       const totalAmount = r.payments.reduce((s, p) => s + p.amount, 0)
-                      const statusCfg: Record<string, string> = {
-                        no_refund:        'bg-red-50 text-red-600 border-red-200',
-                        refund_pending:   'bg-blue-50 text-blue-700 border-blue-200',
-                        refund_uploaded:  'bg-violet-50 text-violet-700 border-violet-200',
-                        refund_confirmed: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+                      const statusCfg: Record<string, StatusTone> = {
+                        no_refund:        'destructive',
+                        refund_pending:   'info',
+                        refund_uploaded:  'info',
+                        refund_confirmed: 'success',
                       }
                       const statusLabel: Record<string, string> = {
                         no_refund:        'No Refund',
@@ -858,25 +857,25 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                         <TableRow key={r.id} className="text-sm cursor-pointer hover:bg-muted/50" onClick={() => setRefundHistorySelected(r)}>
                           <TableCell>
                             <div className="font-mono text-xs font-semibold bg-muted px-1.5 py-0.5 rounded inline-block">{r.bookingCode}</div>
-                            <div className="sm:hidden text-xs font-semibold mt-0.5">${totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                            <div className="sm:hidden text-xs font-semibold mt-0.5">{formatMoney(totalAmount, { currency: 'USD' })}</div>
                           </TableCell>
                           <TableCell className="font-medium">{r.customer.name}</TableCell>
-                          <TableCell className="hidden sm:table-cell font-semibold whitespace-nowrap">${totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
+                          <TableCell className="hidden sm:table-cell font-semibold whitespace-nowrap">{formatMoney(totalAmount, { currency: 'USD' })}</TableCell>
                           <TableCell className="hidden md:table-cell text-xs text-muted-foreground max-w-[140px] truncate" title={r.cancelReason ?? ''}>{r.cancelReason ?? '—'}</TableCell>
                           <TableCell className="hidden sm:table-cell">
-                            <span className={`inline-flex text-[11px] font-semibold px-2 py-0.5 rounded-full border ${r.refundDecision === 'refund' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : r.refundDecision === 'no_refund' ? 'bg-red-50 text-red-600 border-red-200' : 'bg-gray-50 text-gray-400 border-gray-200'}`}>
+                            <StatusBadge size="sm" className="font-semibold" tone={r.refundDecision === 'refund' ? 'success' : r.refundDecision === 'no_refund' ? 'destructive' : 'neutral'}>
                               {r.refundDecision === 'refund' ? 'Refund' : r.refundDecision === 'no_refund' ? 'No Refund' : '—'}
-                            </span>
+                            </StatusBadge>
                           </TableCell>
                           <TableCell className="hidden md:table-cell text-xs text-muted-foreground max-w-[160px] truncate" title={r.refundReason ?? ''}>{r.refundReason ?? '—'}</TableCell>
                           <TableCell>
-                            <span className={`inline-flex text-[11px] font-medium px-2 py-0.5 rounded-full border ${statusCfg[r.refundStatus ?? ''] ?? 'bg-gray-50 text-gray-400 border-gray-200'}`}>
+                            <StatusBadge size="sm" tone={statusCfg[r.refundStatus ?? ''] ?? 'neutral'}>
                               {statusLabel[r.refundStatus ?? ''] ?? r.refundStatus ?? '—'}
-                            </span>
+                            </StatusBadge>
                           </TableCell>
                           <TableCell className="hidden lg:table-cell text-xs text-muted-foreground">{r.refundConfirmedBy ?? '—'}</TableCell>
                           <TableCell className="hidden md:table-cell text-xs text-muted-foreground whitespace-nowrap">
-                            {new Date(r.updatedAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                            {formatDate(r.updatedAt)}
                           </TableCell>
                         </TableRow>
                       )
@@ -941,7 +940,7 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                       </TableCell>
                       <TableCell className="font-medium">{p.booking.customer.name}</TableCell>
                       <TableCell className="font-semibold whitespace-nowrap">
-                        ${fmt(p.amount)}
+                        {formatMoney(p.amount, { currency: 'USD' })}
                       </TableCell>
                       <TableCell className="hidden md:table-cell text-xs text-muted-foreground whitespace-nowrap">
                         {p.paymentMethod ?? '—'}
@@ -959,12 +958,12 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                       <TableCell className="hidden lg:table-cell text-muted-foreground text-xs">
                         {p.submittedByName ?? p.booking.salesperson ?? '—'}
                       </TableCell>
-                      <TableCell className="hidden md:table-cell text-muted-foreground text-xs">{fmtDate(p.createdAt)}</TableCell>
+                      <TableCell className="hidden md:table-cell text-muted-foreground text-xs">{formatDate(p.createdAt)}</TableCell>
                       <TableCell>
-                        <div className={`inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full border ${sc?.color ?? ''}`}>
+                        <StatusBadge size="sm" tone={sc?.tone ?? 'neutral'}>
                           <StatusIcon className="h-3 w-3" />
                           <span className="hidden xs:inline">{sc?.label ?? p.status}</span>
-                        </div>
+                        </StatusBadge>
                       </TableCell>
                       <TableCell className="hidden lg:table-cell text-xs text-muted-foreground">
                         {p.confirmedBy ?? '—'}
@@ -974,7 +973,7 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                           {p.status === 'requested' && isFinance && (
                             <Button
                               size="sm" variant="ghost"
-                              className="h-7 px-2 text-xs font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 gap-1"
+                              className="h-7 px-2 text-xs font-medium text-info hover:text-info/80 hover:bg-info/10 gap-1"
                               onClick={() => openDetail(p)}
                             >
                               <FilePlus className="h-3.5 w-3.5" /><span className="hidden sm:inline">Generate</span>
@@ -984,14 +983,14 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                             <>
                               <Button
                                 size="sm" variant="ghost"
-                                className="h-7 px-2 text-green-600 hover:text-green-700 hover:bg-green-50"
+                                className="h-7 px-2 text-success hover:text-success/80 hover:bg-success/10"
                                 onClick={() => openDetail(p)}
                               >
                                 <Check className="h-3.5 w-3.5" />
                               </Button>
                               <Button
                                 size="sm" variant="ghost"
-                                className="h-7 px-2 text-red-600 hover:text-red-700 hover:bg-red-50"
+                                className="h-7 px-2 text-destructive hover:text-destructive/80 hover:bg-destructive/10"
                                 onClick={() => openDetail(p)}
                               >
                                 <Ban className="h-3.5 w-3.5" />
@@ -1028,9 +1027,9 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                   const sc = STATUS_CONFIG[selected.status]
                   const Icon = sc?.icon ?? Clock
                   return (
-                    <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-medium border ${sc?.color}`}>
+                    <StatusBadge tone={sc?.tone ?? 'neutral'} className="gap-1.5 px-3 py-1 text-sm [&>svg]:size-3.5">
                       <Icon className="h-3.5 w-3.5" /> {sc?.label}
-                    </div>
+                    </StatusBadge>
                   )
                 })()}
                 {selected.hasDocument === false ? (
@@ -1053,7 +1052,7 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                         <Download className="h-3.5 w-3.5" /> {hasConverted ? 'USD' : 'Download Invoice'}
                       </Button>
                       {hasConverted && (
-                        <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5 border-amber-300 text-amber-700 hover:bg-amber-50"
+                        <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5 border-warning/30 text-warning hover:bg-warning/10"
                           onClick={() => window.open(invoiceUrl(selected.currency), '_blank')}>
                           <Download className="h-3.5 w-3.5" /> {selected.currency}
                         </Button>
@@ -1069,8 +1068,8 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                             Customer paying in a different currency? Save the conversion rate here — it's stored on this invoice, so it stays the currency going forward.
                           </p>
                           {hasConverted && (
-                            <div className="flex items-center justify-between rounded-md bg-amber-50 border border-amber-100 px-2.5 py-1.5 text-[11px]">
-                              <span className="text-amber-700 font-medium">Saved: {selected.currency} @ {selected.exchangeRate!.toLocaleString('en-US')}</span>
+                            <div className="flex items-center justify-between rounded-md bg-warning/10 border border-warning/30 px-2.5 py-1.5 text-[11px]">
+                              <span className="text-warning font-medium">Saved: {selected.currency} @ {selected.exchangeRate!.toLocaleString('en-US')}</span>
                               <button
                                 type="button"
                                 className="text-muted-foreground hover:text-foreground underline"
@@ -1103,7 +1102,7 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                           </div>
                           {rateNum > 0 && selected.amount > 0 && (
                             <p className="text-[11px] text-muted-foreground">
-                              ≈ {(selected.amount * rateNum).toLocaleString('en-US', { maximumFractionDigits: convertCurrency === 'IDR' ? 0 : 2 })} {convertCurrency}
+                              ≈ {formatMoney(selected.amount * rateNum, { currency: convertCurrency })}
                             </p>
                           )}
                           <Button
@@ -1132,29 +1131,30 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                 <CardContent className="pt-4 pb-3 px-4 grid grid-cols-3 gap-2 sm:gap-4 text-center">
                   <div>
                     <p className="text-xs text-muted-foreground mb-0.5">Previously Paid</p>
-                    <p className="font-semibold text-sm">${fmt(selected.previouslyPaid)}</p>
+                    <p className="font-semibold text-sm">{formatMoney(selected.previouslyPaid, { currency: 'USD' })}</p>
                   </div>
                   <div className="border-x">
                     <p className="text-xs text-muted-foreground mb-0.5">Invoice Amount</p>
-                    <p className="font-bold text-lg text-[#1a5f6e]">
-                      {selected.amount > 0 ? `$${fmt(selected.amount)}` : <span className="text-muted-foreground text-sm">—</span>}
+                    <p className="font-bold text-lg text-brand">
+                      {selected.amount > 0 ? formatMoney(selected.amount, { currency: 'USD' }) : <span className="text-muted-foreground text-sm">—</span>}
                     </p>
                   </div>
                   <div>
                     <div className="flex items-center justify-center gap-1.5 mb-0.5">
                       <p className="text-xs text-muted-foreground">Total Booking</p>
                       {selected.booking.source === 'AGENT' && (
-                        <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${selected.showNetAmount ? 'bg-amber-100 text-amber-700' : 'bg-muted text-muted-foreground'}`}>
+                        <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${selected.showNetAmount ? 'bg-warning/15 text-warning' : 'bg-muted text-muted-foreground'}`}>
                           {selected.showNetAmount ? 'Net' : 'Published'}
                         </span>
                       )}
                     </div>
-                    <p className="font-semibold text-sm">${fmt(
+                    <p className="font-semibold text-sm">{formatMoney(
                       (() => {
                         const isNet = selected.booking.source === 'AGENT' && selected.showNetAmount
                         const commPct = isNet ? getAgentCommissionPct(selected.booking.agent, selected.booking.tripType, selected.booking.useB2BCommission) : 0
                         return netOfCommission(selected.booking, commPct)
-                      })()
+                      })(),
+                      { currency: 'USD' },
                     )}</p>
                   </div>
                 </CardContent>
@@ -1185,21 +1185,21 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                       <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Payment History</p>
                       {historyRows.map(h => (
                         <div key={h.id} className="flex justify-between items-center text-xs gap-2">
-                          <span className={h.id === selected.id ? 'font-semibold text-[#1a5f6e]' : 'text-muted-foreground italic'}>
-                            {ordinalPayment(h.ordinal)} on {fmtDate(h.paymentDate ?? h.createdAt)}{h.id === selected.id ? ' (this payment)' : ''}
+                          <span className={h.id === selected.id ? 'font-semibold text-brand' : 'text-muted-foreground italic'}>
+                            {ordinalPayment(h.ordinal)} on {formatDate(h.paymentDate ?? h.createdAt)}{h.id === selected.id ? ' (this payment)' : ''}
                           </span>
-                          <span className={h.id === selected.id ? 'font-semibold text-[#1a5f6e] shrink-0' : 'font-medium text-emerald-700 shrink-0'}>${fmt(h.amount)}</span>
+                          <span className={h.id === selected.id ? 'font-semibold text-brand shrink-0' : 'font-medium text-success shrink-0'}>{formatMoney(h.amount, { currency: 'USD' })}</span>
                         </div>
                       ))}
                       <Separator />
                       <div className="flex justify-between items-center">
                         <span className="text-xs font-semibold uppercase tracking-wide">{isClosingPayment ? 'Balance Due' : selected.status === 'confirmed' ? 'Total Deposit Paid' : 'Total Deposit Due'}</span>
-                        <span className="font-bold text-sm">${fmt(isClosingPayment ? selected.amount : grandTotal)}</span>
+                        <span className="font-bold text-sm">{formatMoney(isClosingPayment ? selected.amount : grandTotal, { currency: 'USD' })}</span>
                       </div>
                       {!isClosingPayment && (
                         <div className="flex justify-between items-center text-xs">
-                          <span className={balanceAfterAll > 0 ? 'text-amber-600' : 'text-emerald-600'}>{balanceAfterAll > 0 ? 'Balance Due' : 'Remaining'}</span>
-                          <span className={`font-medium ${balanceAfterAll > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>${fmt(balanceAfterAll)}</span>
+                          <span className={balanceAfterAll > 0 ? 'text-warning' : 'text-success'}>{balanceAfterAll > 0 ? 'Balance Due' : 'Remaining'}</span>
+                          <span className={`font-medium ${balanceAfterAll > 0 ? 'text-warning' : 'text-success'}`}>{formatMoney(balanceAfterAll, { currency: 'USD' })}</span>
                         </div>
                       )}
                     </CardContent>
@@ -1254,7 +1254,7 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                   <Calendar className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
                   <div>
                     <p className="text-xs text-muted-foreground">Trip Date</p>
-                    <p className="font-medium">{fmtDate(selected.booking.startDate)} – {fmtDate(selected.booking.endDate)}</p>
+                    <p className="font-medium">{formatDate(selected.booking.startDate)} – {formatDate(selected.booking.endDate)}</p>
                     {(() => {
                       // Open trips carry the number on the OpenTrip, charters on the booking; the
                       // year is the trip's checkout year, same bucket renumberTripYear() uses.
@@ -1272,7 +1272,7 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                     <Calendar className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
                     <div>
                       <p className="text-xs text-muted-foreground">Deposit Due</p>
-                      <p className="font-medium text-amber-700">{fmtDate(selected.booking.depositDueDate)}</p>
+                      <p className="font-medium text-warning">{formatDate(selected.booking.depositDueDate)}</p>
                     </div>
                   </div>
                 )}
@@ -1281,7 +1281,7 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                     <Calendar className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
                     <div>
                       <p className="text-xs text-muted-foreground">Final Balance Due</p>
-                      <p className="font-medium text-amber-700">{fmtDate(selected.booking.finalDueDate)}</p>
+                      <p className="font-medium text-warning">{formatDate(selected.booking.finalDueDate)}</p>
                     </div>
                   </div>
                 )}
@@ -1302,8 +1302,8 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                     <Banknote className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
                     <div>
                       <p className="text-xs text-muted-foreground">Clawback Deducted</p>
-                      <p className="font-medium text-red-600">
-                        -${fmt(Math.abs(selected.booking.clawbackEntries.reduce((s, e) => s + Math.min(0, e.amount), 0)))}
+                      <p className="font-medium text-destructive">
+                        -{formatMoney(Math.abs(selected.booking.clawbackEntries.reduce((s, e) => s + Math.min(0, e.amount), 0)), { currency: 'USD' })}
                       </p>
                     </div>
                   </div>
@@ -1322,7 +1322,7 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                   <div>
                     <p className="text-xs text-muted-foreground">Submitted By</p>
                     <p className="font-medium">{selected.submittedByName ?? selected.booking.salesperson ?? '—'}</p>
-                    <p className="text-xs text-muted-foreground">{fmtDateTime(selected.createdAt)}</p>
+                    <p className="text-xs text-muted-foreground">{formatDate(selected.createdAt, 'datetime')}</p>
                   </div>
                 </div>
               </div>
@@ -1344,7 +1344,7 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                   <div className="space-y-3">
                     {/* Header row */}
                     <div className="flex items-center justify-between">
-                      <p className="text-sm font-semibold text-blue-700 flex items-center gap-1.5">
+                      <p className="text-sm font-semibold text-info flex items-center gap-1.5">
                         <FilePlus className="h-4 w-4" /> {isFirstGeneration ? 'Generate Invoice' : 'Edit Invoice'}
                       </p>
                       {!genInvEditing && (
@@ -1352,7 +1352,7 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                           type="button"
                           size="sm"
                           variant="outline"
-                          className="h-7 px-2.5 text-xs gap-1.5 border-amber-300 text-amber-700 hover:bg-amber-50"
+                          className="h-7 px-2.5 text-xs gap-1.5 border-warning/30 text-warning hover:bg-warning/10"
                           onClick={() => setGenInvConfirmEdit(true)}
                         >
                           <Receipt className="h-3.5 w-3.5" /> Edit
@@ -1373,13 +1373,13 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
 
                     {/* Edit confirmation prompt */}
                     {genInvConfirmEdit && !genInvEditing && (
-                      <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 space-y-2">
-                        <p className="text-xs font-medium text-amber-800">Are you sure you want to edit these details?</p>
-                        <p className="text-xs text-amber-700">Changes will differ from the original sales request. Make sure any adjustments have been agreed upon.</p>
+                      <div className="rounded-lg border border-warning/30 bg-warning/10 p-3 space-y-2">
+                        <p className="text-xs font-medium text-warning">Are you sure you want to edit these details?</p>
+                        <p className="text-xs text-warning">Changes will differ from the original sales request. Make sure any adjustments have been agreed upon.</p>
                         <div className="flex gap-2 pt-0.5">
                           <Button
                             size="sm"
-                            className="h-7 px-3 text-xs bg-amber-600 hover:bg-amber-700 text-white"
+                            className="h-7 px-3 text-xs bg-warning hover:bg-warning/90 text-warning-foreground"
                             onClick={() => { setGenInvEditing(true); setGenInvConfirmEdit(false) }}
                           >
                             Yes, Edit
@@ -1404,7 +1404,7 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                     <div className="space-y-3">
                       <div className="grid grid-cols-2 gap-3">
                         <div className="space-y-1.5">
-                          <Label className="text-xs">Amount (USD) <span className="text-red-500">*</span></Label>
+                          <Label className="text-xs">Amount (USD) <span className="text-destructive">*</span></Label>
                           <div className="relative">
                             <span className="absolute left-3 top-2.5 text-xs text-muted-foreground">$</span>
                             <Input
@@ -1424,15 +1424,15 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                             <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
                             <SelectContent>
                               <SelectItem value="DP">DP</SelectItem>
-                              <SelectItem value="PELUNASAN">Pelunasan</SelectItem>
+                              <SelectItem value="PELUNASAN">Full Payment</SelectItem>
                             </SelectContent>
                           </Select>
                         </div>
                       </div>
                       {hasIDR && rawNum > 0 && (
-                        <div className="rounded-md bg-amber-50 border border-amber-100 px-3 py-2 text-xs flex items-center justify-between">
-                          <span className="text-muted-foreground">Equivalent (IDR @ {bRate.toLocaleString('id-ID')})</span>
-                          <span className="font-semibold text-amber-700">Rp {Math.round(rawNum * bRate).toLocaleString('id-ID')}</span>
+                        <div className="rounded-md bg-warning/10 border border-warning/30 px-3 py-2 text-xs flex items-center justify-between">
+                          <span className="text-muted-foreground">Equivalent (IDR @ {formatNumber(bRate, { decimals: 3 })})</span>
+                          <span className="font-semibold text-warning">{formatMoney(rawNum * bRate)}</span>
                         </div>
                       )}
 
@@ -1440,7 +1440,7 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                         <div className="rounded-md border border-dashed p-2.5 space-y-2">
                           <button
                             type="button"
-                            className="text-[11px] font-medium text-blue-700 hover:underline"
+                            className="text-[11px] font-medium text-info hover:underline"
                             onClick={() => setAmtConvertOpen(v => !v)}
                           >
                             {amtConvertOpen ? 'Hide' : 'Customer paid in a different currency? Convert to USD'}
@@ -1477,7 +1477,7 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                                   onClick={() => { setGenInvAmount(computedUsd.toFixed(2)); setAmtConvertOpen(false) }}
                                 >
                                   {computedUsd > 0
-                                    ? `Use $${computedUsd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${foreignNum.toLocaleString('en-US')} ${amtConvertCurrency} ÷ ${rateNum2})`
+                                    ? `Use ${formatMoney(computedUsd, { currency: 'USD' })} (${formatMoney(foreignNum, { currency: amtConvertCurrency })} ÷ ${rateNum2})`
                                     : 'Enter amount & rate'}
                                 </Button>
                               </div>
@@ -1502,8 +1502,7 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                               type="button"
                               disabled={!genInvEditing}
                               onClick={() => setGenInvBillTo(opt)}
-                              className={`flex-1 py-2 px-3 font-medium transition-colors flex items-center justify-center gap-1.5 ${genInvBillTo === opt ? 'text-white' : 'text-muted-foreground hover:bg-muted'}`}
-                              style={genInvBillTo === opt ? { backgroundColor: 'var(--brand-primary)' } : {}}
+                              className={`flex-1 py-2 px-3 font-medium transition-colors flex items-center justify-center gap-1.5 ${genInvBillTo === opt ? 'bg-brand text-brand-foreground' : 'text-muted-foreground hover:bg-muted'}`}
                             >
                               {opt === 'AGENT'
                                 ? <><Building2 className="h-3.5 w-3.5" />{selected.booking.agent!.name}</>
@@ -1520,31 +1519,30 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                       const commPct   = getAgentCommissionPct(selected.booking.agent, selected.booking.tripType, selected.booking.useB2BCommission)
                       const grossAmt  = selected.booking.totalPrice // already net of discount
                       const netAmt    = netOfCommission(selected.booking, commPct)
-                      const fmtN = (n: number) => `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                       return (
                         <div className="rounded-lg border overflow-hidden">
                           <div className="flex items-center justify-between px-3 py-2.5">
-                            <p className="text-xs font-medium">Nominal Invoice</p>
+                            <p className="text-xs font-medium">Invoice Amount</p>
                             <div className="flex items-center gap-2">
                               <span className={`text-xs font-medium ${!genInvShowNet ? 'text-foreground' : 'text-muted-foreground'}`}>Published</span>
                               <button
                                 type="button"
                                 onClick={() => setGenInvShowNet(v => !v)}
-                                className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${genInvShowNet ? 'bg-amber-500' : 'bg-[#1a5f6e]'}`}
+                                className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${genInvShowNet ? 'bg-warning' : 'bg-brand'}`}
                               >
-                                <span className={`pointer-events-none block h-4 w-4 rounded-full bg-white shadow-lg transition-transform ${genInvShowNet ? 'translate-x-4' : 'translate-x-0'}`} />
+                                <span className={`pointer-events-none block h-4 w-4 rounded-full bg-background shadow-lg transition-transform ${genInvShowNet ? 'translate-x-4' : 'translate-x-0'}`} />
                               </button>
-                              <span className={`text-xs font-medium ${genInvShowNet ? 'text-amber-600' : 'text-muted-foreground'}`}>Net</span>
+                              <span className={`text-xs font-medium ${genInvShowNet ? 'text-warning' : 'text-muted-foreground'}`}>Net</span>
                             </div>
                           </div>
                           <div className="grid grid-cols-2 border-t text-xs">
                             <div className={`px-3 py-2 border-r ${!genInvShowNet ? 'bg-muted/40' : ''}`}>
                               <p className="text-muted-foreground mb-0.5">Published</p>
-                              <p className={`font-semibold ${!genInvShowNet ? 'text-foreground' : 'text-muted-foreground'}`}>{fmtN(grossAmt)}</p>
+                              <p className={`font-semibold ${!genInvShowNet ? 'text-foreground' : 'text-muted-foreground'}`}>{formatMoney(grossAmt, { currency: 'USD' })}</p>
                             </div>
-                            <div className={`px-3 py-2 ${genInvShowNet ? 'bg-amber-50' : ''}`}>
+                            <div className={`px-3 py-2 ${genInvShowNet ? 'bg-warning/10' : ''}`}>
                               <p className="text-muted-foreground mb-0.5">Net ({commPct}% off)</p>
-                              <p className={`font-semibold ${genInvShowNet ? 'text-amber-600' : 'text-muted-foreground'}`}>{fmtN(netAmt)}</p>
+                              <p className={`font-semibold ${genInvShowNet ? 'text-warning' : 'text-muted-foreground'}`}>{formatMoney(netAmt, { currency: 'USD' })}</p>
                             </div>
                           </div>
                         </div>
@@ -1563,9 +1561,9 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                         <button
                           type="button"
                           onClick={() => setGenInvShowNote(v => !v)}
-                          className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${genInvShowNote ? 'bg-amber-500' : 'bg-muted-foreground/30'}`}
+                          className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${genInvShowNote ? 'bg-warning' : 'bg-muted-foreground/30'}`}
                         >
-                          <span className={`pointer-events-none block h-4 w-4 rounded-full bg-white shadow-lg transition-transform ${genInvShowNote ? 'translate-x-4' : 'translate-x-0'}`} />
+                          <span className={`pointer-events-none block h-4 w-4 rounded-full bg-background shadow-lg transition-transform ${genInvShowNote ? 'translate-x-4' : 'translate-x-0'}`} />
                         </button>
                       </div>
                     )}
@@ -1575,11 +1573,11 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                       <Select value={genInvMethod} onValueChange={v => { setGenInvMethod(v); if (!v.toLowerCase().includes('transfer bank') && !v.toLowerCase().includes('wire')) setGenInvBankId(null) }} disabled={!genInvEditing}>
                         <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="Transfer Bank">Transfer Bank</SelectItem>
-                          <SelectItem value="Transfer Bank (BCA)">Transfer Bank (BCA)</SelectItem>
-                          <SelectItem value="Transfer Bank (Mandiri)">Transfer Bank (Mandiri)</SelectItem>
-                          <SelectItem value="Transfer Bank (BRI)">Transfer Bank (BRI)</SelectItem>
-                          <SelectItem value="Transfer Bank (BNI)">Transfer Bank (BNI)</SelectItem>
+                          <SelectItem value="Transfer Bank">Bank Transfer</SelectItem>
+                          <SelectItem value="Transfer Bank (BCA)">Bank Transfer (BCA)</SelectItem>
+                          <SelectItem value="Transfer Bank (Mandiri)">Bank Transfer (Mandiri)</SelectItem>
+                          <SelectItem value="Transfer Bank (BRI)">Bank Transfer (BRI)</SelectItem>
+                          <SelectItem value="Transfer Bank (BNI)">Bank Transfer (BNI)</SelectItem>
                           <SelectItem value="Wire Transfer">Wire Transfer (International)</SelectItem>
                           <SelectItem value="Cash">Cash</SelectItem>
                           <SelectItem value="Credit Card">Credit Card</SelectItem>
@@ -1592,7 +1590,7 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                       <Label className="text-xs">Notes</Label>
                       <Textarea
                         rows={2} className="text-sm resize-none"
-                        placeholder="Additional notes..."
+                        placeholder="Additional notes…"
                         disabled={!genInvEditing}
                         value={genInvNotes}
                         onChange={e => setGenInvNotes(e.target.value)}
@@ -1667,14 +1665,14 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                     )}
 
                     {genInvPaymentDestMissing && (
-                      <p className="text-[11px] text-red-600">
+                      <p className="text-[11px] text-destructive">
                         Select a bank account or add a payment link before generating the invoice.
                       </p>
                     )}
 
                     <DialogFooter className="flex-col gap-2 sm:flex-col">
                       <Button
-                        className="bg-blue-600 hover:bg-blue-700 text-white w-full"
+                        className="bg-info hover:bg-info/90 text-info-foreground w-full"
                         disabled={genInvSaving || !genInvAmount || (parseFloat(genInvAmount) || 0) <= 0 || genInvPaymentDestMissing}
                         onClick={() => handleGenerateInvoice(false)}
                       >
@@ -1704,14 +1702,14 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                 <>
                   <Separator />
                   <div className="space-y-3">
-                    <p className="text-sm font-semibold text-blue-700 flex items-center gap-1.5">
+                    <p className="text-sm font-semibold text-info flex items-center gap-1.5">
                       <AlertCircle className="h-4 w-4" /> Change Note for Sales
                     </p>
                     {renderChangeProofFields()}
                     <div className="flex justify-end">
                       <Button
                         size="sm"
-                        className="bg-blue-600 hover:bg-blue-700 text-white"
+                        className="bg-info hover:bg-info/90 text-info-foreground"
                         disabled={changeProofSaving || changeProofUploading}
                         onClick={handleSaveChangeProof}
                       >
@@ -1734,15 +1732,15 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                     {proofLoading ? (
                       <div className="mt-2 flex items-center gap-2.5 border-2 border-dashed rounded-md p-3 text-muted-foreground">
                         <Loader2 className="h-4 w-4 animate-spin shrink-0" />
-                        <span className="text-sm">Checking transfer proof...</span>
+                        <span className="text-sm">Checking transfer proof…</span>
                       </div>
                     ) : selected.proofOfTransfer ? (() => {
                       const proofs = [selected.proofOfTransfer, ...(selected.proofOfTransferExtra ?? [])]
                       return (
                       <div className="mt-2 space-y-2">
                         <div className="flex items-center gap-2">
-                          <CheckCircle2 className="h-4 w-4 text-green-600 shrink-0" />
-                          <span className="text-sm text-green-700 font-medium">
+                          <CheckCircle2 className="h-4 w-4 text-success shrink-0" />
+                          <span className="text-sm text-success font-medium">
                             Proof submitted by Sales{proofs.length > 1 ? ` (${proofs.length} files)` : ''}
                           </span>
                         </div>
@@ -1761,7 +1759,7 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                                 </Button>
                                 <a
                                   href={src}
-                                  download={`bukti-${selected.invoiceNumber}${proofs.length > 1 ? `-${i + 1}` : ''}.${extFromDataUrl(src)}`}
+                                  download={`proof-${selected.invoiceNumber}${proofs.length > 1 ? `-${i + 1}` : ''}.${extFromDataUrl(src)}`}
                                   className="inline-flex items-center gap-1 h-7 px-2.5 text-xs border rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
                                 >
                                   <Download className="h-3 w-3" /> Download
@@ -1800,14 +1798,14 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                                : s === 'refunded'  ? '↩ Refunded'
                                : s === 'cancelled' ? '✕ Cancelled'
                                : '✕ Rejected'
-                    const bg    = isGood ? 'bg-green-50'  : s === 'cancelled' ? 'bg-slate-50' : 'bg-red-50'
-                    const text  = isGood ? 'text-green-700' : s === 'cancelled' ? 'text-slate-600' : 'text-red-700'
-                    const sub   = isGood ? 'text-green-600' : s === 'cancelled' ? 'text-slate-400' : 'text-red-600'
+                    const bg    = isGood ? 'bg-success/10'  : s === 'cancelled' ? 'bg-muted/50' : 'bg-destructive/10'
+                    const text  = isGood ? 'text-success' : s === 'cancelled' ? 'text-muted-foreground' : 'text-destructive'
+                    const sub   = isGood ? 'text-success' : s === 'cancelled' ? 'text-muted-foreground/70' : 'text-destructive'
                     return (
                       <div className={`rounded-md p-3 text-sm ${bg}`}>
                         <p className={`font-medium ${text}`}>{label} by {selected.confirmedBy}</p>
                         {selected.confirmedAt && (
-                          <p className={`text-xs mt-0.5 ${sub}`}>{fmtDateTime(selected.confirmedAt)}</p>
+                          <p className={`text-xs mt-0.5 ${sub}`}>{formatDate(selected.confirmedAt, 'datetime')}</p>
                         )}
                       </div>
                     )
@@ -1823,14 +1821,14 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                     <div className="flex gap-2 justify-end">
                       <Button
                         variant="outline"
-                        className="border-red-200 text-red-600 hover:bg-red-50"
+                        className="border-destructive/30 text-destructive hover:bg-destructive/10"
                         onClick={() => setShowRejectInput(true)}
                         disabled={acting}
                       >
                         <Ban className="h-4 w-4 mr-1.5" /> Reject
                       </Button>
                       <Button
-                        className="bg-green-600 hover:bg-green-700 text-white"
+                        className="bg-success hover:bg-success/90 text-success-foreground"
                         onClick={() => handleAction('confirm')}
                         disabled={acting}
                       >
@@ -1845,7 +1843,7 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                         rows={2}
                         value={rejectNotes}
                         onChange={e => setRejectNotes(e.target.value)}
-                        placeholder="e.g. Transfer proof is invalid..."
+                        placeholder="e.g. Transfer proof is invalid…"
                         className="text-sm"
                       />
                       <div className="flex gap-2 justify-end">
@@ -1853,7 +1851,7 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                           Cancel
                         </Button>
                         <Button
-                          className="bg-red-600 hover:bg-red-700 text-white"
+                          className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
                           onClick={() => handleAction('reject')}
                           disabled={acting}
                         >
@@ -1900,7 +1898,7 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                 {refundSelected.payments.map(p => (
                   <div key={p.id} className="flex justify-between text-sm">
                     <span className="text-muted-foreground">{p.invoiceNumber} ({p.paymentType})</span>
-                    <span className="font-semibold">${p.amount.toLocaleString()}</span>
+                    <span className="font-semibold">{formatMoney(p.amount, { currency: 'USD' })}</span>
                   </div>
                 ))}
               </div>
@@ -1913,7 +1911,7 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                     <div className="grid grid-cols-2 gap-2">
                       {(['no_refund', 'refund'] as const).map(d => (
                         <button key={d} type="button" onClick={() => setRefundDecision(d)}
-                          className={`py-2.5 px-3 rounded-lg border text-sm font-medium transition-colors ${refundDecision === d ? d === 'no_refund' ? 'bg-red-600 text-white border-red-600' : 'bg-emerald-600 text-white border-emerald-600' : 'hover:bg-muted'}`}>
+                          className={`py-2.5 px-3 rounded-lg border text-sm font-medium transition-colors ${refundDecision === d ? d === 'no_refund' ? 'bg-destructive text-destructive-foreground border-destructive' : 'bg-success text-success-foreground border-success' : 'hover:bg-muted'}`}>
                           {d === 'no_refund' ? '✕ No Refund' : '✓ Refund'}
                         </button>
                       ))}
@@ -1921,9 +1919,9 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                      Reason <span className="text-red-500">*</span>
+                      Reason <span className="text-destructive">*</span>
                     </Label>
-                    <Textarea rows={3} placeholder={refundDecision === 'no_refund' ? 'Reason for no refund...' : 'Reason for refund...'} value={refundReason} onChange={e => setRefundReason(e.target.value)} />
+                    <Textarea rows={3} placeholder={refundDecision === 'no_refund' ? 'Reason for no refund…' : 'Reason for refund…'} value={refundReason} onChange={e => setRefundReason(e.target.value)} />
                   </div>
                   <DialogFooter>
                     <Button variant="outline" onClick={() => setRefundSelected(null)}>Cancel</Button>
@@ -1938,11 +1936,11 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
               {/* Phase 2: Upload refund proof */}
               {(refundSelected.refundStatus === 'refund_pending' || refundSelected.refundStatus === 'refund_uploaded') && (
                 <>
-                  <div className="rounded-md border bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+                  <div className="rounded-md border bg-success/10 px-3 py-2 text-sm text-success">
                     <strong>Refund approved.</strong> Reason: {refundSelected.refundReason}
                   </div>
                   {refundSelected.refundStatus === 'refund_uploaded' ? (
-                    <div className="rounded-md border bg-violet-50 px-3 py-2 text-sm text-violet-700">
+                    <div className="rounded-md border bg-violet-50 px-3 py-2 text-sm text-violet-700 dark:bg-violet-500/15 dark:text-violet-300">
                       Proof uploaded. Waiting for sales team to confirm with guest.
                     </div>
                   ) : (
@@ -1995,11 +1993,11 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
           refund_uploaded:  'Proof Uploaded — Awaiting Confirmation',
           refund_confirmed: 'Refund Confirmed',
         }
-        const statusColor: Record<string, string> = {
-          no_refund:        'bg-red-50 text-red-700 border-red-200',
-          refund_pending:   'bg-blue-50 text-blue-700 border-blue-200',
-          refund_uploaded:  'bg-violet-50 text-violet-700 border-violet-200',
-          refund_confirmed: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+        const statusTone: Record<string, StatusTone> = {
+          no_refund:        'destructive',
+          refund_pending:   'info',
+          refund_uploaded:  'info',
+          refund_confirmed: 'success',
         }
         return (
           <Dialog open onOpenChange={v => { if (!v) setRefundHistorySelected(null) }}>
@@ -2017,20 +2015,20 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                     {[
                       { label: 'Customer',      value: <span className="font-medium">{r.customer.name}</span> },
                       { label: 'Sales',         value: r.salespersonUser?.name ?? '—' },
-                      { label: 'Total Paid',    value: <span className="font-semibold">${total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span> },
+                      { label: 'Total Paid',    value: <span className="font-semibold">{formatMoney(total, { currency: 'USD' })}</span> },
                       { label: 'Cancel Reason', value: r.cancelReason ?? '—' },
                       { label: 'Decision',      value: (
-                        <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${r.refundDecision === 'refund' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : r.refundDecision === 'no_refund' ? 'bg-red-50 text-red-700 border-red-200' : 'bg-gray-50 text-gray-400 border-gray-200'}`}>
+                        <StatusBadge size="sm" className="font-semibold" tone={r.refundDecision === 'refund' ? 'success' : r.refundDecision === 'no_refund' ? 'destructive' : 'neutral'}>
                           {r.refundDecision === 'refund' ? 'Refund' : r.refundDecision === 'no_refund' ? 'No Refund' : '—'}
-                        </span>
+                        </StatusBadge>
                       )},
                       { label: 'Refund Reason', value: r.refundReason ?? '—' },
                       { label: 'Status',        value: (
-                        <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full border ${statusColor[r.refundStatus ?? ''] ?? 'bg-gray-50 text-gray-400 border-gray-200'}`}>
+                        <StatusBadge size="sm" tone={statusTone[r.refundStatus ?? ''] ?? 'neutral'}>
                           {statusLabel[r.refundStatus ?? ''] ?? r.refundStatus ?? '—'}
-                        </span>
+                        </StatusBadge>
                       )},
-                      ...(r.refundConfirmedBy ? [{ label: 'Confirmed By', value: `${r.refundConfirmedBy}${r.refundConfirmedAt ? ` · ${new Date(r.refundConfirmedAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}` : ''}` }] : []),
+                      ...(r.refundConfirmedBy ? [{ label: 'Confirmed By', value: `${r.refundConfirmedBy}${r.refundConfirmedAt ? ` · ${formatDate(r.refundConfirmedAt)}` : ''}` }] : []),
                     ].map(row => (
                       <div key={row.label} className="flex justify-between items-center px-3 py-2">
                         <span className="text-muted-foreground text-xs shrink-0">{row.label}</span>
@@ -2043,7 +2041,7 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                       {r.payments.map(p => (
                         <div key={p.id} className="flex justify-between px-3 py-2">
                           <span className="font-mono text-muted-foreground">{p.invoiceNumber}</span>
-                          <span className="font-semibold">${p.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          <span className="font-semibold">{formatMoney(p.amount, { currency: 'USD' })}</span>
                         </div>
                       ))}
                     </div>
@@ -2063,7 +2061,7 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                     <a
                       href={r.refundProof}
                       download="refund-proof"
-                      className="inline-flex items-center justify-center gap-1.5 w-full text-xs font-medium text-[#1a5f6e] border border-[#1a5f6e]/30 rounded-md py-1.5 hover:bg-[#1a5f6e]/5 transition-colors"
+                      className="inline-flex items-center justify-center gap-1.5 w-full text-xs font-medium text-brand border border-brand/30 rounded-md py-1.5 hover:bg-brand/5 transition-colors"
                     >
                       <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
                       Download

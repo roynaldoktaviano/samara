@@ -1,15 +1,14 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Badge } from '@/components/ui/badge'
+import { StatusBadge } from '@/components/ui/status-badge'
+import { formatDate, formatMoney, formatPercent } from '@/lib/format'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Mail, Zap, DollarSign, Users2 } from 'lucide-react'
 import type { MarketingPerformanceSnapshot } from '@/lib/marketing-performance'
 import { ACCENT, PageHeader, KpiCard, SectionCard } from '@/components/marketing/shared/MarketingUI'
 
-const fmtUsd = (n: number) => n.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })
-const fmtPct = (n: number) => `${(n * 100).toFixed(1)}%`
-const fmtDate = (d: string | null) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
+const usd = (n: number) => formatMoney(n, { currency: 'USD', decimals: 0 })
 
 function BarList({ rows, valueFmt, total }: { rows: { channel: string; value: number }[]; valueFmt: (n: number) => string; total: number }) {
   if (rows.length === 0) return <p className="text-sm text-muted-foreground py-6 text-center">No data yet for this period.</p>
@@ -52,19 +51,19 @@ export default function PerformancePage() {
       <PageHeader eyebrow="MEASURE" title="Marketing Performance" subtitle="From email campaigns and automations to inquiries and attributed booking revenue." />
 
       {loading || !snapshot ? (
-        <p className="text-sm text-muted-foreground p-6">Loading...</p>
+        <p className="text-sm text-muted-foreground p-6">Loading…</p>
       ) : (
         <>
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
-            <KpiCard icon={Mail} label="Email open rate" value={fmtPct(snapshot.campaigns.openRate)} sub={`${snapshot.campaigns.totalOpened} of ${snapshot.campaigns.totalSentRecipients} sent emails`} />
-            <KpiCard icon={Mail} label="Email click rate" value={fmtPct(snapshot.campaigns.clickRate)} sub={`${snapshot.campaigns.totalClicked} clicked`} />
+            <KpiCard icon={Mail} label="Email open rate" value={formatPercent(snapshot.campaigns.openRate, { decimals: 1 })} sub={`${snapshot.campaigns.totalOpened} of ${snapshot.campaigns.totalSentRecipients} sent emails`} />
+            <KpiCard icon={Mail} label="Email click rate" value={formatPercent(snapshot.campaigns.clickRate, { decimals: 1 })} sub={`${snapshot.campaigns.totalClicked} clicked`} />
             <KpiCard icon={Zap} label="Emails sent, last 8 weeks" value={String(snapshot.campaigns.sentTrend.reduce((s, w) => s + w.count, 0))} sub={`${snapshot.automations.active} automation${snapshot.automations.active === 1 ? '' : 's'} active`} trend={snapshot.campaigns.sentTrend.map(w => w.count)} />
-            <KpiCard icon={DollarSign} label="Confirmed revenue" value={fmtUsd(snapshot.revenue.totalConfirmed)} sub="All-time, attributed to acquisition channel" />
+            <KpiCard icon={DollarSign} label="Confirmed revenue" value={usd(snapshot.revenue.totalConfirmed)} sub="All-time, attributed to acquisition channel" />
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
             <SectionCard title="Revenue by acquisition channel" subtitle="Each guest's earliest inquiry decides their channel — a first-touch attribution model.">
-              <BarList rows={snapshot.revenue.byChannel.map(r => ({ channel: r.channel, value: r.revenue }))} valueFmt={fmtUsd} total={snapshot.revenue.totalConfirmed} />
+              <BarList rows={snapshot.revenue.byChannel.map(r => ({ channel: r.channel, value: r.revenue }))} valueFmt={usd} total={snapshot.revenue.totalConfirmed} />
             </SectionCard>
             <SectionCard title="Inquiries by source" subtitle={`Last ${snapshot.inquiries.periodDays} days · ${snapshot.inquiries.totalInPeriod} total inquiries`}>
               <BarList rows={snapshot.inquiries.bySource.map(r => ({ channel: r.channel, value: r.count }))} valueFmt={n => String(n)} total={snapshot.inquiries.totalInPeriod} />
@@ -79,7 +78,7 @@ export default function PerformancePage() {
                   const max = Math.max(...data, 1)
                   const barW = 100 / data.length
                   return data.map((v, i) => (
-                    <rect key={i} x={i * barW + barW * 0.15} y={56 - (v / max) * 50} width={barW * 0.7} height={(v / max) * 50 || 1} rx="1.5" fill={ACCENT} />
+                    <rect key={i} x={i * barW + barW * 0.15} y={56 - (v / max) * 50} width={barW * 0.7} height={(v / max) * 50 || 1} rx="1.5" style={{ fill: ACCENT }} />
                   ))
                 })()}
               </svg></div></div>
@@ -105,8 +104,8 @@ export default function PerformancePage() {
                   {snapshot.campaigns.recent.map(c => (
                     <TableRow key={c.id}>
                       <TableCell className="font-medium">{c.name}</TableCell>
-                      <TableCell><Badge className="bg-gray-100 text-gray-700 border-gray-200">{c.status}</Badge></TableCell>
-                      <TableCell className="text-muted-foreground">{fmtDate(c.sentAt)}</TableCell>
+                      <TableCell><StatusBadge tone="neutral">{c.status}</StatusBadge></TableCell>
+                      <TableCell className="text-muted-foreground">{formatDate(c.sentAt)}</TableCell>
                       <TableCell className="text-muted-foreground">{c.totalRecipients}</TableCell>
                       <TableCell className="text-muted-foreground">{c.openedCount}</TableCell>
                       <TableCell className="text-muted-foreground">{c.clickedCount}</TableCell>
@@ -136,9 +135,9 @@ export default function PerformancePage() {
                     <TableRow key={a.id}>
                       <TableCell className="font-medium">{a.name}</TableCell>
                       <TableCell>
-                        <Badge className={a.status === 'ACTIVE' ? 'bg-green-100 text-green-700 border-green-200' : 'bg-gray-100 text-gray-600 border-gray-200'}>
+                        <StatusBadge tone={a.status === 'ACTIVE' ? 'success' : 'neutral'}>
                           {a.status === 'ACTIVE' ? 'Active' : 'Paused'}
-                        </Badge>
+                        </StatusBadge>
                       </TableCell>
                       <TableCell className="text-muted-foreground">{a.sentCount}</TableCell>
                       <TableCell className="text-muted-foreground">{a.pendingCount}</TableCell>

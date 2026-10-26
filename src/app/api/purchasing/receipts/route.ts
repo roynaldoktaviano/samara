@@ -41,8 +41,8 @@ export async function POST(req: NextRequest) {
   const db = await getDb(session)
   const body = await req.json()
   const { orderId, locationId, notes, receivePhotoKey, receiverName, items } = body
-  if (!orderId || !locationId) return NextResponse.json({ error: 'orderId dan locationId wajib diisi' }, { status: 400 })
-  if (!items || !Array.isArray(items) || items.length === 0) return NextResponse.json({ error: 'Minimal 1 item dibutuhkan' }, { status: 400 })
+  if (!orderId || !locationId) return NextResponse.json({ error: 'Order and location are required' }, { status: 400 })
+  if (!items || !Array.isArray(items) || items.length === 0) return NextResponse.json({ error: 'At least 1 item is required' }, { status: 400 })
 
   // Permission + status check
   const poForPermission = await db.purchaseOrder.findUnique({
@@ -56,7 +56,7 @@ export async function POST(req: NextRequest) {
   })
   if (!poForPermission) return NextResponse.json({ error: 'PO not found' }, { status: 404 })
   if (!['IN_TRANSIT', 'PARTIALLY_RECEIVED'].includes(poForPermission.status))
-    return NextResponse.json({ error: 'Barang hanya dapat diterima setelah PO berstatus In Transit' }, { status: 400 })
+    return NextResponse.json({ error: 'Items can only be received once the PO is In Transit' }, { status: 400 })
 
   // When the PO has a transit route, goods from the supplier can only land at the first
   // transit stop — the client-supplied locationId is ignored/overridden for routed POs

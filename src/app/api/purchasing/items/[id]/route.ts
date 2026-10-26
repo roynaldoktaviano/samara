@@ -28,14 +28,14 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   const body = await req.json()
   const { sku, name, type, category, baseUnit, purchaseUnit, conversionFactor, standardCost, sellingPrice, valuationMethod, minStock, minStockUnit, reorderQty, treatment, isActive, imageKey, isSoldInPos, isStockTracked, currentLocationId } = body
   if (!sku || !name || !type || !category || !baseUnit || !purchaseUnit) {
-    return NextResponse.json({ error: 'sku, name, type, category, baseUnit, purchaseUnit wajib diisi' }, { status: 400 })
+    return NextResponse.json({ error: 'sku, name, type, category, baseUnit and purchaseUnit are required' }, { status: 400 })
   }
   const typeConfig = await db.purchaseItemTypeConfig.findUnique({ where: { code: type } })
   if (!typeConfig || !typeConfig.isActive) {
-    return NextResponse.json({ error: 'type tidak valid' }, { status: 400 })
+    return NextResponse.json({ error: 'Invalid type' }, { status: 400 })
   }
   const skuConflict = await db.purchaseItem.findFirst({ where: { sku: sku.trim().toUpperCase(), NOT: { id } } })
-  if (skuConflict) return NextResponse.json({ error: `SKU "${sku}" sudah digunakan` }, { status: 409 })
+  if (skuConflict) return NextResponse.json({ error: `SKU "${sku}" is already in use` }, { status: 409 })
   const item = await db.purchaseItem.update({
     where: { id },
     data: {
@@ -71,7 +71,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
   const inUse = await db.stockLot.findFirst({ where: { itemId: id, quantity: { gt: 0 } } })
-  if (inUse) return NextResponse.json({ error: 'Barang masih memiliki stok, tidak bisa dihapus' }, { status: 409 })
+  if (inUse) return NextResponse.json({ error: 'Item still has stock and cannot be deleted' }, { status: 409 })
   await db.purchaseItem.delete({ where: { id } })
   return NextResponse.json({ ok: true })
 }

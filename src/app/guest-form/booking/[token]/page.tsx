@@ -5,11 +5,13 @@ import { createPortal } from 'react-dom'
 import { useParams } from 'next/navigation'
 import { CheckCircle, Loader2, ChevronRight, ChevronLeft, ChevronDown, Save, Calendar, MapPin, Ship, Anchor, Lock, User, Users, Camera, FileText, Wrench, X as XIcon, Plus, AlertCircle, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
+import { useConfirm } from '@/components/ui/confirm-dialog'
 import { useFileDrop } from '@/hooks/useFileDrop'
+import { formatDate } from '@/lib/format'
 
 const LOGO = 'https://samaraliveaboard.com/wp-content/uploads/2025/08/Logo-Samara-icon-192x192-1.png'
-const TEAL = '#1a5f6e'
-const GOLD = '#bdac7e'
+const TEAL = 'var(--brand)'
+const GOLD = 'var(--primary)'
 
 type Section = 'profile' | 'medical' | 'food' | 'drinks' | 'diving' | 'travel'
 type GuestScopedSection = 'profile' | 'diving'
@@ -71,16 +73,17 @@ interface BookingFormData {
 }
 
 /* ── Shared field-level components ── */
-const inputCls  = `w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[${TEAL}]/30 focus:border-[${TEAL}] bg-white placeholder:text-gray-300 transition-all`
-const selectCls = `w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[${TEAL}]/30 focus:border-[${TEAL}] bg-white text-gray-700 transition-all`
-const textCls   = `w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[${TEAL}]/30 focus:border-[${TEAL}] bg-white placeholder:text-gray-300 transition-all resize-none`
+const inputCls  = `w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand bg-white placeholder:text-gray-300 transition-all`
+const selectCls = `w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand bg-white text-gray-700 transition-all`
+const textCls   = `w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand bg-white placeholder:text-gray-300 transition-all resize-none`
 
+// The wrapping <label> links the caption to its control (works even when the same grid renders twice).
 function Field({ label, children, full, style }: { label: string; children: React.ReactNode; full?: boolean; style?: React.CSSProperties }) {
   return (
-    <div className={full ? 'sm:col-span-2' : ''} style={style}>
-      <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wider">{label}</label>
+    <label className={full ? 'block sm:col-span-2' : 'block'} style={style}>
+      <span className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wider">{label}</span>
       {children}
-    </div>
+    </label>
   )
 }
 
@@ -175,7 +178,7 @@ function Combobox({ value, onChange, options, placeholder, disabled }: { value: 
               type="button"
               onMouseDown={e => { e.preventDefault(); onChange(o); setQuery(o); setOpen(false) }}
               className={`w-full text-left px-3 py-1.5 text-sm hover:bg-gray-50 ${o === value ? 'font-semibold' : ''}`}
-              style={o === value ? { color: TEAL, background: '#f0fdfa' } : undefined}
+              style={o === value ? { color: TEAL, background: 'color-mix(in srgb, var(--brand) 8%, transparent)' } : undefined}
             >
               {o}
             </button>
@@ -211,14 +214,14 @@ function ImageUpload({ label, hint, value, onChange }: { label?: string; hint?: 
             // eslint-disable-next-line @next/next/no-img-element
             <img src={value} alt={label ?? 'Photo'} className="w-full max-h-52 object-contain rounded-xl border border-gray-200 bg-gray-50" />
           )}
-          <button type="button" onClick={() => onChange('')}
-            className="absolute top-2 right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity shadow">
+          <button type="button" onClick={() => onChange('')} aria-label="Remove photo"
+            className="absolute top-2 right-2 bg-destructive text-destructive-foreground rounded-full w-6 h-6 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100 transition-opacity shadow">
             ✕
           </button>
         </div>
       ) : (
         <label {...dropProps} className={`flex flex-col items-center justify-center w-full h-28 border-2 border-dashed rounded-xl cursor-pointer transition-all ${
-          isDragging ? 'border-[#1a5f6e] bg-[#1a5f6e]/5' : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+          isDragging ? 'border-brand bg-brand/5' : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
         }`}>
           <span className="text-2xl mb-1">📷</span>
           <span className="text-xs font-medium text-gray-500">{isDragging ? 'Drop to upload' : 'Tap or drag to upload photo'}</span>
@@ -280,14 +283,14 @@ function FileUpload({ label, hint, values, onChange }: { label?: string; hint?: 
               // eslint-disable-next-line @next/next/no-img-element
               <img src={v} alt={label ?? 'file'} className="w-full h-full object-cover" />
             )}
-            <button type="button" onClick={() => removeAt(i)}
-              className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity shadow">
+            <button type="button" onClick={() => removeAt(i)} aria-label={`Remove file ${i + 1}`}
+              className="absolute top-1 right-1 bg-destructive text-destructive-foreground rounded-full w-5 h-5 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100 transition-opacity shadow">
               ✕
             </button>
           </div>
         ))}
         <label {...dropProps} className={`aspect-square flex flex-col items-center justify-center border-2 border-dashed rounded-xl cursor-pointer transition-all ${
-          isDragging ? 'border-[#1a5f6e] bg-[#1a5f6e]/5' : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+          isDragging ? 'border-brand bg-brand/5' : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
         }`}>
           <span className="text-xl leading-none mb-0.5 text-gray-400">{isDragging ? '⬇' : '＋'}</span>
           <span className="text-[9px] font-medium text-gray-500 text-center px-1">{isDragging ? 'Drop' : 'Add file'}</span>
@@ -311,11 +314,11 @@ function EquipmentTable({ items, onChange }: { items: any[]; onChange: (items: a
         <span>Equipment</span><span>Size</span><span>Qty</span><span />
       </div>
       {rows.map((r, i) => (
-        <div key={i} className="grid grid-cols-[1fr_110px_80px_28px] gap-2 items-center">
-          <input value={r.item ?? ''} onChange={e => update(i, 'item', e.target.value)} placeholder="e.g. Wetsuit, BCD, Fins, Mask" className={inputCls} />
-          <input value={r.size ?? ''} onChange={e => update(i, 'size', e.target.value)} placeholder="Size" className={inputCls} />
-          <input value={r.qty ?? ''} onChange={e => update(i, 'qty', e.target.value)} placeholder="Qty" className={inputCls} />
-          <button type="button" onClick={() => removeRow(i)} aria-label="Remove item" className="text-red-400 hover:text-red-600 text-lg leading-none">✕</button>
+        <div key={i} className="grid grid-cols-[1fr_72px_56px_28px] sm:grid-cols-[1fr_110px_80px_28px] gap-2 items-center">
+          <input value={r.item ?? ''} onChange={e => update(i, 'item', e.target.value)} placeholder="e.g. Wetsuit, BCD, Fins, Mask" aria-label={`Equipment ${i + 1}`} className={inputCls} />
+          <input value={r.size ?? ''} onChange={e => update(i, 'size', e.target.value)} placeholder="Size" aria-label={`Size ${i + 1}`} className={inputCls} />
+          <input value={r.qty ?? ''} onChange={e => update(i, 'qty', e.target.value)} placeholder="Qty" aria-label={`Qty ${i + 1}`} className={inputCls} />
+          <button type="button" onClick={() => removeRow(i)} aria-label="Remove item" className="text-destructive/70 hover:text-destructive text-lg leading-none">✕</button>
         </div>
       ))}
       <button type="button" onClick={addRow} className="text-xs font-semibold" style={{ color: TEAL }}>+ Add Item</button>
@@ -412,26 +415,28 @@ function TravelSection({ data, onChange }: { data: TravelData; onChange: (k: key
           Have you explored any of these Indonesian destinations before?
         </p>
         <div className="space-y-2.5">
-          {PAST_DESTINATION_OPTIONS.map(option => (
+          {PAST_DESTINATION_OPTIONS.map((option, optIdx) => (
             <div key={option} className="flex items-center gap-2.5">
               <input
+                id={`gf-past-destination-${optIdx}`}
                 type="checkbox"
                 checked={selected.includes(option)}
                 onChange={() => toggleDestination(option)}
                 className="w-4 h-4 rounded border-gray-300 cursor-pointer"
                 style={{ accentColor: TEAL }}
               />
-              <span
-                onClick={() => toggleDestination(option)}
+              <label
+                htmlFor={`gf-past-destination-${optIdx}`}
                 className="text-sm text-gray-700 cursor-pointer select-none"
               >
                 {option}
-              </span>
+              </label>
               {option === 'Other' && selected.includes('Other') && (
                 <input
                   value={data.pastDestinationsOther}
                   onChange={f('pastDestinationsOther')}
                   placeholder="Where?"
+                  aria-label="Other destination"
                   className={`${inputCls} ml-1 py-1.5! max-w-[220px]`}
                 />
               )}
@@ -481,11 +486,6 @@ const ALL_STEPS: { id: Section; title: string; subtitle: string }[] = [
   { id: 'drinks',  title: 'Drink Preferences',  subtitle: 'One shared answer for the whole booking' },
   { id: 'travel',  title: 'Travel Arrangements', subtitle: 'Arrival & departure pick-up details for the group' },
 ]
-
-function fmtDate(d: string | null | undefined) {
-  if (!d) return ''
-  return new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
-}
 
 function guestLabel(g: GuestRecord, i: number) {
   return [g.firstName, g.lastName].filter(Boolean).join(' ') || g.name || `Guest ${i + 1}`
@@ -603,7 +603,7 @@ const PROFILE_COLS: ColumnDef[] = [
   { key: 'dateOfBirth', label: 'Date of Birth', type: 'date', width: 125 },
   { key: 'nationality', label: 'Nationality', type: 'combobox', options: NATIONALITIES, placeholder: 'Search…', width: 130 },
   { key: 'email', label: 'Email', type: 'email', placeholder: 'email@example.com', width: 150 },
-  { key: 'phone', label: 'Phone', type: 'tel', placeholder: '+62 812...', width: 115 },
+  { key: 'phone', label: 'Phone', type: 'tel', placeholder: '+62 812…', width: 115 },
   { key: 'address', label: 'Address', type: 'text', placeholder: 'City, Country', width: 130 },
   { key: 'passport', label: 'Passport / ID No.', type: 'text', placeholder: 'A1234567', width: 115 },
   { key: 'passportExpiry', label: 'Passport Expiry', type: 'date', width: 125 },
@@ -638,16 +638,16 @@ interface CellModalState { guestId: string; guestName: string; col: ColumnDef }
 function CellModal({ state, value, onChange, onClose }: { state: CellModalState; value: any; onChange: (v: any) => void; onClose: () => void }) {
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center px-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-5 max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+      <div role="dialog" aria-modal="true" aria-label={state.col.label} className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-5 max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-1">
           <h3 className="text-base font-bold text-gray-800">{state.col.label}</h3>
-          <button onClick={onClose} className="p-1 rounded-full hover:bg-gray-100 text-gray-400"><XIcon className="w-4 h-4" /></button>
+          <button onClick={onClose} aria-label="Close" className="p-1 rounded-full hover:bg-gray-100 text-gray-400"><XIcon className="w-4 h-4" /></button>
         </div>
         <p className="text-xs text-gray-400 mb-4">{state.guestName}</p>
         {state.col.type === 'photo' && <ImageUpload value={value ?? ''} onChange={onChange} />}
         {state.col.type === 'files' && <FileUpload values={value ?? []} onChange={onChange} />}
         {state.col.type === 'equipment' && <EquipmentTable items={value ?? []} onChange={onChange} />}
-        <button onClick={onClose} className="w-full mt-4 px-4 py-2.5 rounded-xl text-sm font-bold text-white transition-all shadow-sm"
+        <button onClick={onClose} className="w-full mt-4 px-4 py-2.5 rounded-xl text-sm font-bold text-brand-foreground transition-all shadow-sm"
           style={{ background: `linear-gradient(135deg, ${TEAL} 0%, #0d3d47 100%)` }}>
           Done
         </button>
@@ -701,7 +701,7 @@ function FieldInput({ col, value, onChange, disabled, onOpenModal }: {
   return (
     <button type="button" disabled={disabled} onClick={onOpenModal}
       className={`w-full flex items-center justify-center gap-1.5 px-2 py-2 rounded-lg text-xs font-medium border transition-all ${disabled ? 'opacity-40 cursor-not-allowed' : 'hover:bg-gray-50'}`}
-      style={{ borderColor: s.done ? '#bbf7d0' : '#e5e7eb', background: s.done ? '#f0fdf4' : 'white', color: s.done ? '#16a34a' : '#6b7280' }}>
+      style={{ borderColor: s.done ? 'color-mix(in srgb, var(--success) 30%, transparent)' : '#e5e7eb', background: s.done ? 'color-mix(in srgb, var(--success) 10%, transparent)' : 'white', color: s.done ? 'var(--success)' : '#6b7280' }}>
       {col.type === 'photo' ? <Camera className="w-3.5 h-3.5" /> : col.type === 'files' ? <FileText className="w-3.5 h-3.5" /> : <Wrench className="w-3.5 h-3.5" />}
       {s.label}
     </button>
@@ -744,19 +744,20 @@ function GuestFieldGrid({
         const isOpen = dense || openId === g.id
         const headerInner = (
           <>
-            <div className="w-2 h-2 rounded-full shrink-0 mt-1.5" style={{ background: done ? '#22c55e' : error ? '#ef4444' : '#d1d5db' }} />
+            <div className="w-2 h-2 rounded-full shrink-0 mt-1.5" style={{ background: done ? 'var(--success)' : error ? 'var(--destructive)' : '#d1d5db' }} />
             <div className="min-w-0 flex-1">
               <p className="text-sm font-semibold text-gray-700 leading-tight">
                 {guestLabel(g, i)}{g.isLead ? <span className="ml-1 text-[10px] font-medium" style={{ color: GOLD }}>· Lead</span> : null}
               </p>
-              {error && <p className="text-xs text-red-500 mt-0.5 leading-tight">{error}</p>}
+              {error && <p className="text-xs text-destructive mt-0.5 leading-tight">{error}</p>}
             </div>
             {!g.isLead && (
               <span
                 role="button"
                 onClick={e => { e.stopPropagation(); onDeleteGuest(g) }}
                 title="Remove guest"
-                className="shrink-0 p-1.5 rounded text-gray-300 hover:text-red-500 hover:bg-red-50 transition-colors"
+                aria-label="Remove guest"
+                className="shrink-0 p-1.5 rounded text-gray-300 hover:text-destructive hover:bg-destructive/10 transition-colors"
               >
                 {deletingGuestId === g.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
               </span>
@@ -812,6 +813,7 @@ function GuestFieldGrid({
 /* ── Main Page ── */
 function BookingFormInner() {
   const { token } = useParams<{ token: string }>()
+  const confirm = useConfirm()
 
   const [loading,  setLoading]  = useState(true)
   const [error,    setError]    = useState('')
@@ -934,7 +936,7 @@ function BookingFormInner() {
   }
 
   const handleDeleteGuest = async (guest: GuestRecord) => {
-    if (!window.confirm(`Remove ${guestLabel(guest, 0)}?`)) return
+    if (!(await confirm({ title: `Remove ${guestLabel(guest, 0)}?`, confirmLabel: 'Remove', destructive: true }))) return
 
     // Drafts were never persisted — just drop them locally, no API call needed.
     if (isDraftGuest(guest)) {
@@ -1116,15 +1118,15 @@ function BookingFormInner() {
       <div className="min-h-screen flex items-center justify-center bg-[#f0f4f5] px-4">
         <div className="text-center max-w-sm">
           <img src={LOGO} alt="Samara" className="w-20 h-20 mx-auto mb-5" />
-          <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <CheckCircle className="w-9 h-9 text-emerald-500" />
+          <div className="w-16 h-16 bg-success/15 rounded-full flex items-center justify-center mx-auto mb-4">
+            <CheckCircle className="w-9 h-9 text-success" />
           </div>
           <h1 className="text-2xl font-bold text-gray-800 mb-2">All Done!</h1>
           <p className="text-gray-500 text-sm">Thank you for completing all guest profiles. We look forward to welcoming your group on board Samara Liveaboard.</p>
           {trip && (
             <div className="mt-5 bg-white rounded-2xl border border-gray-100 px-5 py-4 text-sm text-gray-600 text-left">
               <p className="font-semibold text-gray-800 mb-1">{trip.yachtName ?? 'Samara'}</p>
-              <p className="text-xs text-gray-400">{fmtDate(trip.startDate)} – {fmtDate(trip.endDate)}</p>
+              <p className="text-xs text-gray-400">{formatDate(trip.startDate, 'medium', { empty: '' })} – {formatDate(trip.endDate, 'medium', { empty: '' })}</p>
               {trip.destination && <p className="text-xs text-gray-400 mt-0.5">{trip.destination}</p>}
             </div>
           )}
@@ -1178,7 +1180,7 @@ function BookingFormInner() {
                 <div className="hidden sm:block w-px h-4 bg-white/20" />
                 <div className="flex items-center gap-2 text-white/70 text-xs">
                   <Calendar className="w-3.5 h-3.5 shrink-0" style={{ color: GOLD }} />
-                  <span>{fmtDate(trip.startDate)} – {fmtDate(trip.endDate)}</span>
+                  <span>{formatDate(trip.startDate, 'medium', { empty: '' })} – {formatDate(trip.endDate, 'medium', { empty: '' })}</span>
                 </div>
                 {trip.destination && (
                   <>
@@ -1206,8 +1208,8 @@ function BookingFormInner() {
         {/* ── Add guest modal ── */}
         {showAddGuestForm && (
           <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center px-4" onClick={() => setShowAddGuestForm(false)}>
-            <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-5" onClick={e => e.stopPropagation()}>
-              <h3 className="text-lg font-bold text-gray-800 mb-1">Add a Guest</h3>
+            <div role="dialog" aria-modal="true" aria-labelledby="gf-add-guest-title" className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-5" onClick={e => e.stopPropagation()}>
+              <h3 id="gf-add-guest-title" className="text-lg font-bold text-gray-800 mb-1">Add a Guest</h3>
               <p className="text-xs text-gray-400 mb-4">They&apos;ll appear as a new row below — fill in their Personal Details and save to officially add them to the booking.</p>
               <Field label="Guest Full Name *">
                 <input
@@ -1228,7 +1230,7 @@ function BookingFormInner() {
                 </button>
                 <button
                   onClick={handleAddGuest}
-                  className="flex-1 flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-bold text-white transition-all shadow-sm"
+                  className="flex-1 flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-bold text-brand-foreground transition-all shadow-sm"
                   style={{ background: `linear-gradient(135deg, ${TEAL} 0%, #0d3d47 100%)` }}
                 >
                   Add Guest
@@ -1255,17 +1257,17 @@ function BookingFormInner() {
                     onClick={() => { setStepIdx(i); setRowErrors({}) }}
                     className="flex items-center gap-2 px-3 py-2 rounded-xl border transition-all shrink-0 text-left disabled:cursor-not-allowed"
                     style={{
-                      background: active ? TEAL : stepFullyDone ? '#f0fdf4' : 'white',
-                      borderColor: active ? TEAL : stepFullyDone ? '#bbf7d0' : '#e5e7eb',
-                      color: active ? 'white' : stepFullyDone ? '#16a34a' : unlocked ? '#374151' : '#c4c9d0',
+                      background: active ? TEAL : stepFullyDone ? 'color-mix(in srgb, var(--success) 10%, transparent)' : 'white',
+                      borderColor: active ? TEAL : stepFullyDone ? 'color-mix(in srgb, var(--success) 30%, transparent)' : '#e5e7eb',
+                      color: active ? 'var(--brand-foreground)' : stepFullyDone ? 'var(--success)' : unlocked ? '#374151' : '#c4c9d0',
                       opacity: unlocked ? 1 : 0.6,
                     }}
                   >
                     <div className="w-6 h-6 rounded-full flex items-center justify-center shrink-0"
-                      style={{ background: active ? 'rgba(255,255,255,0.2)' : stepFullyDone ? '#dcfce7' : '#f3f4f6' }}>
+                      style={{ background: active ? 'rgba(255,255,255,0.2)' : stepFullyDone ? 'color-mix(in srgb, var(--success) 15%, transparent)' : '#f3f4f6' }}>
                       {stepFullyDone
-                        ? <CheckCircle className="w-3.5 h-3.5" style={{ color: active ? 'white' : '#16a34a' }} />
-                        : unlocked ? <span className="text-[11px] font-bold">{i + 1}</span> : <Lock className="w-3 h-3" style={{ color: active ? 'white' : '#c4c9d0' }} />}
+                        ? <CheckCircle className="w-3.5 h-3.5" style={{ color: active ? 'var(--brand-foreground)' : 'var(--success)' }} />
+                        : unlocked ? <span className="text-[11px] font-bold">{i + 1}</span> : <Lock className="w-3 h-3" style={{ color: active ? 'var(--brand-foreground)' : '#c4c9d0' }} />}
                     </div>
                     <div>
                       <p className="text-xs font-semibold leading-tight whitespace-nowrap">{step.title}</p>
@@ -1290,10 +1292,11 @@ function BookingFormInner() {
               <p className="text-sm text-gray-400 mt-0.5">{currentStep.subtitle}</p>
               {currentStep.id === 'profile' && (
                 <div className="mt-3 max-w-xs">
-                  <label className="block text-[11px] font-bold uppercase tracking-wide text-gray-500 mb-1">
+                  <label htmlFor="gf-traveling-with" className="block text-[11px] font-bold uppercase tracking-wide text-gray-500 mb-1">
                     Who are you sharing this journey with?
                   </label>
                   <select
+                    id="gf-traveling-with"
                     value={travelingWith}
                     onChange={e => handleTravelingWithChange(e.target.value)}
                     className={selectCls}
@@ -1377,7 +1380,7 @@ function BookingFormInner() {
               <button
                 onClick={() => handleSaveStep(true)}
                 disabled={saving}
-                className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-60 transition-all shadow-sm"
+                className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-sm font-bold text-brand-foreground disabled:opacity-60 transition-all shadow-sm"
                 style={{ background: `linear-gradient(135deg, ${TEAL} 0%, #0d3d47 100%)` }}
               >
                 {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}

@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from 'react'
 import { Users, FileWarning, Wallet, ClipboardList, Landmark, Sparkles, Building2, MapPin, AlertTriangle, FileText, Ship } from 'lucide-react'
+import { formatDate, formatDateRange, formatMoneyCompact } from '@/lib/format'
+import { Button } from '@/components/ui/button'
 
 interface ContractRow {
   id: string; fullName: string; employeeNumber: string; role: string | null
@@ -33,12 +35,6 @@ interface HROverviewData {
   headcountByLegalEntity: { name: string; count: number }[]
 }
 
-const fmtMoney = (n: number) => {
-  if (n >= 1_000_000_000) return `Rp ${(n / 1_000_000_000).toFixed(1)}B`
-  if (n >= 1_000_000) return `Rp ${(n / 1_000_000).toFixed(1)}M`
-  return 'Rp ' + new Intl.NumberFormat('id-ID').format(Math.round(n))
-}
-const fmtDate = (s: string) => new Date(s).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
 // Mirrors DOC_WARNING_DAYS in /api/hr/overview/route.ts — display-only, doesn't affect the query.
 const DOC_WARNING_DAYS = 30
 
@@ -48,14 +44,14 @@ function KPICard({ label, value, note, icon: Icon, tone = 'default', onClick }: 
   onClick?: () => void
 }) {
   const toneStyle = {
-    default: 'bg-card border', red: 'bg-red-50 border-red-200', amber: 'bg-amber-50 border-amber-200',
-    blue: 'bg-blue-50 border-blue-200', muted: 'bg-muted/30 border-dashed',
+    default: 'bg-card border', red: 'bg-destructive/10 border-destructive/30', amber: 'bg-warning/10 border-warning/30',
+    blue: 'bg-info/10 border-info/30', muted: 'bg-muted/30 border-dashed',
   }[tone]
-  const valStyle = { default: '', red: 'text-red-700', amber: 'text-amber-700', blue: 'text-blue-700', muted: 'text-muted-foreground' }[tone]
-  const iconStyle = { default: 'text-muted-foreground', red: 'text-red-400', amber: 'text-amber-400', blue: 'text-blue-400', muted: 'text-muted-foreground/50' }[tone]
+  const valStyle = { default: '', red: 'text-destructive', amber: 'text-warning', blue: 'text-info', muted: 'text-muted-foreground' }[tone]
+  const iconStyle = { default: 'text-muted-foreground', red: 'text-destructive/70', amber: 'text-warning/70', blue: 'text-info/70', muted: 'text-muted-foreground/50' }[tone]
   const Tag = onClick ? 'button' : 'div'
   return (
-    <Tag onClick={onClick} className={`rounded-xl p-5 text-left w-full ${toneStyle} ${onClick ? 'hover:border-[#bdac7e] transition-colors cursor-pointer' : ''}`}>
+    <Tag onClick={onClick} className={`rounded-xl p-5 text-left w-full ${toneStyle} ${onClick ? 'hover:border-primary transition-colors cursor-pointer' : ''}`}>
       <div className="flex items-start justify-between">
         <p className="text-xs text-muted-foreground font-medium">{label}</p>
         <Icon className={`h-4 w-4 shrink-0 ${iconStyle}`} />
@@ -83,7 +79,7 @@ function BreakdownList({ title, icon: Icon, rows, total }: {
             <div key={r.name} className="flex items-center gap-3">
               <span className="text-xs w-32 truncate shrink-0" title={r.name}>{r.name}</span>
               <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
-                <div className="h-full rounded-full bg-[#bdac7e]" style={{ width: `${total > 0 ? (r.count / total) * 100 : 0}%` }} />
+                <div className="h-full rounded-full bg-primary" style={{ width: `${total > 0 ? (r.count / total) * 100 : 0}%` }} />
               </div>
               <span className="text-xs font-semibold w-6 text-right shrink-0">{r.count}</span>
             </div>
@@ -125,7 +121,7 @@ export default function HROverview({ onNavigate }: { onNavigate?: (view: 'hr-lea
   )
 
   if (!data) return (
-    <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-center text-red-600 text-sm">
+    <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-6 text-center text-destructive text-sm">
       Failed to load dashboard data.
     </div>
   )
@@ -145,9 +141,9 @@ export default function HROverview({ onNavigate }: { onNavigate?: (view: 'hr-lea
           <h2 className="text-2xl font-bold tracking-tight">HR Overview</h2>
           <p className="text-muted-foreground text-sm mt-1">Workforce summary across all legal entities and work locations.</p>
         </div>
-        <button onClick={load} className="text-sm border rounded-md px-3 py-2 text-muted-foreground hover:bg-muted transition-colors shrink-0">
+        <Button variant="outline" onClick={load} className="text-muted-foreground shrink-0">
           Refresh
-        </button>
+        </Button>
       </div>
 
       {/* KPI Cards */}
@@ -160,7 +156,7 @@ export default function HROverview({ onNavigate }: { onNavigate?: (view: 'hr-lea
           icon={FileWarning}
           tone={contractsExpiringCount > 0 ? 'amber' : 'default'}
         />
-        <KPICard label="Monthly Employer Cost" value={fmtMoney(monthlyEmployerCost)} note="Basic salary + allowance + uang layar + uang makan, active staff" icon={Wallet} />
+        <KPICard label="Monthly Employer Cost" value={formatMoneyCompact(monthlyEmployerCost)} note="Basic salary + allowance + Uang Layar + meal allowance, active staff" icon={Wallet} />
       </div>
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
         <KPICard
@@ -173,7 +169,7 @@ export default function HROverview({ onNavigate }: { onNavigate?: (view: 'hr-lea
         />
         <KPICard
           label="Estimated Exit Exposure"
-          value={anySalaryDataSet ? fmtMoney(estimatedExitExposure) : '—'}
+          value={anySalaryDataSet ? formatMoneyCompact(estimatedExitExposure) : '—'}
           note="Worst-case severance estimate, active staff — planning only, not a legal figure"
           icon={Landmark}
         />
@@ -202,7 +198,7 @@ export default function HROverview({ onNavigate }: { onNavigate?: (view: 'hr-lea
       {/* Contracts expiring soon */}
       <div className="rounded-xl border overflow-hidden">
         <div className="flex items-center gap-2 px-5 py-4 border-b bg-muted/20">
-          <AlertTriangle className="h-4 w-4 text-amber-500" />
+          <AlertTriangle className="h-4 w-4 text-warning" />
           <h3 className="font-semibold text-sm">Contracts Expiring Soon (≤120 days)</h3>
         </div>
         {contractsExpiring.length === 0 ? (
@@ -227,8 +223,8 @@ export default function HROverview({ onNavigate }: { onNavigate?: (view: 'hr-lea
                     <p className="text-xs text-muted-foreground font-mono">{c.employeeNumber}</p>
                   </td>
                   <td className="px-5 py-3 text-muted-foreground">{c.role ?? '—'}</td>
-                  <td className="px-5 py-3 text-muted-foreground">{fmtDate(c.contractEndDate)}</td>
-                  <td className={`px-5 py-3 text-right font-semibold ${c.daysLeft <= 30 ? 'text-red-600' : 'text-amber-600'}`}>{c.daysLeft}d</td>
+                  <td className="px-5 py-3 text-muted-foreground">{formatDate(c.contractEndDate)}</td>
+                  <td className={`px-5 py-3 text-right font-semibold ${c.daysLeft <= 30 ? 'text-destructive' : 'text-warning'}`}>{c.daysLeft}d</td>
                 </tr>
               ))}
             </tbody>
@@ -239,7 +235,7 @@ export default function HROverview({ onNavigate }: { onNavigate?: (view: 'hr-lea
       {/* Documents expiring soon */}
       <div className="rounded-xl border overflow-hidden">
         <div className="flex items-center gap-2 px-5 py-4 border-b bg-muted/20">
-          <FileText className="h-4 w-4 text-amber-500" />
+          <FileText className="h-4 w-4 text-warning" />
           <h3 className="font-semibold text-sm">Documents Expiring Soon (≤{DOC_WARNING_DAYS} days)</h3>
         </div>
         {documentsExpiring.length === 0 ? (
@@ -262,12 +258,12 @@ export default function HROverview({ onNavigate }: { onNavigate?: (view: 'hr-lea
                   <td className="px-5 py-3 font-medium">{d.name}</td>
                   <td className="px-5 py-3 text-muted-foreground">
                     <span className="inline-flex items-center gap-1.5">
-                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${d.ownerType === 'Yacht' ? 'bg-blue-100 text-blue-700' : 'bg-muted text-muted-foreground'}`}>{d.ownerType}</span>
+                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${d.ownerType === 'Yacht' ? 'bg-info/15 text-info' : 'bg-muted text-muted-foreground'}`}>{d.ownerType}</span>
                       {d.ownerName}
                     </span>
                   </td>
-                  <td className="px-5 py-3 text-muted-foreground">{fmtDate(d.expiryDate)}</td>
-                  <td className={`px-5 py-3 text-right font-semibold ${d.daysLeft <= 7 ? 'text-red-600' : 'text-amber-600'}`}>{d.daysLeft < 0 ? `${Math.abs(d.daysLeft)}d overdue` : `${d.daysLeft}d`}</td>
+                  <td className="px-5 py-3 text-muted-foreground">{formatDate(d.expiryDate)}</td>
+                  <td className={`px-5 py-3 text-right font-semibold ${d.daysLeft <= 7 ? 'text-destructive' : 'text-warning'}`}>{d.daysLeft < 0 ? `${Math.abs(d.daysLeft)}d overdue` : `${d.daysLeft}d`}</td>
                 </tr>
               ))}
             </tbody>
@@ -278,7 +274,7 @@ export default function HROverview({ onNavigate }: { onNavigate?: (view: 'hr-lea
       {/* Freelance crew covering a regular employee's trip(s) */}
       <div className="rounded-xl border overflow-hidden">
         <div className="flex items-center gap-2 px-5 py-4 border-b bg-muted/20">
-          <Ship className="h-4 w-4 text-amber-500" />
+          <Ship className="h-4 w-4 text-warning" />
           <h3 className="font-semibold text-sm">Freelance Crew Coverage</h3>
         </div>
         {freelanceCoverage.length === 0 ? (
@@ -296,7 +292,7 @@ export default function HROverview({ onNavigate }: { onNavigate?: (view: 'hr-lea
             <tbody className="divide-y">
               {freelanceCoverage.map(r => (
                 <tr key={`${r.freelanceId}-${r.bookingId}`} className="hover:bg-muted/20">
-                  <td className="px-5 py-3 text-muted-foreground whitespace-nowrap">{fmtDate(r.startDate)} – {fmtDate(r.endDate)}</td>
+                  <td className="px-5 py-3 text-muted-foreground whitespace-nowrap">{formatDateRange(r.startDate, r.endDate)}</td>
                   <td className="px-5 py-3 font-medium">{r.freelanceName}</td>
                   <td className="px-5 py-3 text-muted-foreground">
                     {r.bookingLabel}{r.yachtName ? ` · ${r.yachtName}` : ''}{r.destination ? ` · ${r.destination}` : ''}

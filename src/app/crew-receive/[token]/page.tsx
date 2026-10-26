@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useParams } from 'next/navigation'
 import { Camera, CheckCircle2, Loader2, Search, ChevronDown, User } from 'lucide-react'
 import { useFileDrop } from '@/hooks/useFileDrop'
+import { formatDate } from '@/lib/format'
 
 const LOGO = 'https://samaraliveaboard.com/wp-content/uploads/2025/08/Logo-Samara-icon-192x192-1.png'
 
@@ -20,8 +21,8 @@ interface TransferData {
 // Searchable "Received by" picker — a plain <select> doesn't let crew filter a long
 // employee list by typing, so this is a lightweight combobox instead (same pattern as
 // TripCombobox in src/components/purchasing/TripPicker.tsx, restyled to match this page's mobile-first look).
-function EmployeePicker({ employees, value, onChange }: {
-  employees: EmployeeOption[]; value: string; onChange: (name: string) => void
+function EmployeePicker({ id, employees, value, onChange }: {
+  id?: string; employees: EmployeeOption[]; value: string; onChange: (name: string) => void
 }) {
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
@@ -30,11 +31,12 @@ function EmployeePicker({ employees, value, onChange }: {
 
   return (
     <div className="relative">
-      <button type="button" onClick={() => { setOpen(o => !o); setSearch('') }}
-        className="w-full border rounded-xl px-3 py-2.5 text-sm text-left flex items-center justify-between gap-2 bg-white focus:outline-none focus:ring-2 focus:ring-green-500">
+      <button id={id} type="button" onClick={() => { setOpen(o => !o); setSearch('') }}
+        aria-haspopup="listbox" aria-expanded={open}
+        className="w-full border rounded-xl px-3 py-2.5 text-sm text-left flex items-center justify-between gap-2 bg-white focus:outline-none focus:ring-2 focus:ring-success">
         <span className={`truncate flex items-center gap-2 ${value ? 'text-gray-900' : 'text-gray-400'}`}>
           <User className="h-4 w-4 shrink-0 text-gray-400" />
-          {value || 'Select your name...'}
+          {value || 'Select your name…'}
         </span>
         <ChevronDown className="h-4 w-4 text-gray-400 shrink-0" />
       </button>
@@ -45,15 +47,15 @@ function EmployeePicker({ employees, value, onChange }: {
             <div className="p-2 border-b shrink-0">
               <div className="relative">
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 pointer-events-none" />
-                <input autoFocus className="w-full h-9 border rounded-lg px-2.5 pl-8 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
-                  placeholder="Search name..." value={search} onChange={e => setSearch(e.target.value)} />
+                <input autoFocus aria-label="Search name" className="w-full h-9 border rounded-lg px-2.5 pl-8 text-sm focus:outline-none focus:ring-2 focus:ring-success"
+                  placeholder="Search name…" value={search} onChange={e => setSearch(e.target.value)} />
               </div>
             </div>
             <div className="overflow-y-auto">
               {opts.length === 0 && <p className="px-3 py-3 text-sm text-gray-400">No matching name</p>}
               {opts.map(e => (
                 <button key={e.id} type="button" onClick={() => { onChange(e.fullName); setOpen(false); setSearch('') }}
-                  className="w-full text-left px-3 py-2.5 text-sm hover:bg-green-50 border-b last:border-0 transition-colors">
+                  className="w-full text-left px-3 py-2.5 text-sm hover:bg-success/10 border-b last:border-0 transition-colors">
                   {e.fullName}
                 </button>
               ))}
@@ -128,7 +130,7 @@ export default function CrewReceivePage() {
       <div className="flex flex-col items-center gap-4 text-gray-400">
         <img src={LOGO} alt="Samara" className="w-14 h-14 opacity-60 animate-pulse" />
         <Loader2 className="h-6 w-6 animate-spin" />
-        <p className="text-sm">Loading...</p>
+        <p className="text-sm">Loading…</p>
       </div>
     </div>
   )
@@ -154,13 +156,13 @@ export default function CrewReceivePage() {
   if (transfer.status === 'RECEIVED' || done) return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
       <div className="text-center max-w-sm">
-        <CheckCircle2 className="h-16 w-16 text-green-600 mx-auto mb-4" />
+        <CheckCircle2 className="h-16 w-16 text-success mx-auto mb-4" />
         <h1 className="text-xl font-bold text-gray-800 mb-2">Confirmed</h1>
         <p className="text-gray-600 text-sm">
           {transfer.transferNumber} received by{' '}
           <span className="font-medium">{done ? receiverName.trim() : transfer.receivedByName}</span>
           {!done && transfer.receivedAt && (
-            <> on {new Date(transfer.receivedAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</>
+            <> on {formatDate(transfer.receivedAt)}</>
           )}
         </p>
       </div>
@@ -193,14 +195,14 @@ export default function CrewReceivePage() {
         </div>
 
         <div className="bg-white rounded-2xl border p-4 mb-4 space-y-4">
-          {submitError && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2">{submitError}</div>}
+          {submitError && <div className="rounded-lg bg-destructive/10 border border-destructive/30 text-destructive text-sm px-3 py-2">{submitError}</div>}
 
           <div className="space-y-1.5">
-            <label className="text-sm font-semibold text-gray-900">Received by</label>
-            <EmployeePicker employees={transfer.employees} value={receiverName} onChange={setReceiverName} />
+            <label htmlFor="crew-receive-received-by" className="text-sm font-semibold text-gray-900">Received by</label>
+            <EmployeePicker id="crew-receive-received-by" employees={transfer.employees} value={receiverName} onChange={setReceiverName} />
           </div>
 
-          <input ref={fileInputRef} type="file" accept="image/*" capture="environment" className="hidden"
+          <input ref={fileInputRef} type="file" accept="image/*" capture="environment" className="hidden" aria-label="Upload receipt photo"
             onChange={e => { const f = e.target.files?.[0]; if (f) handlePhotoFile(f) }} />
 
           {photo ? (
@@ -214,10 +216,10 @@ export default function CrewReceivePage() {
           ) : (
             <button onClick={() => fileInputRef.current?.click()} {...dropProps}
               className={`w-full border-2 border-dashed rounded-xl py-10 flex flex-col items-center gap-3 transition-colors ${
-                isDragging ? 'border-green-400 bg-green-50 text-green-700' : 'text-gray-500 hover:border-green-400 hover:text-green-700'
+                isDragging ? 'border-success bg-success/10 text-success' : 'text-gray-500 hover:border-success hover:text-success'
               }`}>
-              <div className="h-12 w-12 rounded-full bg-green-50 flex items-center justify-center">
-                <Camera className="h-6 w-6 text-green-600" />
+              <div className="h-12 w-12 rounded-full bg-success/10 flex items-center justify-center">
+                <Camera className="h-6 w-6 text-success" />
               </div>
               <div className="text-center">
                 <p className="font-medium text-sm">{isDragging ? 'Drop to upload' : 'Take or upload photo'}</p>
@@ -228,8 +230,8 @@ export default function CrewReceivePage() {
         </div>
 
         <button onClick={submit} disabled={submitting}
-          className="w-full py-3.5 bg-green-600 text-white rounded-xl font-semibold hover:bg-green-700 disabled:opacity-40 transition-colors">
-          {submitting ? 'Saving...' : 'Confirm Receipt'}
+          className="w-full py-3.5 bg-success text-success-foreground rounded-xl font-semibold hover:bg-success/90 disabled:opacity-40 transition-colors">
+          {submitting ? 'Saving…' : 'Confirm Receipt'}
         </button>
       </div>
     </div>

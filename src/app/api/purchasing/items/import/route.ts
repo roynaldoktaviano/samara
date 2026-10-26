@@ -50,11 +50,11 @@ export async function POST(req: NextRequest) {
 
   const formData = await req.formData()
   const file = formData.get('file') as File | null
-  if (!file) return NextResponse.json({ error: 'File CSV dibutuhkan' }, { status: 400 })
+  if (!file) return NextResponse.json({ error: 'CSV file is required' }, { status: 400 })
 
   const text = await file.text()
   const rows = parseCSV(text)
-  if (rows.length < 2) return NextResponse.json({ error: 'File CSV kosong atau tidak valid' }, { status: 400 })
+  if (rows.length < 2) return NextResponse.json({ error: 'CSV file is empty or invalid' }, { status: 400 })
 
   const headers = rows[0]
   const iSKU      = col(headers, 'SKU', 'sku')
@@ -71,7 +71,7 @@ export async function POST(req: NextRequest) {
   const iLoc      = col(headers, 'Location', 'Lokasi', 'location', 'lokasi')
 
   if (iSKU < 0 || iName < 0) {
-    return NextResponse.json({ error: 'Kolom SKU dan Nama wajib ada di header CSV' }, { status: 400 })
+    return NextResponse.json({ error: 'CSV header must include SKU and Name columns' }, { status: 400 })
   }
 
   const locations = await db.stockLocation.findMany({ where: { isActive: true }, select: { id: true, name: true } })
@@ -127,7 +127,7 @@ export async function POST(req: NextRequest) {
     const name = row[iName]?.trim()
 
     if (!sku || !name) {
-      errors.push({ row: i + 1, sku: sku || '—', error: 'SKU dan Nama wajib diisi' })
+      errors.push({ row: i + 1, sku: sku || '—', error: 'SKU and Name are required' })
       continue
     }
 

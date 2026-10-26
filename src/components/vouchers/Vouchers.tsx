@@ -17,8 +17,9 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table'
 import { Plus, Pencil, Trash2, Tag, Loader2, RotateCw } from 'lucide-react'
+import { formatDate, formatMoney } from '@/lib/format'
 
-const ACCENT = '#bdac7e'
+const ACCENT = 'var(--primary)'
 
 interface Voucher {
   id: string
@@ -36,11 +37,8 @@ interface Voucher {
   createdAt: string
 }
 
-const fmtDate = (d: string | null) =>
-  d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
-
 const fmtValue = (v: Voucher) =>
-  v.type === 'PERCENTAGE' ? `${v.value}%` : `$${v.value.toLocaleString()}`
+  v.type === 'PERCENTAGE' ? `${v.value}%` : formatMoney(v.value, { currency: 'USD' })
 
 const emptyForm = () => ({
   code: '',
@@ -185,7 +183,7 @@ export default function Vouchers() {
           </div>
           <p className="text-sm text-muted-foreground mt-0.5">Manage discount codes for campaigns and bookings</p>
         </div>
-        <Button onClick={openCreate} style={{ backgroundColor: ACCENT, color: 'white' }} className="hover:opacity-90">
+        <Button onClick={openCreate} style={{ backgroundColor: ACCENT, color: 'var(--primary-foreground)' }} className="hover:opacity-90">
           <Plus className="h-4 w-4 mr-2" /> New Voucher
         </Button>
       </div>
@@ -198,7 +196,7 @@ export default function Vouchers() {
             onClick={() => setFilter(f)}
             className="px-4 py-1.5 rounded-full text-sm font-medium border transition-colors"
             style={filter === f
-              ? { backgroundColor: ACCENT, color: 'white', borderColor: ACCENT }
+              ? { backgroundColor: ACCENT, color: 'var(--primary-foreground)', borderColor: ACCENT }
               : { borderColor: 'var(--border)', color: 'var(--muted-foreground)' }}
           >
             {f === 'ALL' ? 'All' : f === 'ACTIVE' ? 'Active' : 'Inactive'}
@@ -261,14 +259,14 @@ export default function Vouchers() {
                   {fmtValue(v)}
                 </TableCell>
                 <TableCell className="text-sm text-muted-foreground">
-                  {v.minBooking ? `$${v.minBooking.toLocaleString()}` : '—'}
+                  {v.minBooking ? formatMoney(v.minBooking, { currency: 'USD' }) : '—'}
                 </TableCell>
                 <TableCell className="text-sm">
                   {v.maxUses ? `${v.usedCount} / ${v.maxUses}` : `${v.usedCount} / ∞`}
                 </TableCell>
                 <TableCell className="text-xs text-muted-foreground">
                   {v.validFrom || v.validUntil
-                    ? `${fmtDate(v.validFrom)} → ${fmtDate(v.validUntil)}`
+                    ? `${formatDate(v.validFrom)} → ${formatDate(v.validUntil)}`
                     : 'No limit'}
                 </TableCell>
                 <TableCell>
@@ -437,7 +435,7 @@ export default function Vouchers() {
             <Button
               onClick={handleSave}
               disabled={saving}
-              style={{ backgroundColor: ACCENT, color: 'white' }}
+              style={{ backgroundColor: ACCENT, color: 'var(--primary-foreground)' }}
               className="hover:opacity-90"
             >
               {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}

@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Building2, X, FileText } from 'lucide-react'
+import { Building2, FileText } from 'lucide-react'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import LegalDocumentsPanel from './LegalDocumentsPanel'
 
 interface EmpLite { id: string; fullName: string; employeeNumber: string; department: string | null; role: string | null }
@@ -48,7 +49,7 @@ export default function EntitiesAssignmentsPage({ deepLinkId, onDeepLinkHandled 
   )
 
   if (!data) return (
-    <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-center text-red-600 text-sm">
+    <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-6 text-center text-destructive text-sm">
       Failed to load data.
     </div>
   )
@@ -87,9 +88,9 @@ export default function EntitiesAssignmentsPage({ deepLinkId, onDeepLinkHandled 
               const entity = entities.find(e => e.name === row.entity)
               return (
                 <tr key={row.entity} className="hover:bg-muted/20">
-                  <td className="px-4 py-3 font-medium sticky left-0 bg-white">
+                  <td className="px-4 py-3 font-medium sticky left-0 bg-card">
                     {entity ? (
-                      <button onClick={() => setViewEntity(entity)} className="flex items-center gap-1.5 hover:text-amber-700 transition-colors">
+                      <button onClick={() => setViewEntity(entity)} className="flex items-center gap-1.5 hover:text-primary-strong transition-colors">
                         <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                         {row.entity}
                       </button>
@@ -99,7 +100,8 @@ export default function EntitiesAssignmentsPage({ deepLinkId, onDeepLinkHandled 
                     <td key={cell.location} className="px-4 py-3 text-center">
                       {cell.count > 0 ? (
                         <button onClick={() => setDrill({ entity: row.entity, cell })}
-                          className="min-w-8 px-2 py-1 rounded-md font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 transition-colors">
+                          aria-label={`${cell.count} employee${cell.count !== 1 ? 's' : ''} — ${row.entity}, ${cell.location}`}
+                          className="min-w-8 px-2 py-1 rounded-md font-semibold text-primary-strong bg-primary/10 hover:bg-primary/15 transition-colors">
                           {cell.count}
                         </button>
                       ) : (
@@ -124,32 +126,29 @@ export default function EntitiesAssignmentsPage({ deepLinkId, onDeepLinkHandled 
       </div>
 
       {/* ── Drill-down modal ── */}
-      {drill && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[80vh] flex flex-col overflow-hidden">
-            <div className="flex items-center justify-between px-6 py-4 border-b shrink-0">
-              <div className="flex items-center gap-2">
-                <Building2 className="h-4 w-4 text-amber-600" />
-                <div>
-                  <h3 className="font-bold text-sm">{drill.entity}</h3>
-                  <p className="text-xs text-muted-foreground">{drill.cell.location} · {drill.cell.count} employee{drill.cell.count !== 1 ? 's' : ''}</p>
+      <Dialog open={!!drill} onOpenChange={o => { if (!o) setDrill(null) }}>
+        <DialogContent className="sm:max-w-lg max-h-[80vh] flex flex-col p-0 gap-0 overflow-hidden" onInteractOutside={e => e.preventDefault()}>
+          {drill && (
+            <>
+              <DialogHeader className="flex-row items-center gap-2 px-6 py-4 pr-12 border-b shrink-0">
+                <Building2 className="h-4 w-4 text-primary-strong shrink-0" />
+                <div className="text-left">
+                  <DialogTitle className="font-bold text-sm">{drill.entity}</DialogTitle>
+                  <DialogDescription className="text-xs">{drill.cell.location} · {drill.cell.count} employee{drill.cell.count !== 1 ? 's' : ''}</DialogDescription>
                 </div>
+              </DialogHeader>
+              <div className="overflow-y-auto divide-y">
+                {drill.cell.employees.map(e => (
+                  <div key={e.id} className="px-6 py-3">
+                    <p className="font-medium text-sm">{e.fullName}</p>
+                    <p className="text-xs text-muted-foreground font-mono">{e.employeeNumber} {e.department ? `· ${e.department}` : ''} {e.role ? `· ${e.role}` : ''}</p>
+                  </div>
+                ))}
               </div>
-              <button onClick={() => setDrill(null)} className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors">
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <div className="overflow-y-auto divide-y">
-              {drill.cell.employees.map(e => (
-                <div key={e.id} className="px-6 py-3">
-                  <p className="font-medium text-sm">{e.fullName}</p>
-                  <p className="text-xs text-muted-foreground font-mono">{e.employeeNumber} {e.department ? `· ${e.department}` : ''} {e.role ? `· ${e.role}` : ''}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

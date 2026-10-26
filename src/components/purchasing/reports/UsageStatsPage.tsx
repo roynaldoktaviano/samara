@@ -3,6 +3,8 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { RefreshCw, Search, ArrowUpDown } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, CartesianGrid } from 'recharts'
+import { formatMoney, formatNumber, formatCompact, formatDate, formatDateRange } from '@/lib/format'
+import { StatusBadge } from '@/components/ui/status-badge'
 
 interface UsageItem {
   id: string
@@ -48,15 +50,10 @@ const ITEM_TYPES = [
 ]
 const SHIP_COLORS = ['#bdac7e', '#0f766e', '#be185d', '#4f46e5', '#ea580c', '#64748b']
 
-const fmtNum = (n: number, d = 0) => new Intl.NumberFormat('id-ID', { maximumFractionDigits: d, minimumFractionDigits: 0 }).format(n)
-const fmtMoney = (n: number) => 'Rp ' + new Intl.NumberFormat('id-ID').format(Math.round(n))
-const fmtShort = (n: number) => n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${Math.round(n / 1000)}K` : String(Math.round(n))
-const fmtDate = (s: string) => new Date(s).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
-
 type SortKey = 'name' | 'net' | 'avgWeek' | 'avgMonth' | 'value' | 'warehouseStock' | 'weeksCover' | 'loss'
 
 function Tile({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: 'red' | 'amber' }) {
-  const color = tone === 'red' ? 'text-red-600' : tone === 'amber' ? 'text-amber-600' : 'text-foreground'
+  const color = tone === 'red' ? 'text-destructive' : tone === 'amber' ? 'text-warning' : 'text-foreground'
   return (
     <div className="rounded-lg border p-3">
       <p className="text-xs text-muted-foreground">{label}</p>
@@ -68,8 +65,8 @@ function Tile({ label, value, sub, tone }: { label: string; value: string; sub?:
 
 function CoverBadge({ weeks }: { weeks: number | null }) {
   if (weeks === null) return <span className="text-muted-foreground">—</span>
-  const cls = weeks < 2 ? 'bg-red-100 text-red-700' : weeks < 4 ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'
-  return <span className={`inline-block px-2 py-0.5 rounded-full text-[11px] font-semibold ${cls}`}>{weeks >= 52 ? '52+ wk' : `${fmtNum(weeks, 1)} wk`}</span>
+  const tone = weeks < 2 ? 'destructive' : weeks < 4 ? 'warning' : 'success'
+  return <StatusBadge size="sm" tone={tone} className="font-semibold">{weeks >= 52 ? '52+ wk' : `${formatNumber(weeks, { decimals: 1 })} wk`}</StatusBadge>
 }
 
 export default function UsageStatsPage() {
@@ -113,7 +110,7 @@ export default function UsageStatsPage() {
 
   const SortTh = ({ k, children, className = '' }: { k: SortKey; children: React.ReactNode; className?: string }) => (
     <th className={`px-3 py-2 font-medium cursor-pointer select-none hover:text-foreground ${className}`} onClick={() => toggleSort(k)}>
-      <span className="inline-flex items-center gap-1">{children}<ArrowUpDown className={`h-3 w-3 ${sort.key === k ? 'text-amber-600' : 'opacity-30'}`} /></span>
+      <span className="inline-flex items-center gap-1">{children}<ArrowUpDown className={`h-3 w-3 ${sort.key === k ? 'text-warning' : 'opacity-30'}`} /></span>
     </th>
   )
 
@@ -140,19 +137,19 @@ export default function UsageStatsPage() {
       <div className="flex flex-wrap items-center gap-2">
         {PRESETS.map(p => (
           <button key={p.label} onClick={() => applyPreset(p)}
-            className={`h-8 px-3 rounded-md text-xs font-medium transition-colors border ${preset === p.label ? 'border-amber-500 bg-amber-500 text-white' : 'border-input bg-background text-muted-foreground hover:bg-muted'}`}>
+            className={`h-8 px-3 rounded-md text-xs font-medium transition-colors border ${preset === p.label ? 'border-primary bg-primary text-primary-foreground' : 'border-input bg-background text-muted-foreground hover:bg-muted'}`}>
             {p.label}
           </button>
         ))}
         <div className="w-px h-5 bg-border mx-1" />
         <input type="date" value={from} onChange={e => { setFrom(e.target.value); setPreset('') }}
-          className="h-8 px-2 text-xs rounded-md border border-input bg-background focus:outline-none focus:ring-1 focus:ring-amber-500" />
+          className="h-8 px-2 text-xs rounded-md border border-input bg-background focus:outline-none focus:ring-1 focus:ring-ring" />
         <span className="text-xs text-muted-foreground">→</span>
         <input type="date" value={to} onChange={e => { setTo(e.target.value); setPreset('') }}
-          className="h-8 px-2 text-xs rounded-md border border-input bg-background focus:outline-none focus:ring-1 focus:ring-amber-500" />
+          className="h-8 px-2 text-xs rounded-md border border-input bg-background focus:outline-none focus:ring-1 focus:ring-ring" />
         {data && !loading && (
           <span className="text-xs text-muted-foreground ml-2">
-            {fmtDate(data.range.from)} – {fmtDate(data.range.to)} · {data.range.days} days
+            {formatDateRange(data.range.from, data.range.to)} · {data.range.days} days
           </span>
         )}
       </div>
@@ -167,11 +164,11 @@ export default function UsageStatsPage() {
       ) : (
         <div className={`space-y-5 ${loading ? 'opacity-60' : ''}`}>
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-            <Tile label="Avg used / week" value={`${fmtNum(data.totals.avgWeek, 1)} units`} sub={`${fmtNum(data.totals.net)} units in period`} />
-            <Tile label="Avg used / month" value={`${fmtNum(data.totals.avgMonth, 1)} units`} />
-            <Tile label="Avg cost / month" value={fmtMoney(data.totals.valuePerMonth)} sub={`${fmtMoney(data.totals.value)} in period`} />
+            <Tile label="Avg used / week" value={`${formatNumber(data.totals.avgWeek, { decimals: 1 })} units`} sub={`${formatNumber(data.totals.net)} units in period`} />
+            <Tile label="Avg used / month" value={`${formatNumber(data.totals.avgMonth, { decimals: 1 })} units`} />
+            <Tile label="Avg cost / month" value={formatMoney(data.totals.valuePerMonth)} sub={`${formatMoney(data.totals.value)} in period`} />
             <Tile label="Items under 4 weeks of stock" value={String(data.totals.lowCover)} tone={data.totals.lowCover > 0 ? 'amber' : undefined} sub="warehouse stock ÷ avg weekly use" />
-            <Tile label="Lost / miscounted" value={`${fmtNum(data.totals.loss)} units`} tone={data.totals.loss > 0 ? 'red' : undefined} sub={data.totals.lossValue > 0 ? fmtMoney(data.totals.lossValue) : undefined} />
+            <Tile label="Lost / miscounted" value={`${formatNumber(data.totals.loss)} units`} tone={data.totals.loss > 0 ? 'red' : undefined} sub={data.totals.lossValue > 0 ? formatMoney(data.totals.lossValue) : undefined} />
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -182,7 +179,7 @@ export default function UsageStatsPage() {
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f1f1" />
                   <XAxis dataKey="label" tick={{ fontSize: 11, fill: '#888' }} axisLine={false} tickLine={false} />
                   <YAxis tick={{ fontSize: 11, fill: '#888' }} axisLine={false} tickLine={false} width={36} />
-                  <Tooltip formatter={(v: number, n: string) => [fmtNum(v, 1), n]} contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e5e7eb' }} cursor={{ fill: 'rgba(189,172,126,0.08)' }} />
+                  <Tooltip formatter={(v: number, n: string) => [formatNumber(v, { decimals: 1 }), n]} contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid var(--border)', backgroundColor: 'var(--popover)', color: 'var(--popover-foreground)' }} cursor={{ fill: 'rgba(189,172,126,0.08)' }} />
                   <Legend wrapperStyle={{ fontSize: 11 }} />
                   {data.ships.map((s, i) => <Bar key={s} dataKey={s} stackId="a" fill={SHIP_COLORS[i % SHIP_COLORS.length]} radius={i === data.ships.length - 1 ? [4, 4, 0, 0] : undefined} />)}
                 </BarChart>
@@ -194,12 +191,12 @@ export default function UsageStatsPage() {
                 {data.categories.map(c => {
                   const pct = data.totals.value > 0 ? (c.value / data.totals.value) * 100 : 0
                   return (
-                    <button key={c.category} onClick={() => setCategory(category === c.category ? '' : c.category)} className={`w-full text-left rounded-md px-2 py-1.5 transition-colors ${category === c.category ? 'bg-amber-50 ring-1 ring-amber-300' : 'hover:bg-muted'}`}>
+                    <button key={c.category} onClick={() => setCategory(category === c.category ? '' : c.category)} className={`w-full text-left rounded-md px-2 py-1.5 transition-colors ${category === c.category ? 'bg-warning/10 ring-1 ring-warning/40' : 'hover:bg-muted'}`}>
                       <div className="flex justify-between text-xs">
                         <span className="font-medium">{c.category}</span>
-                        <span className="text-muted-foreground">{fmtNum(c.net)} units · {fmtShort(c.value)}</span>
+                        <span className="text-muted-foreground">{formatNumber(c.net)} units · {formatCompact(c.value)}</span>
                       </div>
-                      <div className="h-1.5 rounded bg-muted mt-1"><div className="h-1.5 rounded bg-[#bdac7e]" style={{ width: `${pct}%` }} /></div>
+                      <div className="h-1.5 rounded bg-muted mt-1"><div className="h-1.5 rounded bg-primary" style={{ width: `${pct}%` }} /></div>
                     </button>
                   )
                 })}
@@ -212,7 +209,7 @@ export default function UsageStatsPage() {
               <div className="relative">
                 <Search className="h-3.5 w-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
                 <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search item or SKU…"
-                  className="h-8 pl-8 pr-3 text-sm rounded-md border border-input bg-background w-56 focus:outline-none focus:ring-1 focus:ring-amber-500" />
+                  className="h-8 pl-8 pr-3 text-sm rounded-md border border-input bg-background w-56 focus:outline-none focus:ring-1 focus:ring-ring" />
               </div>
               <select value={category} onChange={e => setCategory(e.target.value)} className="h-8 border rounded-md px-2 text-sm bg-background">
                 <option value="">All categories</option>
@@ -242,14 +239,14 @@ export default function UsageStatsPage() {
                         <div className="font-medium">{r.name}{!r.isActive && <span className="ml-1.5 text-[10px] text-muted-foreground">(inactive)</span>}</div>
                         <div className="text-[11px] text-muted-foreground">{r.sku} · {r.category} · {r.unit}</div>
                       </td>
-                      <td className="px-3 py-2 text-right tabular-nums font-semibold">{fmtNum(r.net, 1)}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{fmtNum(r.avgWeek, 1)}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{fmtNum(r.avgMonth, 1)}</td>
-                      {data.ships.map(s => <td key={s} className="px-3 py-2 text-right tabular-nums text-muted-foreground">{r.byShip[s] ? fmtNum(r.byShip[s], 1) : '—'}</td>)}
-                      <td className="px-3 py-2 text-right tabular-nums text-muted-foreground whitespace-nowrap">{r.value > 0 ? fmtMoney(r.value) : '—'}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{fmtNum(r.warehouseStock, 1)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums font-semibold">{formatNumber(r.net, { decimals: 1 })}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{formatNumber(r.avgWeek, { decimals: 1 })}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{formatNumber(r.avgMonth, { decimals: 1 })}</td>
+                      {data.ships.map(s => <td key={s} className="px-3 py-2 text-right tabular-nums text-muted-foreground">{r.byShip[s] ? formatNumber(r.byShip[s], { decimals: 1 }) : '—'}</td>)}
+                      <td className="px-3 py-2 text-right tabular-nums text-muted-foreground whitespace-nowrap">{r.value > 0 ? formatMoney(r.value) : '—'}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{formatNumber(r.warehouseStock, { decimals: 1 })}</td>
                       <td className="px-3 py-2 text-right"><CoverBadge weeks={r.weeksCover} /></td>
-                      <td className="px-3 py-2 text-right tabular-nums">{r.loss ? <span className="text-red-600">{fmtNum(r.loss, 1)}</span> : '—'}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{r.loss ? <span className="text-destructive">{formatNumber(r.loss, { decimals: 1 })}</span> : '—'}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -260,7 +257,7 @@ export default function UsageStatsPage() {
           <p className="text-[11px] text-muted-foreground">
             Used = issued to ships − returns, in each item&apos;s purchase unit. Averages are over the days in range that have data.
             Cover = warehouse stock ÷ average weekly use. Cost uses the item&apos;s current average cost.
-            {data.range.cutoff && <> History up to {fmtDate(new Date(new Date(data.range.cutoff).getTime() - 86400000).toISOString())} comes from the imported CariStok sheet; later movements from ERP transfers.</>}
+            {data.range.cutoff && <> History up to {formatDate(new Date(data.range.cutoff).getTime() - 86400000)} comes from the imported CariStok sheet; later movements from ERP transfers.</>}
           </p>
         </div>
       )}

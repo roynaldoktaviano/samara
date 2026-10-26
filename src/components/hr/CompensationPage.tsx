@@ -1,7 +1,15 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Wallet, X, Pencil, Trash2, Plus, TrendingUp, TrendingDown, CheckCircle2, ToggleLeft, ToggleRight } from 'lucide-react'
+import { Wallet, Pencil, Trash2, Plus, TrendingUp, TrendingDown, CheckCircle2, ToggleLeft, ToggleRight } from 'lucide-react'
+import { toast } from 'sonner'
+import { formatMoney } from '@/lib/format'
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { useConfirm } from '@/components/ui/confirm-dialog'
+import { Input } from '@/components/ui/input'
+import { NativeSelect } from '@/components/ui/native-select'
+import { Label } from '@/components/ui/label'
 
 interface LocationLite { id: string; name: string }
 interface RoleLite { id: string; title: string; isActive: boolean; location: LocationLite | null }
@@ -15,12 +23,10 @@ interface EmployeeRow {
 const LEVELS = ['HIGH', 'MEDIUM', 'LOW'] as const
 const LEVEL_LABEL: Record<string, string> = { HIGH: 'High', MEDIUM: 'Medium', LOW: 'Low' }
 const LEVEL_COLOR: Record<string, string> = {
-  HIGH: 'bg-green-50 border-green-200 text-green-700',
-  MEDIUM: 'bg-amber-50 border-amber-200 text-amber-700',
-  LOW: 'bg-slate-50 border-slate-200 text-slate-600',
+  HIGH: 'bg-success/10 border-success/30 text-success',
+  MEDIUM: 'bg-warning/10 border-warning/30 text-warning',
+  LOW: 'bg-muted/50 border-border text-muted-foreground',
 }
-
-const fmtMoney = (n: number) => 'Rp ' + new Intl.NumberFormat('id-ID').format(Math.round(n))
 
 const ROLE_BLANK = { title: '', locationId: '' }
 
@@ -42,7 +48,7 @@ export default function CompensationPage() {
   const [roleForm, setRoleForm] = useState({ ...ROLE_BLANK })
   const [roleSaving, setRoleSaving] = useState(false)
   const [roleFormError, setRoleFormError] = useState('')
-  const [deleteConfirm, setDeleteConfirm] = useState<RoleLite | null>(null)
+  const confirm = useConfirm()
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -101,9 +107,19 @@ export default function CompensationPage() {
   }
 
   async function deleteRole(role: RoleLite) {
+    if (!(await confirm({
+      title: 'Delete Role?',
+      description: (
+        <>
+          <span className="font-medium text-foreground">{role.title}</span> and its compensation bands will be removed permanently.
+          Roles still assigned to an employee or candidate can&apos;t be deleted — deactivate it instead.
+        </>
+      ),
+      destructive: true,
+    }))) return
     const res = await fetch(`/api/hr/roles/${role.id}`, { method: 'DELETE' })
-    if (!res.ok) { const d = await res.json(); alert(d.error ?? 'Failed to delete') }
-    setDeleteConfirm(null); load()
+    if (!res.ok) { const d = await res.json(); toast.error(d.error ?? 'Failed to delete') }
+    load()
   }
 
   const bandFor = (roleId: string, level: string) => bands.find(b => b.roleId === roleId && b.level === level) ?? null
@@ -117,9 +133,9 @@ export default function CompensationPage() {
           <h2 className="text-2xl font-bold tracking-tight">Roles & Compensation</h2>
           <p className="text-muted-foreground text-sm mt-1">Approved salary range per role and skill level, and where each employee sits against it</p>
         </div>
-        <button onClick={openAddRole} className="flex items-center gap-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium px-4 py-2 rounded-md transition-colors">
-          <Plus className="h-4 w-4" /> Add Role
-        </button>
+        <Button onClick={openAddRole}>
+          <Plus /> Add Role
+        </Button>
       </div>
 
       {loading ? (
@@ -151,7 +167,7 @@ export default function CompensationPage() {
                         <td key={level} className="px-4 py-3 text-center">
                           <button onClick={() => openEdit(role.id, role.title, level)}
                             className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-colors hover:opacity-80 ${band ? LEVEL_COLOR[level] : 'border-dashed text-muted-foreground'}`}>
-                            {band ? `${fmtMoney(band.minSalary)} – ${fmtMoney(band.maxSalary)}` : 'Set range'}
+                            {band ? `${formatMoney(band.minSalary)} – ${formatMoney(band.maxSalary)}` : 'Set range'}
                             <Pencil className="h-3 w-3" />
                           </button>
                         </td>
@@ -159,17 +175,18 @@ export default function CompensationPage() {
                     })}
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-1">
-                        <button onClick={() => toggleRoleActive(role)} title={role.isActive ? 'Deactivate' : 'Activate'}>
+                        <Button variant="ghost" size="icon" onClick={() => toggleRoleActive(role)} className="size-7"
+                          title={role.isActive ? 'Deactivate' : 'Activate'} aria-label={role.isActive ? 'Deactivate role' : 'Activate role'}>
                           {role.isActive
-                            ? <ToggleRight className="h-5 w-5 text-green-600" />
-                            : <ToggleLeft className="h-5 w-5 text-muted-foreground" />}
-                        </button>
-                        <button onClick={() => openEditRole(role)} className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors">
-                          <Pencil className="h-3.5 w-3.5" />
-                        </button>
-                        <button onClick={() => setDeleteConfirm(role)} className="p-1.5 text-muted-foreground hover:text-destructive hover:bg-red-50 rounded-lg transition-colors">
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
+                            ? <ToggleRight className="size-5 text-success" />
+                            : <ToggleLeft className="size-5 text-muted-foreground" />}
+                        </Button>
+                        <Button variant="ghost" size="icon" onClick={() => openEditRole(role)} className="size-7 text-muted-foreground" aria-label="Edit role">
+                          <Pencil className="size-3.5" />
+                        </Button>
+                        <Button variant="ghost" size="icon" onClick={() => deleteRole(role)} className="size-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10" aria-label="Delete role">
+                          <Trash2 className="size-3.5" />
+                        </Button>
                       </div>
                     </td>
                   </tr>
@@ -206,9 +223,9 @@ export default function CompensationPage() {
                     const salary = e.basicSalary!
                     let position: { label: string; color: string; icon: React.ElementType } | null = null
                     if (band) {
-                      if (salary < band.minSalary) position = { label: 'Below range', color: 'text-red-600', icon: TrendingDown }
-                      else if (salary > band.maxSalary) position = { label: 'Above range', color: 'text-blue-600', icon: TrendingUp }
-                      else position = { label: 'Within range', color: 'text-green-600', icon: CheckCircle2 }
+                      if (salary < band.minSalary) position = { label: 'Below range', color: 'text-destructive', icon: TrendingDown }
+                      else if (salary > band.maxSalary) position = { label: 'Above range', color: 'text-info', icon: TrendingUp }
+                      else position = { label: 'Within range', color: 'text-success', icon: CheckCircle2 }
                     }
                     return (
                       <tr key={e.id} className="hover:bg-muted/20">
@@ -220,8 +237,8 @@ export default function CompensationPage() {
                         <td className="px-4 py-3 text-center">
                           <span className={`px-2 py-0.5 rounded-full text-xs font-medium border ${LEVEL_COLOR[e.level!]}`}>{LEVEL_LABEL[e.level!]}</span>
                         </td>
-                        <td className="px-4 py-3 text-right font-semibold">{fmtMoney(salary)}</td>
-                        <td className="px-4 py-3 text-muted-foreground text-xs">{band ? `${fmtMoney(band.minSalary)} – ${fmtMoney(band.maxSalary)}` : 'No range set'}</td>
+                        <td className="px-4 py-3 text-right font-semibold">{formatMoney(salary)}</td>
+                        <td className="px-4 py-3 text-muted-foreground text-xs">{band ? `${formatMoney(band.minSalary)} – ${formatMoney(band.maxSalary)}` : 'No range set'}</td>
                         <td className="px-4 py-3 text-center">
                           {position ? (
                             <span className={`inline-flex items-center gap-1 text-xs font-semibold ${position.color}`}>
@@ -240,93 +257,66 @@ export default function CompensationPage() {
       )}
 
       {/* ── Edit Band Modal ── */}
-      {editing && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
-            <div className="flex items-center justify-between px-6 py-4 border-b">
-              <h3 className="font-bold text-sm">{editing.roleTitle} — {LEVEL_LABEL[editing.level]}</h3>
-              <button onClick={() => setEditing(null)} className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors">
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <div className="px-6 py-5 space-y-4">
-              {formError && <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{formError}</p>}
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Min Salary</label>
-                  <input type="number" className="w-full h-10 border rounded-lg px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
-                    value={form.minSalary} onChange={e => setForm(f => ({ ...f, minSalary: e.target.value }))} />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Max Salary</label>
-                  <input type="number" className="w-full h-10 border rounded-lg px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
-                    value={form.maxSalary} onChange={e => setForm(f => ({ ...f, maxSalary: e.target.value }))} />
-                </div>
+      <Dialog open={!!editing} onOpenChange={o => { if (!o) setEditing(null) }}>
+        <DialogContent aria-describedby={undefined} className="sm:max-w-sm p-0 gap-0 overflow-hidden" onInteractOutside={e => e.preventDefault()}>
+          <DialogHeader className="px-6 py-4 border-b">
+            <DialogTitle className="font-bold text-sm pr-6">{editing ? `${editing.roleTitle} — ${LEVEL_LABEL[editing.level]}` : ''}</DialogTitle>
+          </DialogHeader>
+          <div className="px-6 py-5 space-y-4">
+            {formError && <p className="text-xs text-destructive bg-destructive/10 border border-destructive/30 rounded-lg px-3 py-2">{formError}</p>}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="comp-band-min" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Min Salary</Label>
+                <Input id="comp-band-min" type="number" className="h-10"
+                  value={form.minSalary} onChange={e => setForm(f => ({ ...f, minSalary: e.target.value }))} />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="comp-band-max" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Max Salary</Label>
+                <Input id="comp-band-max" type="number" className="h-10"
+                  value={form.maxSalary} onChange={e => setForm(f => ({ ...f, maxSalary: e.target.value }))} />
               </div>
             </div>
-            <div className="flex items-center justify-end gap-2 px-6 py-4 border-t bg-gray-50/80">
-              <button onClick={() => setEditing(null)} className="px-4 py-2 text-sm border rounded-lg hover:bg-white transition-colors">Cancel</button>
-              <button onClick={save} disabled={saving} className="px-5 py-2 text-sm text-white rounded-lg font-semibold bg-amber-600 hover:bg-amber-700 disabled:opacity-50 transition-colors">
-                {saving ? 'Saving...' : 'Save'}
-              </button>
-            </div>
           </div>
-        </div>
-      )}
+          <DialogFooter className="px-6 py-4 border-t bg-muted/50">
+            <Button variant="outline" onClick={() => setEditing(null)}>Cancel</Button>
+            <Button onClick={save} loading={saving} className="font-semibold">
+              {saving ? 'Saving…' : 'Save'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* ── Add/Edit Role Modal ── */}
-      {roleModal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
-            <div className="flex items-center justify-between px-6 py-4 border-b">
-              <h3 className="font-bold text-sm">{roleModal.role ? 'Edit Role' : 'Add Role'}</h3>
-              <button onClick={() => setRoleModal(null)} className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors">
-                <X className="h-4 w-4" />
-              </button>
+      <Dialog open={!!roleModal} onOpenChange={o => { if (!o) setRoleModal(null) }}>
+        <DialogContent aria-describedby={undefined} className="sm:max-w-sm p-0 gap-0 overflow-hidden" onInteractOutside={e => e.preventDefault()}>
+          <DialogHeader className="px-6 py-4 border-b">
+            <DialogTitle className="font-bold text-sm pr-6">{roleModal?.role ? 'Edit Role' : 'Add Role'}</DialogTitle>
+          </DialogHeader>
+          <div className="px-6 py-5 space-y-4">
+            {roleFormError && <p className="text-xs text-destructive bg-destructive/10 border border-destructive/30 rounded-lg px-3 py-2">{roleFormError}</p>}
+            <div className="space-y-1.5">
+              <Label htmlFor="comp-role-title" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Title</Label>
+              <Input id="comp-role-title" autoFocus className="h-10"
+                value={roleForm.title} onChange={e => setRoleForm(f => ({ ...f, title: e.target.value }))} />
             </div>
-            <div className="px-6 py-5 space-y-4">
-              {roleFormError && <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{roleFormError}</p>}
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Title</label>
-                <input autoFocus className="w-full h-10 border rounded-lg px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
-                  value={roleForm.title} onChange={e => setRoleForm(f => ({ ...f, title: e.target.value }))} />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Location</label>
-                <select className="w-full h-10 border rounded-lg px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
-                  value={roleForm.locationId} onChange={e => setRoleForm(f => ({ ...f, locationId: e.target.value }))}>
-                  <option value="">— Not location-specific —</option>
-                  {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
-                </select>
-                <p className="text-[11px] text-muted-foreground">Optional — set this if the role only exists at one location (e.g. a role specific to one vessel).</p>
-              </div>
-            </div>
-            <div className="flex items-center justify-end gap-2 px-6 py-4 border-t bg-gray-50/80">
-              <button onClick={() => setRoleModal(null)} className="px-4 py-2 text-sm border rounded-lg hover:bg-white transition-colors">Cancel</button>
-              <button onClick={saveRole} disabled={roleSaving} className="px-5 py-2 text-sm text-white rounded-lg font-semibold bg-amber-600 hover:bg-amber-700 disabled:opacity-50 transition-colors">
-                {roleSaving ? 'Saving...' : roleModal.role ? 'Save Changes' : 'Add Role'}
-              </button>
+            <div className="space-y-1.5">
+              <Label htmlFor="comp-role-location" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Location</Label>
+              <NativeSelect id="comp-role-location" className="h-10"
+                value={roleForm.locationId} onChange={e => setRoleForm(f => ({ ...f, locationId: e.target.value }))}>
+                <option value="">— Not location-specific —</option>
+                {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+              </NativeSelect>
+              <p className="text-[11px] text-muted-foreground">Optional — set this if the role only exists at one location (e.g. a role specific to one vessel).</p>
             </div>
           </div>
-        </div>
-      )}
-
-      {/* ── Delete Confirm ── */}
-      {deleteConfirm && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6">
-            <h3 className="font-semibold mb-2">Delete Role?</h3>
-            <p className="text-sm text-muted-foreground mb-4">
-              <span className="font-medium text-foreground">{deleteConfirm.title}</span> and its compensation bands will be removed permanently.
-              Roles still assigned to an employee or candidate can&apos;t be deleted — deactivate it instead.
-            </p>
-            <div className="flex gap-3 justify-end">
-              <button onClick={() => setDeleteConfirm(null)} className="px-4 py-2 text-sm border rounded-md hover:bg-muted">Cancel</button>
-              <button onClick={() => deleteRole(deleteConfirm)} className="px-4 py-2 text-sm bg-destructive text-white rounded-md hover:bg-destructive/90">Delete</button>
-            </div>
-          </div>
-        </div>
-      )}
+          <DialogFooter className="px-6 py-4 border-t bg-muted/50">
+            <Button variant="outline" onClick={() => setRoleModal(null)}>Cancel</Button>
+            <Button onClick={saveRole} loading={roleSaving} className="font-semibold">
+              {roleSaving ? 'Saving…' : roleModal?.role ? 'Save Changes' : 'Add Role'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

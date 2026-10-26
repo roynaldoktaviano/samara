@@ -29,10 +29,10 @@ export async function PATCH(_req: NextRequest, { params }: { params: Promise<{ i
   }
   const undecided = undecidedLines(request)
   if (undecided.length > 0) {
-    return NextResponse.json({ error: `Masih ada item yang belum dicek: ${undecided.map(i => i.itemName).join(', ')}` }, { status: 409 })
+    return NextResponse.json({ error: `Some items have not been checked yet: ${undecided.map(i => i.itemName).join(', ')}` }, { status: 409 })
   }
   if (!parallel && request.items.every(i => i.verifyRejectedAt)) {
-    return NextResponse.json({ error: 'Semua item ditolak — reject PR ini langsung, bukan diteruskan' }, { status: 409 })
+    return NextResponse.json({ error: 'All items were rejected — reject this PR instead of forwarding it' }, { status: 409 })
   }
 
   const result = await finishWarehouseCheck(db, id, session.user.id)

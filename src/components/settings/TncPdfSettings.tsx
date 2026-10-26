@@ -4,12 +4,10 @@ import { useState, useEffect } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { FileText, Upload, Trash2, Loader2, CheckCircle, ExternalLink } from 'lucide-react'
-import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
+import { useConfirm } from '@/components/ui/confirm-dialog'
+import { formatDate } from '@/lib/format'
 
-const ACCENT = '#bdac7e'
+const ACCENT = 'var(--primary)'
 
 interface TncInfo {
   uploaded: boolean
@@ -23,8 +21,8 @@ export default function TncPdfSettings() {
   const [loading,     setLoading]     = useState(true)
   const [uploading,   setUploading]   = useState(false)
   const [deleting,    setDeleting]    = useState(false)
-  const [confirmDel,  setConfirmDel]  = useState(false)
   const [toast,       setToast]       = useState<{ type: 'success' | 'error'; msg: string } | null>(null)
+  const confirm = useConfirm()
 
   const showToast = (type: 'success' | 'error', msg: string) => {
     setToast({ type, msg })
@@ -63,11 +61,18 @@ export default function TncPdfSettings() {
   }
 
   const handleDelete = async () => {
+    if (!(await confirm({
+      title: 'Remove T&C PDF?',
+      description: 'Invoices will revert to the default built-in T&C. This action cannot be undone.',
+      confirmLabel: 'Yes, Remove',
+      destructive: true,
+    }))) return
     setDeleting(true)
     try {
       const res = await fetch('/api/admin/settings/tnc-pdf', { method: 'DELETE' })
       if (res.ok) { showToast('success', 'PDF removed'); await fetchInfo() }
-    } finally { setDeleting(false); setConfirmDel(false) }
+      else showToast('error', 'Failed to remove PDF')
+    } finally { setDeleting(false) }
   }
 
   return (
@@ -91,14 +96,14 @@ export default function TncPdfSettings() {
             <div className="space-y-3">
               {/* Current file info */}
               <div className="flex items-start gap-3 rounded-lg border bg-muted/30 p-3">
-                <div className="h-9 w-9 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: `${ACCENT}20` }}>
+                <div className="h-9 w-9 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: 'color-mix(in srgb, var(--primary) 12%, transparent)' }}>
                   <FileText className="h-4 w-4" style={{ color: ACCENT }} />
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="font-medium text-sm truncate">{info.fileName}</p>
                   {info.updatedAt && (
                     <p className="text-xs text-muted-foreground mt-0.5">
-                      Uploaded {new Date(info.updatedAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                      Uploaded {formatDate(info.updatedAt, 'datetime')}
                       {info.updatedBy && ` by ${info.updatedBy}`}
                     </p>
                   )}
@@ -109,13 +114,14 @@ export default function TncPdfSettings() {
                   rel="noopener noreferrer"
                   className="shrink-0 p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
                   title="Preview PDF"
+                  aria-label="Preview PDF"
                 >
                   <ExternalLink className="h-3.5 w-3.5" />
                 </a>
               </div>
 
               {/* Actions */}
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <label className="cursor-pointer">
                   <input type="file" accept="application/pdf" className="hidden" onChange={handleUpload} disabled={uploading} />
                   <span className={`inline-flex items-center gap-1.5 h-8 px-3 text-xs font-medium rounded-md border border-input bg-background hover:bg-accent transition-colors ${uploading ? 'opacity-50 pointer-events-none' : 'cursor-pointer'}`}>
@@ -125,11 +131,11 @@ export default function TncPdfSettings() {
                 </label>
                 <Button
                   variant="ghost" size="sm"
-                  className="h-8 px-3 text-xs text-red-600 hover:text-red-700 hover:bg-red-50"
-                  onClick={() => setConfirmDel(true)}
-                  disabled={deleting}
+                  className="text-xs text-destructive hover:text-destructive hover:bg-destructive/10"
+                  onClick={handleDelete}
+                  loading={deleting}
                 >
-                  <Trash2 className="h-3.5 w-3.5 mr-1" /> Remove
+                  {!deleting && <Trash2 className="h-3.5 w-3.5" />} Remove
                 </Button>
               </div>
             </div>
@@ -142,7 +148,7 @@ export default function TncPdfSettings() {
               </div>
               <label className="cursor-pointer">
                 <input type="file" accept="application/pdf" className="hidden" onChange={handleUpload} disabled={uploading} />
-                <span className={`inline-flex items-center gap-1.5 h-8 px-4 text-xs font-medium rounded-md text-white transition-colors ${uploading ? 'opacity-50 pointer-events-none' : 'cursor-pointer hover:opacity-90'}`}
+                <span className={`inline-flex items-center gap-1.5 h-8 px-4 text-xs font-medium rounded-md text-primary-foreground transition-colors ${uploading ? 'opacity-50 pointer-events-none' : 'cursor-pointer hover:opacity-90'}`}
                   style={{ backgroundColor: ACCENT }}>
                   {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
                   Upload PDF
@@ -153,31 +159,13 @@ export default function TncPdfSettings() {
 
           {/* Toast */}
           {toast && (
-            <div className={`mt-3 flex items-center gap-2 text-xs rounded-md px-3 py-2 ${toast.type === 'success' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'}`}>
+            <div className={`mt-3 flex items-center gap-2 text-xs rounded-md px-3 py-2 ${toast.type === 'success' ? 'bg-success/10 text-success' : 'bg-destructive/10 text-destructive'}`}>
               {toast.type === 'success' && <CheckCircle className="h-3.5 w-3.5 shrink-0" />}
               {toast.msg}
             </div>
           )}
         </CardContent>
       </Card>
-
-      {/* Confirm delete */}
-      <AlertDialog open={confirmDel} onOpenChange={v => !v && setConfirmDel(false)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Remove T&amp;C PDF?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Invoices will revert to the default built-in T&amp;C. This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete} disabled={deleting} className="bg-red-600 hover:bg-red-700 text-white">
-              {deleting && <Loader2 className="h-4 w-4 animate-spin mr-2" />} Yes, Remove
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </>
   )
 }

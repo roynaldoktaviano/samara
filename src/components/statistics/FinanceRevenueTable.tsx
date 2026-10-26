@@ -7,6 +7,9 @@ import {
   Tooltip, ResponsiveContainer,
 } from 'recharts'
 import { RotateCw, Download } from 'lucide-react'
+import { formatMoney, formatMoneyCompact } from '@/lib/format'
+import { Button } from '@/components/ui/button'
+import { NativeSelect } from '@/components/ui/native-select'
 
 /* ── types ── */
 interface Vessel { id: string; name: string }
@@ -38,13 +41,8 @@ const VESSEL_COLORS: Record<string, string> = {
 const vesselColor = (name: string) => VESSEL_COLORS[name] ?? '#6b7280'
 
 function fmtUSD(n: number) {
-  if (n === 0) return <span className="text-gray-300">$ &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;-</span>
-  return <>$ &nbsp;{n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</>
-}
-function fmtK(n: number) {
-  if (n >= 1_000_000) return `$${(n/1_000_000).toFixed(1)}M`
-  if (n >= 1_000)     return `$${(n/1_000).toFixed(0)}K`
-  return `$${n.toFixed(0)}`
+  if (n === 0) return <span className="text-muted-foreground/70">$ &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;-</span>
+  return <>{formatMoney(n, { currency: 'USD' })}</>
 }
 
 const YEARS = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i + 1)
@@ -52,11 +50,11 @@ const YEARS = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i +
 function ChartTip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null
   return (
-    <div className="bg-white border border-gray-200 rounded-lg shadow px-3 py-2 text-xs">
-      <p className="font-bold text-gray-700 mb-1">{label}</p>
+    <div className="bg-popover border border-border rounded-lg shadow px-3 py-2 text-xs">
+      <p className="font-bold text-foreground/80 mb-1">{label}</p>
       {payload.map((p: any) => (
         <p key={p.name} style={{ color: p.color }}>
-          {p.name}: <strong>${p.value.toLocaleString('en-US', { maximumFractionDigits: 0 })}</strong>
+          {p.name}: <strong>{formatMoney(p.value, { currency: 'USD', decimals: 0 })}</strong>
         </p>
       ))}
     </div>
@@ -75,7 +73,7 @@ function SectionTitle({ color, children }: { color: string; children: React.Reac
 function TableWrapper({ children }: { children: React.ReactNode }) {
   return (
     <div className="rounded-lg border overflow-hidden shadow-sm">
-      <p className="sm:hidden text-xs text-muted-foreground px-3 py-1.5 border-b bg-gray-50">← Geser untuk lihat semua kolom</p>
+      <p className="sm:hidden text-xs text-muted-foreground px-3 py-1.5 border-b bg-muted/50">← Swipe to see all columns</p>
       <div className="overflow-x-auto">
         <table className="w-full text-xs border-collapse">{children}</table>
       </div>
@@ -83,8 +81,8 @@ function TableWrapper({ children }: { children: React.ReactNode }) {
   )
 }
 
-const th = 'px-3 py-2 text-center text-xs font-bold border border-gray-200 whitespace-nowrap bg-blue-100'
-const td = 'px-3 py-2 text-right text-xs border border-gray-200 whitespace-nowrap'
+const th = 'px-3 py-2 text-center text-xs font-bold border border-border whitespace-nowrap bg-info/15'
+const td = 'px-3 py-2 text-right text-xs border border-border whitespace-nowrap'
 const tfootTd = 'px-3 py-2.5 text-right text-xs font-bold border border-blue-800 whitespace-nowrap'
 
 /* ══════════════════════════════════════════
@@ -156,19 +154,18 @@ export default function FinanceRevenueTable() {
           <h3 className="text-2xl font-bold tracking-tight">Revenue Summary</h3>
           <p className="text-muted-foreground text-sm">Net revenue per cabin & vessel (after discount & commission)</p>
         </div>
-        <div className="flex items-center gap-2">
-          <select value={year} onChange={e => setYear(Number(e.target.value))}
-            className="h-8 px-2 text-xs rounded-md border border-input bg-background">
+        <div className="flex flex-wrap items-center gap-2">
+          <NativeSelect aria-label="Year" value={year} onChange={e => setYear(Number(e.target.value))}
+            className="h-8 w-auto">
             {YEARS.map(y => <option key={y} value={y}>{y}</option>)}
-          </select>
-          <button onClick={exportCSV}
-            className="flex items-center gap-1.5 h-8 px-3 text-xs rounded-md border border-input bg-background hover:bg-muted">
-            <Download className="h-3.5 w-3.5" /> Export CSV
-          </button>
-          <button onClick={() => fetchData(true)} disabled={refreshing}
-            className="flex items-center gap-1.5 h-8 px-3 text-xs rounded-md border border-input bg-background hover:bg-muted disabled:opacity-50">
-            <RotateCw className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`} />
-          </button>
+          </NativeSelect>
+          <Button variant="outline" size="sm" onClick={exportCSV} className="text-xs">
+            <Download className="size-3.5" /> Export CSV
+          </Button>
+          <Button variant="outline" size="icon" onClick={() => fetchData(true)} disabled={refreshing}
+            aria-label="Refresh" className="size-8">
+            <RotateCw className={`size-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+          </Button>
         </div>
       </div>
 
@@ -181,21 +178,21 @@ export default function FinanceRevenueTable() {
           <TableWrapper>
             <thead>
               <tr>
-                <th className={`${th} text-left`} style={{ minWidth: 100 }}>PERIODE</th>
+                <th className={`${th} text-left`} style={{ minWidth: 100 }}>PERIOD</th>
                 {ct.cabins.map(c => (
                   <th key={c} className={th} style={{ minWidth: 110 }}>{c}</th>
                 ))}
-                <th className={`${th} bg-blue-200`} style={{ minWidth: 120 }}>TOTAL</th>
+                <th className={`${th} bg-info/25`} style={{ minWidth: 120 }}>TOTAL</th>
               </tr>
             </thead>
             <tbody>
               {ct.months.map((m, mi) => (
-                <tr key={m.month} className={`${mi % 2 === 0 ? 'bg-white' : 'bg-gray-50'} ${m.total === 0 ? 'opacity-40' : ''} hover:bg-blue-50/40`}>
-                  <td className="px-3 py-1.5 text-xs font-medium border border-gray-200">{m.month}</td>
+                <tr key={m.month} className={`${mi % 2 === 0 ? 'bg-card' : 'bg-muted/50'} ${m.total === 0 ? 'opacity-40' : ''} hover:bg-info/5`}>
+                  <td className="px-3 py-1.5 text-xs font-medium border border-border">{m.month}</td>
                   {ct.cabins.map(c => (
                     <td key={c} className={td}>{fmtUSD(m.byCabin[c] ?? 0)}</td>
                   ))}
-                  <td className={`${td} font-bold bg-blue-50`}>{fmtUSD(m.total)}</td>
+                  <td className={`${td} font-bold bg-info/10`}>{fmtUSD(m.total)}</td>
                 </tr>
               ))}
             </tbody>
@@ -203,33 +200,33 @@ export default function FinanceRevenueTable() {
               <tr style={{ backgroundColor: '#1e3a5f', color: 'white' }}>
                 <td className={tfootTd + ' text-left text-[10px] opacity-70'}>PUBLISHED</td>
                 {ct.cabins.map(c => (
-                  <td key={c} className={tfootTd}>$ {(ct.yearByCabin[c] ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                  <td key={c} className={tfootTd}>{formatMoney(ct.yearByCabin[c] ?? 0, { currency: 'USD' })}</td>
                 ))}
-                <td className={tfootTd} style={{ backgroundColor: '#0f3050' }}>$ {ct.grandTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                <td className={tfootTd} style={{ backgroundColor: '#0f3050' }}>{formatMoney(ct.grandTotal, { currency: 'USD' })}</td>
               </tr>
-              <tr className="bg-red-50 text-red-600">
-                <td className="px-3 py-1.5 text-left text-[10px] font-bold border border-gray-200 whitespace-nowrap">REFUNDED</td>
+              <tr className="bg-destructive/10 text-destructive">
+                <td className="px-3 py-1.5 text-left text-[10px] font-bold border border-border whitespace-nowrap">REFUNDED</td>
                 {ct.cabins.map(c => (
-                  <td key={c} className="px-3 py-1.5 text-right text-xs border border-gray-200 whitespace-nowrap">
+                  <td key={c} className="px-3 py-1.5 text-right text-xs border border-border whitespace-nowrap">
                     {(ct.refundByCabin[c] ?? 0) > 0
-                      ? <span className="text-red-500">- $ {(ct.refundByCabin[c]).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                      : <span className="text-gray-300">—</span>}
+                      ? <span className="text-destructive">-{formatMoney(ct.refundByCabin[c], { currency: 'USD' })}</span>
+                      : <span className="text-muted-foreground/70">—</span>}
                   </td>
                 ))}
-                <td className="px-3 py-1.5 text-right text-xs font-bold border border-gray-200 whitespace-nowrap bg-red-100">
+                <td className="px-3 py-1.5 text-right text-xs font-bold border border-border whitespace-nowrap bg-destructive/15">
                   {ct.refundTotal > 0
-                    ? <span className="text-red-600">- $ {ct.refundTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                    : <span className="text-gray-300">—</span>}
+                    ? <span className="text-destructive">-{formatMoney(ct.refundTotal, { currency: 'USD' })}</span>
+                    : <span className="text-muted-foreground/70">—</span>}
                 </td>
               </tr>
-              <tr className="bg-emerald-50">
-                <td className="px-3 py-1.5 text-left text-[10px] font-bold border border-gray-200 whitespace-nowrap text-emerald-700">NET</td>
+              <tr className="bg-success/10">
+                <td className="px-3 py-1.5 text-left text-[10px] font-bold border border-border whitespace-nowrap text-success">NET</td>
                 {ct.cabins.map(c => {
                   const net = (ct.yearByCabin[c] ?? 0) - (ct.refundByCabin[c] ?? 0)
-                  return <td key={c} className="px-3 py-1.5 text-right text-xs font-semibold border border-gray-200 whitespace-nowrap text-emerald-700">$ {net.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                  return <td key={c} className="px-3 py-1.5 text-right text-xs font-semibold border border-border whitespace-nowrap text-success">{formatMoney(net, { currency: 'USD' })}</td>
                 })}
-                <td className="px-3 py-1.5 text-right text-xs font-bold border border-gray-200 whitespace-nowrap bg-emerald-100 text-emerald-800">
-                  $ {(ct.grandTotal - ct.refundTotal).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                <td className="px-3 py-1.5 text-right text-xs font-bold border border-border whitespace-nowrap bg-success/15 text-success">
+                  {formatMoney(ct.grandTotal - ct.refundTotal, { currency: 'USD' })}
                 </td>
               </tr>
             </tfoot>
@@ -239,31 +236,31 @@ export default function FinanceRevenueTable() {
 
       {/* ── VESSEL TOTAL TABLE ── */}
       <div>
-        <SectionTitle color="#1a5f6e">
+        <SectionTitle color="var(--brand)">
           SUMMARY REVENUE {year} — PER VESSEL
         </SectionTitle>
         <TableWrapper>
           <thead>
             <tr>
-              <th className={`${th} text-left`} style={{ minWidth: 100 }}>PERIODE</th>
+              <th className={`${th} text-left`} style={{ minWidth: 100 }}>PERIOD</th>
               {vessels.map(v => (
                 <th key={v.id} className={th} style={{ minWidth: 120, color: vesselColor(v.name) }}>
                   {v.name.toUpperCase()}
                 </th>
               ))}
-              <th className={`${th} bg-blue-200`} style={{ minWidth: 120 }}>TOTAL</th>
+              <th className={`${th} bg-info/25`} style={{ minWidth: 120 }}>TOTAL</th>
             </tr>
           </thead>
           <tbody>
             {vesselTable.months.map((m, mi) => (
-              <tr key={m.month} className={`${mi % 2 === 0 ? 'bg-white' : 'bg-gray-50'} ${m.total === 0 ? 'opacity-40' : ''} hover:bg-blue-50/40`}>
-                <td className="px-3 py-1.5 text-xs font-medium border border-gray-200">{m.month}</td>
+              <tr key={m.month} className={`${mi % 2 === 0 ? 'bg-card' : 'bg-muted/50'} ${m.total === 0 ? 'opacity-40' : ''} hover:bg-info/5`}>
+                <td className="px-3 py-1.5 text-xs font-medium border border-border">{m.month}</td>
                 {vessels.map(v => (
                   <td key={v.id} className={`${td} font-medium`} style={{ color: (m.perVessel[v.id] ?? 0) > 0 ? vesselColor(v.name) : undefined }}>
                     {fmtUSD(m.perVessel[v.id] ?? 0)}
                   </td>
                 ))}
-                <td className={`${td} font-bold bg-blue-50`}>{fmtUSD(m.total)}</td>
+                <td className={`${td} font-bold bg-info/10`}>{fmtUSD(m.total)}</td>
               </tr>
             ))}
           </tbody>
@@ -272,43 +269,43 @@ export default function FinanceRevenueTable() {
               <td className={tfootTd + ' text-left text-[10px] opacity-70'}>PUBLISHED</td>
               {vessels.map(v => (
                 <td key={v.id} className={tfootTd} style={{ backgroundColor: '#1a4e6e' }}>
-                  $ {(vesselTable.yearTotals[v.id] ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                  {formatMoney(vesselTable.yearTotals[v.id] ?? 0, { currency: 'USD' })}
                 </td>
               ))}
               <td className={tfootTd} style={{ backgroundColor: '#0f3050' }}>
-                $ {vesselTable.grandTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                {formatMoney(vesselTable.grandTotal, { currency: 'USD' })}
               </td>
             </tr>
-            <tr className="bg-red-50">
-              <td className="px-3 py-1.5 text-left text-[10px] font-bold border border-gray-200 whitespace-nowrap text-red-600">REFUNDED</td>
+            <tr className="bg-destructive/10">
+              <td className="px-3 py-1.5 text-left text-[10px] font-bold border border-border whitespace-nowrap text-destructive">REFUNDED</td>
               {vessels.map(v => {
                 const ref = vesselTable.refundYearTotals[v.id] ?? 0
                 return (
-                  <td key={v.id} className="px-3 py-1.5 text-right text-xs border border-gray-200 whitespace-nowrap">
+                  <td key={v.id} className="px-3 py-1.5 text-right text-xs border border-border whitespace-nowrap">
                     {ref > 0
-                      ? <span className="text-red-500">- $ {ref.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                      : <span className="text-gray-300">—</span>}
+                      ? <span className="text-destructive">-{formatMoney(ref, { currency: 'USD' })}</span>
+                      : <span className="text-muted-foreground/70">—</span>}
                   </td>
                 )
               })}
-              <td className="px-3 py-1.5 text-right text-xs font-bold border border-gray-200 whitespace-nowrap bg-red-100">
+              <td className="px-3 py-1.5 text-right text-xs font-bold border border-border whitespace-nowrap bg-destructive/15">
                 {vesselTable.refundGrandTotal > 0
-                  ? <span className="text-red-600">- $ {vesselTable.refundGrandTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                  : <span className="text-gray-300">—</span>}
+                  ? <span className="text-destructive">-{formatMoney(vesselTable.refundGrandTotal, { currency: 'USD' })}</span>
+                  : <span className="text-muted-foreground/70">—</span>}
               </td>
             </tr>
-            <tr className="bg-emerald-50">
-              <td className="px-3 py-1.5 text-left text-[10px] font-bold border border-gray-200 whitespace-nowrap text-emerald-700">NET</td>
+            <tr className="bg-success/10">
+              <td className="px-3 py-1.5 text-left text-[10px] font-bold border border-border whitespace-nowrap text-success">NET</td>
               {vessels.map(v => {
                 const net = (vesselTable.yearTotals[v.id] ?? 0) - (vesselTable.refundYearTotals[v.id] ?? 0)
                 return (
-                  <td key={v.id} className="px-3 py-1.5 text-right text-xs font-semibold border border-gray-200 whitespace-nowrap text-emerald-700">
-                    $ {net.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                  <td key={v.id} className="px-3 py-1.5 text-right text-xs font-semibold border border-border whitespace-nowrap text-success">
+                    {formatMoney(net, { currency: 'USD' })}
                   </td>
                 )
               })}
-              <td className="px-3 py-1.5 text-right text-xs font-bold border border-gray-200 whitespace-nowrap bg-emerald-100 text-emerald-800">
-                $ {(vesselTable.grandTotal - vesselTable.refundGrandTotal).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+              <td className="px-3 py-1.5 text-right text-xs font-bold border border-border whitespace-nowrap bg-success/15 text-success">
+                {formatMoney(vesselTable.grandTotal - vesselTable.refundGrandTotal, { currency: 'USD' })}
               </td>
             </tr>
           </tfoot>
@@ -319,12 +316,12 @@ export default function FinanceRevenueTable() {
       <div className="grid gap-4 grid-cols-1">
         {/* ALL REVENUE */}
         <div className="rounded-xl border shadow-sm p-4">
-          <h4 className="text-sm font-bold mb-3" style={{ color: '#16a34a' }}>ALL REVENUE {year}</h4>
+          <h4 className="text-sm font-bold mb-3" style={{ color: 'var(--success)' }}>ALL REVENUE {year}</h4>
           <ResponsiveContainer width="100%" height={200}>
             <LineChart data={charts.allRevenue}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
               <XAxis dataKey="month" tick={{ fontSize: 10 }} />
-              <YAxis tickFormatter={fmtK} tick={{ fontSize: 10 }} width={58} />
+              <YAxis tickFormatter={v => formatMoneyCompact(v, { currency: 'USD' })} tick={{ fontSize: 10 }} width={58} />
               <Tooltip content={<ChartTip />} />
               <Line type="monotone" dataKey="total" name="Revenue" stroke="#16a34a" strokeWidth={2} dot={{ r: 3 }} />
             </LineChart>
@@ -344,8 +341,8 @@ export default function FinanceRevenueTable() {
               <BarChart data={cabinChart}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                 <XAxis dataKey="cabin" tick={{ fontSize: 10 }} />
-                <YAxis tickFormatter={fmtK} tick={{ fontSize: 10 }} width={58} />
-                <Tooltip content={<ChartTip />} formatter={(v: number) => [`$${v.toLocaleString('en-US', { maximumFractionDigits: 0 })}`, 'Revenue']} />
+                <YAxis tickFormatter={v => formatMoneyCompact(v, { currency: 'USD' })} tick={{ fontSize: 10 }} width={58} />
+                <Tooltip content={<ChartTip />} formatter={(v: number) => [formatMoney(v, { currency: 'USD', decimals: 0 }), 'Revenue']} />
                 <Bar dataKey="value" name="Revenue" fill={vesselColor(ct.vesselName)} radius={[3, 3, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
@@ -354,7 +351,7 @@ export default function FinanceRevenueTable() {
       })}
 
       {/* Per vessel monthly bar charts */}
-      <div className="grid gap-4 grid-cols-2">
+      <div className="grid gap-4 grid-cols-1 sm:grid-cols-2">
         {vessels.map(v => (
           <div key={v.id} className="rounded-xl border shadow-sm p-4">
             <h4 className="text-sm font-bold mb-3" style={{ color: vesselColor(v.name) }}>
@@ -364,7 +361,7 @@ export default function FinanceRevenueTable() {
               <BarChart data={charts.perVessel}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                 <XAxis dataKey="month" tick={{ fontSize: 9 }} />
-                <YAxis tickFormatter={fmtK} tick={{ fontSize: 9 }} width={46} />
+                <YAxis tickFormatter={v => formatMoneyCompact(v, { currency: 'USD' })} tick={{ fontSize: 9 }} width={46} />
                 <Tooltip content={<ChartTip />} />
                 <Bar dataKey={v.name} fill={vesselColor(v.name)} radius={[3, 3, 0, 0]} />
               </BarChart>

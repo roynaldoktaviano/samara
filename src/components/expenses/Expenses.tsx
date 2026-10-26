@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { DollarSign, Plus, Search, TrendingUp, TrendingDown } from 'lucide-react'
+import { formatMoney } from '@/lib/format'
 
 interface Expense {
   id: string
@@ -51,14 +52,14 @@ export default function Expenses() {
 
   const getCategoryColor = (category: string) => {
     const colors: Record<string, string> = {
-      'Fuel': 'bg-red-100 text-red-700',
-      'Maintenance': 'bg-orange-100 text-orange-700',
-      'Crew Salary': 'bg-blue-100 text-blue-700',
-      'Supplies': 'bg-green-100 text-green-700',
-      'Insurance': 'bg-purple-100 text-purple-700',
-      'Docking': 'bg-yellow-100 text-yellow-700',
-      'Cleaning': 'bg-cyan-100 text-cyan-700',
-      'Other': 'bg-gray-100 text-gray-700',
+      'Fuel': 'bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300',
+      'Maintenance': 'bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-300',
+      'Crew Salary': 'bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300',
+      'Supplies': 'bg-green-100 text-green-700 dark:bg-green-500/15 dark:text-green-300',
+      'Insurance': 'bg-purple-100 text-purple-700 dark:bg-purple-500/15 dark:text-purple-300',
+      'Docking': 'bg-yellow-100 text-yellow-700 dark:bg-yellow-500/15 dark:text-yellow-300',
+      'Cleaning': 'bg-cyan-100 text-cyan-700 dark:bg-cyan-500/15 dark:text-cyan-300',
+      'Other': 'bg-muted text-foreground/80',
     }
     return colors[category] || colors['Other']
   }
@@ -102,7 +103,7 @@ export default function Expenses() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="description">Description</Label>
-                <Input id="description" placeholder="Enter description..." />
+                <Input id="description" placeholder="Enter description…" />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
@@ -141,7 +142,7 @@ export default function Expenses() {
             <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">${totalExpenses.toLocaleString()}</div>
+            <div className="text-2xl font-bold">{formatMoney(totalExpenses, { currency: 'USD', decimals: 0 })}</div>
             <p className="text-xs text-muted-foreground flex items-center">
               <TrendingUp className="h-3 w-3 mr-1" />
               All time
@@ -155,7 +156,7 @@ export default function Expenses() {
             <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">${monthlyExpenses.toLocaleString()}</div>
+            <div className="text-2xl font-bold">{formatMoney(monthlyExpenses, { currency: 'USD', decimals: 0 })}</div>
             <p className="text-xs text-muted-foreground">Current month</p>
           </CardContent>
         </Card>
@@ -166,7 +167,7 @@ export default function Expenses() {
             <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">${Math.round(totalExpenses / expenses.length).toLocaleString()}</div>
+            <div className="text-2xl font-bold">{formatMoney(Math.round(totalExpenses / expenses.length), { currency: 'USD', decimals: 0 })}</div>
             <p className="text-xs text-muted-foreground">Per transaction</p>
           </CardContent>
         </Card>
@@ -207,7 +208,7 @@ export default function Expenses() {
           <div className="flex items-center gap-2 mb-4">
             <Search className="h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Search expenses..."
+              placeholder="Search expenses…"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="max-w-sm"
@@ -236,7 +237,7 @@ export default function Expenses() {
                     <TableCell>{expense.description}</TableCell>
                     <TableCell>{expense.yachtName || '-'}</TableCell>
                     <TableCell className="text-right font-medium">
-                      ${expense.amount.toLocaleString()}
+                      {formatMoney(expense.amount, { currency: 'USD', decimals: 0 })}
                     </TableCell>
                   </TableRow>
                 ))}

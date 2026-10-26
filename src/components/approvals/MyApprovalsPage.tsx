@@ -6,6 +6,12 @@ import { FilePreview } from '@/components/ui/file-preview'
 import { isPdfDataUrl, downloadDataUrl, extFromDataUrl } from '@/lib/fileUpload'
 import { FreelanceRecommendationsField, type FreelanceRecommendation } from '@/components/hr/FreelanceRecommendationsField'
 import { tripDates, tripShortLabel, type TripOption } from '@/components/purchasing/TripPicker'
+import { formatDate, formatMoney } from '@/lib/format'
+import { toast } from 'sonner'
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Textarea } from '@/components/ui/textarea'
+import { Label } from '@/components/ui/label'
 
 interface ApprovalRequest {
   id: string
@@ -80,13 +86,9 @@ interface TeamPerformanceReview {
   employee: { id: string; fullName: string; employeeNumber: string }
 }
 
-function fmtDate(s: string) {
-  return new Date(s).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
-}
-
 function UrgentBadge() {
   return (
-    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-600 text-white animate-pulse">
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-destructive text-destructive-foreground animate-pulse">
       <AlertTriangle className="h-3 w-3" /> URGENT
     </span>
   )
@@ -111,7 +113,7 @@ function RequesterLine({ employee, sub }: { employee: ApprovalRequest['requested
   const secondary = [employee?.department, sub].filter(Boolean).join(' · ')
   return (
     <div className="flex items-center gap-2.5 min-w-0">
-      <span className="h-8 w-8 shrink-0 rounded-full bg-amber-100 text-amber-800 text-xs font-semibold flex items-center justify-center">{initials}</span>
+      <span className="h-8 w-8 shrink-0 rounded-full bg-warning/15 text-warning text-xs font-semibold flex items-center justify-center">{initials}</span>
       <div className="min-w-0">
         <p className="text-sm font-semibold truncate">{name}</p>
         {secondary && <p className="text-xs text-muted-foreground truncate">{secondary}</p>}
@@ -199,7 +201,7 @@ export default function MyApprovalsPage() {
     })
     const data = await res.json()
     setActingId(null)
-    if (!res.ok) { alert(data.error ?? 'Failed to update'); return }
+    if (!res.ok) { toast.error(data.error ?? 'Failed to update'); return }
     setRejectModal(null)
     setRejectReason('')
     if (detailModal?.id === id) { setDetailModal(null); setDetail(null) }
@@ -215,7 +217,7 @@ export default function MyApprovalsPage() {
     })
     const data = await res.json()
     setActingId(null)
-    if (!res.ok) { alert(data.error ?? 'Failed to update'); return }
+    if (!res.ok) { toast.error(data.error ?? 'Failed to update'); return }
     setQuoteRejectModal(null)
     setQuoteRejectReason('')
     setQuotationItems(prev => prev.filter(q => q.id !== item.id))
@@ -237,7 +239,7 @@ export default function MyApprovalsPage() {
     })
     const data = await res.json()
     setActingId(null)
-    if (!res.ok) { alert(data.error ?? 'Failed to update'); return }
+    if (!res.ok) { toast.error(data.error ?? 'Failed to update'); return }
     setCrewRejectModal(null)
     setCrewRejectNote('')
     setCrewLeaveRequests(prev => prev.filter(x => x.id !== r.id))
@@ -252,7 +254,7 @@ export default function MyApprovalsPage() {
     })
     const data = await res.json()
     setActingId(null)
-    if (!res.ok) { alert(data.error ?? 'Failed to update'); return }
+    if (!res.ok) { toast.error(data.error ?? 'Failed to update'); return }
     setTripRejectModal(null)
     setTripRejectNote('')
     setTripDetailModal(null)
@@ -269,7 +271,7 @@ export default function MyApprovalsPage() {
     })
     const data = await res.json()
     setRequestingReview(false)
-    if (!res.ok) { alert(data.error ?? 'Failed to request review'); return }
+    if (!res.ok) { toast.error(data.error ?? 'Failed to request review'); return }
     setRequestReviewModal(null)
     setRequestReviewNote('')
     load()
@@ -296,14 +298,14 @@ export default function MyApprovalsPage() {
                     <p className="text-xs text-muted-foreground font-mono">{m.employeeNumber}{m.department ? ` · ${m.department}` : ''}</p>
                     {latest && (
                       <p className="text-xs text-muted-foreground mt-0.5">
-                        {latest.status === 'REQUESTED' ? `Review requested ${fmtDate(latest.createdAt)}, waiting for HR` : `Last reviewed ${fmtDate(latest.createdAt)}`}
+                        {latest.status === 'REQUESTED' ? `Review requested ${formatDate(latest.createdAt)}, waiting for HR` : `Last reviewed ${formatDate(latest.createdAt)}`}
                       </p>
                     )}
                   </div>
-                  <button disabled={pending} onClick={() => { setRequestReviewModal(m); setRequestReviewNote('') }}
-                    className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md bg-amber-50 text-amber-700 hover:bg-amber-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
-                    <Send className="h-3.5 w-3.5" /> {pending ? 'Requested' : 'Request Review'}
-                  </button>
+                  <Button size="sm" variant="ghost" disabled={pending} onClick={() => { setRequestReviewModal(m); setRequestReviewNote('') }}
+                    className="shrink-0 text-xs bg-warning/10 text-warning hover:bg-warning/15 hover:text-warning dark:hover:bg-warning/15">
+                    <Send className="size-3.5" /> {pending ? 'Requested' : 'Request Review'}
+                  </Button>
                 </div>
               )
             })}
@@ -325,15 +327,15 @@ export default function MyApprovalsPage() {
               <div key={r.id} className="rounded-lg border p-4 space-y-3">
                 <div className="flex items-start justify-between gap-2">
                   <div>
-                    <p className="font-semibold text-sm">{r.employee.fullName} <span className={`ml-1 px-1.5 py-0.5 rounded text-[10px] font-semibold ${r.type === 'WFH' ? 'bg-sky-100 text-sky-700' : 'bg-purple-100 text-purple-700'}`}>{r.type === 'WFH' ? 'WFH' : 'Leave'}</span></p>
+                    <p className="font-semibold text-sm">{r.employee.fullName} <span className={`ml-1 px-1.5 py-0.5 rounded text-[10px] font-semibold ${r.type === 'WFH' ? 'bg-info/15 text-info' : 'bg-purple-100 text-purple-700 dark:bg-purple-500/15 dark:text-purple-300'}`}>{r.type === 'WFH' ? 'WFH' : 'Leave'}</span></p>
                     <p className="text-xs text-muted-foreground font-mono">{r.employee.employeeNumber}</p>
                   </div>
-                  <span className="text-xs text-muted-foreground shrink-0 text-right">{fmtDate(r.startDate)} – {fmtDate(r.endDate)}<br />{r.days} day{r.days !== 1 ? 's' : ''}</span>
+                  <span className="text-xs text-muted-foreground shrink-0 text-right">{formatDate(r.startDate)} – {formatDate(r.endDate)}<br />{r.days} day{r.days !== 1 ? 's' : ''}</span>
                 </div>
                 {r.reason && <p className="text-sm text-muted-foreground">{r.reason}</p>}
 
                 {r.type !== 'WFH' && <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
-                  <input type="checkbox" className="h-4 w-4 accent-amber-600" checked={draft.needsFreelance}
+                  <input type="checkbox" className="h-4 w-4 accent-primary" checked={draft.needsFreelance}
                     onChange={e => setCrewLeaveDrafts(prev => ({ ...prev, [r.id]: { needsFreelance: e.target.checked, freelanceRecommendations: e.target.checked ? draft.freelanceRecommendations : [] } }))} />
                   Needs a freelance replacement for the trips missed?
                 </label>}
@@ -342,15 +344,14 @@ export default function MyApprovalsPage() {
                     onChange={v => setCrewLeaveDrafts(prev => ({ ...prev, [r.id]: { needsFreelance: true, freelanceRecommendations: v } }))} />
                 )}
 
-                <div className="flex items-center justify-end gap-2 pt-1">
-                  <button disabled={actingId === r.id} onClick={() => actOnCrewLeave(r, 'approve')}
-                    className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white rounded-md transition-colors">
-                    <CheckCircle2 className="h-3 w-3" /> Approve
-                  </button>
-                  <button disabled={actingId === r.id} onClick={() => { setCrewRejectModal(r); setCrewRejectNote('') }}
-                    className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium border rounded-md text-muted-foreground hover:bg-red-50 hover:text-red-600 hover:border-red-200 disabled:opacity-50 transition-colors">
-                    <XCircle className="h-3 w-3" /> Reject
-                  </button>
+                <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
+                  <Button size="sm" variant="success" disabled={actingId === r.id} onClick={() => actOnCrewLeave(r, 'approve')} className="text-xs">
+                    <CheckCircle2 className="size-3.5" /> Approve
+                  </Button>
+                  <Button size="sm" variant="outline" disabled={actingId === r.id} onClick={() => { setCrewRejectModal(r); setCrewRejectNote('') }}
+                    className="text-xs text-muted-foreground hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30 dark:hover:bg-destructive/10">
+                    <XCircle className="size-3.5" /> Reject
+                  </Button>
                 </div>
               </div>
             )
@@ -368,14 +369,14 @@ export default function MyApprovalsPage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 desktop:grid-cols-3 gap-3">
           {businessTripApprovals.map(t => (
             <button key={t.id} onClick={() => setTripDetailModal(t)}
-              className="text-left rounded-lg border p-4 space-y-2 hover:bg-muted/30 hover:border-amber-300 transition-colors">
+              className="text-left rounded-lg border p-4 space-y-2 hover:bg-muted/30 hover:border-warning/30 transition-colors">
               <div>
                 <p className="font-semibold text-sm">{t.employee.fullName}</p>
                 <p className="text-xs text-muted-foreground font-mono">{t.employee.employeeNumber}</p>
               </div>
               <p className="text-sm font-medium">{t.destination}</p>
               <p className="text-xs text-muted-foreground line-clamp-2">{t.purpose}</p>
-              <p className="text-xs text-muted-foreground">{fmtDate(t.startDate)} – {fmtDate(t.endDate)}</p>
+              <p className="text-xs text-muted-foreground">{formatDate(t.startDate)} – {formatDate(t.endDate)}</p>
             </button>
           ))}
         </div>
@@ -401,14 +402,14 @@ export default function MyApprovalsPage() {
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {requests.map(r => (
             <div key={r.id}
-              className={`rounded-xl border bg-white flex flex-col transition-shadow hover:shadow-md ${r.isUrgent ? 'border-red-200' : ''}`}>
+              className={`rounded-xl border bg-card flex flex-col transition-shadow hover:shadow-md ${r.isUrgent ? 'border-destructive/30' : ''}`}>
               <button onClick={() => openDetail(r)} className="flex-1 text-left p-4 space-y-3">
                 <div className="flex items-center justify-between gap-2">
                   <span className="font-mono text-xs font-semibold text-muted-foreground flex items-center gap-1.5">
                     {r.prNumber}
                     {r.isUrgent && <UrgentBadge />}
                   </span>
-                  <span className="text-xs text-muted-foreground shrink-0">{fmtDate(r.createdAt)}</span>
+                  <span className="text-xs text-muted-foreground shrink-0">{formatDate(r.createdAt)}</span>
                 </div>
                 <RequesterLine employee={r.requestedByEmployee} />
                 <div className="flex flex-wrap gap-1.5">
@@ -417,27 +418,31 @@ export default function MyApprovalsPage() {
                   )}
                   <MetaChip><Package className="h-3 w-3" />{r.itemCount} item{r.itemCount !== 1 ? 's' : ''}</MetaChip>
                   {r.neededByDate && (
-                    <MetaChip><CalendarDays className="h-3 w-3" />Need by {fmtDate(r.neededByDate)}</MetaChip>
+                    <MetaChip><CalendarDays className="h-3 w-3" />Need by {formatDate(r.neededByDate)}</MetaChip>
                   )}
                 </div>
               </button>
-              <div className="flex items-center gap-2 px-4 py-3 border-t bg-muted/20 rounded-b-xl">
-                <button onClick={() => openDetail(r)}
-                  className="mr-auto flex items-center gap-1 text-xs font-medium text-amber-700 hover:text-amber-900">
-                  View items <ChevronRight className="h-3.5 w-3.5" />
-                </button>
-                <button
+              <div className="flex flex-wrap items-center gap-2 px-4 py-3 border-t bg-muted/20 rounded-b-xl">
+                <Button variant="link" size="sm" onClick={() => openDetail(r)}
+                  className="mr-auto h-auto gap-1 px-0 has-[>svg]:px-0 text-xs text-warning hover:text-warning/80 hover:no-underline">
+                  View items <ChevronRight className="size-3.5" />
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
                   disabled={actingId === r.id}
                   onClick={() => setRejectModal(r)}
-                  className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium border bg-white rounded-lg text-muted-foreground hover:bg-red-50 hover:text-red-600 hover:border-red-200 disabled:opacity-50 transition-colors">
-                  <XCircle className="h-3.5 w-3.5" /> Reject
-                </button>
-                <button
+                  className="text-xs bg-card text-muted-foreground hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30 dark:hover:bg-destructive/10">
+                  <XCircle className="size-3.5" /> Reject
+                </Button>
+                <Button
+                  size="sm"
+                  variant="success"
                   disabled={actingId === r.id}
                   onClick={() => act(r.id, 'approve')}
-                  className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white rounded-lg transition-colors">
-                  <CheckCircle2 className="h-3.5 w-3.5" /> Approve
-                </button>
+                  className="text-xs">
+                  <CheckCircle2 className="size-3.5" /> Approve
+                </Button>
               </div>
             </div>
           ))}
@@ -460,17 +465,17 @@ export default function MyApprovalsPage() {
                   <p className="font-mono text-xs text-muted-foreground">{q.request.prNumber}</p>
                   <p className="font-semibold text-sm mt-0.5">{q.itemName} <span className="text-muted-foreground font-normal">· {q.quantity} {q.unit}</span></p>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    Submitted by {q.quotationSubmittedBy?.name ?? '—'} · {fmtDate(q.quotationSubmittedAt)}
+                    Submitted by {q.quotationSubmittedBy?.name ?? '—'} · {formatDate(q.quotationSubmittedAt)}
                   </p>
                 </div>
 
                 <div className="space-y-1">
                   <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Pick which quotation to use</p>
-                  <div className="grid grid-cols-5 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-5 gap-3">
                   {q.quotations.map(quote => {
                     const isChosen = quote.id === chosenId
                     return (
-                      <div key={quote.id} className={`border rounded-md overflow-hidden text-xs ${isChosen ? 'border-green-400 bg-green-50' : ''}`}>
+                      <div key={quote.id} className={`border rounded-md overflow-hidden text-xs ${isChosen ? 'border-success bg-success/10' : ''}`}>
                         {quote.fileKey ? (
                           <div className="relative">
                             <FilePreview
@@ -479,13 +484,16 @@ export default function MyApprovalsPage() {
                               onClick={() => setFileLightbox(quote.fileKey)}
                               className="w-full h-20 object-cover cursor-pointer hover:opacity-80 transition-opacity"
                             />
-                            <button
+                            <Button
+                              variant="outline"
+                              size="icon"
                               onClick={() => downloadDataUrl(quote.fileKey!, `${quote.supplierName.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-quotation.${extFromDataUrl(quote.fileKey!)}`)}
                               title="Download quotation document"
-                              className="absolute top-1 right-1 bg-white/90 hover:bg-white text-foreground rounded-full p-1 shadow transition-colors"
+                              aria-label="Download quotation document"
+                              className="absolute top-1 right-1 size-7 rounded-full bg-card/90 hover:bg-card text-foreground shadow"
                             >
-                              <Download className="h-3 w-3" />
-                            </button>
+                              <Download className="size-3.5" />
+                            </Button>
                           </div>
                         ) : (
                           <div className="w-full h-20 border-b border-dashed flex items-center justify-center text-[11px] text-muted-foreground/60 italic">No document</div>
@@ -493,17 +501,17 @@ export default function MyApprovalsPage() {
                         <div className="px-3 py-3 space-y-2.5">
                           <div className="flex items-center justify-between gap-2 text-sm">
                             <span className={`truncate ${isChosen ? 'font-semibold' : ''}`}>{quote.supplierName}</span>
-                            <span className="font-medium shrink-0">Rp {new Intl.NumberFormat('id-ID').format(quote.price)}</span>
+                            <span className="font-medium shrink-0">{formatMoney(quote.price)}</span>
                           </div>
                           {isChosen ? (
-                            <div className="w-full flex items-center justify-center gap-1.5 text-sm font-semibold text-white bg-green-600 rounded-md py-2">
+                            <div className="w-full flex items-center justify-center gap-1.5 text-sm font-semibold text-success-foreground bg-success rounded-md py-2">
                               <CheckCircle2 className="h-4 w-4" /> Chosen
                             </div>
                           ) : (
-                            <button onClick={() => setChosenQuotation(prev => ({ ...prev, [q.id]: quote.id }))}
-                              className="w-full flex items-center justify-center gap-1.5 text-sm font-semibold text-white bg-amber-600 hover:bg-amber-700 rounded-md py-2 transition-colors shadow-sm">
+                            <Button onClick={() => setChosenQuotation(prev => ({ ...prev, [q.id]: quote.id }))}
+                              className="w-full font-semibold text-warning-foreground bg-warning hover:bg-warning/90 shadow-sm">
                               Use this quote
-                            </button>
+                            </Button>
                           )}
                         </div>
                       </div>
@@ -512,20 +520,24 @@ export default function MyApprovalsPage() {
                   </div>
                 </div>
 
-                <div className="flex items-center justify-end gap-2 pt-1">
+                <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
                   {!chosenId && <p className="text-[11px] text-muted-foreground italic mr-auto">Pick a quotation above first.</p>}
-                  <button
+                  <Button
+                    size="sm"
+                    variant="success"
                     disabled={actingId === q.id || !chosenId}
                     onClick={() => actOnQuotation(q, 'approve')}
-                    className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white rounded-md transition-colors">
-                    <CheckCircle2 className="h-3 w-3" /> Approve
-                  </button>
-                  <button
+                    className="text-xs">
+                    <CheckCircle2 className="size-3.5" /> Approve
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
                     disabled={actingId === q.id}
                     onClick={() => { setQuoteRejectModal(q); setQuoteRejectReason('') }}
-                    className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium border rounded-md text-muted-foreground hover:bg-red-50 hover:text-red-600 hover:border-red-200 disabled:opacity-50 transition-colors">
-                    <XCircle className="h-3 w-3" /> Reject
-                  </button>
+                    className="text-xs text-muted-foreground hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30 dark:hover:bg-destructive/10">
+                    <XCircle className="size-3.5" /> Reject
+                  </Button>
                 </div>
               </div>
             )
@@ -533,70 +545,68 @@ export default function MyApprovalsPage() {
         </div>
       )}
 
-      {quoteRejectModal && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm overflow-hidden">
-            <div className="px-6 py-4 border-b">
-              <h3 className="font-semibold text-base">Reject supplier for &quot;{quoteRejectModal.itemName}&quot;?</h3>
-            </div>
+      <Dialog open={!!quoteRejectModal} onOpenChange={o => { if (!o) setQuoteRejectModal(null) }}>
+        {quoteRejectModal && (
+          <DialogContent className="sm:max-w-sm p-0 gap-0 overflow-hidden" aria-describedby={undefined} showCloseButton={false} onInteractOutside={e => e.preventDefault()}>
+            <DialogHeader className="px-6 py-4 border-b text-left">
+              <DialogTitle className="font-semibold text-base leading-snug">Reject supplier for &quot;{quoteRejectModal.itemName}&quot;?</DialogTitle>
+            </DialogHeader>
             <div className="px-6 py-4 space-y-2">
-              <label className="text-xs font-medium text-muted-foreground">Reason (required)</label>
-              <textarea
+              <Label htmlFor="approval-quote-reject-reason" className="text-xs font-medium text-muted-foreground">Reason (required)</Label>
+              <Textarea
+                id="approval-quote-reject-reason"
                 rows={3}
                 autoFocus
                 value={quoteRejectReason}
                 onChange={e => setQuoteRejectReason(e.target.value)}
                 placeholder="Why is this supplier selection being rejected?"
-                className="w-full border rounded-md px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-amber-500"
+                className="resize-none"
               />
             </div>
-            <div className="px-6 py-4 border-t flex justify-end gap-2">
-              <button onClick={() => setQuoteRejectModal(null)} className="px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">Cancel</button>
-              <button
+            <DialogFooter className="px-6 py-4 border-t">
+              <Button variant="outline" onClick={() => setQuoteRejectModal(null)}>Cancel</Button>
+              <Button
+                variant="destructive"
                 disabled={actingId === quoteRejectModal.id || !quoteRejectReason.trim()}
-                onClick={() => actOnQuotation(quoteRejectModal, 'reject', quoteRejectReason)}
-                className="px-4 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors">
+                onClick={() => actOnQuotation(quoteRejectModal, 'reject', quoteRejectReason)}>
                 Yes, Reject
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        )}
+      </Dialog>
 
-      {crewRejectModal && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm overflow-hidden">
-            <div className="px-6 py-4 border-b">
-              <h3 className="font-semibold text-base">Reject {crewRejectModal.employee.fullName}&apos;s leave request?</h3>
-            </div>
+      <Dialog open={!!crewRejectModal} onOpenChange={o => { if (!o) setCrewRejectModal(null) }}>
+        {crewRejectModal && (
+          <DialogContent className="sm:max-w-sm p-0 gap-0 overflow-hidden" aria-describedby={undefined} showCloseButton={false} onInteractOutside={e => e.preventDefault()}>
+            <DialogHeader className="px-6 py-4 border-b text-left">
+              <DialogTitle className="font-semibold text-base leading-snug">Reject {crewRejectModal.employee.fullName}&apos;s leave request?</DialogTitle>
+            </DialogHeader>
             <div className="px-6 py-4 space-y-2">
-              <label className="text-xs font-medium text-muted-foreground">Note (optional)</label>
-              <textarea rows={3} autoFocus value={crewRejectNote} onChange={e => setCrewRejectNote(e.target.value)}
-                className="w-full border rounded-md px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-amber-500" />
+              <Label htmlFor="approval-crew-reject-note" className="text-xs font-medium text-muted-foreground">Note (optional)</Label>
+              <Textarea id="approval-crew-reject-note" rows={3} autoFocus value={crewRejectNote} onChange={e => setCrewRejectNote(e.target.value)}
+                className="resize-none" />
             </div>
-            <div className="px-6 py-4 border-t flex justify-end gap-2">
-              <button onClick={() => setCrewRejectModal(null)} className="px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">Cancel</button>
-              <button
+            <DialogFooter className="px-6 py-4 border-t">
+              <Button variant="outline" onClick={() => setCrewRejectModal(null)}>Cancel</Button>
+              <Button
+                variant="destructive"
                 disabled={actingId === crewRejectModal.id}
-                onClick={() => actOnCrewLeave(crewRejectModal, 'reject', crewRejectNote)}
-                className="px-4 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors">
+                onClick={() => actOnCrewLeave(crewRejectModal, 'reject', crewRejectNote)}>
                 Yes, Reject
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        )}
+      </Dialog>
 
-      {tripDetailModal && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setTripDetailModal(null)}>
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm overflow-hidden" onClick={e => e.stopPropagation()}>
-            <div className="px-6 py-4 border-b flex items-start justify-between gap-2">
-              <div>
-                <h3 className="font-semibold text-base">{tripDetailModal.employee.fullName}</h3>
-                <p className="text-xs text-muted-foreground font-mono mt-0.5">{tripDetailModal.employee.employeeNumber}</p>
-              </div>
-              <button onClick={() => setTripDetailModal(null)} className="text-muted-foreground hover:text-foreground text-xl leading-none shrink-0">×</button>
-            </div>
+      <Dialog open={!!tripDetailModal} onOpenChange={o => { if (!o) setTripDetailModal(null) }}>
+        {tripDetailModal && (
+          <DialogContent className="sm:max-w-sm p-0 gap-0 overflow-hidden" aria-describedby={undefined}>
+            <DialogHeader className="px-6 py-4 pr-12 border-b text-left gap-0">
+              <DialogTitle className="font-semibold text-base leading-snug">{tripDetailModal.employee.fullName}</DialogTitle>
+              <p className="text-xs text-muted-foreground font-mono mt-0.5">{tripDetailModal.employee.employeeNumber}</p>
+            </DialogHeader>
             <div className="px-6 py-4 space-y-3 text-sm">
               <div>
                 <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Destination</p>
@@ -604,124 +614,122 @@ export default function MyApprovalsPage() {
               </div>
               <div>
                 <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Dates</p>
-                <p className="mt-0.5">{fmtDate(tripDetailModal.startDate)} – {fmtDate(tripDetailModal.endDate)}</p>
+                <p className="mt-0.5">{formatDate(tripDetailModal.startDate)} – {formatDate(tripDetailModal.endDate)}</p>
               </div>
               <div>
                 <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Purpose</p>
                 <p className="mt-0.5">{tripDetailModal.purpose}</p>
               </div>
-              <p className="text-xs text-muted-foreground border-t pt-2">Requested {fmtDate(tripDetailModal.requestedAt)}</p>
+              <p className="text-xs text-muted-foreground border-t pt-2">Requested {formatDate(tripDetailModal.requestedAt)}</p>
             </div>
-            <div className="px-6 py-4 border-t flex justify-end gap-2">
-              <button disabled={actingId === tripDetailModal.id}
+            <DialogFooter className="px-6 py-4 border-t">
+              <Button variant="outline" disabled={actingId === tripDetailModal.id}
                 onClick={() => { setTripDetailModal(null); setTripRejectModal(tripDetailModal); setTripRejectNote('') }}
-                className="flex items-center gap-1 px-4 py-2 text-sm border rounded-lg text-muted-foreground hover:bg-red-50 hover:text-red-600 hover:border-red-200 disabled:opacity-50 transition-colors">
-                <XCircle className="h-3.5 w-3.5" /> Reject
-              </button>
-              <button disabled={actingId === tripDetailModal.id} onClick={() => actOnBusinessTrip(tripDetailModal, 'approve')}
-                className="flex items-center gap-1 px-5 py-2 text-sm bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white rounded-lg font-semibold transition-colors">
-                <CheckCircle2 className="h-3.5 w-3.5" /> Approve
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+                className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30 dark:hover:bg-destructive/10">
+                <XCircle className="size-3.5" /> Reject
+              </Button>
+              <Button variant="success" disabled={actingId === tripDetailModal.id} onClick={() => actOnBusinessTrip(tripDetailModal, 'approve')}
+                className="font-semibold">
+                <CheckCircle2 className="size-3.5" /> Approve
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        )}
+      </Dialog>
 
-      {tripRejectModal && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm overflow-hidden">
-            <div className="px-6 py-4 border-b">
-              <h3 className="font-semibold text-base">Reject {tripRejectModal.employee.fullName}&apos;s business trip request?</h3>
-            </div>
+      <Dialog open={!!tripRejectModal} onOpenChange={o => { if (!o) setTripRejectModal(null) }}>
+        {tripRejectModal && (
+          <DialogContent className="sm:max-w-sm p-0 gap-0 overflow-hidden" aria-describedby={undefined} showCloseButton={false} onInteractOutside={e => e.preventDefault()}>
+            <DialogHeader className="px-6 py-4 border-b text-left">
+              <DialogTitle className="font-semibold text-base leading-snug">Reject {tripRejectModal.employee.fullName}&apos;s business trip request?</DialogTitle>
+            </DialogHeader>
             <div className="px-6 py-4 space-y-2">
-              <label className="text-xs font-medium text-muted-foreground">Note (optional)</label>
-              <textarea rows={3} autoFocus value={tripRejectNote} onChange={e => setTripRejectNote(e.target.value)}
-                className="w-full border rounded-md px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-amber-500" />
+              <Label htmlFor="approval-trip-reject-note" className="text-xs font-medium text-muted-foreground">Note (optional)</Label>
+              <Textarea id="approval-trip-reject-note" rows={3} autoFocus value={tripRejectNote} onChange={e => setTripRejectNote(e.target.value)}
+                className="resize-none" />
             </div>
-            <div className="px-6 py-4 border-t flex justify-end gap-2">
-              <button onClick={() => setTripRejectModal(null)} className="px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">Cancel</button>
-              <button
+            <DialogFooter className="px-6 py-4 border-t">
+              <Button variant="outline" onClick={() => setTripRejectModal(null)}>Cancel</Button>
+              <Button
+                variant="destructive"
                 disabled={actingId === tripRejectModal.id}
-                onClick={() => actOnBusinessTrip(tripRejectModal, 'reject', tripRejectNote)}
-                className="px-4 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors">
+                onClick={() => actOnBusinessTrip(tripRejectModal, 'reject', tripRejectNote)}>
                 Yes, Reject
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        )}
+      </Dialog>
 
-      {requestReviewModal && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm overflow-hidden">
-            <div className="px-6 py-4 border-b">
-              <h3 className="font-semibold text-base">Request performance review — {requestReviewModal.fullName}?</h3>
-            </div>
+      <Dialog open={!!requestReviewModal} onOpenChange={o => { if (!o) setRequestReviewModal(null) }}>
+        {requestReviewModal && (
+          <DialogContent className="sm:max-w-sm p-0 gap-0 overflow-hidden" aria-describedby={undefined} showCloseButton={false} onInteractOutside={e => e.preventDefault()}>
+            <DialogHeader className="px-6 py-4 border-b text-left">
+              <DialogTitle className="font-semibold text-base leading-snug">Request performance review — {requestReviewModal.fullName}?</DialogTitle>
+            </DialogHeader>
             <div className="px-6 py-4 space-y-2">
-              <label className="text-xs font-medium text-muted-foreground">Note for HR (optional)</label>
-              <textarea rows={3} autoFocus value={requestReviewNote} onChange={e => setRequestReviewNote(e.target.value)}
-                className="w-full border rounded-md px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-amber-500" />
+              <Label htmlFor="approval-review-note" className="text-xs font-medium text-muted-foreground">Note for HR (optional)</Label>
+              <Textarea id="approval-review-note" rows={3} autoFocus value={requestReviewNote} onChange={e => setRequestReviewNote(e.target.value)}
+                className="resize-none" />
             </div>
-            <div className="px-6 py-4 border-t flex justify-end gap-2">
-              <button onClick={() => setRequestReviewModal(null)} className="px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">Cancel</button>
-              <button disabled={requestingReview} onClick={submitReviewRequest}
-                className="px-4 py-2 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50 transition-colors">
-                {requestingReview ? 'Sending...' : 'Send Request'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+            <DialogFooter className="px-6 py-4 border-t">
+              <Button variant="outline" onClick={() => setRequestReviewModal(null)}>Cancel</Button>
+              <Button loading={requestingReview} onClick={submitReviewRequest}
+                className="bg-warning text-warning-foreground hover:bg-warning/90">
+                {requestingReview ? 'Sending…' : 'Send Request'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        )}
+      </Dialog>
 
-      {rejectModal && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm overflow-hidden">
-            <div className="px-6 py-4 border-b">
-              <h3 className="font-semibold text-base">Reject {rejectModal.prNumber}?</h3>
-            </div>
+      <Dialog open={!!rejectModal} onOpenChange={o => { if (!o) { setRejectModal(null); setRejectReason('') } }}>
+        {rejectModal && (
+          <DialogContent className="sm:max-w-sm p-0 gap-0 overflow-hidden" showCloseButton={false} onInteractOutside={e => e.preventDefault()}>
+            <DialogHeader className="px-6 py-4 border-b text-left">
+              <DialogTitle className="font-semibold text-base leading-snug">Reject {rejectModal.prNumber}?</DialogTitle>
+            </DialogHeader>
             <div className="px-6 py-5 space-y-3">
-              <p className="text-sm text-muted-foreground">
+              <DialogDescription className="text-sm text-muted-foreground">
                 The requester will be notified that this request was rejected. If it's still needed, they'll need to submit a new PR.
-              </p>
+              </DialogDescription>
               <div className="space-y-2">
-                <label className="text-xs font-medium text-muted-foreground">Reason (optional, sent to the requester)</label>
-                <textarea
+                <Label htmlFor="approval-pr-reject-reason" className="text-xs font-medium text-muted-foreground">Reason (optional, sent to the requester)</Label>
+                <Textarea
+                  id="approval-pr-reject-reason"
                   rows={3}
                   value={rejectReason}
                   onChange={e => setRejectReason(e.target.value)}
                   placeholder="Why is this request being rejected?"
-                  className="w-full border rounded-md px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  className="resize-none"
                 />
               </div>
             </div>
-            <div className="px-6 py-4 border-t flex justify-end gap-2">
-              <button onClick={() => { setRejectModal(null); setRejectReason('') }} className="px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">Cancel</button>
-              <button
+            <DialogFooter className="px-6 py-4 border-t">
+              <Button variant="outline" onClick={() => { setRejectModal(null); setRejectReason('') }}>Cancel</Button>
+              <Button
+                variant="destructive"
                 disabled={actingId === rejectModal.id}
-                onClick={() => act(rejectModal.id, 'reject', rejectReason)}
-                className="px-4 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors">
+                onClick={() => act(rejectModal.id, 'reject', rejectReason)}>
                 Yes, Reject
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        )}
+      </Dialog>
 
 
-      {detailModal && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[85vh] flex flex-col overflow-hidden">
-            <div className="px-6 pt-5 pb-4 flex items-start justify-between gap-3 shrink-0">
+      <Dialog open={!!detailModal} onOpenChange={o => { if (!o) { setDetailModal(null); setDetail(null) } }}>
+        {detailModal && (
+          <DialogContent className="sm:max-w-lg max-h-[85vh] flex flex-col p-0 gap-0 overflow-hidden" aria-describedby={undefined} onInteractOutside={e => e.preventDefault()}>
+            <div className="px-6 pt-5 pb-4 pr-12 shrink-0">
               <div className="min-w-0 space-y-2">
-                <p className="font-mono text-xs font-semibold text-muted-foreground flex items-center gap-1.5">
+                <DialogTitle className="font-mono text-xs font-semibold leading-normal text-muted-foreground flex items-center gap-1.5">
                   {detailModal.prNumber}
                   {detailModal.isUrgent && <UrgentBadge />}
-                </p>
-                <RequesterLine employee={detailModal.requestedByEmployee} sub={`Submitted ${fmtDate(detailModal.createdAt)}`} />
+                </DialogTitle>
+                <RequesterLine employee={detailModal.requestedByEmployee} sub={`Submitted ${formatDate(detailModal.createdAt)}`} />
               </div>
-              <button onClick={() => { setDetailModal(null); setDetail(null) }} className="p-1 -m-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted">
-                <X className="h-4 w-4" />
-              </button>
             </div>
 
             <div className="px-6 pb-5 space-y-4 overflow-y-auto">
@@ -735,7 +743,7 @@ export default function MyApprovalsPage() {
                     <InfoField label="Destination">
                       {detail.deliveryLocation ? <span className="flex items-center gap-1"><MapPin className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />{detail.deliveryLocation.name}</span> : '—'}
                     </InfoField>
-                    <InfoField label="Needed By">{detail.neededByDate ? fmtDate(detail.neededByDate) : '—'}</InfoField>
+                    <InfoField label="Needed By">{formatDate(detail.neededByDate)}</InfoField>
                     {detail.purpose === 'TRIP' && detail.trip && (
                       <div className="col-span-2">
                         <InfoField label="Trip">
@@ -748,9 +756,9 @@ export default function MyApprovalsPage() {
                   </div>
 
                   {detail.isUrgent && detail.urgentReason && (
-                    <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3">
-                      <p className="text-[11px] font-semibold text-red-700 uppercase tracking-wide">Why urgent</p>
-                      <p className="text-sm text-red-700 mt-0.5">{detail.urgentReason}</p>
+                    <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3">
+                      <p className="text-[11px] font-semibold text-destructive uppercase tracking-wide">Why urgent</p>
+                      <p className="text-sm text-destructive mt-0.5">{detail.urgentReason}</p>
                     </div>
                   )}
 
@@ -783,31 +791,33 @@ export default function MyApprovalsPage() {
             </div>
 
             <div className="px-6 py-4 border-t bg-muted/20 flex gap-2 shrink-0">
-              <button
+              <Button
+                variant="outline"
                 disabled={actingId === detailModal.id}
                 onClick={() => { setRejectModal(detailModal); setDetailModal(null) }}
-                className="flex-1 flex items-center justify-center gap-1.5 px-4 py-2 text-sm font-medium border bg-white rounded-lg text-muted-foreground hover:bg-red-50 hover:text-red-600 hover:border-red-200 disabled:opacity-50 transition-colors">
-                <XCircle className="h-4 w-4" /> Reject
-              </button>
-              <button
-                disabled={actingId === detailModal.id}
+                className="flex-1 bg-card text-muted-foreground hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30 dark:hover:bg-destructive/10">
+                <XCircle /> Reject
+              </Button>
+              <Button
+                variant="success"
+                loading={actingId === detailModal.id}
                 onClick={() => act(detailModal.id, 'approve')}
-                className="flex-1 flex items-center justify-center gap-1.5 px-4 py-2 text-sm font-medium bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white rounded-lg transition-colors">
-                <CheckCircle2 className="h-4 w-4" /> {actingId === detailModal.id ? 'Approving…' : 'Approve'}
-              </button>
+                className="flex-1">
+                {actingId !== detailModal.id && <CheckCircle2 />} {actingId === detailModal.id ? 'Approving…' : 'Approve'}
+              </Button>
             </div>
-          </div>
-        </div>
-      )}
+          </DialogContent>
+        )}
+      </Dialog>
 
       {fileLightbox && (
         <div className="fixed inset-0 bg-black/70 z-[60] flex items-center justify-center p-4" onClick={() => setFileLightbox(null)}>
           <div className="relative inline-block" onClick={e => e.stopPropagation()}>
             {isPdfDataUrl(fileLightbox) ? (
-              <div className="bg-white rounded-xl shadow-2xl overflow-hidden w-[90vw] max-w-2xl">
+              <div className="bg-card rounded-xl shadow-2xl overflow-hidden w-[90vw] max-w-2xl">
                 <embed src={fileLightbox} type="application/pdf" className="w-full h-[75vh]" />
                 <div className="p-3 flex justify-center">
-                  <a href={fileLightbox} target="_blank" rel="noopener noreferrer" className="text-sm text-amber-700 hover:text-amber-900 font-medium underline underline-offset-2">
+                  <a href={fileLightbox} target="_blank" rel="noopener noreferrer" className="text-sm text-warning hover:text-warning/80 font-medium underline underline-offset-2">
                     Open PDF in new tab
                   </a>
                 </div>
@@ -815,7 +825,7 @@ export default function MyApprovalsPage() {
             ) : (
               <img src={fileLightbox} alt="Quotation document" className="block max-w-[90vw] max-h-[85vh] w-auto h-auto rounded-xl shadow-2xl object-contain" />
             )}
-            <button onClick={() => setFileLightbox(null)} className="absolute top-3 right-3 bg-black/50 text-white rounded-full p-1.5 hover:bg-black/70">
+            <button onClick={() => setFileLightbox(null)} aria-label="Close" className="absolute top-3 right-3 bg-black/50 text-white rounded-full p-1.5 hover:bg-black/70">
               <X className="h-4 w-4" />
             </button>
           </div>

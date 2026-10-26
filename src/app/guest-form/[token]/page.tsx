@@ -1,14 +1,15 @@
  'use client'
 
-import { useState, useEffect, useRef, Suspense } from 'react'
+import { useState, useEffect, useRef, useId, cloneElement, isValidElement, Suspense } from 'react'
 import { useParams, useSearchParams } from 'next/navigation'
 import { CheckCircle, Loader2, ChevronRight, ChevronLeft, Save, Calendar, MapPin, Ship, Anchor, Lock } from 'lucide-react'
 import { toast } from 'sonner'
 import { useFileDrop } from '@/hooks/useFileDrop'
+import { formatDate } from '@/lib/format'
 
 const LOGO = 'https://samaraliveaboard.com/wp-content/uploads/2025/08/Logo-Samara-icon-192x192-1.png'
-const TEAL = '#1a5f6e'
-const GOLD = '#bdac7e'  
+const TEAL = 'var(--brand)'
+const GOLD = 'var(--primary)'  
 
 type Section = 'profile' | 'medical' | 'food' | 'drinks' | 'diving' | 'surfing'
 
@@ -35,17 +36,22 @@ interface GuestData {
 
 /* ── Field components ── */
 function Field({ label, children, full }: { label: string; children: React.ReactNode; full?: boolean }) {
+  const id = useId()
+  // A single native control gets linked to the label; anything else (Yes/No buttons) becomes a labelled group.
+  const isControl = isValidElement(children) && typeof children.type === 'string' && ['input', 'select', 'textarea'].includes(children.type)
   return (
     <div className={full ? 'sm:col-span-2' : ''}>
-      <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wider">{label}</label>
-      {children}
+      <label id={`${id}-label`} htmlFor={isControl ? id : undefined} className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wider">{label}</label>
+      {isControl
+        ? cloneElement(children as React.ReactElement<{ id?: string }>, { id })
+        : <div role="group" aria-labelledby={`${id}-label`}>{children}</div>}
     </div>
   )
 }
 
-const inputCls  = `w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[${TEAL}]/30 focus:border-[${TEAL}] bg-white placeholder:text-gray-300 transition-all`
-const selectCls = `w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[${TEAL}]/30 focus:border-[${TEAL}] bg-white text-gray-700 transition-all`
-const textCls   = `w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[${TEAL}]/30 focus:border-[${TEAL}] bg-white placeholder:text-gray-300 transition-all resize-none`
+const inputCls  = `w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand bg-white placeholder:text-gray-300 transition-all`
+const selectCls = `w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand bg-white text-gray-700 transition-all`
+const textCls   = `w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand bg-white placeholder:text-gray-300 transition-all resize-none`
 
 /* ── Image upload ── */
 function ImageUpload({ label, hint, value, onChange }: { label: string; hint?: string; value: string; onChange: (b64: string) => void }) {
@@ -56,9 +62,10 @@ function ImageUpload({ label, hint, value, onChange }: { label: string; hint?: s
   }
   const { isDragging, dropProps } = useFileDrop(files => { if (files[0]) readFileAsDataUrl(files[0]).then(onChange).catch(() => {}) })
   const isPdf = value.startsWith('data:application/pdf')
+  const inputId = useId()
   return (
     <div className="space-y-2">
-      <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">{label}</label>
+      <label htmlFor={value ? undefined : inputId} className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">{label}</label>
       {value ? (
         <div className="relative group">
           {isPdf ? (
@@ -70,19 +77,19 @@ function ImageUpload({ label, hint, value, onChange }: { label: string; hint?: s
             // eslint-disable-next-line @next/next/no-img-element
             <img src={value} alt={label} className="w-full max-h-52 object-contain rounded-xl border border-gray-200 bg-gray-50" />
           )}
-          <button type="button" onClick={() => onChange('')}
-            className="absolute top-2 right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity shadow">
+          <button type="button" onClick={() => onChange('')} aria-label="Remove photo"
+            className="absolute top-2 right-2 bg-destructive text-destructive-foreground rounded-full w-6 h-6 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity shadow">
             ✕
           </button>
         </div>
       ) : (
         <label {...dropProps} className={`flex flex-col items-center justify-center w-full h-28 border-2 border-dashed rounded-xl cursor-pointer transition-all ${
-          isDragging ? 'border-[#1a5f6e] bg-[#1a5f6e]/5' : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+          isDragging ? 'border-brand bg-brand/5' : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
         }`}>
           <span className="text-2xl mb-1">📷</span>
           <span className="text-xs font-medium text-gray-500">{isDragging ? 'Drop to upload' : 'Tap or drag to upload photo'}</span>
           <span className="text-[11px] text-gray-300 mt-0.5">JPG, PNG, or PDF</span>
-          <input type="file" className="hidden" accept="image/*,application/pdf" capture="environment" onChange={handleFile} />
+          <input id={inputId} type="file" className="hidden" accept="image/*,application/pdf" capture="environment" onChange={handleFile} />
         </label>
       )}
       {hint && <p className="text-[11px] text-gray-400">{hint}</p>}
@@ -125,9 +132,10 @@ function FileUpload({ label, hint, values, onChange }: { label: string; hint?: s
   function removeAt(i: number) { onChange(list.filter((_, idx) => idx !== i)) }
   const isPdf = (v: string) => v.startsWith('data:application/pdf')
   const { isDragging, dropProps } = useFileDrop(handleFiles)
+  const inputId = useId()
   return (
     <div className="space-y-2">
-      <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">{label}</label>
+      <label htmlFor={inputId} className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">{label}</label>
       <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
         {list.map((v, i) => (
           <div key={i} className="relative group aspect-square rounded-xl border border-gray-200 bg-gray-50 overflow-hidden flex items-center justify-center">
@@ -140,18 +148,18 @@ function FileUpload({ label, hint, values, onChange }: { label: string; hint?: s
               // eslint-disable-next-line @next/next/no-img-element
               <img src={v} alt={label} className="w-full h-full object-cover" />
             )}
-            <button type="button" onClick={() => removeAt(i)}
-              className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity shadow">
+            <button type="button" onClick={() => removeAt(i)} aria-label="Remove file"
+              className="absolute top-1 right-1 bg-destructive text-destructive-foreground rounded-full w-5 h-5 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity shadow">
               ✕
             </button>
           </div>
         ))}
         <label {...dropProps} className={`aspect-square flex flex-col items-center justify-center border-2 border-dashed rounded-xl cursor-pointer transition-all ${
-          isDragging ? 'border-[#1a5f6e] bg-[#1a5f6e]/5' : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+          isDragging ? 'border-brand bg-brand/5' : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
         }`}>
           <span className="text-xl leading-none mb-0.5 text-gray-400">{isDragging ? '⬇' : '＋'}</span>
           <span className="text-[9px] font-medium text-gray-500 text-center px-1">{isDragging ? 'Drop' : 'Add file'}</span>
-          <input type="file" multiple className="hidden" accept="image/*,application/pdf"
+          <input id={inputId} type="file" multiple className="hidden" accept="image/*,application/pdf"
             onChange={e => { if (e.target.files?.length) handleFiles(e.target.files); e.target.value = '' }} />
         </label>
       </div>
@@ -166,9 +174,10 @@ function YesNo({ value, onChange }: { value: string; onChange: (v: string) => vo
       <button
         type="button"
         onClick={() => onChange('yes')}
+        aria-pressed={value === 'yes'}
         className="flex-1 h-11 rounded-xl text-sm font-semibold border-2 transition-all"
         style={value === 'yes'
-          ? { background: TEAL, borderColor: TEAL, color: 'white' }
+          ? { background: TEAL, borderColor: TEAL, color: 'var(--brand-foreground)' }
           : { background: 'white', borderColor: '#e5e7eb', color: '#9ca3af' }}
       >
         Yes
@@ -176,9 +185,10 @@ function YesNo({ value, onChange }: { value: string; onChange: (v: string) => vo
       <button
         type="button"
         onClick={() => onChange('no')}
+        aria-pressed={value === 'no'}
         className="flex-1 h-11 rounded-xl text-sm font-semibold border-2 transition-all"
         style={value === 'no'
-          ? { background: '#f43f5e', borderColor: '#f43f5e', color: 'white' }
+          ? { background: 'var(--destructive)', borderColor: 'var(--destructive)', color: 'var(--destructive-foreground)' }
           : { background: 'white', borderColor: '#e5e7eb', color: '#9ca3af' }}
       >
         No
@@ -328,11 +338,11 @@ function EquipmentTable({ items, onChange }: { items: any[]; onChange: (items: a
         <span>Equipment</span><span>Size</span><span>Qty</span><span />
       </div>
       {rows.map((r, i) => (
-        <div key={i} className="grid grid-cols-[1fr_110px_80px_28px] gap-2 items-center">
-          <input value={r.item ?? ''} onChange={e => update(i, 'item', e.target.value)} placeholder="e.g. Wetsuit, BCD, Fins, Mask" className={inputCls} />
-          <input value={r.size ?? ''} onChange={e => update(i, 'size', e.target.value)} placeholder="Size" className={inputCls} />
-          <input value={r.qty ?? ''} onChange={e => update(i, 'qty', e.target.value)} placeholder="Qty" className={inputCls} />
-          <button type="button" onClick={() => removeRow(i)} aria-label="Remove item" className="text-red-400 hover:text-red-600 text-lg leading-none">✕</button>
+        <div key={i} className="grid grid-cols-[1fr_72px_60px_28px] sm:grid-cols-[1fr_110px_80px_28px] gap-2 items-center">
+          <input aria-label={`Equipment ${i + 1}`} value={r.item ?? ''} onChange={e => update(i, 'item', e.target.value)} placeholder="e.g. Wetsuit, BCD, Fins, Mask" className={inputCls} />
+          <input aria-label={`Equipment ${i + 1} size`} value={r.size ?? ''} onChange={e => update(i, 'size', e.target.value)} placeholder="Size" className={inputCls} />
+          <input aria-label={`Equipment ${i + 1} quantity`} value={r.qty ?? ''} onChange={e => update(i, 'qty', e.target.value)} placeholder="Qty" className={inputCls} />
+          <button type="button" onClick={() => removeRow(i)} aria-label="Remove item" className="text-destructive/70 hover:text-destructive text-lg leading-none">✕</button>
         </div>
       ))}
       <button type="button" onClick={addRow} className="text-xs font-semibold" style={{ color: TEAL }}>+ Add Item</button>
@@ -454,11 +464,6 @@ const ALL_STEPS: { id: Section; title: string; subtitle: string }[] = [
   { id: 'drinks',  title: 'Drink Preferences',   subtitle: 'Beverages you enjoy on board' },
   { id: 'surfing', title: 'Surfing Information', subtitle: 'Board details & skill level' },
 ]
-
-function fmtDate(d: string | null | undefined) {
-  if (!d) return ''
-  return new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
-}
 
 /* ── Main Page ── */
 function validateSection(section: Section, data: any): string | null {
@@ -653,15 +658,15 @@ function GuestFormInner() {
     <div className="min-h-screen flex items-center justify-center bg-[#f0f4f5] px-4">
       <div className="text-center max-w-sm">
         <img src={LOGO} alt="Samara" className="w-20 h-20 mx-auto mb-5" />
-        <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4">
-          <CheckCircle className="w-9 h-9 text-emerald-500" />
+        <div className="w-16 h-16 bg-success/15 rounded-full flex items-center justify-center mx-auto mb-4">
+          <CheckCircle className="w-9 h-9 text-success" />
         </div>
         <h1 className="text-2xl font-bold text-gray-800 mb-2">All Done!</h1>
         <p className="text-gray-500 text-sm">Thank you for completing your guest profile. We look forward to welcoming you on board Samara Liveaboard.</p>
         {guest?.tripInfo && (
           <div className="mt-5 bg-white rounded-2xl border border-gray-100 px-5 py-4 text-sm text-gray-600 text-left">
             <p className="font-semibold text-gray-800 mb-1">{guest.tripInfo.yachtName ?? 'Samara'}</p>
-            <p className="text-xs text-gray-400">{fmtDate(guest.tripInfo.startDate)} – {fmtDate(guest.tripInfo.endDate)}</p>
+            <p className="text-xs text-gray-400">{formatDate(guest.tripInfo.startDate, 'medium', { empty: '' })} – {formatDate(guest.tripInfo.endDate, 'medium', { empty: '' })}</p>
             {guest.tripInfo.destination && <p className="text-xs text-gray-400 mt-0.5">{guest.tripInfo.destination}</p>}
           </div>
         )}
@@ -721,7 +726,7 @@ function GuestFormInner() {
                 <div className="hidden sm:block w-px h-4 bg-white/20" />
                 <div className="flex items-center gap-2 text-white/70 text-xs">
                   <Calendar className="w-3.5 h-3.5 shrink-0" style={{ color: GOLD }} />
-                  <span>{fmtDate(trip.startDate)} – {fmtDate(trip.endDate)}</span>
+                  <span>{formatDate(trip.startDate, 'medium', { empty: '' })} – {formatDate(trip.endDate, 'medium', { empty: '' })}</span>
                 </div>
                 {trip.destination && (
                   <>
@@ -752,7 +757,7 @@ function GuestFormInner() {
           <div className="max-w-2xl mx-auto px-4 sm:px-6 py-3">
 
             {/* Mobile: thin progress bar + step label */}
-            <div className="sm:hidden">
+            <div className="md:hidden">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-bold" style={{ color: TEAL }}>
                   Step {stepIdx + 1} / {STEPS.length}
@@ -768,9 +773,11 @@ function GuestFormInner() {
                       key={i}
                       onClick={() => unlocked && setStepIdx(i)}
                       disabled={!unlocked}
+                      aria-label={`Step ${i + 1}: ${STEPS[i].title}`}
+                      aria-current={i === stepIdx ? 'step' : undefined}
                       className="flex-1 h-1.5 rounded-full transition-all"
                       style={{
-                        background: i < stepIdx ? '#10b981' : i === stepIdx ? TEAL : '#e5e7eb',
+                        background: i < stepIdx ? 'var(--success)' : i === stepIdx ? TEAL : '#e5e7eb',
                         cursor: unlocked ? 'pointer' : 'not-allowed',
                         opacity: unlocked ? 1 : 0.4,
                       }}
@@ -781,7 +788,7 @@ function GuestFormInner() {
             </div>
 
             {/* Desktop: circles + labels, always fits */}
-            <div className="hidden sm:flex items-center w-full">
+            <div className="hidden md:flex items-center w-full">
               {STEPS.map((step, i) => {
                 const done     = saved.has(step.id)
                 const active   = i === stepIdx
@@ -792,15 +799,16 @@ function GuestFormInner() {
                     <button
                       onClick={() => unlocked && setStepIdx(i)}
                       disabled={locked}
+                      aria-current={active ? 'step' : undefined}
                       className="flex flex-col items-center gap-1.5 shrink-0"
                       style={{ cursor: locked ? 'not-allowed' : 'pointer' }}
                     >
                       <div
                         className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all"
                         style={{
-                          background: active ? TEAL : done ? '#10b981' : locked ? '#f3f4f6' : '#e5e7eb',
+                          background: active ? TEAL : done ? 'var(--success)' : locked ? '#f3f4f6' : '#e5e7eb',
                           color: active || done ? 'white' : '#c4c9d0',
-                          boxShadow: active ? `0 0 0 3px ${TEAL}30` : 'none',
+                          boxShadow: active ? `0 0 0 3px color-mix(in srgb, ${TEAL} 19%, transparent)` : 'none',
                           opacity: locked ? 0.5 : 1,
                         }}
                       >
@@ -808,7 +816,7 @@ function GuestFormInner() {
                       </div>
                       <span
                         className="text-[11px] font-semibold whitespace-nowrap transition-colors"
-                        style={{ color: active ? TEAL : done ? '#10b981' : '#c4c9d0' }}
+                        style={{ color: active ? TEAL : done ? 'var(--success)' : '#c4c9d0' }}
                       >
                         {step.title}
                       </span>
@@ -816,7 +824,7 @@ function GuestFormInner() {
                     {i < STEPS.length - 1 && (
                       <div
                         className="flex-1 h-px mx-2 mb-5 transition-all"
-                        style={{ background: i < stepIdx ? '#10b981' : '#e5e7eb' }}
+                        style={{ background: i < stepIdx ? 'var(--success)' : '#e5e7eb' }}
                       />
                     )}
                   </div>
@@ -832,7 +840,7 @@ function GuestFormInner() {
 
           {/* Step header — only shown on desktop (mobile has it in the bar) */}
           <div className="mb-5">
-            <span className="hidden sm:inline-block text-xs font-bold uppercase tracking-widest mb-1" style={{ color: TEAL }}>
+            <span className="hidden md:inline-block text-xs font-bold uppercase tracking-widest mb-1" style={{ color: TEAL }}>
               Step {stepIdx + 1} of {STEPS.length}
             </span>
             <h2 className="text-xl font-extrabold text-gray-800">{currentStep.title}</h2>

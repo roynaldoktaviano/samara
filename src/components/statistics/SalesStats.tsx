@@ -6,10 +6,12 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Calendar, Ship, Users, TrendingUp, TrendingDown, Minus, Briefcase, Globe, RotateCw, UserCog } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 
 /* ── constants ── */
-const TEAL        = '#1a5f6e'
-const GOLD        = '#bdac7e'
+const TEAL        = 'var(--brand)'
+const GOLD        = 'var(--primary)'
 const RANK_COLORS = [GOLD, '#9ca3af', '#b45309', '#6b7280', '#6b7280']
 const REFRESH_MS  = 30_000
 
@@ -52,7 +54,7 @@ function Delta({ now, prev, label }: { now: number; prev: number; label: string 
   if (diff === 0) return <span className="text-xs text-muted-foreground flex items-center gap-0.5"><Minus className="h-3 w-3" />same as {label}</span>
   const up = diff > 0
   return (
-    <span className={`text-xs flex items-center gap-0.5 ${up ? 'text-emerald-600' : 'text-red-500'}`}>
+    <span className={`text-xs flex items-center gap-0.5 ${up ? 'text-success' : 'text-destructive'}`}>
       {up ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
       {up ? '+' : ''}{diff} vs {label}
     </span>
@@ -147,14 +149,14 @@ export default function SalesStats() {
     <div className="space-y-5">
 
       {/* ── Header row 1: title + scope label ── */}
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-3 mb-0.5">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 mb-0.5">
             <h3 className="text-2xl font-bold tracking-tight">Sales Overview</h3>
             {/* Admin: salesperson filter dropdown. Sales: fixed "My Sales" badge */}
             {isAdmin ? (
               <Select value={salespersonId} onValueChange={setSalespersonId}>
-                <SelectTrigger className="h-8 w-44 text-xs font-semibold border rounded-lg" style={{ borderColor: TEAL, color: salespersonId !== 'all' ? TEAL : undefined }}>
+                <SelectTrigger aria-label="Salesperson" className="h-8 w-44 text-xs font-semibold border rounded-lg" style={{ borderColor: TEAL, color: salespersonId !== 'all' ? TEAL : undefined }}>
                   <UserCog className="h-3.5 w-3.5 mr-1 shrink-0" style={{ color: TEAL }} />
                   <SelectValue />
                 </SelectTrigger>
@@ -166,7 +168,7 @@ export default function SalesStats() {
                 </SelectContent>
               </Select>
             ) : (
-              <span className="px-3 py-1 rounded-lg text-xs font-semibold text-white" style={{ backgroundColor: TEAL }}>
+              <span className="px-3 py-1 rounded-lg text-xs font-semibold text-brand-foreground" style={{ backgroundColor: TEAL }}>
                 My Sales
               </span>
             )}
@@ -189,13 +191,14 @@ export default function SalesStats() {
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <button
+          <Button
+            variant="outline" size="sm"
             onClick={() => fetchStats(true)} disabled={refreshing}
-            className="flex items-center gap-1.5 h-8 px-3 text-xs rounded-md border border-input bg-background hover:bg-muted transition-colors disabled:opacity-50"
+            className="text-xs"
           >
-            <RotateCw className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+            <RotateCw className={`size-3.5 ${refreshing ? 'animate-spin' : ''}`} />
             Refresh
-          </button>
+          </Button>
           {data?.updatedAt && !loading && (
             <span className="text-[11px] text-muted-foreground w-12">{timeAgo(data.updatedAt)}</span>
           )}
@@ -208,9 +211,10 @@ export default function SalesStats() {
           <button
             key={p.label}
             onClick={() => applyPreset(p)}
+            aria-pressed={activePreset === p.label}
             className={`h-8 px-3 rounded-md text-xs font-medium transition-colors border ${
               activePreset === p.label
-                ? 'border-transparent text-white'
+                ? 'border-transparent text-brand-foreground'
                 : 'border-input bg-background text-muted-foreground hover:text-foreground hover:bg-muted'
             }`}
             style={activePreset === p.label ? { backgroundColor: TEAL } : {}}
@@ -221,22 +225,22 @@ export default function SalesStats() {
 
         <div className="w-px h-5 bg-border mx-1" />
 
-        <input
-          type="date" value={from}
+        <Input
+          type="date" value={from} aria-label="From date"
           onChange={e => handleFromChange(e.target.value)}
-          className="h-8 px-2 text-xs rounded-md border border-input bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+          className="h-8 w-auto px-2"
         />
         <span className="text-xs text-muted-foreground">→</span>
-        <input
-          type="date" value={to}
+        <Input
+          type="date" value={to} aria-label="To date"
           onChange={e => handleToChange(e.target.value)}
-          className="h-8 px-2 text-xs rounded-md border border-input bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+          className="h-8 w-auto px-2"
         />
 
         <div className="w-px h-5 bg-border mx-1" />
 
         <Select value={yachtId} onValueChange={setYachtId}>
-          <SelectTrigger className="h-8 w-36 text-xs">
+          <SelectTrigger aria-label="Vessel" className="h-8 w-36 text-xs">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -332,7 +336,7 @@ export default function SalesStats() {
                       <p className="font-medium text-sm truncate">{a.name}</p>
                       <p className="text-xs text-muted-foreground">{a.total} bookings all-time</p>
                     </div>
-                    <span className="shrink-0 text-xs font-semibold px-2 py-0.5 rounded-full text-white" style={{ backgroundColor: TEAL }}>
+                    <span className="shrink-0 text-xs font-semibold px-2 py-0.5 rounded-full text-brand-foreground" style={{ backgroundColor: TEAL }}>
                       {a.period} this period
                     </span>
                   </div>

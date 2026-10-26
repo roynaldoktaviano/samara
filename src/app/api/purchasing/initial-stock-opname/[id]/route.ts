@@ -28,7 +28,7 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
       },
     },
   })
-  if (!count || count.type !== 'INITIAL') return NextResponse.json({ error: 'Tidak ditemukan' }, { status: 404 })
+  if (!count || count.type !== 'INITIAL') return NextResponse.json({ error: 'Not found' }, { status: 404 })
   return NextResponse.json(count)
 }
 
@@ -43,13 +43,13 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   const { items, notes, status } = await req.json()
 
   const count = await db.stockCount.findUnique({ where: { id } })
-  if (!count || count.type !== 'INITIAL') return NextResponse.json({ error: 'Tidak ditemukan' }, { status: 404 })
+  if (!count || count.type !== 'INITIAL') return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
   // Once finalized, only the person who did the opname can correct it — not any
   // Admin/Finance Director who happens to have access to this menu.
   const isCorrection = count.status === 'COMPLETED'
   if (isCorrection && count.countedById !== session.user.id) {
-    return NextResponse.json({ error: 'Hanya orang yang melakukan opname ini yang bisa mengoreksi' }, { status: 403 })
+    return NextResponse.json({ error: 'Only the person who did this opname can correct it' }, { status: 403 })
   }
 
   if (items?.length) {
@@ -123,8 +123,8 @@ export async function DELETE(_: NextRequest, { params }: { params: Promise<{ id:
   if (!(await canUseInitialOpname(db, role, id))) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
   const count = await db.stockCount.findUnique({ where: { id } })
-  if (!count || count.type !== 'INITIAL') return NextResponse.json({ error: 'Tidak ditemukan' }, { status: 404 })
-  if (count.status === 'COMPLETED') return NextResponse.json({ error: 'Opname yang sudah selesai tidak bisa dihapus' }, { status: 400 })
+  if (!count || count.type !== 'INITIAL') return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  if (count.status === 'COMPLETED') return NextResponse.json({ error: 'A completed opname cannot be deleted' }, { status: 400 })
 
   await db.stockCount.delete({ where: { id } })
   return NextResponse.json({ ok: true })

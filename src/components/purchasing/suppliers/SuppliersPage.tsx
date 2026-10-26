@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { Plus, Search, Building2, Phone, Mail, MapPin, Pencil, Trash2, X, Check, ChevronDown } from 'lucide-react'
+import { formatMoney, formatDate } from '@/lib/format'
+import { StatusBadge, type StatusTone } from '@/components/ui/status-badge'
 
 interface SupplierLocation { city: string; address: string }
 interface Supplier {
@@ -17,14 +19,13 @@ interface SupplierDetail extends Supplier {
   totalSpend: number; totalOrders: number
 }
 
-const STATUS_COLOR: Record<string, string> = {
-  DRAFT: 'bg-muted text-muted-foreground', ORDERED: 'bg-blue-100 text-blue-700',
-  IN_TRANSIT: 'bg-amber-100 text-amber-700', PARTIALLY_RECEIVED: 'bg-orange-100 text-orange-700',
-  RECEIVED: 'bg-green-100 text-green-700', CANCELLED: 'bg-red-100 text-red-700',
-}
-const STATUS_LABEL: Record<string, string> = {
-  DRAFT: 'Draft', ORDERED: 'Ordered', IN_TRANSIT: 'On Delivery',
-  PARTIALLY_RECEIVED: 'Partially Received', RECEIVED: 'Received', CANCELLED: 'Cancelled',
+const STATUS: Record<string, { label: string; tone: StatusTone }> = {
+  DRAFT:              { label: 'Draft',              tone: 'neutral' },
+  ORDERED:            { label: 'Ordered',            tone: 'info' },
+  IN_TRANSIT:         { label: 'On Delivery',        tone: 'info' },
+  PARTIALLY_RECEIVED: { label: 'Partially Received', tone: 'warning' },
+  RECEIVED:           { label: 'Received',           tone: 'success' },
+  CANCELLED:          { label: 'Cancelled',          tone: 'neutral' },
 }
 
 const CITY_OPTIONS = [
@@ -32,9 +33,6 @@ const CITY_OPTIONS = [
   'Makassar', 'Manado', 'Sorong', 'Raja Ampat', 'Komodo', 'Semarang',
   'Bandung', 'Yogyakarta', 'Medan', 'Balikpapan', 'Ambon', 'Kupang',
 ]
-
-const fmtMoney = (n: number) => 'Rp ' + new Intl.NumberFormat('id-ID').format(n)
-const fmtDate = (s: string) => new Date(s).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
 
 const BLANK = {
   name: '', locations: [] as SupplierLocation[],
@@ -50,24 +48,24 @@ function CitySelect({ value, onChange, usedCities }: {
   return (
     <div className="relative">
       <button type="button" onClick={() => setOpen(o => !o)}
-        className="w-full h-9 border rounded-md px-3 text-sm text-left flex items-center justify-between bg-white focus:outline-none focus:ring-1 focus:ring-amber-500 transition-colors">
-        <span className={value ? '' : 'text-muted-foreground'}>{value || 'Select city...'}</span>
+        className="w-full h-9 border rounded-md px-3 text-sm text-left flex items-center justify-between bg-card focus:outline-none focus:ring-1 focus:ring-ring transition-colors">
+        <span className={value ? '' : 'text-muted-foreground'}>{value || 'Select city…'}</span>
         <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
       </button>
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute left-0 right-0 top-full mt-1 bg-white border rounded-lg shadow-xl z-50 max-h-48 flex flex-col">
+          <div className="absolute left-0 right-0 top-full mt-1 bg-popover border rounded-lg shadow-xl z-50 max-h-48 flex flex-col">
             <div className="p-2 border-b shrink-0">
-              <input autoFocus className="w-full h-8 border rounded px-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
-                placeholder="Search..." value={search} onChange={e => setSearch(e.target.value)} />
+              <input autoFocus className="w-full h-8 border rounded px-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                placeholder="Search…" value={search} onChange={e => setSearch(e.target.value)} />
             </div>
             <div className="overflow-y-auto">
               {opts.map(c => (
                 <button key={c} onClick={() => { onChange(c); setOpen(false); setSearch('') }}
-                  className={`w-full text-left px-3 py-2 text-sm hover:bg-amber-50 flex items-center justify-between transition-colors ${usedCities.includes(c) && c !== value ? 'text-muted-foreground' : ''}`}>
+                  className={`w-full text-left px-3 py-2 text-sm hover:bg-warning/10 flex items-center justify-between transition-colors ${usedCities.includes(c) && c !== value ? 'text-muted-foreground' : ''}`}>
                   {c}
-                  {value === c && <Check className="h-3.5 w-3.5 text-amber-600" />}
+                  {value === c && <Check className="h-3.5 w-3.5 text-warning" />}
                 </button>
               ))}
             </div>
@@ -168,7 +166,7 @@ export default function SuppliersPage() {
     return matchSearch && matchCity
   })
 
-  const inp = 'w-full h-9 border rounded-md px-3 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white transition-colors'
+  const inp = 'w-full h-9 border rounded-md px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring bg-card transition-colors'
 
   return (
     <div className="flex gap-6 h-full">
@@ -178,9 +176,9 @@ export default function SuppliersPage() {
         <div className="flex items-center gap-2">
           <div className="relative flex-1">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-            <input className={`${inp} pl-8`} placeholder="Search suppliers..." value={search} onChange={e => setSearch(e.target.value)} />
+            <input className={`${inp} pl-8`} placeholder="Search suppliers…" value={search} onChange={e => setSearch(e.target.value)} />
           </div>
-          <button onClick={openAdd} className="h-9 px-3 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium rounded-md transition-colors flex items-center shrink-0">
+          <button onClick={openAdd} className="h-9 px-3 bg-primary hover:bg-primary-hover text-primary-foreground text-sm font-medium rounded-md transition-colors flex items-center shrink-0">
             <Plus className="h-3.5 w-3.5" />
           </button>
         </div>
@@ -188,12 +186,12 @@ export default function SuppliersPage() {
         {allCities.length > 0 && (
           <div className="flex gap-1.5 flex-wrap">
             <button onClick={() => setFilterCity('')}
-              className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${!filterCity ? 'bg-amber-500 text-white' : 'bg-muted text-muted-foreground hover:bg-muted/70'}`}>
+              className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${!filterCity ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/70'}`}>
               All
             </button>
             {allCities.map(c => (
               <button key={c} onClick={() => setFilterCity(filterCity === c ? '' : c)}
-                className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${filterCity === c ? 'bg-blue-500 text-white' : 'bg-muted text-muted-foreground hover:bg-muted/70'}`}>
+                className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${filterCity === c ? 'bg-info text-info-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/70'}`}>
                 {c}
               </button>
             ))}
@@ -214,20 +212,20 @@ export default function SuppliersPage() {
             const locs: SupplierLocation[] = Array.isArray(s.locations) ? s.locations : []
             return (
               <button key={s.id} onClick={() => openDetail(s)}
-                className={`w-full text-left rounded-lg border p-3 transition-colors hover:border-amber-300 hover:bg-amber-50/50 ${detail?.id === s.id ? 'border-amber-400 bg-amber-50' : 'bg-white'}`}>
+                className={`w-full text-left rounded-lg border p-3 transition-colors hover:border-primary/40 hover:bg-warning/5 ${detail?.id === s.id ? 'border-warning bg-warning/10' : 'bg-card'}`}>
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <p className={`text-sm font-semibold truncate ${!s.isActive ? 'text-muted-foreground line-through' : ''}`}>{s.name}</p>
                     {locs.length > 0 && (
                       <div className="flex flex-wrap gap-1 mt-1">
-                        {locs.map((l, i) => <span key={i} className="px-1.5 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full">{l.city}</span>)}
+                        {locs.map((l, i) => <span key={i} className="px-1.5 py-0.5 bg-info/15 text-info text-xs rounded-full">{l.city}</span>)}
                       </div>
                     )}
                     {s.contact && <p className="text-xs text-muted-foreground truncate mt-0.5">{s.contact}</p>}
                   </div>
                   <div className="shrink-0 text-right">
                     <span className="text-xs text-muted-foreground">{s._count?.orders ?? 0} PO</span>
-                    {!s.isActive && <p className="text-xs text-red-500 font-medium">Inactive</p>}
+                    {!s.isActive && <p className="text-xs text-destructive font-medium">Inactive</p>}
                   </div>
                 </div>
               </button>
@@ -257,20 +255,20 @@ export default function SuppliersPage() {
                 <div>
                   <div className="flex items-center gap-2 flex-wrap">
                     <h2 className="text-2xl font-bold tracking-tight">{detail.name}</h2>
-                    {!detail.isActive && <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full font-medium">Inactive</span>}
+                    {!detail.isActive && <StatusBadge tone="neutral">Inactive</StatusBadge>}
                   </div>
-                  <p className="text-muted-foreground text-sm mt-0.5">Added {fmtDate(detail.createdAt)}</p>
+                  <p className="text-muted-foreground text-sm mt-0.5">Added {formatDate(detail.createdAt)}</p>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   <button onClick={() => openEdit(detail)} className="flex items-center gap-1.5 px-3 py-1.5 text-sm border rounded-lg hover:bg-muted transition-colors">
                     <Pencil className="h-3.5 w-3.5" /> Edit
                   </button>
                   <button onClick={() => toggleActive(detail)}
-                    className={`px-3 py-1.5 text-sm border rounded-lg transition-colors ${detail.isActive ? 'hover:bg-red-50 hover:text-red-600 hover:border-red-200' : 'hover:bg-green-50 hover:text-green-700'}`}>
+                    className={`px-3 py-1.5 text-sm border rounded-lg transition-colors ${detail.isActive ? 'hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30' : 'hover:bg-success/10 hover:text-success'}`}>
                     {detail.isActive ? 'Deactivate' : 'Reactivate'}
                   </button>
                   {detail.totalOrders === 0 && (
-                    <button onClick={() => del(detail)} className="p-1.5 text-muted-foreground hover:text-red-500 hover:bg-red-50 rounded-md transition-colors">
+                    <button onClick={() => del(detail)} className="p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors">
                       <Trash2 className="h-4 w-4" />
                     </button>
                   )}
@@ -279,8 +277,8 @@ export default function SuppliersPage() {
 
               <div className="grid grid-cols-3 gap-4">
                 <div className="rounded-lg border p-4"><p className="text-xs text-muted-foreground">Total Orders</p><p className="text-2xl font-bold mt-1">{detail.totalOrders}</p></div>
-                <div className="rounded-lg border p-4"><p className="text-xs text-muted-foreground">Total Spend</p><p className="text-xl font-bold mt-1">{fmtMoney(detail.totalSpend)}</p></div>
-                <div className="rounded-lg border p-4"><p className="text-xs text-muted-foreground">Avg Order Value</p><p className="text-xl font-bold mt-1">{detail.totalOrders > 0 ? fmtMoney(detail.totalSpend / detail.totalOrders) : '—'}</p></div>
+                <div className="rounded-lg border p-4"><p className="text-xs text-muted-foreground">Total Spend</p><p className="text-xl font-bold mt-1">{formatMoney(detail.totalSpend)}</p></div>
+                <div className="rounded-lg border p-4"><p className="text-xs text-muted-foreground">Avg Order Value</p><p className="text-xl font-bold mt-1">{detail.totalOrders > 0 ? formatMoney(detail.totalSpend / detail.totalOrders) : '—'}</p></div>
               </div>
 
               {/* Locations */}
@@ -290,7 +288,7 @@ export default function SuppliersPage() {
                   <div className="space-y-2">
                     {locs.map((l, i) => (
                       <div key={i} className="flex items-start gap-2.5 text-sm">
-                        <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full font-medium shrink-0 mt-0.5">{l.city}</span>
+                        <span className="px-2 py-0.5 bg-info/15 text-info text-xs rounded-full font-medium shrink-0 mt-0.5">{l.city}</span>
                         {l.address && <span className="text-muted-foreground">{l.address}</span>}
                       </div>
                     ))}
@@ -329,10 +327,10 @@ export default function SuppliersPage() {
                       {detail.history.map(o => (
                         <tr key={o.id} className="hover:bg-muted/20">
                           <td className="px-4 py-3 font-mono font-medium text-sm">{o.poNumber}</td>
-                          <td className="px-4 py-3 text-muted-foreground">{fmtDate(o.orderedAt)}</td>
+                          <td className="px-4 py-3 text-muted-foreground">{formatDate(o.orderedAt)}</td>
                           <td className="px-4 py-3 text-center text-muted-foreground">{o.itemCount}</td>
-                          <td className="px-4 py-3"><span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLOR[o.status] ?? ''}`}>{STATUS_LABEL[o.status] ?? o.status}</span></td>
-                          <td className="px-4 py-3 text-right font-medium">{fmtMoney(o.totalValue)}</td>
+                          <td className="px-4 py-3"><StatusBadge tone={STATUS[o.status]?.tone}>{STATUS[o.status]?.label ?? o.status}</StatusBadge></td>
+                          <td className="px-4 py-3 text-right font-medium">{formatMoney(o.totalValue)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -349,16 +347,16 @@ export default function SuppliersPage() {
         <>
           <div className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm" onClick={() => setShowForm(false)} />
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
-            <div className="pointer-events-auto bg-white rounded-2xl shadow-2xl w-full max-w-md flex flex-col max-h-[85vh]">
+            <div className="pointer-events-auto bg-card rounded-2xl shadow-2xl w-full max-w-md flex flex-col max-h-[85vh]">
               <div className="flex items-center justify-between px-5 py-4 border-b shrink-0">
                 <h3 className="text-sm font-semibold">{editId ? 'Edit Supplier' : 'Add Supplier'}</h3>
                 <button onClick={() => setShowForm(false)} className="p-1 hover:bg-muted rounded-md"><X className="h-4 w-4" /></button>
               </div>
               <div className="p-5 space-y-4 overflow-y-auto flex-1">
-                {saveError && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2">{saveError}</div>}
+                {saveError && <div className="rounded-lg bg-destructive/10 border border-destructive/30 text-destructive text-sm px-3 py-2">{saveError}</div>}
 
                 <div className="space-y-1.5">
-                  <label className="text-sm font-medium">Name <span className="text-red-500">*</span></label>
+                  <label className="text-sm font-medium">Name <span className="text-destructive">*</span></label>
                   <input className={inp} placeholder="e.g. PT Maju Bersama" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
                 </div>
 
@@ -366,13 +364,13 @@ export default function SuppliersPage() {
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <label className="text-sm font-medium text-muted-foreground">Locations</label>
-                    <button onClick={addLocation} className="text-xs text-amber-700 hover:text-amber-900 font-medium flex items-center gap-1">
+                    <button onClick={addLocation} className="text-xs text-warning hover:text-warning/80 font-medium flex items-center gap-1">
                       <Plus className="h-3 w-3" /> Add location
                     </button>
                   </div>
                   {form.locations.length === 0 ? (
                     <button onClick={addLocation}
-                      className="w-full border border-dashed rounded-lg py-3 text-sm text-muted-foreground hover:border-amber-400 hover:text-amber-700 transition-colors flex items-center justify-center gap-2">
+                      className="w-full border border-dashed rounded-lg py-3 text-sm text-muted-foreground hover:border-warning hover:text-warning transition-colors flex items-center justify-center gap-2">
                       <MapPin className="h-4 w-4" /> Add city &amp; address
                     </button>
                   ) : (
@@ -381,7 +379,7 @@ export default function SuppliersPage() {
                         <div key={i} className="rounded-lg border p-3 space-y-2 bg-muted/20">
                           <div className="flex items-center justify-between">
                             <span className="text-xs font-medium text-muted-foreground">Location {i + 1}</span>
-                            <button onClick={() => removeLocation(i)} className="text-muted-foreground hover:text-red-500 transition-colors">
+                            <button onClick={() => removeLocation(i)} className="text-muted-foreground hover:text-destructive transition-colors">
                               <X className="h-3.5 w-3.5" />
                             </button>
                           </div>
@@ -405,7 +403,7 @@ export default function SuppliersPage() {
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-sm font-medium text-muted-foreground">Phone</label>
-                    <input className={inp} placeholder="+62..." value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} />
+                    <input className={inp} placeholder="+62…" value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} />
                   </div>
                   <div className="space-y-1.5 col-span-2">
                     <label className="text-sm font-medium text-muted-foreground">Email</label>
@@ -413,7 +411,7 @@ export default function SuppliersPage() {
                   </div>
                   <div className="space-y-1.5 col-span-2">
                     <label className="text-sm font-medium text-muted-foreground">Notes</label>
-                    <textarea className="w-full border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white resize-none"
+                    <textarea className="w-full border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring bg-card resize-none"
                       rows={2} placeholder="Payment terms, etc." value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} />
                   </div>
                 </div>
@@ -421,8 +419,8 @@ export default function SuppliersPage() {
               <div className="flex justify-end gap-2 px-5 py-4 border-t shrink-0">
                 <button onClick={() => setShowForm(false)} className="px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">Cancel</button>
                 <button onClick={save} disabled={saving}
-                  className="flex items-center gap-2 px-5 py-2 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700 font-semibold disabled:opacity-50 transition-colors">
-                  {saving ? <><div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Saving...</> : editId ? 'Save Changes' : 'Add Supplier'}
+                  className="flex items-center gap-2 px-5 py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary-hover font-semibold disabled:opacity-50 transition-colors">
+                  {saving ? <><div className="h-4 w-4 border-2 border-current/30 border-t-current rounded-full animate-spin" />Saving…</> : editId ? 'Save Changes' : 'Add Supplier'}
                 </button>
               </div>
             </div>

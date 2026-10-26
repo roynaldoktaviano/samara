@@ -10,8 +10,11 @@ import {
 } from 'lucide-react'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
+import { StatusBadge, type StatusTone } from '@/components/ui/status-badge'
+import { formatDate, formatMoney, formatNumber } from '@/lib/format'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { NativeSelect } from '@/components/ui/native-select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet'
 
@@ -35,18 +38,13 @@ type TimelineItem =
   | { kind: 'activity'; id: string; at: string | null; activityKind: string; title: string | null; body: string | null; type: string | null; outcome: string | null; status: string | null; owner: string | null }
   | { kind: 'event'; id: string; at: string; actionType: string; label: string; detail: string | null; targetType: string | null }
 
-const STATUS_COLOR: Record<Status, string> = {
-  OPEN: 'bg-blue-100 text-blue-700', WON: 'bg-green-100 text-green-700', LOST: 'bg-gray-100 text-gray-600',
+const STATUS_TONE: Record<Status, StatusTone> = {
+  OPEN: 'info', WON: 'success', LOST: 'neutral',
 }
 const SYNC_LABEL: Record<string, string> = {
   contacts: 'Contacts', dealsIndex: 'Deals', dealDetails: 'Deal details', conversations: 'Emails', timeline: 'Timeline', activities: 'Activities',
 }
 
-const fmtDate = (d: string | null | undefined) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
-const fmtDateTime = (d: string | null | undefined) => d ? new Date(d).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'
-const fmtMoney = (n: number | null, cur: string | null) => n == null ? '—' : `${cur ?? ''} ${n.toLocaleString('en-US', { maximumFractionDigits: 0 })}`.trim()
-
-const selectCls = 'h-9 rounded-md border bg-background px-2 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500'
 
 export default function FreshsalesArchive() {
   const [tab, setTab] = useState<'deals' | 'contacts'>('deals')
@@ -58,7 +56,7 @@ export default function FreshsalesArchive() {
     <div className="p-4 md:p-6 space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex items-center gap-2">
-          <Archive className="h-5 w-5 text-amber-600" />
+          <Archive className="h-5 w-5 text-primary-strong" />
           <div>
             <h1 className="text-xl font-semibold">Freshsales Archive</h1>
             <p className="text-sm text-muted-foreground">Read-only copy of Freshsales deals, contacts, emails and activity history.</p>
@@ -69,8 +67,8 @@ export default function FreshsalesArchive() {
 
       <div className="flex gap-1.5">
         {([['deals', 'Deals', Briefcase], ['contacts', 'Contacts', Users]] as const).map(([key, label, Icon]) => (
-          <button key={key} onClick={() => setTab(key)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${tab === key ? 'bg-amber-600 text-white' : 'bg-muted text-muted-foreground hover:text-foreground'}`}>
+          <button key={key} type="button" aria-pressed={tab === key} onClick={() => setTab(key)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${tab === key ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:text-foreground'}`}>
             <Icon className="h-3.5 w-3.5" /> {label}
           </button>
         ))}
@@ -95,11 +93,12 @@ function SyncStatus({ sync }: { sync: SyncRow[] }) {
         const pct = s.total ? Math.min(100, Math.round((s.processed / s.total) * 100)) : null
         const running = s.status === 'RUNNING'
         return (
-          <span key={s.entity} title={`Updated ${fmtDateTime(s.updatedAt)}`}
-            className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium ${s.status === 'ERROR' ? 'bg-red-100 text-red-700' : running ? 'bg-amber-100 text-amber-800' : 'bg-green-100 text-green-700'}`}>
+          <StatusBadge key={s.entity} title={`Updated ${formatDate(s.updatedAt, 'datetime')}`}
+            size="sm" className="px-2.5 py-1 text-[11px]"
+            tone={s.status === 'ERROR' ? 'destructive' : running ? 'info' : 'success'}>
             {running && <RefreshCw className="h-3 w-3 animate-spin" />}
             {SYNC_LABEL[s.entity]} {running && pct !== null ? `${pct}%` : s.status === 'DONE' ? '✓' : s.status.toLowerCase()}
-          </span>
+          </StatusBadge>
         )
       })}
     </div>
@@ -110,10 +109,10 @@ function Pager({ page, total, pageSize, onPage, noun }: { page: number; total: n
   const pages = Math.max(1, Math.ceil(total / pageSize))
   return (
     <div className="flex items-center justify-between text-sm pt-3">
-      <p className="text-muted-foreground text-xs">Page {page} of {pages} · {total.toLocaleString()} {noun}</p>
+      <p className="text-muted-foreground text-xs">Page {page} of {pages} · {formatNumber(total)} {noun}</p>
       <div className="flex items-center gap-1">
-        <Button variant="outline" size="icon" className="h-8 w-8" disabled={page <= 1} onClick={() => onPage(page - 1)}><ChevronLeft className="h-4 w-4" /></Button>
-        <Button variant="outline" size="icon" className="h-8 w-8" disabled={page >= pages} onClick={() => onPage(page + 1)}><ChevronRight className="h-4 w-4" /></Button>
+        <Button variant="outline" size="icon" className="size-8" disabled={page <= 1} onClick={() => onPage(page - 1)} aria-label="Previous page"><ChevronLeft className="h-4 w-4" /></Button>
+        <Button variant="outline" size="icon" className="size-8" disabled={page >= pages} onClick={() => onPage(page + 1)} aria-label="Next page"><ChevronRight className="h-4 w-4" /></Button>
       </div>
     </div>
   )
@@ -176,32 +175,32 @@ function DealsTab({ onOpen, onSync }: { onOpen: (id: string) => void; onSync: (s
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
-        <div className="relative">
+        <div className="relative w-full sm:w-64">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input value={q} onChange={e => withReset(setQ)(e.target.value)} placeholder="Search deal name…" className="pl-8 h-9 w-64" />
+          <Input value={q} onChange={e => withReset(setQ)(e.target.value)} placeholder="Search deal name…" aria-label="Search deals" className="pl-8" />
         </div>
-        <select className={selectCls} value={pipeline} onChange={e => { withReset(setPipeline)(e.target.value); setStage('') }}>
+        <NativeSelect className="w-auto max-w-full" aria-label="Filter by pipeline" value={pipeline} onChange={e => { withReset(setPipeline)(e.target.value); setStage('') }}>
           <option value="">All pipelines</option>
           {filters.pipelines.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-        </select>
-        <select className={selectCls} value={stage} onChange={e => withReset(setStage)(e.target.value)}>
+        </NativeSelect>
+        <NativeSelect className="w-auto max-w-full" aria-label="Filter by stage" value={stage} onChange={e => withReset(setStage)(e.target.value)}>
           <option value="">All stages</option>
           {stages.map(s => <option key={s.id} value={s.id}>{pipeline ? s.name : `${s.name} · ${filters.pipelines.find(p => p.id === s.pipelineId)?.name ?? ''}`}</option>)}
-        </select>
-        <select className={selectCls} value={status} onChange={e => withReset(setStatus)(e.target.value)} disabled={!!stage}>
+        </NativeSelect>
+        <NativeSelect className="w-auto max-w-full" aria-label="Filter by status" value={status} onChange={e => withReset(setStatus)(e.target.value)} disabled={!!stage}>
           <option value="">Open / Won / Lost</option>
           <option value="OPEN">Open</option>
           <option value="WON">Won</option>
           <option value="LOST">Lost</option>
-        </select>
-        <select className={selectCls} value={owner} onChange={e => withReset(setOwner)(e.target.value)}>
+        </NativeSelect>
+        <NativeSelect className="w-auto max-w-full" aria-label="Filter by owner" value={owner} onChange={e => withReset(setOwner)(e.target.value)}>
           <option value="">All owners</option>
           {filters.owners.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
           <option value="none">No owner</option>
-        </select>
+        </NativeSelect>
       </div>
 
-      <div className="rounded-xl border bg-white overflow-x-auto">
+      <div className="rounded-xl border bg-card overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
@@ -226,7 +225,7 @@ function DealsTab({ onOpen, onSync }: { onOpen: (id: string) => void; onSync: (s
                 </TableCell>
                 <TableCell>
                   <div className="flex items-center gap-1.5">
-                    <Badge className={`${STATUS_COLOR[d.status]} border-transparent`}>{d.stage ?? '—'}</Badge>
+                    <StatusBadge tone={STATUS_TONE[d.status]}>{d.stage ?? '—'}</StatusBadge>
                   </div>
                   <p className="text-[11px] text-muted-foreground mt-0.5">{d.pipeline ?? '—'}</p>
                 </TableCell>
@@ -237,8 +236,8 @@ function DealsTab({ onOpen, onSync }: { onOpen: (id: string) => void; onSync: (s
                   {d.contacts.length > 2 && <p className="text-[11px] text-muted-foreground">+{d.contacts.length - 2} more</p>}
                 </TableCell>
                 <TableCell className="text-xs">{d.owner ?? '—'}</TableCell>
-                <TableCell className="text-right text-xs whitespace-nowrap">{fmtMoney(d.amount, d.currency)}</TableCell>
-                <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{fmtDate(d.createdAt)}</TableCell>
+                <TableCell className="text-right text-xs whitespace-nowrap">{d.currency ? formatMoney(d.amount, { currency: d.currency, decimals: 0 }) : formatNumber(d.amount)}</TableCell>
+                <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{formatDate(d.createdAt)}</TableCell>
               </TableRow>
             ))}
           </TableBody>
@@ -270,19 +269,19 @@ function ContactsTab({ onOpen }: { onOpen: (id: string) => void }) {
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
-        <div className="relative">
+        <div className="relative w-full sm:w-72">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input value={q} onChange={e => { setQ(e.target.value); setPage(1) }} placeholder="Search name, email, phone…" className="pl-8 h-9 w-72" />
+          <Input value={q} onChange={e => { setQ(e.target.value); setPage(1) }} placeholder="Search name, email, phone…" aria-label="Search contacts" className="pl-8" />
         </div>
-        <select className={selectCls} value={linked} onChange={e => { setLinked(e.target.value); setPage(1) }}>
+        <NativeSelect className="w-auto max-w-full" aria-label="Filter by ERP link" value={linked} onChange={e => { setLinked(e.target.value); setPage(1) }}>
           <option value="">All contacts</option>
           <option value="lead">Linked to a Lead</option>
           <option value="customer">Linked to a Guest</option>
           <option value="none">Archive only</option>
-        </select>
+        </NativeSelect>
       </div>
 
-      <div className="rounded-xl border bg-white overflow-x-auto">
+      <div className="rounded-xl border bg-card overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
@@ -311,7 +310,7 @@ function ContactsTab({ onOpen }: { onOpen: (id: string) => void }) {
                 <TableCell><ErpBadge leadId={c.leadId} customerId={c.customerId} /></TableCell>
                 <TableCell className="text-center text-xs">{c.deals || '—'}</TableCell>
                 <TableCell className="text-xs">{c.owner ?? '—'}</TableCell>
-                <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{fmtDate(c.lastContactedAt)}</TableCell>
+                <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{formatDate(c.lastContactedAt)}</TableCell>
               </TableRow>
             ))}
           </TableBody>
@@ -323,8 +322,8 @@ function ContactsTab({ onOpen }: { onOpen: (id: string) => void }) {
 }
 
 function ErpBadge({ leadId, customerId }: { leadId: string | null; customerId: string | null }) {
-  if (customerId) return <Badge className="bg-green-100 text-green-700 border-transparent">Guest</Badge>
-  if (leadId) return <Badge className="bg-amber-100 text-amber-800 border-transparent">Lead</Badge>
+  if (customerId) return <Badge className="bg-success/15 text-success border-transparent">Guest</Badge>
+  if (leadId) return <Badge className="bg-warning/15 text-warning border-transparent">Lead</Badge>
   return <span className="text-[11px] text-muted-foreground">Archive only</span>
 }
 
@@ -353,19 +352,19 @@ function DealSheet({ id, onClose, onOpenContact }: { id: string | null; onClose:
               <div className="flex items-center gap-2 text-xs text-muted-foreground"><Briefcase className="h-3.5 w-3.5" /> Freshsales deal</div>
               <h2 className="text-lg font-semibold leading-snug">{d.name}</h2>
               <div className="flex flex-wrap items-center gap-2">
-                <Badge className={`${STATUS_COLOR[d.status]} border-transparent`}>{d.stage ?? '—'}</Badge>
+                <StatusBadge tone={STATUS_TONE[d.status]}>{d.stage ?? '—'}</StatusBadge>
                 <span className="text-xs text-muted-foreground">{d.pipeline}</span>
                 {d.lostReason && <span className="text-xs text-muted-foreground">· Lost: {d.lostReason}</span>}
               </div>
             </div>
 
             <div className="p-5 grid grid-cols-2 gap-x-4 gap-y-3 text-sm border-b">
-              <Field label="Amount" value={fmtMoney(d.amount, d.currency)} />
+              <Field label="Amount" value={d.currency ? formatMoney(d.amount, { currency: d.currency, decimals: 0 }) : formatNumber(d.amount)} />
               <Field label="Owner" value={d.owner} />
-              <Field label="Created" value={fmtDate(d.createdAt)} />
-              <Field label="Stage updated" value={fmtDate(d.stageUpdatedAt)} />
-              <Field label="Expected close" value={fmtDate(d.expectedClose)} />
-              <Field label="Closed" value={fmtDate(d.closedDate)} />
+              <Field label="Created" value={formatDate(d.createdAt)} />
+              <Field label="Stage updated" value={formatDate(d.stageUpdatedAt)} />
+              <Field label="Expected close" value={formatDate(d.expectedClose)} />
+              <Field label="Closed" value={formatDate(d.closedDate)} />
               <Field label="Lead source" value={d.leadSource} />
               <Field label="Probability" value={d.probability != null ? `${d.probability}%` : null} />
             </div>
@@ -373,7 +372,7 @@ function DealSheet({ id, onClose, onOpenContact }: { id: string | null; onClose:
             <div className="p-5 border-b space-y-2">
               <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Contacts</h3>
               {data.contacts.length ? data.contacts.map(c => (
-                <button key={c.id} onClick={() => onOpenContact(c.id)} className="w-full flex items-center justify-between rounded-lg border px-3 py-2 text-left hover:bg-muted/50">
+                <button key={c.id} type="button" onClick={() => onOpenContact(c.id)} className="w-full flex items-center justify-between rounded-lg border px-3 py-2 text-left hover:bg-muted/50">
                   <div>
                     <p className="text-sm font-medium">{c.name ?? c.email}</p>
                     <p className="text-xs text-muted-foreground">{[c.email, c.phone].filter(Boolean).join(' · ')}</p>
@@ -392,7 +391,7 @@ function DealSheet({ id, onClose, onOpenContact }: { id: string | null; onClose:
               </div>
             )}
             {!d.detailSynced && (
-              <p className="mx-5 mt-4 rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
+              <p className="mx-5 mt-4 rounded-md bg-warning/10 border border-warning/30 px-3 py-2 text-xs text-warning">
                 Custom fields, lost reason and notes for this deal are still being pulled from Freshsales.
               </p>
             )}
@@ -434,8 +433,8 @@ function ContactSheet({ id, onClose, onOpenDeal }: { id: string | null; onClose:
 
             <div className="p-5 grid grid-cols-2 gap-x-4 gap-y-3 text-sm border-b">
               <Field label="Owner" value={c.owner} />
-              <Field label="Created" value={fmtDate(c.createdAt)} />
-              <Field label="Last contacted" value={fmtDate(c.lastContactedAt)} />
+              <Field label="Created" value={formatDate(c.createdAt)} />
+              <Field label="Last contacted" value={formatDate(c.lastContactedAt)} />
               <Field label="Location" value={[c.city, c.country].filter(Boolean).join(', ') || null} />
               <Field label="First source" value={[c.firstSource, c.firstMedium].filter(Boolean).join(' / ') || null} />
               <Field label="First campaign" value={c.firstCampaign} />
@@ -444,18 +443,18 @@ function ContactSheet({ id, onClose, onOpenDeal }: { id: string | null; onClose:
             <div className="p-5 border-b space-y-2">
               <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Deals ({data.deals.length})</h3>
               {data.deals.length ? data.deals.map(d => (
-                <button key={d.id} onClick={() => onOpenDeal(d.id)} className="w-full flex items-center justify-between gap-3 rounded-lg border px-3 py-2 text-left hover:bg-muted/50">
+                <button key={d.id} type="button" onClick={() => onOpenDeal(d.id)} className="w-full flex items-center justify-between gap-3 rounded-lg border px-3 py-2 text-left hover:bg-muted/50">
                   <div className="min-w-0">
                     <p className="text-sm font-medium truncate">{d.name}</p>
-                    <p className="text-xs text-muted-foreground">{d.pipeline} · {fmtDate(d.createdAt)}{d.owner ? ` · ${d.owner}` : ''}</p>
+                    <p className="text-xs text-muted-foreground">{d.pipeline} · {formatDate(d.createdAt)}{d.owner ? ` · ${d.owner}` : ''}</p>
                   </div>
-                  <Badge className={`${STATUS_COLOR[d.status]} border-transparent shrink-0`}>{d.stage ?? '—'}</Badge>
+                  <StatusBadge tone={STATUS_TONE[d.status]}>{d.stage ?? '—'}</StatusBadge>
                 </button>
               )) : <p className="text-sm text-muted-foreground">No deals</p>}
             </div>
 
             {!c.historySynced && (
-              <p className="mx-5 mt-4 rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
+              <p className="mx-5 mt-4 rounded-md bg-warning/10 border border-warning/30 px-3 py-2 text-xs text-warning">
                 Emails and timeline for this contact are still being pulled from Freshsales (or it has no contact history).
               </p>
             )}
@@ -495,12 +494,12 @@ function TimelineView({ items }: { items: TimelineItem[] }) {
   const count = (k: TimelineItem['kind']) => items.filter(i => i.kind === k).length
   return (
     <div className="p-5 space-y-3">
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">History</h3>
-        <div className="flex gap-1">
+        <div role="group" aria-label="Filter history" className="flex flex-wrap gap-1">
           {([['all', `All ${items.length}`], ['email', `Emails ${count('email')}`], ['activity', `Activities ${count('activity')}`], ['event', `Changes ${count('event')}`]] as const).map(([k, label]) => (
-            <button key={k} onClick={() => setFilter(k)}
-              className={`px-2 py-0.5 rounded-md text-[11px] font-medium ${filter === k ? 'bg-amber-100 text-amber-800' : 'text-muted-foreground hover:bg-muted'}`}>{label}</button>
+            <button key={k} type="button" aria-pressed={filter === k} onClick={() => setFilter(k)}
+              className={`px-2 py-0.5 rounded-md text-[11px] font-medium ${filter === k ? 'bg-primary/15 text-primary-strong' : 'text-muted-foreground hover:bg-muted'}`}>{label}</button>
           ))}
         </div>
       </div>
@@ -521,11 +520,11 @@ function TimelineEntry({ item }: { item: TimelineItem }) {
     const Icon = incoming ? ArrowDownLeft : ArrowUpRight
     return (
       <li className="relative">
-        <span className={`absolute -left-[25px] top-1 flex h-4 w-4 items-center justify-center rounded-full ${incoming ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'}`}><Icon className="h-2.5 w-2.5" /></span>
-        <button onClick={() => setOpen(o => !o)} className="w-full text-left rounded-lg border px-3 py-2 hover:bg-muted/40">
+        <span className={`absolute -left-[25px] top-1 flex h-4 w-4 items-center justify-center rounded-full ${incoming ? 'bg-info/15 text-info' : 'bg-success/15 text-success'}`}><Icon className="h-2.5 w-2.5" /></span>
+        <button type="button" aria-expanded={open} onClick={() => setOpen(o => !o)} className="w-full text-left rounded-lg border px-3 py-2 hover:bg-muted/40">
           <div className="flex items-center justify-between gap-2">
             <p className="text-sm font-medium truncate">{item.subject || '(no subject)'}</p>
-            <span className="text-[11px] text-muted-foreground whitespace-nowrap">{fmtDateTime(item.at)}</span>
+            <span className="text-[11px] text-muted-foreground whitespace-nowrap">{formatDate(item.at, 'datetime')}</span>
           </div>
           <p className="text-[11px] text-muted-foreground truncate">
             <Mail className="inline h-3 w-3 mr-1" />{incoming ? 'From' : 'Sent'} {item.from ?? '—'}{item.to.length ? ` → ${item.to.slice(0, 3).join(', ')}${item.to.length > 3 ? '…' : ''}` : ''}
@@ -546,11 +545,11 @@ function TimelineEntry({ item }: { item: TimelineItem }) {
     const Icon = ACTIVITY_ICON[item.activityKind] ?? Activity
     return (
       <li className="relative">
-        <span className="absolute -left-[25px] top-1 flex h-4 w-4 items-center justify-center rounded-full bg-amber-100 text-amber-800"><Icon className="h-2.5 w-2.5" /></span>
+        <span className="absolute -left-[25px] top-1 flex h-4 w-4 items-center justify-center rounded-full bg-warning/15 text-warning"><Icon className="h-2.5 w-2.5" /></span>
         <div className="rounded-lg border px-3 py-2">
           <div className="flex items-center justify-between gap-2">
             <p className="text-sm font-medium">{item.title || item.activityKind.replace('_', ' ').toLowerCase()}</p>
-            <span className="text-[11px] text-muted-foreground whitespace-nowrap">{fmtDateTime(item.at)}</span>
+            <span className="text-[11px] text-muted-foreground whitespace-nowrap">{formatDate(item.at, 'datetime')}</span>
           </div>
           <p className="text-[11px] text-muted-foreground">
             {[item.activityKind === 'NOTE' ? 'Note' : item.type ?? item.activityKind.replace('_', ' ').toLowerCase(), item.outcome, item.status, item.owner].filter(Boolean).join(' · ')}
@@ -565,7 +564,7 @@ function TimelineEntry({ item }: { item: TimelineItem }) {
       <span className="absolute -left-[25px] top-1 flex h-4 w-4 items-center justify-center rounded-full bg-muted text-muted-foreground"><History className="h-2.5 w-2.5" /></span>
       <div className="flex items-center justify-between gap-2 py-0.5">
         <p className="text-xs"><span className="font-medium capitalize">{item.label}</span>{item.targetType ? <span className="text-muted-foreground"> · {item.targetType}</span> : null}{item.detail ? <span className="text-muted-foreground"> — {item.detail}</span> : null}</p>
-        <span className="text-[11px] text-muted-foreground whitespace-nowrap">{fmtDateTime(item.at)}</span>
+        <span className="text-[11px] text-muted-foreground whitespace-nowrap">{formatDate(item.at, 'datetime')}</span>
       </div>
     </li>
   )

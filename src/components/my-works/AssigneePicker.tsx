@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { Check, Search, UserPlus } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Input } from '@/components/ui/input'
 import { Avatar, AvatarStack, useWorks, userLabel } from './shared'
 
 /** "Budi" / "Budi, Sari" / "Budi, Sari +2" — first names keep the cell narrow; the full list is in the title. */
@@ -18,7 +19,9 @@ function NamesLabel({ ids }: { ids: string[] }) {
  * Avatar stack that opens a searchable multi-select of every user. Read-only on a task someone
  * else owns. Shows names next to the avatars unless `compact`.
  */
-export default function AssigneePicker({ value, onChange, readOnly, size = 24, compact }: {
+export default function AssigneePicker({ id, value, onChange, readOnly, size = 24, compact }: {
+  /** Put on the trigger so a field <Label htmlFor> can point at it. */
+  id?: string
   value: string[]; onChange: (ids: string[]) => void; readOnly?: boolean; size?: number; compact?: boolean
 }) {
   const { users, byId, meId } = useWorks()
@@ -38,7 +41,7 @@ export default function AssigneePicker({ value, onChange, readOnly, size = 24, c
   return (
     <Popover onOpenChange={o => { if (!o) setQ('') }}>
       <PopoverTrigger asChild>
-        <button type="button" title={value.length ? full : 'Assign'}
+        <button type="button" id={id} title={value.length ? full : 'Assign'} aria-label={value.length ? `Assignees: ${full}` : 'Assign'}
           className={compact
             ? 'h-8 min-w-8 px-1.5 flex items-center justify-center rounded-md border hover:bg-muted text-muted-foreground'
             : 'rounded-md px-1 py-0.5 -mx-1 hover:bg-muted flex items-center gap-1.5 min-h-7 max-w-full min-w-0'}>
@@ -50,8 +53,8 @@ export default function AssigneePicker({ value, onChange, readOnly, size = 24, c
       <PopoverContent align="start" className="w-64 p-0" onClick={e => e.stopPropagation()}>
         <div className="p-2 border-b relative">
           <Search className="h-3.5 w-3.5 absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground" />
-          <input autoFocus className="w-full h-8 border rounded-md pl-7 pr-2 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
-            placeholder="Search people..." value={q} onChange={e => setQ(e.target.value)} />
+          <Input autoFocus className="h-8 pl-7 pr-2" aria-label="Search people"
+            placeholder="Search people…" value={q} onChange={e => setQ(e.target.value)} />
         </div>
         <div className="max-h-64 overflow-y-auto p-1">
           {list.map(u => {
@@ -61,7 +64,7 @@ export default function AssigneePicker({ value, onChange, readOnly, size = 24, c
                 className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-muted text-left text-sm">
                 <Avatar id={u.id} user={u} size={22} />
                 <span className="flex-1 min-w-0 truncate">{userLabel(u)}{u.id === meId && <span className="text-muted-foreground"> (me)</span>}</span>
-                {on && <Check className="h-4 w-4 text-amber-600 shrink-0" />}
+                {on && <Check className="h-4 w-4 text-primary shrink-0" />}
               </button>
             )
           })}

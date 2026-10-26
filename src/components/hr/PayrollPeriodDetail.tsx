@@ -3,10 +3,20 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useSession } from 'next-auth/react'
 import {
-  ChevronLeft, Loader2, Pencil, Printer, Trash2, Send, ThumbsUp, ThumbsDown, RotateCcw, Wallet, X,
+  ChevronLeft, Pencil, Printer, Trash2, Send, ThumbsUp, ThumbsDown, RotateCcw, Wallet, X,
 } from 'lucide-react'
 import { roleMatches } from '@/lib/role-utils'
 import { RupiahInput } from '@/components/ui/rupiah-input'
+import { StatusBadge, type StatusTone } from '@/components/ui/status-badge'
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { useConfirm } from '@/components/ui/confirm-dialog'
+import { toast } from 'sonner'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import { NativeSelect } from '@/components/ui/native-select'
+import { Label } from '@/components/ui/label'
+import { formatDate, formatMoney } from '@/lib/format'
 import type { OtherIncomeItem } from '@/lib/payroll'
 
 interface PayslipEntry {
@@ -65,15 +75,14 @@ interface Period {
 const STATUS_LABEL: Record<string, string> = {
   OPEN: 'Open', SUBMITTED: 'Submitted', APPROVED: 'Approved', REJECTED: 'Rejected', PAID: 'Paid',
 }
-const STATUS_COLOR: Record<string, string> = {
-  OPEN: 'bg-slate-100 text-slate-700',
-  SUBMITTED: 'bg-blue-100 text-blue-700',
-  APPROVED: 'bg-emerald-100 text-emerald-700',
-  REJECTED: 'bg-red-100 text-red-700',
-  PAID: 'bg-purple-100 text-purple-700',
+const STATUS_TONE: Record<string, StatusTone> = {
+  OPEN: 'neutral',
+  SUBMITTED: 'info',
+  APPROVED: 'success',
+  REJECTED: 'destructive',
+  PAID: 'success',
 }
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
-const fmtMoney = (n: number) => 'Rp ' + new Intl.NumberFormat('id-ID').format(Math.round(n))
 
 const EDIT_FIELDS = [
   { key: 'basicSalary', label: 'Basic Salary', group: 'earning' },
@@ -110,8 +119,7 @@ export default function PayrollPeriodDetail({ periodId, onBack }: { periodId: st
   const [editOtherIncome, setEditOtherIncome] = useState<OtherIncomeItem[]>([])
   const [savingEntry, setSavingEntry] = useState(false)
 
-  const [deleteEntry, setDeleteEntry] = useState<PayslipEntry | null>(null)
-  const [deletingEntry, setDeletingEntry] = useState(false)
+  const confirm = useConfirm()
 
   const [decision, setDecision] = useState<'approve' | 'reject' | null>(null)
   const [decisionNote, setDecisionNote] = useState('')
@@ -192,20 +200,24 @@ export default function PayrollPeriodDetail({ periodId, onBack }: { periodId: st
     if (res.ok) { setEditEntry(null); load() }
   }
 
-  async function confirmDeleteEntry() {
-    if (!deleteEntry) return
-    setDeletingEntry(true)
-    const res = await fetch(`/api/hr/payroll/entries/${deleteEntry.id}`, { method: 'DELETE' })
-    setDeletingEntry(false)
-    if (res.ok) { setDeleteEntry(null); load() }
+  async function removeEntry(entry: PayslipEntry) {
+    if (!(await confirm({
+      title: `Remove ${entry.fullNameSnap} from this payroll?`,
+      description: 'This only removes their entry from this period — e.g. if they resigned mid-period.',
+      confirmLabel: 'Remove',
+      destructive: true,
+    }))) return
+    const res = await fetch(`/api/hr/payroll/entries/${entry.id}`, { method: 'DELETE' })
+    if (res.ok) load()
+    else toast.error((await res.json().catch(() => null))?.error ?? 'Failed to remove entry')
   }
 
   if (loading || !period) {
     return (
       <div className="space-y-4">
-        <button onClick={onBack} className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
-          <ChevronLeft className="h-4 w-4" /> Back to Payroll
-        </button>
+        <Button variant="ghost" size="sm" onClick={onBack} className="-ml-2.5 text-muted-foreground">
+          <ChevronLeft /> Back to Payroll
+        </Button>
         <div className="rounded-lg border h-40 bg-muted/30 animate-pulse" />
       </div>
     )
@@ -219,22 +231,22 @@ export default function PayrollPeriodDetail({ periodId, onBack }: { periodId: st
 
   return (
     <div className="space-y-6">
-      <button onClick={onBack} className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
-        <ChevronLeft className="h-4 w-4" /> Back to Payroll
-      </button>
+      <Button variant="ghost" size="sm" onClick={onBack} className="-ml-2.5 text-muted-foreground">
+        <ChevronLeft /> Back to Payroll
+      </Button>
 
       <div className="flex items-start justify-between flex-wrap gap-3">
         <div>
           <div className="flex items-center gap-2.5">
             <h2 className="text-2xl font-bold tracking-tight">{MONTH_NAMES[period.month - 1]} {period.year}</h2>
-            <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${STATUS_COLOR[period.status]}`}>{STATUS_LABEL[period.status]}</span>
+            <StatusBadge tone={STATUS_TONE[period.status]} className="px-2.5 py-1 font-semibold">{STATUS_LABEL[period.status]}</StatusBadge>
           </div>
           <div className="text-xs text-muted-foreground mt-1 space-y-0.5">
             <p>
-              {filteredEntries.length}{filteredEntries.length !== period.entries.length ? ` of ${period.entries.length}` : ''} {filteredEntries.length === 1 ? 'employee' : 'employees'} · Total take-home {fmtMoney(totalTakeHome)}
-              {period.payDate ? ` · Pay date ${new Date(period.payDate).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}` : ''}
+              {filteredEntries.length}{filteredEntries.length !== period.entries.length ? ` of ${period.entries.length}` : ''} {filteredEntries.length === 1 ? 'employee' : 'employees'} · Total take-home {formatMoney(totalTakeHome)}
+              {period.payDate ? ` · Pay date ${formatDate(period.payDate)}` : ''}
             </p>
-            {period.submittedBy && <p>Submitted by {period.submittedBy.name ?? '—'}{period.submittedAt ? ` on ${new Date(period.submittedAt).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}` : ''}</p>}
+            {period.submittedBy && <p>Submitted by {period.submittedBy.name ?? '—'}{period.submittedAt ? ` on ${formatDate(period.submittedAt)}` : ''}</p>}
             {period.approvedBy && <p>Approved by {period.approvedBy.name ?? '—'}{period.approvalNote ? ` — "${period.approvalNote}"` : ''}</p>}
             {period.rejectedBy && <p>Rejected by {period.rejectedBy.name ?? '—'}{period.rejectionNote ? ` — "${period.rejectionNote}"` : ''}</p>}
             {period.paidBy && <p>Marked paid by {period.paidBy.name ?? '—'}</p>}
@@ -243,57 +255,51 @@ export default function PayrollPeriodDetail({ periodId, onBack }: { periodId: st
 
         <div className="flex items-center gap-2 flex-wrap justify-end">
           {isOpen && canManage && (
-            <button onClick={() => runAction('generate-entries')} disabled={busy}
-              className="px-3 py-2 text-sm font-medium rounded-md border hover:bg-muted transition-colors disabled:opacity-50">
+            <Button variant="outline" onClick={() => runAction('generate-entries')} disabled={busy}>
               Generate Entries
-            </button>
+            </Button>
           )}
           {isOpen && canManage && period.entries.length > 0 && (
-            <button onClick={() => runAction('submit')} disabled={busy}
-              className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-md bg-amber-600 hover:bg-amber-700 text-white transition-colors disabled:opacity-50">
-              <Send className="h-3.5 w-3.5" /> Submit for Approval
-            </button>
+            <Button onClick={() => runAction('submit')} disabled={busy} className="gap-1.5">
+              <Send className="size-3.5" /> Submit for Approval
+            </Button>
           )}
           {period.status === 'SUBMITTED' && isApprover && (
             <>
-              <button onClick={() => setDecision('approve')} disabled={busy}
-                className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-md bg-green-50 text-green-700 hover:bg-green-100 transition-colors">
-                <ThumbsUp className="h-3.5 w-3.5" /> Approve
-              </button>
-              <button onClick={() => setDecision('reject')} disabled={busy}
-                className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-md bg-red-50 text-red-700 hover:bg-red-100 transition-colors">
-                <ThumbsDown className="h-3.5 w-3.5" /> Reject
-              </button>
+              <Button variant="success-soft" onClick={() => setDecision('approve')} disabled={busy} className="gap-1.5">
+                <ThumbsUp className="size-3.5" /> Approve
+              </Button>
+              <Button variant="destructive-soft" onClick={() => setDecision('reject')} disabled={busy} className="gap-1.5">
+                <ThumbsDown className="size-3.5" /> Reject
+              </Button>
             </>
           )}
           {period.status === 'SUBMITTED' && !isApprover && (
             <span className="text-xs text-muted-foreground">Waiting for Head of Finance approval.</span>
           )}
           {period.status === 'REJECTED' && canManage && (
-            <button onClick={() => runAction('reopen')} disabled={busy}
-              className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-md border hover:bg-muted transition-colors disabled:opacity-50">
-              <RotateCcw className="h-3.5 w-3.5" /> Reopen
-            </button>
+            <Button variant="outline" onClick={() => runAction('reopen')} disabled={busy} className="gap-1.5">
+              <RotateCcw className="size-3.5" /> Reopen
+            </Button>
           )}
           {period.status === 'APPROVED' && canPay && (
-            <button onClick={() => runAction('mark-paid')} disabled={busy}
-              className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-md bg-emerald-600 hover:bg-emerald-700 text-white transition-colors disabled:opacity-50">
-              <Wallet className="h-3.5 w-3.5" /> Mark Paid
-            </button>
+            <Button variant="success" onClick={() => runAction('mark-paid')} disabled={busy} className="gap-1.5">
+              <Wallet className="size-3.5" /> Mark Paid
+            </Button>
           )}
         </div>
       </div>
 
-      {actionError && <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{actionError}</p>}
+      {actionError && <p className="text-xs text-destructive bg-destructive/10 border border-destructive/30 rounded-lg px-3 py-2">{actionError}</p>}
 
       {period.entries.length > 0 && locationOptions.length > 0 && (
         <div className="flex items-center gap-2">
-          <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Work Location</label>
-          <select value={locationFilter} onChange={e => setLocationFilter(e.target.value)}
-            className="h-8 border rounded-md px-2 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500">
+          <Label htmlFor="payroll-location-filter" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Work Location</Label>
+          <NativeSelect id="payroll-location-filter" value={locationFilter} onChange={e => setLocationFilter(e.target.value)}
+            className="h-8 w-auto">
             <option value="All">All locations</option>
             {locationOptions.map(l => <option key={l} value={l}>{l}</option>)}
-          </select>
+          </NativeSelect>
         </div>
       )}
 
@@ -303,7 +309,7 @@ export default function PayrollPeriodDetail({ periodId, onBack }: { periodId: st
         </div>
       ) : filteredEntries.length === 0 ? (
         <div className="rounded-xl border py-12 text-center text-muted-foreground text-sm">
-          No entries for &quot;{locationFilter}&quot;. <button onClick={() => setLocationFilter('All')} className="text-amber-700 hover:underline">Show all locations</button>
+          No entries for &quot;{locationFilter}&quot;. <Button variant="link" onClick={() => setLocationFilter('All')} className="h-auto p-0 text-primary-strong">Show all locations</Button>
         </div>
       ) : (
         <div className="rounded-lg border overflow-hidden overflow-x-auto">
@@ -325,25 +331,26 @@ export default function PayrollPeriodDetail({ periodId, onBack }: { periodId: st
                     <p className="font-medium">{e.fullNameSnap}</p>
                     <p className="text-xs text-muted-foreground font-mono">{e.employeeNumberSnap}{e.positionSnap ? ` · ${e.positionSnap}` : ''}</p>
                   </td>
-                  <td className="px-4 py-2.5 text-right">{fmtMoney(e.basicSalary)}</td>
-                  <td className="px-4 py-2.5 text-right">{fmtMoney(e.grossEarnings)}</td>
-                  <td className="px-4 py-2.5 text-right text-red-600">-{fmtMoney(e.totalDeductions)}</td>
-                  <td className="px-4 py-2.5 text-right font-semibold">{fmtMoney(e.takeHomePay)}</td>
+                  <td className="px-4 py-2.5 text-right">{formatMoney(e.basicSalary)}</td>
+                  <td className="px-4 py-2.5 text-right">{formatMoney(e.grossEarnings)}</td>
+                  <td className="px-4 py-2.5 text-right text-destructive">-{formatMoney(e.totalDeductions)}</td>
+                  <td className="px-4 py-2.5 text-right font-semibold">{formatMoney(e.takeHomePay)}</td>
                   <td className="px-4 py-2.5">
                     <div className="flex items-center gap-0.5 justify-end">
                       {isOpen && canManage && (
-                        <button onClick={() => openEdit(e)} className="p-1.5 rounded hover:bg-muted text-muted-foreground transition-colors" title="Edit">
-                          <Pencil className="h-3.5 w-3.5" />
-                        </button>
+                        <Button variant="ghost" size="icon" onClick={() => openEdit(e)} className="size-7 text-muted-foreground" title="Edit" aria-label="Edit">
+                          <Pencil className="size-3.5" />
+                        </Button>
                       )}
-                      <a href={`/print/payslip/${e.id}`} target="_blank" rel="noopener noreferrer"
-                        className="p-1.5 rounded hover:bg-muted text-muted-foreground transition-colors inline-flex" title="Print payslip">
-                        <Printer className="h-3.5 w-3.5" />
-                      </a>
+                      <Button asChild variant="ghost" size="icon" className="size-7 text-muted-foreground">
+                        <a href={`/print/payslip/${e.id}`} target="_blank" rel="noopener noreferrer" title="Print payslip" aria-label="Print payslip">
+                          <Printer className="size-3.5" />
+                        </a>
+                      </Button>
                       {isOpen && canManage && (
-                        <button onClick={() => setDeleteEntry(e)} className="p-1.5 rounded hover:bg-red-50 text-red-500 transition-colors" title="Remove entry">
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
+                        <Button variant="ghost" size="icon" onClick={() => removeEntry(e)} className="size-7 text-destructive hover:bg-destructive/10 hover:text-destructive" title="Remove entry" aria-label="Remove entry">
+                          <Trash2 className="size-3.5" />
+                        </Button>
                       )}
                     </div>
                   </td>
@@ -355,113 +362,92 @@ export default function PayrollPeriodDetail({ periodId, onBack }: { periodId: st
       )}
 
       {/* ── Edit entry modal ── */}
-      {editEntry && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden max-h-[85vh] flex flex-col">
-            <div className="flex items-center justify-between px-6 py-4 border-b shrink-0">
-              <h3 className="font-bold text-sm">{editEntry.fullNameSnap}</h3>
-              <button onClick={() => setEditEntry(null)} className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors">
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <div className="px-6 py-5 space-y-5 overflow-y-auto">
-              {(['earning', 'employerBpjs', 'deduction'] as const).map(group => (
-                <div key={group} className="space-y-2">
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                    {group === 'earning' ? 'Earnings' : group === 'employerBpjs' ? 'Employer BPJS Contributions' : 'Deductions'}
-                  </p>
-                  <div className="grid grid-cols-2 gap-3">
-                    {EDIT_FIELDS.filter(f => f.group === group).map(f => (
-                      <div key={f.key} className="space-y-1">
-                        <label className="text-[11px] text-muted-foreground">{f.label}</label>
-                        <RupiahInput value={editForm[f.key] ?? ''} onChange={digits => setEditForm(v => ({ ...v, [f.key]: digits }))} />
-                        {f.key === 'uangLayar' && editEntry.uangLayarTripDays != null && (
-                          <p className="text-[10px] text-muted-foreground">Auto-calculated from {editEntry.uangLayarTripDays} trip day{editEntry.uangLayarTripDays === 1 ? '' : 's'} this period.</p>
-                        )}
+      <Dialog open={!!editEntry} onOpenChange={o => { if (!o) setEditEntry(null) }}>
+        <DialogContent aria-describedby={undefined} className="sm:max-w-lg p-0 gap-0 overflow-hidden max-h-[85vh] flex flex-col" onInteractOutside={e => e.preventDefault()}>
+          {editEntry && (
+            <>
+              <DialogHeader className="px-6 py-4 border-b shrink-0">
+                <DialogTitle className="font-bold text-sm pr-6">{editEntry.fullNameSnap}</DialogTitle>
+              </DialogHeader>
+              <div className="px-6 py-5 space-y-5 overflow-y-auto">
+                {(['earning', 'employerBpjs', 'deduction'] as const).map(group => (
+                  <div key={group} className="space-y-2">
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                      {group === 'earning' ? 'Earnings' : group === 'employerBpjs' ? 'Employer BPJS Contributions' : 'Deductions'}
+                    </p>
+                    <div className="grid grid-cols-2 gap-3">
+                      {EDIT_FIELDS.filter(f => f.group === group).map(f => (
+                        <div key={f.key} className="space-y-1">
+                          {/* RupiahInput takes no id, so the label wraps the control to link them. */}
+                          <label className="block space-y-1">
+                            <span className="text-[11px] text-muted-foreground">{f.label}</span>
+                            <RupiahInput value={editForm[f.key] ?? ''} onChange={digits => setEditForm(v => ({ ...v, [f.key]: digits }))} />
+                          </label>
+                          {f.key === 'uangLayar' && editEntry.uangLayarTripDays != null && (
+                            <p className="text-[10px] text-muted-foreground">Auto-calculated from {editEntry.uangLayarTripDays} trip day{editEntry.uangLayarTripDays === 1 ? '' : 's'} this period.</p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Other Income</p>
+                  <div className="space-y-2">
+                    {editOtherIncome.map(item => (
+                      <div key={item.id} className="flex items-start gap-2 border rounded-lg p-2">
+                        <div className="flex-1 space-y-1 min-w-0">
+                          <Input value={item.name} onChange={e => updateOtherIncomeRow(item.id, { name: e.target.value })} placeholder="Name"
+                            aria-label="Other income name" className="h-8 font-medium" />
+                          <Input value={item.description} onChange={e => updateOtherIncomeRow(item.id, { description: e.target.value })} placeholder="Description (optional)"
+                            aria-label="Other income description" className="h-8 text-xs md:text-xs" />
+                        </div>
+                        <div className="w-32 shrink-0">
+                          <RupiahInput title="Amount" value={String(item.amount)} onChange={digits => updateOtherIncomeRow(item.id, { amount: Number(digits) || 0 })} />
+                        </div>
+                        <Button type="button" variant="ghost" size="icon" onClick={() => removeOtherIncomeRow(item.id)}
+                          className="size-7 shrink-0 text-muted-foreground hover:text-destructive" aria-label="Remove other income">
+                          <X className="size-3.5" />
+                        </Button>
                       </div>
                     ))}
+                    <Button type="button" variant="outline" onClick={addOtherIncomeRow}
+                      className="w-full border-dashed text-muted-foreground">
+                      + Add Other Income
+                    </Button>
                   </div>
                 </div>
-              ))}
-
-              <div className="space-y-2">
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Other Income</p>
-                <div className="space-y-2">
-                  {editOtherIncome.map(item => (
-                    <div key={item.id} className="flex items-start gap-2 border rounded-lg p-2">
-                      <div className="flex-1 space-y-1 min-w-0">
-                        <input value={item.name} onChange={e => updateOtherIncomeRow(item.id, { name: e.target.value })} placeholder="Name"
-                          className="w-full h-8 text-sm font-medium bg-transparent focus:outline-none" />
-                        <input value={item.description} onChange={e => updateOtherIncomeRow(item.id, { description: e.target.value })} placeholder="Description (optional)"
-                          className="w-full h-6 text-xs text-muted-foreground bg-transparent focus:outline-none" />
-                      </div>
-                      <div className="w-32 shrink-0">
-                        <RupiahInput value={String(item.amount)} onChange={digits => updateOtherIncomeRow(item.id, { amount: Number(digits) || 0 })} />
-                      </div>
-                      <button type="button" onClick={() => removeOtherIncomeRow(item.id)} className="p-1.5 text-muted-foreground hover:text-destructive shrink-0">
-                        <X className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  ))}
-                  <button type="button" onClick={addOtherIncomeRow}
-                    className="w-full flex items-center justify-center gap-1.5 border-2 border-dashed rounded-lg py-2 text-sm text-muted-foreground hover:border-amber-400 hover:text-amber-700 transition-colors">
-                    + Add Other Income
-                  </button>
-                </div>
               </div>
-            </div>
-            <div className="flex items-center justify-end gap-2 px-6 py-4 border-t bg-gray-50/80 shrink-0">
-              <button onClick={() => setEditEntry(null)} className="px-4 py-2 text-sm border rounded-lg hover:bg-white transition-colors">Cancel</button>
-              <button onClick={saveEntry} disabled={savingEntry}
-                className="px-5 py-2 text-sm text-white rounded-lg font-semibold bg-amber-600 hover:bg-amber-700 disabled:opacity-50 transition-colors flex items-center gap-2">
-                {savingEntry && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                Save
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Delete entry confirm ── */}
-      {deleteEntry && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
-            <div className="px-6 py-5 space-y-2">
-              <h3 className="font-bold text-sm">Remove {deleteEntry.fullNameSnap} from this payroll?</h3>
-              <p className="text-xs text-muted-foreground">This only removes their entry from this period — e.g. if they resigned mid-period.</p>
-            </div>
-            <div className="flex items-center justify-end gap-2 px-6 py-4 border-t bg-gray-50/80">
-              <button onClick={() => setDeleteEntry(null)} className="px-4 py-2 text-sm border rounded-lg hover:bg-white transition-colors">Cancel</button>
-              <button onClick={confirmDeleteEntry} disabled={deletingEntry}
-                className="px-5 py-2 text-sm text-white rounded-lg font-semibold bg-destructive hover:bg-destructive/90 disabled:opacity-50 transition-colors flex items-center gap-2">
-                {deletingEntry && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                Remove
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+              <DialogFooter className="px-6 py-4 border-t bg-muted/50 shrink-0">
+                <Button variant="outline" onClick={() => setEditEntry(null)}>Cancel</Button>
+                <Button onClick={saveEntry} loading={savingEntry} className="font-semibold">
+                  Save
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* ── Approve / Reject decision modal ── */}
-      {decision && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
-            <div className="px-6 py-5 space-y-3">
-              <h3 className="font-bold text-sm">{decision === 'approve' ? 'Approve' : 'Reject'} Payroll — {MONTH_NAMES[period.month - 1]} {period.year}</h3>
-              <textarea rows={2} placeholder="Note (optional)"
-                className="w-full border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500 resize-none"
-                value={decisionNote} onChange={e => setDecisionNote(e.target.value)} />
-            </div>
-            <div className="flex items-center justify-end gap-2 px-6 py-4 border-t bg-gray-50/80">
-              <button onClick={() => { setDecision(null); setDecisionNote('') }} className="px-4 py-2 text-sm border rounded-lg hover:bg-white transition-colors">Cancel</button>
-              <button onClick={decide} disabled={deciding}
-                className={`px-5 py-2 text-sm text-white rounded-lg font-semibold disabled:opacity-50 transition-colors ${decision === 'approve' ? 'bg-green-600 hover:bg-green-700' : 'bg-destructive hover:bg-destructive/90'}`}>
-                {deciding ? 'Saving...' : decision === 'approve' ? 'Approve' : 'Reject'}
-              </button>
-            </div>
+      <Dialog open={!!decision} onOpenChange={o => { if (!o) { setDecision(null); setDecisionNote('') } }}>
+        <DialogContent aria-describedby={undefined} className="sm:max-w-sm p-0 gap-0 overflow-hidden" onInteractOutside={e => e.preventDefault()}>
+          <div className="px-6 py-5 space-y-3">
+            <DialogTitle className="font-bold text-sm pr-6">{decision === 'approve' ? 'Approve' : 'Reject'} Payroll — {MONTH_NAMES[period.month - 1]} {period.year}</DialogTitle>
+            <Textarea rows={2} placeholder="Note (optional)" aria-label="Note (optional)"
+              className="resize-none"
+              value={decisionNote} onChange={e => setDecisionNote(e.target.value)} />
           </div>
-        </div>
-      )}
+          <DialogFooter className="px-6 py-4 border-t bg-muted/50">
+            <Button variant="outline" onClick={() => { setDecision(null); setDecisionNote('') }}>Cancel</Button>
+            <Button onClick={decide} loading={deciding}
+              variant={decision === 'approve' ? 'success' : 'destructive'} className="font-semibold">
+              {deciding ? 'Saving…' : decision === 'approve' ? 'Approve' : 'Reject'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

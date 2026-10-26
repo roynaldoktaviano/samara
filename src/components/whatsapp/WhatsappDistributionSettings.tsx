@@ -143,7 +143,7 @@ export default function WhatsappDistributionSettings() {
               <CardTitle className="text-base">Distribution Method — {poolLabel}</CardTitle>
               <CardDescription>Pick one.</CardDescription>
               {borrowsWhatsapp && (
-                <p className="text-xs text-amber-600 pt-1">
+                <p className="text-xs text-warning pt-1">
                   Not set up yet — new {channelInfo.noun} currently use the WhatsApp {channelInfo.hasBrands ? WHATSAPP_BRAND_LABELS[brand] : 'Samara'} pool (with their own counter). Save here to give this channel its own pool.
                 </p>
               )}
@@ -208,7 +208,7 @@ export default function WhatsappDistributionSettings() {
               })}
 
               {method === 'PERCENTAGE' && selected.size > 0 && (
-                <p className={cn('text-sm font-medium pt-2 text-right', totalPercentage === 100 ? 'text-emerald-600' : 'text-destructive')}>
+                <p className={cn('text-sm font-medium pt-2 text-right', totalPercentage === 100 ? 'text-success' : 'text-destructive')}>
                   Total: {totalPercentage}% {totalPercentage !== 100 && `(must be 100%)`}
                 </p>
               )}

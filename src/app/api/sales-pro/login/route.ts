@@ -11,22 +11,22 @@ function getIp(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const { password } = await request.json().catch(() => ({ password: '' }))
   if (typeof password !== 'string' || !password) {
-    return NextResponse.json({ error: 'Password wajib diisi' }, { status: 400 })
+    return NextResponse.json({ error: 'Password is required' }, { status: 400 })
   }
 
   const rateLimitKey = `sales-pro:${getIp(request)}`
   if (isRateLimited(rateLimitKey)) {
-    return NextResponse.json({ error: 'Terlalu banyak percobaan gagal. Coba lagi dalam beberapa menit.' }, { status: 429 })
+    return NextResponse.json({ error: 'Too many failed attempts. Please try again in a few minutes.' }, { status: 429 })
   }
 
   const expected = process.env.SALES_PRO_PASSWORD
   if (!expected) {
-    return NextResponse.json({ error: 'Halaman ini belum dikonfigurasi (SALES_PRO_PASSWORD kosong)' }, { status: 500 })
+    return NextResponse.json({ error: 'This page is not configured yet (SALES_PRO_PASSWORD is empty)' }, { status: 500 })
   }
 
   if (password !== expected) {
     recordFailedAttempt(rateLimitKey)
-    return NextResponse.json({ error: 'Password salah' }, { status: 401 })
+    return NextResponse.json({ error: 'Incorrect password' }, { status: 401 })
   }
   clearAttempts(rateLimitKey)
 

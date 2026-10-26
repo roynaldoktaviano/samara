@@ -9,8 +9,10 @@ import { Label } from '@/components/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
+import { useConfirm } from '@/components/ui/confirm-dialog'
+import { toast } from 'sonner'
 import { Plus, Edit, Trash2, Eye, EyeOff, Search, IdCard } from 'lucide-react'
+import { formatDate } from '@/lib/format'
 
 type Role = 'ADMIN' | 'SUPER_ADMIN' | 'SALES' | 'FINANCE' | 'MARKETING' | 'MARKETING_DIRECTOR' | 'PURCHASING' | 'WAREHOUSE' | 'HR' | 'SALES_MARKETING' | 'FINANCE_DIRECTOR' | 'CREW' | 'BOAT_CAPTAIN' | 'CRUISE_DIRECTOR' | 'BOT'
 type PurchasingDivision = 'BOAT_OPERATION' | 'BUILDING_MATERIAL'
@@ -33,8 +35,10 @@ const DIVISIONS: { value: PurchasingDivision; label: string }[] = [
 
 interface EmployeeOption { id: string; fullName: string; employeeNumber: string }
 
-function EmployeeCombobox({ value, options, onChange }: {
-  value: string; options: EmployeeOption[]; onChange: (id: string) => void
+// `id` goes on the trigger; the field's <Label> must use `${id}-label` as its id so the
+// trigger is announced as "<label> <selected employee>".
+function EmployeeCombobox({ id, value, options, onChange }: {
+  id: string; value: string; options: EmployeeOption[]; onChange: (id: string) => void
 }) {
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
@@ -44,20 +48,20 @@ function EmployeeCombobox({ value, options, onChange }: {
 
   return (
     <div className="relative">
-      <button type="button" onClick={() => { setOpen(o => !o); setSearch('') }}
-        className="w-full h-9 border rounded-md px-3 text-sm text-left flex items-center justify-between bg-white focus:outline-none focus:ring-1 focus:ring-amber-500 transition-colors">
-        <span className={selected ? '' : 'text-muted-foreground'}>{selected ? `${selected.fullName} (${selected.employeeNumber})` : '— No employee linked —'}</span>
+      <button type="button" id={id} aria-labelledby={`${id}-label ${id}`} aria-haspopup="listbox" aria-expanded={open} onClick={() => { setOpen(o => !o); setSearch('') }}
+        className="w-full h-9 border border-input rounded-md px-3 text-sm text-left flex items-center justify-between gap-2 bg-transparent dark:bg-input/30 shadow-xs outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50">
+        <span className={`truncate ${selected ? '' : 'text-muted-foreground'}`}>{selected ? `${selected.fullName} (${selected.employeeNumber})` : '— No employee linked —'}</span>
         <IdCard className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
       </button>
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute left-0 right-0 top-full mt-1 bg-white border rounded-lg shadow-xl z-50 max-h-60 flex flex-col">
+          <div className="absolute left-0 right-0 top-full mt-1 bg-popover border rounded-lg shadow-xl z-50 max-h-60 flex flex-col">
             <div className="p-2 border-b shrink-0">
               <div className="relative">
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
-                <input autoFocus className="w-full h-8 border rounded px-2.5 pl-8 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
-                  placeholder="Search employee..." value={search} onChange={e => setSearch(e.target.value)} />
+                <Input autoFocus className="h-8 pl-8" aria-label="Search employee"
+                  placeholder="Search employee…" value={search} onChange={e => setSearch(e.target.value)} />
               </div>
             </div>
             <div className="overflow-y-auto">
@@ -72,7 +76,7 @@ function EmployeeCombobox({ value, options, onChange }: {
               )}
               {opts.map(e => (
                 <button key={e.id} type="button" onClick={() => { onChange(e.id); setOpen(false); setSearch('') }}
-                  className="w-full text-left px-3 py-2 text-sm hover:bg-amber-50 transition-colors">
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-accent transition-colors">
                   {e.fullName} <span className="text-muted-foreground">({e.employeeNumber})</span>
                 </button>
               ))}
@@ -89,105 +93,105 @@ const ROLES: { value: Role; label: string; desc: string; color: string; modules:
     value: 'SALES',
     label: 'Sales',
     desc: 'Manage bookings & guests',
-    color: 'bg-blue-100 text-blue-700',
+    color: 'bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300',
     modules: 'Dashboard, Bookings, Open Trips, Guests',
   },
   {
     value: 'SALES_MARKETING',
     label: 'Sales & Marketing',
     desc: 'Combined role — full Sales + Marketing access',
-    color: 'bg-indigo-100 text-indigo-700',
+    color: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300',
     modules: 'Everything Sales and Marketing can access',
   },
   {
     value: 'FINANCE',
     label: 'Finance',
     desc: 'Financial overview & costs',
-    color: 'bg-emerald-100 text-emerald-700',
+    color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300',
     modules: 'Dashboard, Statistics, Expenses, Maintenance, Bookings',
   },
   {
     value: 'MARKETING',
     label: 'Marketing',
     desc: 'Trips & customer reach',
-    color: 'bg-orange-100 text-orange-700',
+    color: 'bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-300',
     modules: 'Dashboard, Open Trips, Guests, Email Campaigns, Email Templates',
   },
   {
     value: 'MARKETING_DIRECTOR',
     label: 'Marketing Director',
     desc: 'Everything Marketing can do, plus approval authority',
-    color: 'bg-fuchsia-100 text-fuchsia-700',
+    color: 'bg-fuchsia-100 text-fuchsia-700 dark:bg-fuchsia-500/15 dark:text-fuchsia-300',
     modules: 'Same as Marketing — plus approving Content Studio items and moving campaigns out of Approval',
   },
   {
     value: 'PURCHASING',
     label: 'Purchasing',
     desc: 'Manage procurement',
-    color: 'bg-amber-100 text-amber-700',
+    color: 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300',
     modules: 'Purchasing (PR, PO, Suppliers, Items, Stock)',
   },
   {
     value: 'WAREHOUSE',
     label: 'Warehouse',
     desc: 'Receive & check incoming goods',
-    color: 'bg-teal-100 text-teal-700',
+    color: 'bg-teal-100 text-teal-700 dark:bg-teal-500/15 dark:text-teal-300',
     modules: 'Purchasing (PO, Stock, Transfers, Stock Counts)',
   },
   {
     value: 'HR',
     label: 'HR',
     desc: 'People & employee records',
-    color: 'bg-pink-100 text-pink-700',
+    color: 'bg-pink-100 text-pink-700 dark:bg-pink-500/15 dark:text-pink-300',
     modules: 'Trip Sheet',
   },
   {
     value: 'FINANCE_DIRECTOR',
     label: 'Finance Director',
     desc: 'Combined role — full Purchasing + Finance + HR access',
-    color: 'bg-cyan-100 text-cyan-700',
+    color: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-500/15 dark:text-cyan-300',
     modules: 'Everything Purchasing, Finance, and HR can access',
   },
   {
     value: 'CREW',
     label: 'Crew',
     desc: 'Ship crew — file purchase requests',
-    color: 'bg-sky-100 text-sky-700',
+    color: 'bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300',
     modules: 'Purchasing (Purchase Requests only)',
   },
   {
     value: 'BOAT_CAPTAIN',
     label: 'Boat Captain',
     desc: 'File & approve crew purchase requests',
-    color: 'bg-blue-100 text-blue-700',
+    color: 'bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300',
     modules: 'Purchasing (Purchase Requests, My Approvals)',
   },
   {
     value: 'CRUISE_DIRECTOR',
     label: 'Cruise Director',
     desc: 'File & approve crew purchase requests',
-    color: 'bg-indigo-100 text-indigo-700',
+    color: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300',
     modules: 'Purchasing (Purchase Requests, My Approvals)',
   },
   {
     value: 'BOT',
     label: 'Bot (Read-only)',
     desc: 'AI bot service account — read-only API, no UI',
-    color: 'bg-slate-200 text-slate-700',
+    color: 'bg-accent text-foreground/80',
     modules: 'Read-only /api/bot: bookings, revenue, costs, invoices, purchasing, stock, boat & hotel ops. No passwords, bank details, staff personal data or guest IDs. Cannot post, approve or delete.',
   },
   {
     value: 'ADMIN',
     label: 'Admin',
     desc: 'Full access',
-    color: 'bg-purple-100 text-purple-700',
+    color: 'bg-purple-100 text-purple-700 dark:bg-purple-500/15 dark:text-purple-300',
     modules: 'All Modules',
   },
   {
     value: 'SUPER_ADMIN',
     label: 'Super Admin',
     desc: 'System administration',
-    color: 'bg-red-100 text-red-700',
+    color: 'bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300',
     modules: 'All Modules',
   },
 ]
@@ -197,12 +201,9 @@ const roleMeta = (role: Role) =>
     value: role,
     label: role,
     desc: '',
-    color: 'bg-gray-100 text-gray-700',
+    color: 'bg-muted text-foreground/80',
     modules: '-',
   }
-
-const fmtDate = (d: string) =>
-  new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
 
 export default function UsersPage() {
   const { data: session } = useSession()
@@ -224,8 +225,7 @@ export default function UsersPage() {
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState('')
 
-  const [deleteTarget, setDeleteTarget] = useState<UserRecord | null>(null)
-  const [deleting, setDeleting] = useState(false)
+  const confirm = useConfirm()
 
   const fetchUsers = async () => {
     setLoading(true)
@@ -300,12 +300,15 @@ export default function UsersPage() {
     }
   }
 
-  const handleDelete = async () => {
-    if (!deleteTarget) return
-    setDeleting(true)
-    await fetch(`/api/users/${deleteTarget.id}`, { method: 'DELETE' })
-    setDeleting(false)
-    setDeleteTarget(null)
+  const handleDelete = async (target: UserRecord) => {
+    if (!(await confirm({
+      title: 'Delete User',
+      description: <>Are you sure you want to delete <strong>{target.name ?? target.email}</strong>? This action cannot be undone.</>,
+      confirmLabel: 'Delete User',
+      destructive: true,
+    }))) return
+    const res = await fetch(`/api/users/${target.id}`, { method: 'DELETE' })
+    if (!res.ok) toast.error((await res.json().catch(() => ({}))).error ?? 'Failed to delete user')
     fetchUsers()
   }
 
@@ -314,13 +317,13 @@ export default function UsersPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h3 className="text-2xl font-bold tracking-tight">Team Management</h3>
           <p className="text-muted-foreground">Manage user accounts and access levels</p>
         </div>
         <Button onClick={openAdd}>
-          <Plus className="mr-2 h-4 w-4" />
+          <Plus className="h-4 w-4" />
           Add User
         </Button>
       </div>
@@ -352,7 +355,7 @@ export default function UsersPage() {
         </CardHeader>
         <CardContent>
           <div className="rounded-md border overflow-hidden">
-            <Table className="table-fixed w-full">
+            <Table className="table-fixed w-full min-w-[860px]">
               <colgroup>
                 <col className="w-44" />
                 <col className="w-52" />
@@ -396,7 +399,7 @@ export default function UsersPage() {
                     <TableRow key={u.id}>
                       <TableCell>
                         <div className="flex items-center gap-2.5">
-                          <div className="h-8 w-8 rounded-full bg-[#1a5f6e] text-white flex items-center justify-center text-xs font-bold uppercase shrink-0">
+                          <div className="h-8 w-8 rounded-full bg-brand text-brand-foreground flex items-center justify-center text-xs font-bold uppercase shrink-0">
                             {(u.name ?? u.email).charAt(0)}
                           </div>
                           <div className="min-w-0">
@@ -434,21 +437,23 @@ export default function UsersPage() {
                           ))}
                         </div>
                       </TableCell>
-                      <TableCell className="text-muted-foreground text-sm whitespace-nowrap">{fmtDate(u.createdAt)}</TableCell>
+                      <TableCell className="text-muted-foreground text-sm whitespace-nowrap">{formatDate(u.createdAt)}</TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-1">
-                          <Button variant="ghost" size="icon" onClick={() => openEdit(u)}>
+                          <Button variant="ghost" size="icon" aria-label="Edit user" onClick={() => openEdit(u)}>
                             <Edit className="h-4 w-4" />
                           </Button>
-                          <Button
-                            variant="ghost" size="icon"
-                            className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                            disabled={isSelf}
-                            title={isSelf ? 'Cannot delete your own account' : 'Delete user'}
-                            onClick={() => setDeleteTarget(u)}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+                          <span className="inline-flex" title={isSelf ? 'Cannot delete your own account' : 'Delete user'}>
+                            <Button
+                              variant="ghost" size="icon"
+                              className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                              disabled={isSelf}
+                              aria-label="Delete user"
+                              onClick={() => handleDelete(u)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </span>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -462,7 +467,7 @@ export default function UsersPage() {
 
       {/* Add / Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto" onInteractOutside={e => e.preventDefault()}>
           <DialogHeader>
             <DialogTitle>{editUser ? 'Edit User' : 'Add New User'}</DialogTitle>
             <DialogDescription>
@@ -471,18 +476,20 @@ export default function UsersPage() {
           </DialogHeader>
 
           <div className="space-y-4 py-1">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label>Full Name</Label>
+                <Label htmlFor="user-name">Full Name</Label>
                 <Input
+                  id="user-name"
                   placeholder="John Doe"
                   value={formName}
                   onChange={e => setFormName(e.target.value)}
                 />
               </div>
               <div className="space-y-1.5">
-                <Label>Email <span className="text-destructive">*</span></Label>
+                <Label htmlFor="user-email">Email <span className="text-destructive">*</span></Label>
                 <Input
+                  id="user-email"
                   type="email"
                   placeholder="user@samara.com"
                   value={formEmail}
@@ -492,12 +499,13 @@ export default function UsersPage() {
             </div>
 
             <div className="space-y-1.5">
-              <Label>
+              <Label htmlFor="user-password">
                 {editUser ? 'New Password' : 'Password'}
-                {!editUser && <span className="text-destructive"> *</span>}
+                {!editUser && <span className="text-destructive">*</span>}
               </Label>
               <div className="relative">
                 <Input
+                  id="user-password"
                   type={showPw ? 'text' : 'password'}
                   placeholder={editUser ? 'Leave blank to keep current password' : 'Min. 8 characters'}
                   value={formPassword}
@@ -507,6 +515,7 @@ export default function UsersPage() {
                 <button
                   type="button"
                   onClick={() => setShowPw(v => !v)}
+                  aria-label={showPw ? 'Hide password' : 'Show password'}
                   className="absolute right-3 top-2.5 text-muted-foreground hover:text-foreground transition-colors"
                 >
                   {showPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -515,9 +524,9 @@ export default function UsersPage() {
             </div>
 
             <div className="space-y-1.5">
-              <Label>Role <span className="text-destructive">*</span></Label>
+              <Label htmlFor="user-role">Role <span className="text-destructive">*</span></Label>
               <Select value={formRole} onValueChange={v => setFormRole(v as Role)}>
-                <SelectTrigger>
+                <SelectTrigger id="user-role" className="w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -537,9 +546,9 @@ export default function UsersPage() {
 
             {formRole === 'PURCHASING' && (
               <div className="space-y-1.5">
-                <Label>Purchasing Division</Label>
+                <Label htmlFor="user-purchasing-division">Purchasing Division</Label>
                 <Select value={formPurchasingDivision || 'NONE'} onValueChange={v => setFormPurchasingDivision(v === 'NONE' ? '' : v as PurchasingDivision)}>
-                  <SelectTrigger>
+                  <SelectTrigger id="user-purchasing-division" className="w-full">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -555,9 +564,9 @@ export default function UsersPage() {
 
             {(formRole === 'BOAT_CAPTAIN' || formRole === 'CRUISE_DIRECTOR') && (
               <div className="space-y-1.5">
-                <Label>Assigned Yacht <span className="text-destructive">*</span></Label>
+                <Label htmlFor="user-assigned-yacht">Assigned Yacht <span className="text-destructive">*</span></Label>
                 <Select value={formAssignedYachtId || 'NONE'} onValueChange={v => setFormAssignedYachtId(v === 'NONE' ? '' : v)}>
-                  <SelectTrigger>
+                  <SelectTrigger id="user-assigned-yacht" className="w-full">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -572,8 +581,8 @@ export default function UsersPage() {
             )}
 
             <div className="space-y-1.5">
-              <Label>Link to Employee</Label>
-              <EmployeeCombobox value={formEmployeeId} options={employeeOptions} onChange={setFormEmployeeId} />
+              <Label id="user-employee-label" htmlFor="user-employee">Link to Employee</Label>
+              <EmployeeCombobox id="user-employee" value={formEmployeeId} options={employeeOptions} onChange={setFormEmployeeId} />
               <p className="text-[11px] text-muted-foreground">Connects this login to an HR employee record for approvals and org-chart lookups.</p>
             </div>
 
@@ -593,37 +602,15 @@ export default function UsersPage() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
             <Button
-              disabled={saving || !formEmail || (!editUser && !formPassword)}
+              loading={saving}
+              disabled={!formEmail || (!editUser && !formPassword)}
               onClick={handleSave}
             >
-              {saving ? 'Saving...' : editUser ? 'Save Changes' : 'Create User'}
+              {saving ? 'Saving…' : editUser ? 'Save Changes' : 'Create User'}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {/* Delete confirmation */}
-      <AlertDialog open={!!deleteTarget} onOpenChange={open => !open && setDeleteTarget(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete User</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete <strong>{deleteTarget?.name ?? deleteTarget?.email}</strong>?
-              This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive hover:bg-destructive/90 text-white"
-              disabled={deleting}
-              onClick={handleDelete}
-            >
-              {deleting ? 'Deleting...' : 'Delete User'}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   )
 }

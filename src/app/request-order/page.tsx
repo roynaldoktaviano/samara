@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo, Suspense } from 'react'
+import { useState, useEffect, useMemo, useId, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import {
   Search, Plus, Minus, X, Trash2, ChevronsUpDown, ChevronLeft, ChevronRight, Check, Camera,
@@ -244,8 +244,8 @@ function RequestOrderContent() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#fafaf8] p-6">
         <div className="w-full max-w-md bg-white rounded-2xl shadow-xl border p-8 text-center">
-          <div className="mx-auto mb-4 w-14 h-14 rounded-full bg-red-50 flex items-center justify-center">
-            <AlertTriangle className="h-7 w-7 text-red-500" />
+          <div className="mx-auto mb-4 w-14 h-14 rounded-full bg-destructive/10 flex items-center justify-center">
+            <AlertTriangle className="h-7 w-7 text-destructive" />
           </div>
           <h2 className="text-xl font-bold">Link Not Valid</h2>
           <p className="text-muted-foreground text-sm mt-2">
@@ -260,14 +260,14 @@ function RequestOrderContent() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#fafaf8] p-6">
         <div className="w-full max-w-md bg-white rounded-2xl shadow-xl border p-8 text-center">
-          <div className="mx-auto mb-4 w-14 h-14 rounded-full bg-green-50 flex items-center justify-center">
-            <CheckCircle2 className="h-7 w-7 text-green-600" />
+          <div className="mx-auto mb-4 w-14 h-14 rounded-full bg-success/10 flex items-center justify-center">
+            <CheckCircle2 className="h-7 w-7 text-success" />
           </div>
           <h2 className="text-xl font-bold">Request Submitted</h2>
           <p className="text-muted-foreground text-sm mt-2">
             Your request <span className="font-mono font-semibold text-foreground">{success.prNumber}</span> has been sent to the purchasing team for review.
           </p>
-          <button onClick={resetForm} className="mt-6 w-full py-2.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium transition-colors">
+          <button onClick={resetForm} className="mt-6 w-full py-2.5 rounded-lg bg-primary hover:bg-primary-hover text-primary-foreground text-sm font-medium transition-colors">
             Make Another Request
           </button>
         </div>
@@ -286,10 +286,11 @@ function RequestOrderContent() {
           </div>
           <button
             onClick={() => setCartOpen(true)}
+            aria-label={totalQty > 0 ? `Your request (${totalQty} items)` : 'Your request'}
             className="lg:hidden relative flex items-center gap-2 border rounded-lg px-3 py-2 text-sm font-medium bg-white hover:bg-muted transition-colors shrink-0"
           >
             <ShoppingCart className="h-4 w-4" />
-            {totalQty > 0 && <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[10px] font-bold rounded-full w-4.5 h-4.5 flex items-center justify-center">{totalQty}</span>}
+            {totalQty > 0 && <span className="absolute -top-1.5 -right-1.5 bg-destructive text-destructive-foreground text-[10px] font-bold rounded-full w-4.5 h-4.5 flex items-center justify-center">{totalQty}</span>}
           </button>
         </div>
       </div>
@@ -301,14 +302,15 @@ function RequestOrderContent() {
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
               <input
-                className="w-full h-10 pl-9 pr-3 text-sm border rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-amber-500"
-                placeholder="Search item name or SKU..."
+                aria-label="Search items"
+                className="w-full h-10 pl-9 pr-3 text-sm border rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-ring"
+                placeholder="Search item name or SKU…"
                 value={search} onChange={e => setSearch(e.target.value)}
               />
             </div>
             <button
               onClick={() => setCustomModal(true)}
-              className="flex items-center justify-center gap-2 h-10 px-4 rounded-lg border border-amber-300 bg-amber-50 text-amber-700 text-sm font-medium transition-colors hover:bg-amber-100 hover:border-amber-400 shrink-0"
+              className="flex items-center justify-center gap-2 h-10 px-4 rounded-lg border border-primary/40 bg-primary/10 text-primary-strong text-sm font-medium transition-colors hover:bg-primary/15 hover:border-primary shrink-0"
             >
               <ImagePlus className="h-4 w-4" /> Custom Request
             </button>
@@ -327,7 +329,7 @@ function RequestOrderContent() {
               {categories.map(c => (
                 <button key={c} onClick={() => setActiveCat(c)}
                   className={cn('px-2.5 py-1 rounded-full text-xs font-medium border transition-colors',
-                    activeCat === c ? 'bg-amber-600 text-white border-amber-600' : 'bg-white text-muted-foreground border-border hover:border-amber-300 hover:text-foreground')}>
+                    activeCat === c ? 'bg-primary text-primary-foreground border-primary' : 'bg-white text-muted-foreground border-border hover:border-primary/40 hover:text-foreground')}>
                   {c === 'All' ? c : toTitleCase(c)}
                 </button>
               ))}
@@ -350,12 +352,12 @@ function RequestOrderContent() {
                 const baseLine = cart.find(l => l.key === `${item.id}-${item.baseUnit}`)
                 const purchaseLine = hasPurchaseUnit ? cart.find(l => l.key === `${item.id}-${item.purchaseUnit}`) : undefined
                 return (
-                  <div key={item.id} className="bg-white rounded-xl border overflow-hidden flex flex-col shadow-sm hover:shadow-md hover:border-amber-300 transition-all">
+                  <div key={item.id} className="bg-white rounded-xl border overflow-hidden flex flex-col shadow-sm hover:shadow-md hover:border-primary/40 transition-all">
                     <div className="aspect-square bg-muted/40 flex items-center justify-center overflow-hidden">
                       {item.imageKey ? <img src={item.imageKey} alt={item.name} className="w-full h-full object-cover" /> : <Package className="h-8 w-8 text-muted-foreground/30" />}
                     </div>
                     <div className="p-2.5 flex flex-col flex-1">
-                      <span className="text-[9px] font-semibold uppercase tracking-wide text-amber-700">{item.category}</span>
+                      <span className="text-[9px] font-semibold uppercase tracking-wide text-primary-strong">{item.category}</span>
                       <p className="text-xs font-medium leading-snug mt-0.5 line-clamp-2">{item.name}</p>
                       <p className="text-[11px] text-muted-foreground mt-0.5">
                         {hasPurchaseUnit ? `${item.baseUnit} · ${item.purchaseUnit} (${item.conversionFactor}×)` : item.baseUnit}
@@ -363,17 +365,17 @@ function RequestOrderContent() {
                       <div className="mt-auto pt-2 space-y-1">
                         {baseLine ? (
                           <div className="flex items-center justify-between gap-1 bg-muted/50 rounded-lg p-1">
-                            <button onClick={() => changeQty(baseLine.key, -1)} className="w-6 h-6 rounded-md bg-white shadow-sm flex items-center justify-center hover:bg-muted transition-colors">
+                            <button onClick={() => changeQty(baseLine.key, -1)} aria-label={`Decrease ${item.name} (${item.baseUnit})`} className="w-6 h-6 rounded-md bg-white shadow-sm flex items-center justify-center hover:bg-muted transition-colors">
                               <Minus className="h-3 w-3" />
                             </button>
                             <span className="text-[11px] font-semibold tabular-nums">{baseLine.quantity} {item.baseUnit}</span>
-                            <button onClick={() => changeQty(baseLine.key, 1)} className="w-6 h-6 rounded-md bg-white shadow-sm flex items-center justify-center hover:bg-muted transition-colors">
+                            <button onClick={() => changeQty(baseLine.key, 1)} aria-label={`Increase ${item.name} (${item.baseUnit})`} className="w-6 h-6 rounded-md bg-white shadow-sm flex items-center justify-center hover:bg-muted transition-colors">
                               <Plus className="h-3 w-3" />
                             </button>
                           </div>
                         ) : (
                           <button onClick={() => addToCart(item, item.baseUnit)}
-                            className="w-full flex items-center justify-center gap-1 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-[11px] font-semibold transition-colors">
+                            className="w-full flex items-center justify-center gap-1 py-1.5 rounded-lg bg-primary hover:bg-primary-hover text-primary-foreground text-[11px] font-semibold transition-colors">
                             <Plus className="h-3 w-3" /> Add {item.baseUnit}
                           </button>
                         )}
@@ -381,17 +383,17 @@ function RequestOrderContent() {
                         {hasPurchaseUnit && (
                           purchaseLine ? (
                             <div className="flex items-center justify-between gap-1 bg-muted/50 rounded-lg p-1">
-                              <button onClick={() => changeQty(purchaseLine.key, -1)} className="w-6 h-6 rounded-md bg-white shadow-sm flex items-center justify-center hover:bg-muted transition-colors">
+                              <button onClick={() => changeQty(purchaseLine.key, -1)} aria-label={`Decrease ${item.name} (${item.purchaseUnit})`} className="w-6 h-6 rounded-md bg-white shadow-sm flex items-center justify-center hover:bg-muted transition-colors">
                                 <Minus className="h-3 w-3" />
                               </button>
                               <span className="text-[11px] font-semibold tabular-nums">{purchaseLine.quantity} {item.purchaseUnit}</span>
-                              <button onClick={() => changeQty(purchaseLine.key, 1)} className="w-6 h-6 rounded-md bg-white shadow-sm flex items-center justify-center hover:bg-muted transition-colors">
+                              <button onClick={() => changeQty(purchaseLine.key, 1)} aria-label={`Increase ${item.name} (${item.purchaseUnit})`} className="w-6 h-6 rounded-md bg-white shadow-sm flex items-center justify-center hover:bg-muted transition-colors">
                                 <Plus className="h-3 w-3" />
                               </button>
                             </div>
                           ) : (
                             <button onClick={() => addToCart(item, item.purchaseUnit!)}
-                              className="w-full flex items-center justify-center gap-1 py-1.5 rounded-lg text-[11px] font-semibold border-2 border-amber-500 text-amber-700 transition-colors hover:bg-amber-50">
+                              className="w-full flex items-center justify-center gap-1 py-1.5 rounded-lg text-[11px] font-semibold border-2 border-primary text-primary-strong transition-colors hover:bg-primary/10">
                               <Plus className="h-3 w-3" /> Add {item.purchaseUnit}
                             </button>
                           )
@@ -405,12 +407,12 @@ function RequestOrderContent() {
           )}
 
           {pageCount > 1 && (
-            <div className="flex items-center justify-between pt-1">
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
               <span className="text-xs text-muted-foreground">
                 {(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(currentPage * PAGE_SIZE, filtered.length)} of {filtered.length}
               </span>
-              <div className="flex items-center gap-1">
-                <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}
+              <div className="flex flex-wrap items-center gap-1">
+                <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} aria-label="Previous page"
                   className="h-8 w-8 flex items-center justify-center rounded-md border bg-white hover:bg-muted disabled:opacity-40 disabled:pointer-events-none transition-colors">
                   <ChevronLeft className="h-4 w-4" />
                 </button>
@@ -424,14 +426,14 @@ function RequestOrderContent() {
                   .map((n, i) => n === 'ellipsis' ? (
                     <span key={`e${i}`} className="w-8 text-center text-xs text-muted-foreground">…</span>
                   ) : (
-                    <button key={n} onClick={() => setPage(n)}
+                    <button key={n} onClick={() => setPage(n)} aria-current={n === currentPage ? 'page' : undefined}
                       className={`h-8 w-8 rounded-md text-xs font-semibold transition-colors ${
-                        n === currentPage ? 'bg-amber-600 text-white' : 'border bg-white hover:bg-muted text-muted-foreground'
+                        n === currentPage ? 'bg-primary text-primary-foreground' : 'border bg-white hover:bg-muted text-muted-foreground'
                       }`}>
                       {n}
                     </button>
                   ))}
-                <button onClick={() => setPage(p => Math.min(pageCount, p + 1))} disabled={currentPage === pageCount}
+                <button onClick={() => setPage(p => Math.min(pageCount, p + 1))} disabled={currentPage === pageCount} aria-label="Next page"
                   className="h-8 w-8 flex items-center justify-center rounded-md border bg-white hover:bg-muted disabled:opacity-40 disabled:pointer-events-none transition-colors">
                   <ChevronRight className="h-4 w-4" />
                 </button>
@@ -463,10 +465,10 @@ function RequestOrderContent() {
       {cartOpen && (
         <div className="fixed inset-0 z-50 lg:hidden">
           <div className="absolute inset-0 bg-black/40" onClick={() => setCartOpen(false)} />
-          <div className="absolute inset-x-0 bottom-0 top-16 bg-white rounded-t-2xl flex flex-col">
+          <div role="dialog" aria-modal="true" aria-labelledby="ro-cart-title" className="absolute inset-x-0 bottom-0 top-16 bg-white rounded-t-2xl flex flex-col">
             <div className="flex items-center justify-between px-5 py-4 border-b shrink-0">
-              <h3 className="font-semibold">Your Request</h3>
-              <button onClick={() => setCartOpen(false)}><X className="h-5 w-5 text-muted-foreground" /></button>
+              <h3 id="ro-cart-title" className="font-semibold">Your Request</h3>
+              <button onClick={() => setCartOpen(false)} aria-label="Close"><X className="h-5 w-5 text-muted-foreground" /></button>
             </div>
             <div className="overflow-y-auto flex-1 p-5">
               <RequestSidebar
@@ -490,50 +492,52 @@ function RequestOrderContent() {
       {/* ── Custom Request Modal ── */}
       {customModal && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[92vh] flex flex-col overflow-hidden">
-            <div className="flex items-center justify-between px-6 py-5 border-b shrink-0">
+          <div role="dialog" aria-modal="true" aria-labelledby="ro-custom-title" className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[92vh] flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between gap-3 px-6 py-5 border-b shrink-0">
               <div>
-                <h3 className="font-bold text-lg">Custom Request</h3>
+                <h3 id="ro-custom-title" className="font-bold text-lg">Custom Request</h3>
                 <p className="text-xs text-muted-foreground mt-0.5">For items not in the catalog — this won't create a new catalog item, it's just added to your request for purchasing to review</p>
               </div>
-              <button onClick={() => setCustomModal(false)}><X className="h-5 w-5 text-muted-foreground" /></button>
+              <button onClick={() => setCustomModal(false)} aria-label="Close" className="shrink-0"><X className="h-5 w-5 text-muted-foreground" /></button>
             </div>
             <div className="px-6 py-5 space-y-4 flex-1 min-h-0 overflow-y-auto">
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Description <span className="text-red-500">*</span></label>
+                <label htmlFor="ro-custom-description" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Description <span className="text-destructive">*</span></label>
                 <textarea
-                  className="w-full border rounded-lg px-3 py-2.5 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-amber-500"
-                  rows={3} placeholder="What do you need? Be as specific as possible..."
+                  id="ro-custom-description"
+                  className="w-full border rounded-lg px-3 py-2.5 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-ring"
+                  rows={3} placeholder="What do you need? Be as specific as possible…"
                   value={customForm.itemName} onChange={e => setCustomForm(f => ({ ...f, itemName: e.target.value }))} autoFocus
                 />
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Quantity</label>
-                  <input type="number" min={1} className="w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  <label htmlFor="ro-custom-quantity" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Quantity</label>
+                  <input id="ro-custom-quantity" type="number" min={1} className="w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
                     value={customForm.quantity} onChange={e => setCustomForm(f => ({ ...f, quantity: Number(e.target.value) }))} />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Unit</label>
-                  <input className="w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500" placeholder="pcs"
+                  <label htmlFor="ro-custom-unit" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Unit</label>
+                  <input id="ro-custom-unit" className="w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring" placeholder="pcs"
                     value={customForm.unit} onChange={e => setCustomForm(f => ({ ...f, unit: e.target.value }))} />
                 </div>
               </div>
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Notes</label>
+                <label htmlFor="ro-custom-notes" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Notes</label>
                 <textarea
-                  className="w-full border rounded-lg px-3 py-2.5 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-amber-500"
-                  rows={2} placeholder="Optional additional detail..."
+                  id="ro-custom-notes"
+                  className="w-full border rounded-lg px-3 py-2.5 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-ring"
+                  rows={2} placeholder="Optional additional detail…"
                   value={customForm.notes} onChange={e => setCustomForm(f => ({ ...f, notes: e.target.value }))}
                 />
               </div>
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Reference Photos</label>
-                <div className="grid grid-cols-3 sm:grid-cols-4 gap-2.5">
+                <label id="ro-custom-photos-label" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Reference Photos</label>
+                <div role="group" aria-labelledby="ro-custom-photos-label" className="grid grid-cols-3 sm:grid-cols-4 gap-2.5">
                   {customForm.images.map((src, i) => (
                     <div key={i} className="relative aspect-square rounded-lg overflow-hidden border">
                       <img src={src} alt={`Reference ${i + 1}`} className="w-full h-full object-cover" />
-                      <button onClick={() => removeCustomImage(i)} className="absolute top-1.5 right-1.5 bg-black/50 text-white rounded-full p-1">
+                      <button onClick={() => removeCustomImage(i)} aria-label={`Remove reference photo ${i + 1}`} className="absolute top-1.5 right-1.5 bg-black/50 text-white rounded-full p-1">
                         <X className="h-3 w-3" />
                       </button>
                     </div>
@@ -541,7 +545,7 @@ function RequestOrderContent() {
                   <div className="relative aspect-square">
                     <button onClick={() => setCustomPhotoMenuOpen(o => !o)} disabled={compressingCustomImage} {...customImageDropProps}
                       className={`w-full h-full flex flex-col items-center justify-center gap-1.5 border-2 border-dashed rounded-lg transition-colors disabled:opacity-50 ${
-                        isDraggingCustomImage ? 'border-amber-500 bg-amber-50 text-amber-700' : 'text-muted-foreground hover:bg-muted/30'
+                        isDraggingCustomImage ? 'border-primary bg-primary/10 text-primary-strong' : 'text-muted-foreground hover:bg-muted/30'
                       }`}>
                       <Camera className="h-5 w-5" />
                       <span className="text-[11px] text-center px-1">{compressingCustomImage ? 'Processing…' : isDraggingCustomImage ? 'Drop' : 'Add photo'}</span>
@@ -554,7 +558,7 @@ function RequestOrderContent() {
             <div className="flex gap-3 justify-end px-6 py-4 border-t bg-muted/20 shrink-0">
               <button onClick={() => setCustomModal(false)} className="px-4 py-2 text-sm border rounded-lg hover:bg-muted">Cancel</button>
               <button onClick={addCustomToCart} disabled={!customForm.itemName.trim()}
-                className="px-5 py-2 text-sm text-white rounded-lg font-medium disabled:opacity-40 transition-colors bg-amber-600 hover:bg-amber-700">
+                className="px-5 py-2 text-sm text-primary-foreground rounded-lg font-medium disabled:opacity-40 transition-colors bg-primary hover:bg-primary-hover">
                 Add to Request
               </button>
             </div>
@@ -592,28 +596,30 @@ function RequestSidebar({
   submit: () => void; submitting: boolean; submitError: string
   embedded?: boolean
 }) {
+  // RequestSidebar renders twice (desktop column + mobile drawer), so field ids must be unique per instance.
+  const uid = useId()
   return (
     <div className={cn('bg-white rounded-xl border shadow-sm flex flex-col', !embedded && 'max-h-[calc(100vh-104px)]')}>
       {!embedded && (
-        <div className="flex items-center gap-2 px-5 py-4 border-b shrink-0 bg-amber-50/60 rounded-t-xl">
-          <ShoppingCart className="h-4 w-4 text-amber-700" />
+        <div className="flex items-center gap-2 px-5 py-4 border-b shrink-0 bg-primary/10 rounded-t-xl">
+          <ShoppingCart className="h-4 w-4 text-primary-strong" />
           <h3 className="font-semibold text-sm">Your Request {cart.length > 0 && `(${cart.length})`}</h3>
         </div>
       )}
 
       <div className="p-5 space-y-4 overflow-y-auto flex-1">
         {submitError && (
-          <div className="flex items-center gap-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2.5">
+          <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 border border-destructive/30 rounded-lg px-3 py-2.5">
             <AlertTriangle className="h-4 w-4 shrink-0" /> {submitError}
           </div>
         )}
 
         {/* Requester */}
         <div className="space-y-1.5">
-          <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Requested By <span className="text-red-500">*</span></label>
+          <label htmlFor={`${uid}-employee`} className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Requested By <span className="text-destructive">*</span></label>
           <Popover open={employeeOpen} onOpenChange={setEmployeeOpen}>
             <PopoverTrigger asChild>
-              <button className="w-full flex items-center justify-between px-3 py-2.5 h-auto rounded-lg border bg-background text-sm hover:bg-accent/30 transition-colors">
+              <button id={`${uid}-employee`} className="w-full flex items-center justify-between px-3 py-2.5 h-auto rounded-lg border bg-background text-sm hover:bg-accent/30 transition-colors">
                 {selectedEmployee ? (
                   <div className="text-left min-w-0">
                     <p className="font-medium truncate">{selectedEmployee.fullName}</p>
@@ -647,9 +653,10 @@ function RequestSidebar({
 
         {/* Vessel */}
         <div className="space-y-1.5">
-          <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Vessel / Location <span className="text-red-500">*</span></label>
+          <label htmlFor={`${uid}-location`} className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Vessel / Location <span className="text-destructive">*</span></label>
           <select
-            className="w-full h-10 border rounded-lg px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
+            id={`${uid}-location`}
+            className="w-full h-10 border rounded-lg px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-ring"
             value={locationId} onChange={e => setLocationId(e.target.value)}
           >
             <option value="">Select vessel or location…</option>
@@ -659,8 +666,8 @@ function RequestSidebar({
 
         {/* Purpose */}
         <div className="space-y-1.5">
-          <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Purpose <span className="text-red-500">*</span></label>
-          <div className="inline-flex gap-1 bg-muted rounded-lg p-1 w-full">
+          <label id={`${uid}-purpose-label`} className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Purpose <span className="text-destructive">*</span></label>
+          <div role="group" aria-labelledby={`${uid}-purpose-label`} className="inline-flex gap-1 bg-muted rounded-lg p-1 w-full">
             <button type="button" onClick={() => setPurpose('STOCK_INVENTORY')}
               className={cn('flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors', purpose === 'STOCK_INVENTORY' ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground')}>
               Stock & Inventory
@@ -677,8 +684,8 @@ function RequestSidebar({
 
         {/* Division — routes this request to the right Purchasing person */}
         <div className="space-y-1.5">
-          <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">What is this for? <span className="text-red-500">*</span></label>
-          <div className={cn('inline-flex gap-1 bg-muted rounded-lg p-1 w-full', !division && submitError && 'ring-1 ring-red-400')}>
+          <label id={`${uid}-division-label`} className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">What is this for? <span className="text-destructive">*</span></label>
+          <div role="group" aria-labelledby={`${uid}-division-label`} className={cn('inline-flex gap-1 bg-muted rounded-lg p-1 w-full', !division && submitError && 'ring-1 ring-destructive')}>
             <button type="button" onClick={() => setDivision('BOAT_OPERATION')}
               className={cn('flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors', division === 'BOAT_OPERATION' ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground')}>
               Boat Operation
@@ -717,12 +724,12 @@ function RequestSidebar({
                     <span className="text-xs font-semibold tabular-nums shrink-0">{line.quantity} {line.unit}</span>
                   ) : (
                     <div className="flex items-center gap-1 shrink-0">
-                      <button onClick={() => changeQty(line.key, -1)} className="w-5 h-5 rounded border flex items-center justify-center hover:bg-muted"><Minus className="h-3 w-3" /></button>
+                      <button onClick={() => changeQty(line.key, -1)} aria-label={`Decrease ${line.itemName}`} className="w-5 h-5 rounded border flex items-center justify-center hover:bg-muted"><Minus className="h-3 w-3" /></button>
                       <span className="text-xs font-semibold tabular-nums w-4 text-center">{line.quantity}</span>
-                      <button onClick={() => changeQty(line.key, 1)} className="w-5 h-5 rounded border flex items-center justify-center hover:bg-muted"><Plus className="h-3 w-3" /></button>
+                      <button onClick={() => changeQty(line.key, 1)} aria-label={`Increase ${line.itemName}`} className="w-5 h-5 rounded border flex items-center justify-center hover:bg-muted"><Plus className="h-3 w-3" /></button>
                     </div>
                   )}
-                  <button onClick={() => removeLine(line.key)} className="text-muted-foreground hover:text-destructive shrink-0">
+                  <button onClick={() => removeLine(line.key)} aria-label={`Remove ${line.itemName}`} className="text-muted-foreground hover:text-destructive shrink-0">
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
                 </div>
@@ -738,7 +745,8 @@ function RequestSidebar({
                   </div>
                   {line.requestType === 'REPLACEMENT' && (
                     <textarea
-                      className="w-full border rounded-md px-2 py-1.5 text-xs resize-none focus:outline-none focus:ring-1 focus:ring-amber-500"
+                      aria-label={`Damage details for ${line.itemName}`}
+                      className="w-full border rounded-md px-2 py-1.5 text-xs resize-none focus:outline-none focus:ring-1 focus:ring-ring"
                       rows={2} placeholder="Damage details — what is broken, how it happened (required)"
                       value={line.damageDetail ?? ''} onChange={e => updateLine(line.key, { damageDetail: e.target.value })}
                     />
@@ -751,10 +759,11 @@ function RequestSidebar({
 
         {/* Needed by */}
         <div className="space-y-1.5">
-          <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Needed By</label>
+          <label htmlFor={`${uid}-needed-by`} className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Needed By</label>
           <input
+            id={`${uid}-needed-by`}
             type="date"
-            className="w-full h-10 border rounded-lg px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500"
+            className="w-full h-10 border rounded-lg px-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-ring"
             value={neededByDate} onChange={e => setNeededByDate(e.target.value)}
           />
         </div>
@@ -763,11 +772,12 @@ function RequestSidebar({
         <div className="space-y-2">
           <label className="flex items-center gap-2 text-sm font-medium cursor-pointer">
             <input type="checkbox" checked={isUrgent} onChange={e => setIsUrgent(e.target.checked)} className="h-4 w-4" />
-            <span className="text-red-600">This request is urgent</span>
+            <span className="text-destructive">This request is urgent</span>
           </label>
           {isUrgent && (
             <textarea
-              className="w-full border border-red-300 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-red-400"
+              aria-label="Urgent reason"
+              className="w-full border border-destructive/30 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-destructive"
               rows={2} placeholder="Why is this urgent? (required)"
               value={urgentReason} onChange={e => setUrgentReason(e.target.value)}
             />
@@ -776,10 +786,11 @@ function RequestSidebar({
 
         {/* Notes */}
         <div className="space-y-1.5">
-          <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Notes</label>
+          <label htmlFor={`${uid}-notes`} className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Notes</label>
           <textarea
-            className="w-full border rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-amber-500"
-            rows={2} placeholder="Anything else purchasing should know..."
+            id={`${uid}-notes`}
+            className="w-full border rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-ring"
+            rows={2} placeholder="Anything else purchasing should know…"
             value={notes} onChange={e => setNotes(e.target.value)}
           />
         </div>
@@ -788,7 +799,7 @@ function RequestSidebar({
       <div className="p-5 border-t shrink-0">
         <button
           onClick={submit} disabled={submitting || cart.length === 0}
-          className="w-full flex items-center justify-center gap-2 py-3 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold disabled:opacity-40 transition-colors"
+          className="w-full flex items-center justify-center gap-2 py-3 rounded-lg bg-primary hover:bg-primary-hover text-primary-foreground text-sm font-semibold disabled:opacity-40 transition-colors"
         >
           {submitting ? <div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Send className="h-4 w-4" />}
           {submitting ? 'Submitting…' : 'Submit Request'}

@@ -19,18 +19,18 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   const data: { name?: string; isActive?: boolean; skuPrefix?: string } = {}
   if (isActive !== undefined) data.isActive = Boolean(isActive)
   if (skuPrefix !== undefined) {
-    if (!String(skuPrefix).trim()) return NextResponse.json({ error: 'SKU prefix tidak boleh kosong' }, { status: 400 })
+    if (!String(skuPrefix).trim()) return NextResponse.json({ error: 'SKU prefix cannot be empty' }, { status: 400 })
     data.skuPrefix = String(skuPrefix).trim().toUpperCase()
   }
 
   if (name !== undefined) {
     const cleanName = String(name).trim()
-    if (!cleanName) return NextResponse.json({ error: 'name tidak boleh kosong' }, { status: 400 })
+    if (!cleanName) return NextResponse.json({ error: 'name cannot be empty' }, { status: 400 })
     if (cleanName !== existing.name) {
       const inUse = await db.purchaseItem.findFirst({ where: { type: existing.typeCode, category: existing.name } })
-      if (inUse) return NextResponse.json({ error: 'Nama kategori tidak bisa diubah karena masih dipakai oleh item' }, { status: 409 })
+      if (inUse) return NextResponse.json({ error: 'Category name cannot be changed because items still use it' }, { status: 409 })
       const conflict = await db.purchaseItemCategory.findUnique({ where: { typeCode_name: { typeCode: existing.typeCode, name: cleanName } } })
-      if (conflict) return NextResponse.json({ error: `Kategori "${cleanName}" sudah ada di tipe ini` }, { status: 409 })
+      if (conflict) return NextResponse.json({ error: `Category "${cleanName}" already exists in this type` }, { status: 409 })
       data.name = cleanName
     }
   }
@@ -50,7 +50,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
   const inUse = await db.purchaseItem.findFirst({ where: { type: existing.typeCode, category: existing.name } })
-  if (inUse) return NextResponse.json({ error: 'Kategori masih dipakai oleh item, tidak bisa dihapus' }, { status: 409 })
+  if (inUse) return NextResponse.json({ error: 'Category is still used by items and cannot be deleted' }, { status: 409 })
 
   await db.purchaseItemCategory.delete({ where: { id: categoryId } })
   return NextResponse.json({ ok: true })

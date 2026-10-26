@@ -148,7 +148,7 @@ export default function AddToWaitingListDialog({
 
   return (
     <Dialog open={open} onOpenChange={v => { if (!v) reset(); onOpenChange(v) }}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md" aria-describedby={undefined} onInteractOutside={e => e.preventDefault()}>
         <DialogHeader>
           <DialogTitle>Add to Waiting List</DialogTitle>
         </DialogHeader>
@@ -156,13 +156,14 @@ export default function AddToWaitingListDialog({
         <div className="space-y-4 py-2">
           {/* Customer search */}
           <div className="space-y-1.5">
-            <Label>Search or enter guest name <span className="text-red-500">*</span></Label>
+            <Label htmlFor="wl-guest-search">Search or enter guest name <span className="text-destructive">*</span></Label>
             <div ref={searchRef} className="relative">
               <div className="relative">
                 <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground pointer-events-none" />
                 <Input
+                  id="wl-guest-search"
                   className="pl-8 pr-8"
-                  placeholder="Search by name, phone, email..."
+                  placeholder="Search by name, phone, email…"
                   value={search}
                   onChange={e => { setSearch(e.target.value); if (selectedCustomer) setSelectedCustomer(null) }}
                   disabled={saving}
@@ -174,6 +175,7 @@ export default function AddToWaitingListDialog({
                     className="absolute right-2.5 top-2.5 text-muted-foreground hover:text-foreground"
                     onClick={clearSelection}
                     tabIndex={-1}
+                    aria-label="Clear guest"
                   >
                     <X className="h-4 w-4" />
                   </button>
@@ -214,7 +216,7 @@ export default function AddToWaitingListDialog({
             </div>
 
             {selectedCustomer && (
-              <p className="text-xs text-green-600 flex items-center gap-1 mt-1">
+              <p className="text-xs text-success flex items-center gap-1 mt-1">
                 <Check className="h-3 w-3" /> Selected: <span className="font-medium">{selectedCustomer.name}</span>
               </p>
             )}
@@ -222,19 +224,21 @@ export default function AddToWaitingListDialog({
 
           {/* Contact fields — shown when no existing customer selected */}
           {!selectedCustomer && (
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label>No. WhatsApp</Label>
+                <Label htmlFor="wl-phone">WhatsApp No.</Label>
                 <Input
-                  placeholder="+62..."
+                  id="wl-phone"
+                  placeholder="+62…"
                   value={phone}
                   onChange={e => setPhone(e.target.value)}
                   disabled={saving}
                 />
               </div>
               <div className="space-y-1.5">
-                <Label>Email</Label>
+                <Label htmlFor="wl-email">Email</Label>
                 <Input
+                  id="wl-email"
                   placeholder="email@..."
                   value={email}
                   onChange={e => setEmail(e.target.value)}
@@ -245,9 +249,10 @@ export default function AddToWaitingListDialog({
           )}
 
           <div className="space-y-1.5">
-            <Label>Notes</Label>
+            <Label htmlFor="wl-notes">Notes</Label>
             <Textarea
-              placeholder="Preferences, special requests..."
+              id="wl-notes"
+              placeholder="Preferences, special requests…"
               value={notes}
               onChange={e => setNotes(e.target.value)}
               rows={3}
@@ -260,8 +265,7 @@ export default function AddToWaitingListDialog({
           <Button variant="outline" onClick={() => { reset(); onOpenChange(false) }} disabled={saving}>
             Cancel
           </Button>
-          <Button onClick={handleSubmit} disabled={saving || !contactName}>
-            {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+          <Button onClick={handleSubmit} loading={saving} disabled={!contactName}>
             Add to List
           </Button>
         </DialogFooter>

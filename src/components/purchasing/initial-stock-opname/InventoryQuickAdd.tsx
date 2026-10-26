@@ -35,11 +35,11 @@ function AddInventoryItemModal({ roomId, categories, onClose, onAdded, onCategor
     setSaving(true)
     let finalCategoryId = categoryId
     if (usingNewCategory) {
-      if (!newCategoryName.trim()) { setError('Nama kategori wajib diisi'); setSaving(false); return }
+      if (!newCategoryName.trim()) { setError('Category name is required'); setSaving(false); return }
       const catRes = await fetch('/api/inventory/categories', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: newCategoryName, roomId }),
       })
-      if (!catRes.ok) { const err = await catRes.json(); setError(err.error ?? 'Gagal menambah kategori'); setSaving(false); return }
+      if (!catRes.ok) { const err = await catRes.json(); setError(err.error ?? 'Failed to add category'); setSaving(false); return }
       const newCat = await catRes.json()
       onCategoryAdded(newCat)
       finalCategoryId = newCat.id
@@ -53,7 +53,7 @@ function AddInventoryItemModal({ roomId, categories, onClose, onAdded, onCategor
       onClose()
     } else {
       const err = await res.json()
-      setError(err.error ?? 'Gagal menambah barang')
+      setError(err.error ?? 'Failed to add item')
     }
     setSaving(false)
   }
@@ -62,42 +62,42 @@ function AddInventoryItemModal({ roomId, categories, onClose, onAdded, onCategor
 
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
+      <div className="bg-card rounded-xl shadow-xl w-full max-w-md">
         <div className="flex items-center justify-between p-6 border-b">
-          <h3 className="font-semibold text-lg">Tambah Barang</h3>
+          <h3 className="font-semibold text-lg">Add Item</h3>
           <button onClick={onClose}><X className="h-5 w-5 text-muted-foreground" /></button>
         </div>
         <div className="p-6 space-y-4">
           <div className="space-y-1.5">
-            <label className="text-sm font-medium">Nama Barang *</label>
-            <input value={name} onChange={e => setName(e.target.value)} className="w-full h-9 border rounded-md px-3 text-sm focus:outline-none focus:ring-1 focus:ring-[#bdac7e]/50 focus:border-[#bdac7e]" />
+            <label className="text-sm font-medium">Item Name *</label>
+            <input value={name} onChange={e => setName(e.target.value)} className="w-full h-9 border rounded-md px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring/50 focus:border-ring" />
           </div>
           <div className="space-y-1.5">
-            <label className="text-sm font-medium">Kategori *</label>
+            <label className="text-sm font-medium">Category *</label>
             {categories.length > 0 && !usingNewCategory && (
               <select value={categoryId} onChange={e => setCategoryId(e.target.value)}
-                className="w-full h-9 border rounded-md px-3 text-sm focus:outline-none focus:ring-1 focus:ring-[#bdac7e]/50 focus:border-[#bdac7e] bg-white">
+                className="w-full h-9 border rounded-md px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring/50 focus:border-ring bg-card">
                 {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                <option value={NEW_CATEGORY}>+ Kategori baru...</option>
+                <option value={NEW_CATEGORY}>+ New category…</option>
               </select>
             )}
             {(usingNewCategory) && (
               <div className="space-y-1.5">
-                <input value={newCategoryName} onChange={e => setNewCategoryName(e.target.value)} placeholder="Nama kategori baru"
-                  className="w-full h-9 border rounded-md px-3 text-sm focus:outline-none focus:ring-1 focus:ring-[#bdac7e]/50 focus:border-[#bdac7e]" />
+                <input value={newCategoryName} onChange={e => setNewCategoryName(e.target.value)} placeholder="New category name"
+                  className="w-full h-9 border rounded-md px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring/50 focus:border-ring" />
                 {categories.length > 0 && (
-                  <button onClick={() => setCategoryId(categories[0].id)} className="text-xs text-muted-foreground hover:underline">Batal, pilih dari yang sudah ada</button>
+                  <button onClick={() => setCategoryId(categories[0].id)} className="text-xs text-muted-foreground hover:underline">Cancel, pick an existing one</button>
                 )}
               </div>
             )}
           </div>
-          {error && <p className="text-xs text-red-600">{error}</p>}
+          {error && <p className="text-xs text-destructive">{error}</p>}
         </div>
         <div className="flex justify-end gap-3 px-6 py-4 border-t bg-muted/30">
-          <button onClick={onClose} className="px-4 py-2 text-sm border rounded-md hover:bg-muted">Batal</button>
+          <button onClick={onClose} className="px-4 py-2 text-sm border rounded-md hover:bg-muted">Cancel</button>
           <button onClick={submit} disabled={!canSubmit || saving}
-            className="px-4 py-2 text-sm bg-[#bdac7e] text-white rounded-md hover:bg-[#a89860] disabled:opacity-50 font-medium">
-            {saving ? 'Menambah...' : 'Tambah'}
+            className="px-4 py-2 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary-hover disabled:opacity-50 font-medium">
+            {saving ? 'Adding…' : 'Add'}
           </button>
         </div>
       </div>
@@ -169,7 +169,7 @@ export default function InventoryQuickAdd({ locationId, locationName, initialRoo
   return (
     <div className="space-y-5">
       <div className="flex items-center gap-3">
-        <button onClick={onBack} className="text-muted-foreground hover:text-foreground text-sm">← Kembali</button>
+        <button onClick={onBack} className="text-muted-foreground hover:text-foreground text-sm">← Back</button>
         <ChevronRight className="h-4 w-4 text-muted-foreground" />
         <span className="text-sm font-medium">Inventory — {locationName}</span>
       </div>
@@ -177,29 +177,29 @@ export default function InventoryQuickAdd({ locationId, locationName, initialRoo
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h2 className="text-xl font-bold">{currentRoom?.name ?? '...'}</h2>
-          <p className="text-sm text-muted-foreground mt-0.5">Tambah barang & kategori awal untuk ruangan ini — tanpa perlu jumlah stok</p>
+          <p className="text-sm text-muted-foreground mt-0.5">Add initial items & categories for this room — no stock quantity needed</p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <select value={roomId} onChange={e => switchRoom(e.target.value)}
-            className="h-9 border rounded-md px-3 text-sm focus:outline-none focus:ring-1 focus:ring-[#bdac7e]/50 focus:border-[#bdac7e] bg-white">
+            className="h-9 border rounded-md px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring/50 focus:border-ring bg-card">
             {rooms.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
           </select>
-          <button onClick={() => setAddOpen(true)} className="flex items-center gap-2 px-4 py-2 text-sm bg-[#bdac7e] hover:bg-[#a89860] text-white rounded-md font-medium transition-colors">
-            <Plus className="h-4 w-4" /> Tambah Barang
+          <button onClick={() => setAddOpen(true)} className="flex items-center gap-2 px-4 py-2 text-sm bg-primary hover:bg-primary-hover text-primary-foreground rounded-md font-medium transition-colors">
+            <Plus className="h-4 w-4" /> Add Item
           </button>
         </div>
       </div>
 
       {!addingRoom ? (
-        <button onClick={() => setAddingRoom(true)} className="text-xs text-[#bdac7e] hover:underline">+ Ruangan baru di lokasi ini</button>
+        <button onClick={() => setAddingRoom(true)} className="text-xs text-primary hover:underline">+ New room at this location</button>
       ) : (
         <div className="flex items-center gap-2">
-          <input value={newRoomName} onChange={e => setNewRoomName(e.target.value)} placeholder="Nama ruangan baru"
-            className="h-9 border rounded-md px-3 text-sm w-56 focus:outline-none focus:ring-1 focus:ring-[#bdac7e]/50 focus:border-[#bdac7e]" />
-          <button onClick={addRoom} disabled={!newRoomName.trim() || savingRoom} className="px-3 py-1.5 text-sm bg-[#bdac7e] text-white rounded-md hover:bg-[#a89860] disabled:opacity-50">
-            {savingRoom ? 'Menambah...' : 'Tambah'}
+          <input value={newRoomName} onChange={e => setNewRoomName(e.target.value)} placeholder="New room name"
+            className="h-9 border rounded-md px-3 text-sm w-56 focus:outline-none focus:ring-1 focus:ring-ring/50 focus:border-ring" />
+          <button onClick={addRoom} disabled={!newRoomName.trim() || savingRoom} className="px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary-hover disabled:opacity-50">
+            {savingRoom ? 'Adding…' : 'Add'}
           </button>
-          <button onClick={() => { setAddingRoom(false); setNewRoomName('') }} className="text-sm text-muted-foreground hover:underline">Batal</button>
+          <button onClick={() => { setAddingRoom(false); setNewRoomName('') }} className="text-sm text-muted-foreground hover:underline">Cancel</button>
         </div>
       )}
 
@@ -211,7 +211,7 @@ export default function InventoryQuickAdd({ locationId, locationName, initialRoo
         ) : categories.length === 0 ? (
           <div className="p-10 text-center">
             <Boxes className="h-8 w-8 mx-auto mb-3 opacity-20" />
-            <p className="text-sm text-muted-foreground">Belum ada kategori di ruangan ini. Klik "Tambah Barang" untuk mulai — kategori baru bisa dibuat langsung dari situ.</p>
+            <p className="text-sm text-muted-foreground">No categories in this room yet. Click "Add Item" to get started — you can create a new category from there.</p>
           </div>
         ) : (
           <div className="divide-y">
@@ -219,7 +219,7 @@ export default function InventoryQuickAdd({ locationId, locationName, initialRoo
               <div key={cat.id} className="px-5 py-3">
                 <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">{cat.name}</p>
                 {(itemsByCategory.get(cat.id) ?? []).length === 0 ? (
-                  <p className="text-sm text-muted-foreground/60 italic">Belum ada barang</p>
+                  <p className="text-sm text-muted-foreground/60 italic">No items yet</p>
                 ) : (
                   <div className="space-y-1">
                     {(itemsByCategory.get(cat.id) ?? []).map(item => (

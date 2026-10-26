@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
+import { StatusBadge, type StatusTone } from '@/components/ui/status-badge'
+import { formatDate } from '@/lib/format'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from '@/components/ui/alert-dialog'
 import { Send, Plus, Pencil, Trash2, Ban, Eye, Play } from 'lucide-react'
@@ -11,7 +12,7 @@ import { toast } from 'sonner'
 import CampaignEditor from './CampaignEditor'
 import CampaignDetailView from './CampaignDetailView'
 
-const ACCENT = '#bdac7e'
+const ACCENT = 'var(--primary)'
 
 interface Campaign {
   id: string
@@ -31,17 +32,15 @@ interface Campaign {
   createdAt: string
 }
 
-const STATUS_STYLE: Record<Campaign['status'], string> = {
-  DRAFT: 'bg-gray-100 text-gray-700 border-gray-200',
-  SCHEDULED: 'bg-blue-100 text-blue-700 border-blue-200',
-  SENDING: 'bg-amber-100 text-amber-700 border-amber-200',
-  PAUSED: 'bg-orange-100 text-orange-700 border-orange-200',
-  SENT: 'bg-green-100 text-green-700 border-green-200',
-  FAILED: 'bg-red-100 text-red-700 border-red-200',
-  CANCELED: 'bg-gray-100 text-gray-500 border-gray-200',
+const STATUS_TONE: Record<Campaign['status'], StatusTone> = {
+  DRAFT: 'neutral',
+  SCHEDULED: 'info',
+  SENDING: 'warning',
+  PAUSED: 'warning',
+  SENT: 'success',
+  FAILED: 'destructive',
+  CANCELED: 'neutral',
 }
-
-const fmt = (d: string | null) => d ? new Date(d).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'
 
 export default function CampaignsPage() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([])
@@ -109,7 +108,7 @@ export default function CampaignsPage() {
           <Send className="h-5 w-5" style={{ color: ACCENT }} />
           <h1 className="text-xl font-semibold">Email Campaigns</h1>
         </div>
-        <Button onClick={openNew} style={{ backgroundColor: ACCENT, color: 'white' }} className="hover:opacity-90">
+        <Button onClick={openNew} className="bg-primary text-primary-foreground hover:bg-primary-hover">
           <Plus className="h-4 w-4 mr-2" /> New Campaign
         </Button>
       </div>
@@ -117,7 +116,7 @@ export default function CampaignsPage() {
       <Card>
         <CardContent className="p-0">
           {loading ? (
-            <p className="text-sm text-muted-foreground p-6">Loading...</p>
+            <p className="text-sm text-muted-foreground p-6">Loading…</p>
           ) : campaigns.length === 0 ? (
             <p className="text-sm text-muted-foreground p-12 text-center">No campaigns yet. Create one to reach your guests and agents.</p>
           ) : (
@@ -146,7 +145,7 @@ export default function CampaignsPage() {
                   >
                     <TableCell className="font-medium">{c.name}</TableCell>
                     <TableCell className="text-sm text-muted-foreground max-w-[240px] truncate">{c.subject}</TableCell>
-                    <TableCell><Badge className={STATUS_STYLE[c.status]}>{c.status}</Badge></TableCell>
+                    <TableCell><StatusBadge tone={STATUS_TONE[c.status]}>{c.status}</StatusBadge></TableCell>
                     <TableCell className="text-sm text-muted-foreground">{c.createdByName ?? '—'}</TableCell>
                     <TableCell className="text-sm">
                       {hasSendData
@@ -159,22 +158,22 @@ export default function CampaignsPage() {
                     <TableCell className="text-sm">
                       {hasSendData ? `${c.clickedCount}/${c.sentCount}` : '—'}
                     </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{fmt(c.sentAt ?? c.scheduledAt)}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">{formatDate(c.sentAt ?? c.scheduledAt, 'datetime')}</TableCell>
                     <TableCell className="text-right space-x-1" onClick={e => e.stopPropagation()}>
                       {hasSendData && (
                         <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => openDetail(c)} title="View detail"><Eye className="h-3.5 w-3.5" /></Button>
                       )}
                       {c.status === 'PAUSED' && (
-                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-orange-600" disabled={continuingId === c.id} onClick={() => continueSend(c)} title="Continue sending to the rest of the audience"><Play className="h-3.5 w-3.5" /></Button>
+                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-warning" disabled={continuingId === c.id} onClick={() => continueSend(c)} title="Continue sending to the rest of the audience"><Play className="h-3.5 w-3.5" /></Button>
                       )}
                       {(c.status === 'DRAFT' || c.status === 'SCHEDULED') && (
                         <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => openEdit(c)}><Pencil className="h-3.5 w-3.5" /></Button>
                       )}
                       {c.status === 'SCHEDULED' && (
-                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-amber-600" onClick={() => setCancelTarget(c)} title="Cancel scheduled send"><Ban className="h-3.5 w-3.5" /></Button>
+                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-warning" onClick={() => setCancelTarget(c)} title="Cancel scheduled send"><Ban className="h-3.5 w-3.5" /></Button>
                       )}
                       {c.status !== 'SENDING' && (
-                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-600" onClick={() => setDeleteTarget(c)}><Trash2 className="h-3.5 w-3.5" /></Button>
+                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-destructive" onClick={() => setDeleteTarget(c)}><Trash2 className="h-3.5 w-3.5" /></Button>
                       )}
                     </TableCell>
                   </TableRow>
@@ -201,7 +200,7 @@ export default function CampaignsPage() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmDelete} className="bg-red-600 hover:bg-red-700">Delete</AlertDialogAction>
+            <AlertDialogAction onClick={confirmDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">Delete</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

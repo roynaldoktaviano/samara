@@ -21,8 +21,8 @@ import BlockPreview from './BlockPreview'
 import BlockInspector from './BlockInspector'
 import { useEmailFonts } from '@/components/marketing/shared/useEmailFonts'
 
-const ACCENT = '#bdac7e'
-const DOT_GRID = { backgroundImage: 'radial-gradient(circle, rgba(0,0,0,0.08) 1px, transparent 1px)', backgroundSize: '18px 18px' }
+const ACCENT = 'var(--primary)'
+const DOT_GRID = { backgroundImage: 'radial-gradient(circle, color-mix(in srgb, var(--foreground) 8%, transparent) 1px, transparent 1px)', backgroundSize: '18px 18px' }
 
 const PALETTE: { type: EmailBlock['type']; icon: React.ElementType }[] = [
   { type: 'heading', icon: HeadingIcon },
@@ -399,14 +399,14 @@ function PaletteItem({ type, icon: Icon }: { type: EmailBlock['type']; icon: Rea
       {...listeners}
       {...attributes}
       type="button"
-      className={`group flex flex-col items-center justify-center gap-1.5 rounded-lg border bg-white py-3 px-1 text-[11px] font-medium text-gray-600 hover:border-[#bdac7e] hover:shadow-sm transition-all cursor-grab active:cursor-grabbing ${isDragging ? 'opacity-40' : ''}`}
+      className={`group flex flex-col items-center justify-center gap-1.5 rounded-lg border bg-card py-3 px-1 text-[11px] font-medium text-muted-foreground hover:border-primary hover:shadow-sm transition-all cursor-grab active:cursor-grabbing ${isDragging ? 'opacity-40' : ''}`}
     >
-      <div className="h-8 w-8 rounded-md border flex items-center justify-center transition-colors group-hover:border-[#bdac7e]">
-        <Icon className="h-4 w-4 text-gray-500 transition-colors group-hover:text-[#bdac7e]" />
+      <div className="h-8 w-8 rounded-md border flex items-center justify-center transition-colors group-hover:border-primary">
+        <Icon className="h-4 w-4 text-muted-foreground transition-colors group-hover:text-primary" />
       </div>
       <span className="text-center leading-tight">{BLOCK_LABELS[type]}</span>
       <div className="flex gap-0.5">
-        {[0, 1, 2].map(i => <span key={i} className="h-[3px] w-[3px] rounded-full bg-gray-300" />)}
+        {[0, 1, 2].map(i => <span key={i} className="h-[3px] w-[3px] rounded-full bg-muted-foreground/30" />)}
       </div>
     </button>
   )
@@ -417,9 +417,9 @@ function LayoutItem({ label, onClick }: { label: string; onClick: () => void }) 
     <button
       type="button"
       onClick={onClick}
-      className="flex items-center gap-3 rounded-lg border bg-white p-3 text-left text-xs font-medium text-gray-700 hover:border-[#bdac7e] hover:shadow-sm transition-all w-full"
+      className="flex items-center gap-3 rounded-lg border bg-card p-3 text-left text-xs font-medium text-foreground/80 hover:border-primary hover:shadow-sm transition-all w-full"
     >
-      <div className="h-9 w-9 shrink-0 rounded-md border flex items-center justify-center" style={{ background: 'rgba(189,172,126,0.10)' }}>
+      <div className="h-9 w-9 shrink-0 rounded-md border flex items-center justify-center" style={{ background: 'color-mix(in srgb, var(--primary) 10%, transparent)' }}>
         <LayoutGrid className="h-4 w-4" style={{ color: ACCENT }} />
       </div>
       {label}
@@ -432,13 +432,13 @@ function TemplateItem({ label, description, onClick }: { label: string; descript
     <button
       type="button"
       onClick={onClick}
-      className="flex items-start gap-3 rounded-lg border bg-white p-3 text-left hover:border-[#bdac7e] hover:shadow-sm transition-all w-full"
+      className="flex items-start gap-3 rounded-lg border bg-card p-3 text-left hover:border-primary hover:shadow-sm transition-all w-full"
     >
-      <div className="h-9 w-9 shrink-0 rounded-md border flex items-center justify-center" style={{ background: 'rgba(189,172,126,0.10)' }}>
+      <div className="h-9 w-9 shrink-0 rounded-md border flex items-center justify-center" style={{ background: 'color-mix(in srgb, var(--primary) 10%, transparent)' }}>
         <Sparkles className="h-4 w-4" style={{ color: ACCENT }} />
       </div>
       <div>
-        <p className="text-xs font-medium text-gray-700">{label}</p>
+        <p className="text-xs font-medium text-foreground/80">{label}</p>
         <p className="text-[10px] text-muted-foreground mt-0.5">{description}</p>
       </div>
     </button>
@@ -460,21 +460,21 @@ function SortableCanvasBlock({
       ref={setNodeRef}
       style={style}
       onClick={e => { e.stopPropagation(); onSelect() }}
-      className={`group relative rounded-lg border-2 transition-all ${fillHeight ? 'h-full' : ''} ${selected ? 'border-dashed border-[#bdac7e] ring-1 ring-[#bdac7e]' : 'border-transparent hover:border-dashed hover:border-gray-200'} ${isDragging ? 'opacity-40' : ''} ${hideOn !== 'none' ? 'opacity-60' : ''}`}
+      className={`group relative rounded-lg border-2 transition-all ${fillHeight ? 'h-full' : ''} ${selected ? 'border-dashed border-primary ring-1 ring-ring' : 'border-transparent hover:border-dashed hover:border-border'} ${isDragging ? 'opacity-40' : ''} ${hideOn !== 'none' ? 'opacity-60' : ''}`}
     >
       {selected && (
-        <span className="absolute -top-2.5 left-2 z-10 rounded-full px-2 py-0.5 text-[10px] font-medium text-white shadow-sm" style={{ backgroundColor: ACCENT }}>
+        <span className="absolute -top-2.5 left-2 z-10 rounded-full px-2 py-0.5 text-[10px] font-medium text-primary-foreground shadow-sm" style={{ backgroundColor: ACCENT }}>
           {BLOCK_LABELS[block.type]}
         </span>
       )}
       {hideOn !== 'none' && (
-        <span className="absolute -top-2.5 right-2 z-10 flex items-center gap-1 rounded-full bg-gray-700 px-2 py-0.5 text-[10px] font-medium text-white shadow-sm">
+        <span className="absolute -top-2.5 right-2 z-10 flex items-center gap-1 rounded-full bg-foreground/80 px-2 py-0.5 text-[10px] font-medium text-background shadow-sm">
           {hideOn === 'desktop' ? <Monitor className="h-2.5 w-2.5" /> : <Smartphone className="h-2.5 w-2.5" />}
           Hidden
         </span>
       )}
       <div className="absolute -left-8 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity">
-        <button {...attributes} {...listeners} className="flex items-center justify-center h-7 w-7 rounded-full bg-white border shadow-sm cursor-grab active:cursor-grabbing text-muted-foreground">
+        <button {...attributes} {...listeners} className="flex items-center justify-center h-7 w-7 rounded-full bg-card border shadow-sm cursor-grab active:cursor-grabbing text-muted-foreground">
           <GripVertical className="h-3.5 w-3.5" />
         </button>
       </div>
@@ -483,12 +483,12 @@ function SortableCanvasBlock({
         ? (children ?? <BlockPreview block={block} mobile={mobile} />)
         : <div style={marginStyle(effectiveMargin(block, mobile))}>{children ?? <BlockPreview block={block} mobile={mobile} />}</div>}
       {selected && (
-        <div className="absolute top-1.5 right-1.5 flex gap-0.5 bg-white border rounded-md shadow-sm">
-          <button onClick={e => { e.stopPropagation(); onDuplicate() }} className="p-1.5 hover:bg-gray-50 rounded-l-md" title="Duplicate">
+        <div className="absolute top-1.5 right-1.5 flex gap-0.5 bg-card border rounded-md shadow-sm">
+          <button onClick={e => { e.stopPropagation(); onDuplicate() }} className="p-1.5 hover:bg-accent rounded-l-md" title="Duplicate">
             <Copy className="h-3.5 w-3.5 text-muted-foreground" />
           </button>
-          <button onClick={e => { e.stopPropagation(); onDelete() }} className="p-1.5 hover:bg-gray-50 rounded-r-md" title="Delete">
-            <Trash2 className="h-3.5 w-3.5 text-red-500" />
+          <button onClick={e => { e.stopPropagation(); onDelete() }} className="p-1.5 hover:bg-accent rounded-r-md" title="Delete">
+            <Trash2 className="h-3.5 w-3.5 text-destructive" />
           </button>
         </div>
       )}
@@ -513,7 +513,7 @@ function BlockList({
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: containerId })
   return (
-    <div ref={setNodeRef} className={`space-y-1 min-h-[56px] h-full rounded-md transition-colors ${isOver ? 'ring-2 ring-[#bdac7e]/50' : ''}`}>
+    <div ref={setNodeRef} className={`space-y-1 min-h-[56px] h-full rounded-md transition-colors ${isOver ? 'ring-2 ring-ring/50' : ''}`}>
       <SortableContext items={blocks.map(b => b.id)} strategy={verticalListSortingStrategy}>
         {blocks.length === 0 && (
           <div className="flex items-center justify-center h-14 text-xs text-muted-foreground border-2 border-dashed rounded-md">
@@ -773,13 +773,13 @@ export default function EmailBuilder({
       onDragEnd={handleDragEnd}
       onDragCancel={() => setActiveDrag(null)}
     >
-      <div className="flex flex-col h-full bg-gray-50">
-        <div className="flex items-center justify-between border-b bg-white px-4 py-2.5 shrink-0">
+      <div className="flex flex-col h-full bg-muted/50">
+        <div className="flex items-center justify-between border-b bg-card px-4 py-2.5 shrink-0">
           <div className="flex items-center gap-2.5">
             <div className="h-8 w-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: ACCENT }}>
-              <Mail className="h-4 w-4 text-white" />
+              <Mail className="h-4 w-4 text-primary-foreground" />
             </div>
-            <span className="text-sm font-semibold text-gray-800">{title}</span>
+            <span className="text-sm font-semibold text-foreground">{title}</span>
           </div>
 
           <div className="flex items-center gap-1.5">
@@ -787,7 +787,7 @@ export default function EmailBuilder({
               <button
                 onClick={undo}
                 disabled={!canUndo}
-                className="flex items-center justify-center h-8 w-8 rounded-full border text-gray-500 hover:bg-gray-50 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+                className="flex items-center justify-center h-8 w-8 rounded-full border text-muted-foreground hover:bg-accent disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
                 title="Undo"
               >
                 <Undo2 className="h-3.5 w-3.5" />
@@ -795,7 +795,7 @@ export default function EmailBuilder({
               <button
                 onClick={redo}
                 disabled={!canRedo}
-                className="flex items-center justify-center h-8 w-8 rounded-full border text-gray-500 hover:bg-gray-50 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+                className="flex items-center justify-center h-8 w-8 rounded-full border text-muted-foreground hover:bg-accent disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
                 title="Redo"
               >
                 <Redo2 className="h-3.5 w-3.5" />
@@ -805,14 +805,14 @@ export default function EmailBuilder({
             <div className="flex items-center gap-0.5 rounded-full border p-0.5 mr-1">
               <button
                 onClick={() => setDevice('desktop')}
-                className={`flex items-center justify-center h-7 w-7 rounded-full transition-colors ${device === 'desktop' ? 'bg-gray-900 text-white' : 'text-muted-foreground hover:bg-gray-100'}`}
+                className={`flex items-center justify-center h-7 w-7 rounded-full transition-colors ${device === 'desktop' ? 'bg-foreground text-background' : 'text-muted-foreground hover:bg-accent'}`}
                 title={showPreview ? 'Desktop preview' : 'Edit at desktop width'}
               >
                 <Monitor className="h-3.5 w-3.5" />
               </button>
               <button
                 onClick={() => setDevice('mobile')}
-                className={`flex items-center justify-center h-7 w-7 rounded-full transition-colors ${device === 'mobile' ? 'bg-gray-900 text-white' : 'text-muted-foreground hover:bg-gray-100'}`}
+                className={`flex items-center justify-center h-7 w-7 rounded-full transition-colors ${device === 'mobile' ? 'bg-foreground text-background' : 'text-muted-foreground hover:bg-accent'}`}
                 title={showPreview ? 'Mobile preview' : 'Edit at mobile width'}
               >
                 <Smartphone className="h-3.5 w-3.5" />
@@ -820,7 +820,7 @@ export default function EmailBuilder({
             </div>
             <button
               onClick={() => setShowPreview(v => !v)}
-              className="flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+              className="flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-xs font-medium text-foreground/80 hover:bg-accent transition-colors"
             >
               {showPreview ? <Pencil className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
               {showPreview ? 'Edit' : 'Preview'}
@@ -844,25 +844,25 @@ export default function EmailBuilder({
           </div>
         ) : (
           <div className="flex flex-1 min-h-0">
-            <div className="w-72 border-r bg-white flex flex-col shrink-0">
+            <div className="w-72 border-r bg-card flex flex-col shrink-0">
               <div className={`flex items-center gap-4 border-b px-3 pt-3 text-sm font-medium shrink-0 ${selectedBlock ? 'opacity-40 pointer-events-none' : ''}`}>
                 <button
                   onClick={() => { setSelectedId(null); setPaletteTab('content') }}
-                  className={`pb-2.5 border-b-2 transition-colors ${paletteTab === 'content' ? 'text-gray-900' : 'border-transparent text-muted-foreground hover:text-gray-600'}`}
+                  className={`pb-2.5 border-b-2 transition-colors ${paletteTab === 'content' ? 'text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground/80'}`}
                   style={paletteTab === 'content' ? { borderColor: ACCENT } : undefined}
                 >
                   Content
                 </button>
                 <button
                   onClick={() => { setSelectedId(null); setPaletteTab('layouts') }}
-                  className={`pb-2.5 border-b-2 transition-colors ${paletteTab === 'layouts' ? 'text-gray-900' : 'border-transparent text-muted-foreground hover:text-gray-600'}`}
+                  className={`pb-2.5 border-b-2 transition-colors ${paletteTab === 'layouts' ? 'text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground/80'}`}
                   style={paletteTab === 'layouts' ? { borderColor: ACCENT } : undefined}
                 >
                   Rows
                 </button>
                 <button
                   onClick={() => { setSelectedId(null); setPaletteTab('templates') }}
-                  className={`pb-2.5 border-b-2 transition-colors ${paletteTab === 'templates' ? 'text-gray-900' : 'border-transparent text-muted-foreground hover:text-gray-600'}`}
+                  className={`pb-2.5 border-b-2 transition-colors ${paletteTab === 'templates' ? 'text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground/80'}`}
                   style={paletteTab === 'templates' ? { borderColor: ACCENT } : undefined}
                 >
                   Templates
@@ -870,7 +870,7 @@ export default function EmailBuilder({
                 {onSettingsChange && (
                   <button
                     onClick={() => { setSelectedId(null); setPaletteTab('settings') }}
-                    className={`pb-2.5 border-b-2 transition-colors ${paletteTab === 'settings' ? 'text-gray-900' : 'border-transparent text-muted-foreground hover:text-gray-600'}`}
+                    className={`pb-2.5 border-b-2 transition-colors ${paletteTab === 'settings' ? 'text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground/80'}`}
                     style={paletteTab === 'settings' ? { borderColor: ACCENT } : undefined}
                   >
                     Settings
@@ -880,16 +880,16 @@ export default function EmailBuilder({
 
               {selectedBlock ? (
                 <div className="flex flex-col flex-1 min-h-0">
-                  <div className="flex items-center justify-between border-b bg-gray-100 px-3 py-2.5 shrink-0">
-                    <p className="text-[11px] font-semibold tracking-wide text-gray-600 uppercase">{BLOCK_LABELS[selectedBlock.type]} properties</p>
+                  <div className="flex items-center justify-between border-b bg-muted px-3 py-2.5 shrink-0">
+                    <p className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">{BLOCK_LABELS[selectedBlock.type]} properties</p>
                     <div className="flex items-center gap-0.5">
-                      <button onClick={() => duplicateBlock(selectedBlock.id)} className="p-1.5 rounded hover:bg-gray-200 text-gray-500" title="Duplicate">
+                      <button onClick={() => duplicateBlock(selectedBlock.id)} className="p-1.5 rounded hover:bg-accent text-muted-foreground" title="Duplicate">
                         <Copy className="h-3.5 w-3.5" />
                       </button>
-                      <button onClick={() => deleteBlock(selectedBlock.id)} className="p-1.5 rounded hover:bg-gray-200 text-red-500" title="Delete">
+                      <button onClick={() => deleteBlock(selectedBlock.id)} className="p-1.5 rounded hover:bg-accent text-destructive" title="Delete">
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
-                      <button onClick={() => setSelectedId(null)} className="p-1.5 rounded hover:bg-gray-200 text-gray-500" title="Close">
+                      <button onClick={() => setSelectedId(null)} className="p-1.5 rounded hover:bg-accent text-muted-foreground" title="Close">
                         <X className="h-3.5 w-3.5" />
                       </button>
                     </div>
@@ -970,12 +970,11 @@ export default function EmailBuilder({
                     <div
                       onClick={() => setSelectedId(footerBlock.id)}
                       title="Always last, can't be moved, duplicated, or removed — click to edit its company/social details"
-                      className={`group relative shrink-0 cursor-pointer overflow-hidden rounded-b-lg border-2 transition-all ${selectedId === footerBlock.id ? 'border-dashed border-[#bdac7e] ring-1 ring-[#bdac7e]' : 'border-transparent hover:border-dashed hover:border-gray-200'}`}
+                      className={`group relative shrink-0 cursor-pointer overflow-hidden rounded-b-lg border-2 transition-all ${selectedId === footerBlock.id ? 'border-dashed border-primary ring-1 ring-ring' : 'border-transparent hover:border-dashed hover:border-border'}`}
                     >
                       <BlockPreview block={footerBlock} />
                       <span
-                        className={`absolute -top-2.5 left-2 z-10 flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium text-white shadow-sm transition-opacity ${selectedId === footerBlock.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
-                        style={{ backgroundColor: selectedId === footerBlock.id ? ACCENT : '#1f2937' }}
+                        className={`absolute -top-2.5 left-2 z-10 flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium shadow-sm transition-opacity ${selectedId === footerBlock.id ? 'opacity-100 bg-primary text-primary-foreground' : 'opacity-0 group-hover:opacity-100 bg-foreground text-background'}`}
                       >
                         <Lock className="h-2.5 w-2.5" /> Footer
                       </span>
@@ -992,7 +991,7 @@ export default function EmailBuilder({
         {activeDrag?.kind === 'palette' && (() => {
           const Icon = PALETTE.find(p => p.type === activeDrag.blockType)?.icon ?? Type
           return (
-            <div className="flex items-center gap-2 rounded-lg border bg-white shadow-xl px-3 py-2 text-xs font-medium text-gray-700">
+            <div className="flex items-center gap-2 rounded-lg border bg-popover shadow-xl px-3 py-2 text-xs font-medium text-foreground/80">
               <Icon className="h-4 w-4" style={{ color: ACCENT }} />
               {BLOCK_LABELS[activeDrag.blockType]}
             </div>

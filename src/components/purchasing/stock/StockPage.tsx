@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { Warehouse, Ship, AlertTriangle, Search, X, Layers, FileText } from 'lucide-react'
+import { formatMoney, formatNumber, formatDate } from '@/lib/format'
 
 interface StockRow {
   kind: 'stock'
@@ -30,18 +31,14 @@ interface StockLot { id: string; quantity: number; costPerUnit: number; batch: s
 type ItemKindFilter = 'all' | 'stock' | 'non-stock'
 
 const METHOD_LABEL: Record<string, string> = { FIFO: 'FIFO', LIFO: 'LIFO', WEIGHTED_AVERAGE: 'WA', STANDARD: 'STD' }
-const METHOD_COLOR: Record<string, string> = { FIFO: 'bg-blue-50 text-blue-700', LIFO: 'bg-purple-50 text-purple-700', WEIGHTED_AVERAGE: 'bg-amber-50 text-amber-700', STANDARD: 'bg-green-50 text-green-700' }
+const METHOD_COLOR: Record<string, string> = { FIFO: 'bg-info/10 text-info', LIFO: 'bg-purple-50 text-purple-700 dark:bg-purple-500/10 dark:text-purple-300', WEIGHTED_AVERAGE: 'bg-warning/10 text-warning', STANDARD: 'bg-success/10 text-success' }
 
-const fmtNum = (n: number) => new Intl.NumberFormat('id-ID').format(Math.round(n))
-const fmtMoney = (n: number) => 'Rp ' + fmtNum(n)
-const fmtDate = (s: string) => new Date(s).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
-
-const fmtExpiry = (s: string) => {
+const expiryLabel = (s: string) => {
   const d = new Date(s)
   const days = Math.ceil((d.getTime() - Date.now()) / 86400000)
-  const label = d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
-  if (days < 0) return <span className="text-red-600 font-medium">{label} <span className="text-xs">({Math.abs(days)}d ago)</span></span>
-  if (days <= 30) return <span className="text-amber-600 font-medium">{label} <span className="text-xs">({days}d)</span></span>
+  const label = formatDate(d)
+  if (days < 0) return <span className="text-destructive font-medium">{label} <span className="text-xs">({Math.abs(days)}d ago)</span></span>
+  if (days <= 30) return <span className="text-warning font-medium">{label} <span className="text-xs">({days}d)</span></span>
   return <span className="text-muted-foreground">{label}</span>
 }
 
@@ -80,7 +77,7 @@ function StockTable({ rows, locationId, locationName, onOpenLots }: {
               const method = item.valuationMethod ?? 'FIFO'
               return (
                 <tr key={item.id}
-                  className={`hover:bg-[#bdac7e]/5 cursor-pointer transition-colors ${isLow ? 'bg-red-50/40' : ''}`}
+                  className={`hover:bg-primary/5 cursor-pointer transition-colors ${isLow ? 'bg-destructive/5' : ''}`}
                   onClick={() => onOpenLots(item, locationId, locationName)}>
                   <td className="px-5 py-3 font-mono text-xs text-muted-foreground">{item.sku}</td>
                   <td className="px-5 py-3">
@@ -98,16 +95,16 @@ function StockTable({ rows, locationId, locationName, onOpenLots }: {
                       {lotsCount > 1 && <Layers className="h-3 w-3 text-muted-foreground/50" />}
                     </span>
                   </td>
-                  <td className={`px-5 py-3 text-right font-semibold tabular-nums ${isLow ? 'text-red-600' : ''}`}>
-                    {fmtNum(qty)} <span className="text-xs font-normal text-muted-foreground">{item.baseUnit}</span>
+                  <td className={`px-5 py-3 text-right font-semibold tabular-nums ${isLow ? 'text-destructive' : ''}`}>
+                    {formatNumber(qty)} <span className="text-xs font-normal text-muted-foreground">{item.baseUnit}</span>
                   </td>
                   <td className="px-5 py-3 text-right text-muted-foreground text-xs tabular-nums">
-                    {item.minStock > 0 ? `${fmtNum(item.minStock)} ${item.baseUnit}` : '—'}
+                    {item.minStock > 0 ? `${formatNumber(item.minStock)} ${item.baseUnit}` : '—'}
                   </td>
                   <td className="px-5 py-3 text-sm">
-                    {nearestExpiry ? fmtExpiry(nearestExpiry) : <span className="text-muted-foreground/40">—</span>}
+                    {nearestExpiry ? expiryLabel(nearestExpiry) : <span className="text-muted-foreground/40">—</span>}
                   </td>
-                  <td className="px-5 py-3 text-right text-muted-foreground tabular-nums">Rp {fmtNum(qty * costPerUnit)}</td>
+                  <td className="px-5 py-3 text-right text-muted-foreground tabular-nums">{formatMoney(qty * costPerUnit)}</td>
                 </tr>
               )
             })}
@@ -120,16 +117,16 @@ function StockTable({ rows, locationId, locationName, onOpenLots }: {
           const isLow = item.minStock > 0 && qty < item.minStock
           return (
             <button key={item.id} onClick={() => onOpenLots(item, locationId, locationName)}
-              className={`w-full text-left px-4 py-3 hover:bg-muted/30 active:bg-muted/50 transition-colors ${isLow ? 'bg-red-50/40' : ''}`}>
+              className={`w-full text-left px-4 py-3 hover:bg-muted/30 active:bg-muted/50 transition-colors ${isLow ? 'bg-destructive/5' : ''}`}>
               <div className="flex items-center justify-between gap-2">
                 <span className="font-medium text-sm truncate min-w-0">{item.name}</span>
-                <span className={`text-sm font-semibold tabular-nums shrink-0 ${isLow ? 'text-red-600' : ''}`}>
-                  {fmtNum(qty)} <span className="text-xs font-normal text-muted-foreground">{item.baseUnit}</span>
+                <span className={`text-sm font-semibold tabular-nums shrink-0 ${isLow ? 'text-destructive' : ''}`}>
+                  {formatNumber(qty)} <span className="text-xs font-normal text-muted-foreground">{item.baseUnit}</span>
                 </span>
               </div>
               <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground mt-0.5">
-                <span className="truncate min-w-0 font-mono">{item.sku}{nearestExpiry && <> · {fmtExpiry(nearestExpiry)}</>}</span>
-                <span className="tabular-nums shrink-0">Rp {fmtNum(qty * costPerUnit)}</span>
+                <span className="truncate min-w-0 font-mono">{item.sku}{nearestExpiry && <> · {expiryLabel(nearestExpiry)}</>}</span>
+                <span className="tabular-nums shrink-0">{formatMoney(qty * costPerUnit)}</span>
               </div>
             </button>
           )
@@ -177,20 +174,20 @@ function NonStockTable({ rows, onOpenPo }: { rows: NonStockRow[]; onOpenPo?: (po
                   <p className="text-xs text-muted-foreground">Non-stock item</p>
                 </td>
                 <td className="px-5 py-3 text-right font-semibold tabular-nums">
-                  {fmtNum(r.qty)} <span className="text-xs font-normal text-muted-foreground">{r.unit ?? ''}</span>
+                  {formatNumber(r.qty)} <span className="text-xs font-normal text-muted-foreground">{r.unit ?? ''}</span>
                 </td>
                 <td className="px-5 py-3">
                   {r.poNumber && r.sourcePoId ? (
                     <button
                       onClick={() => onOpenPo?.(r.sourcePoId!)}
-                      className="font-mono text-xs text-amber-700 hover:text-amber-900 hover:underline underline-offset-2 transition-colors"
+                      className="font-mono text-xs text-warning hover:text-warning hover:underline underline-offset-2 transition-colors"
                     >
                       {r.poNumber}
                     </button>
                   ) : <span className="text-muted-foreground/40 text-xs">—</span>}
                 </td>
-                <td className="px-5 py-3 text-muted-foreground text-xs">{fmtDate(r.receivedAt)}</td>
-                <td className="px-5 py-3 text-right text-muted-foreground tabular-nums">{fmtMoney(r.qty * r.costPerUnit)}</td>
+                <td className="px-5 py-3 text-muted-foreground text-xs">{formatDate(r.receivedAt)}</td>
+                <td className="px-5 py-3 text-right text-muted-foreground tabular-nums">{formatMoney(r.qty * r.costPerUnit)}</td>
               </tr>
             ))}
           </tbody>
@@ -203,17 +200,17 @@ function NonStockTable({ rows, onOpenPo }: { rows: NonStockRow[]; onOpenPo?: (po
             <div className="flex items-center justify-between gap-2">
               <span className="font-medium text-sm truncate min-w-0">{r.itemName}</span>
               <span className="text-sm font-semibold tabular-nums shrink-0">
-                {fmtNum(r.qty)} <span className="text-xs font-normal text-muted-foreground">{r.unit ?? ''}</span>
+                {formatNumber(r.qty)} <span className="text-xs font-normal text-muted-foreground">{r.unit ?? ''}</span>
               </span>
             </div>
             <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground mt-0.5">
               <span className="truncate min-w-0">
                 {r.poNumber && r.sourcePoId ? (
-                  <button onClick={() => onOpenPo?.(r.sourcePoId!)} className="font-mono text-amber-700 hover:text-amber-900 hover:underline underline-offset-2 transition-colors">{r.poNumber}</button>
+                  <button onClick={() => onOpenPo?.(r.sourcePoId!)} className="font-mono text-warning hover:text-warning hover:underline underline-offset-2 transition-colors">{r.poNumber}</button>
                 ) : '—'}
-                {' · '}{fmtDate(r.receivedAt)}
+                {' · '}{formatDate(r.receivedAt)}
               </span>
-              <span className="tabular-nums shrink-0">{fmtMoney(r.qty * r.costPerUnit)}</span>
+              <span className="tabular-nums shrink-0">{formatMoney(r.qty * r.costPerUnit)}</span>
             </div>
           </div>
         ))}
@@ -313,9 +310,9 @@ export default function StockPage({ onOpenPo }: { onOpenPo?: (poId: string) => v
             <p className="text-xs text-muted-foreground">Active Locations</p>
             <p className="text-2xl font-bold mt-1">{data.locations.length}</p>
           </div>
-          <div className={`rounded-lg border p-4 ${data.summary.lowStock > 0 ? 'bg-red-50 border-red-200' : 'bg-card'}`}>
-            <p className={`text-xs ${data.summary.lowStock > 0 ? 'text-red-600' : 'text-muted-foreground'}`}>Low Stock</p>
-            <p className={`text-2xl font-bold mt-1 ${data.summary.lowStock > 0 ? 'text-red-700' : ''}`}>{data.summary.lowStock}</p>
+          <div className={`rounded-lg border p-4 ${data.summary.lowStock > 0 ? 'bg-destructive/10 border-destructive/30' : 'bg-card'}`}>
+            <p className={`text-xs ${data.summary.lowStock > 0 ? 'text-destructive' : 'text-muted-foreground'}`}>Low Stock</p>
+            <p className={`text-2xl font-bold mt-1 ${data.summary.lowStock > 0 ? 'text-destructive' : ''}`}>{data.summary.lowStock}</p>
           </div>
         </div>
       )}
@@ -324,19 +321,19 @@ export default function StockPage({ onOpenPo }: { onOpenPo?: (poId: string) => v
       <div className="flex items-center gap-3 flex-wrap">
         <div className="relative flex-1 max-w-xs">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-          <input className="w-full pl-9 pr-3 h-9 text-sm border rounded-md focus:outline-none focus:ring-1 focus:ring-[#bdac7e]/50 focus:border-[#bdac7e]" placeholder="Search name, SKU, or PO no..." value={search} onChange={e => setSearch(e.target.value)} />
+          <input className="w-full pl-9 pr-3 h-9 text-sm border rounded-md focus:outline-none focus:ring-1 focus:ring-ring/50 focus:border-ring" placeholder="Search name, SKU, or PO no…" value={search} onChange={e => setSearch(e.target.value)} />
         </div>
         <div className="flex rounded-md border overflow-hidden h-9">
           {(['all', 'stock', 'non-stock'] as const).map(k => (
             <button key={k} onClick={() => setItemKind(k)}
-              className={`px-3 text-xs font-medium transition-colors ${itemKind === k ? 'bg-[#bdac7e] text-white' : 'text-muted-foreground hover:bg-muted'}`}>
+              className={`px-3 text-xs font-medium transition-colors ${itemKind === k ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}>
               {k === 'all' ? 'All Items' : k === 'stock' ? 'Stock Item' : 'Non-Stock Item'}
             </button>
           ))}
         </div>
         {data && data.locations.length > 1 && (
           <select
-            className="h-9 border rounded-md px-3 text-sm bg-background focus:ring-1 focus:ring-[#bdac7e]/50 focus:border-[#bdac7e] outline-none"
+            className="h-9 border rounded-md px-3 text-sm bg-background focus:ring-1 focus:ring-ring/50 focus:border-ring outline-none"
             value={filterLoc}
             onChange={e => setFilterLoc(e.target.value)}
           >
@@ -390,11 +387,11 @@ export default function StockPage({ onOpenPo }: { onOpenPo?: (poId: string) => v
                   <Icon className="h-4 w-4 text-muted-foreground" />
                   <div>
                     <p className="font-semibold text-sm">{loc.location.name}</p>
-                    <p className="text-xs text-muted-foreground">{loc.rows.length} item{loc.rows.length !== 1 ? 's' : ''} · Value: Rp {fmtNum(totalValue)}</p>
+                    <p className="text-xs text-muted-foreground">{loc.rows.length} item{loc.rows.length !== 1 ? 's' : ''} · Value: {formatMoney(totalValue)}</p>
                   </div>
                 </div>
                 {lowStockCount > 0 && (
-                  <span className="flex items-center gap-1 text-xs text-red-600 font-medium">
+                  <span className="flex items-center gap-1 text-xs text-destructive font-medium">
                     <AlertTriangle className="h-3.5 w-3.5" /> {lowStockCount} low stock
                   </span>
                 )}
@@ -424,12 +421,12 @@ export default function StockPage({ onOpenPo }: { onOpenPo?: (poId: string) => v
                       <Icon className="h-4 w-4 text-muted-foreground" />
                       <div>
                         <p className="font-semibold text-sm">{location.name}</p>
-                        <p className="text-xs text-muted-foreground">{rows.length} item{rows.length !== 1 ? 's' : ''} · Value: Rp {fmtNum(totalValue)}</p>
+                        <p className="text-xs text-muted-foreground">{rows.length} item{rows.length !== 1 ? 's' : ''} · Value: {formatMoney(totalValue)}</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-3">
                       {lowStockCount > 0 && (
-                        <span className="flex items-center gap-1 text-xs text-red-600 font-medium">
+                        <span className="flex items-center gap-1 text-xs text-destructive font-medium">
                           <AlertTriangle className="h-3.5 w-3.5" /> {lowStockCount} low stock
                         </span>
                       )}
@@ -452,7 +449,7 @@ export default function StockPage({ onOpenPo }: { onOpenPo?: (poId: string) => v
       {lotPanel && (
         <>
           <div className="fixed inset-0 bg-black/30 z-40" onClick={() => setLotPanel(null)} />
-          <div className="fixed right-0 top-0 h-full w-full max-w-lg bg-white shadow-2xl z-50 flex flex-col">
+          <div className="fixed right-0 top-0 h-full w-full max-w-lg bg-card shadow-2xl z-50 flex flex-col">
             {/* Header */}
             <div className="flex items-start justify-between px-5 py-4 border-b shrink-0">
               <div>
@@ -487,12 +484,12 @@ export default function StockPage({ onOpenPo }: { onOpenPo?: (poId: string) => v
                   <div className="grid grid-cols-3 gap-px bg-border m-5 mb-0 rounded-lg overflow-hidden border">
                     <div className="bg-card px-3 py-3">
                       <p className="text-xs text-muted-foreground">Total Qty</p>
-                      <p className="font-bold text-sm sm:text-lg tabular-nums truncate">{fmtNum(lots.reduce((s, l) => s + l.quantity, 0))}</p>
+                      <p className="font-bold text-sm sm:text-lg tabular-nums truncate">{formatNumber(lots.reduce((s, l) => s + l.quantity, 0))}</p>
                       <p className="text-xs text-muted-foreground">{lotPanel.item.baseUnit}</p>
                     </div>
                     <div className="bg-card px-3 py-3">
                       <p className="text-xs text-muted-foreground">Total Value</p>
-                      <p className="font-bold text-sm sm:text-lg tabular-nums truncate">{fmtMoney(lots.reduce((s, l) => s + l.quantity * l.costPerUnit, 0))}</p>
+                      <p className="font-bold text-sm sm:text-lg tabular-nums truncate">{formatMoney(lots.reduce((s, l) => s + l.quantity * l.costPerUnit, 0))}</p>
                     </div>
                     <div className="bg-card px-3 py-3">
                       <p className="text-xs text-muted-foreground">Lots</p>
@@ -506,7 +503,7 @@ export default function StockPage({ onOpenPo }: { onOpenPo?: (poId: string) => v
                       const isExpired = lot.expiresAt && new Date(lot.expiresAt) < new Date()
                       const isNearExpiry = lot.expiresAt && !isExpired && Math.ceil((new Date(lot.expiresAt).getTime() - Date.now()) / 86400000) <= 30
                       return (
-                        <div key={lot.id} className={`rounded-lg border p-4 ${isExpired ? 'border-red-200 bg-red-50/40' : isNearExpiry ? 'border-amber-200 bg-amber-50/30' : 'bg-card'}`}>
+                        <div key={lot.id} className={`rounded-lg border p-4 ${isExpired ? 'border-destructive/30 bg-destructive/5' : isNearExpiry ? 'border-warning/30 bg-warning/5' : 'bg-card'}`}>
                           <div className="flex items-start justify-between gap-3">
                             <div className="space-y-1">
                               <div className="flex items-center gap-2">
@@ -514,19 +511,19 @@ export default function StockPage({ onOpenPo }: { onOpenPo?: (poId: string) => v
                                 {lot.batch && (
                                   <span className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded">{lot.batch}</span>
                                 )}
-                                {isExpired && <span className="text-xs font-semibold text-red-600 bg-red-100 px-1.5 py-0.5 rounded">EXPIRED</span>}
-                                {isNearExpiry && <span className="text-xs font-semibold text-amber-600 bg-amber-100 px-1.5 py-0.5 rounded">NEAR EXPIRY</span>}
+                                {isExpired && <span className="text-xs font-semibold text-destructive bg-destructive/15 px-1.5 py-0.5 rounded">EXPIRED</span>}
+                                {isNearExpiry && <span className="text-xs font-semibold text-warning bg-warning/15 px-1.5 py-0.5 rounded">NEAR EXPIRY</span>}
                               </div>
                               <div className="flex items-center gap-4 text-sm">
-                                <span className="font-semibold tabular-nums">{fmtNum(lot.quantity)} <span className="text-xs font-normal text-muted-foreground">{lotPanel.item.baseUnit}</span></span>
-                                <span className="text-muted-foreground tabular-nums">@ {fmtMoney(lot.costPerUnit)}</span>
+                                <span className="font-semibold tabular-nums">{formatNumber(lot.quantity)} <span className="text-xs font-normal text-muted-foreground">{lotPanel.item.baseUnit}</span></span>
+                                <span className="text-muted-foreground tabular-nums">@ {formatMoney(lot.costPerUnit)}</span>
                               </div>
                             </div>
                             <div className="text-right shrink-0">
-                              <p className="text-sm font-semibold tabular-nums">{fmtMoney(lot.quantity * lot.costPerUnit)}</p>
+                              <p className="text-sm font-semibold tabular-nums">{formatMoney(lot.quantity * lot.costPerUnit)}</p>
                               {lot.expiresAt && (
-                                <p className={`text-xs mt-0.5 ${isExpired ? 'text-red-600 font-medium' : isNearExpiry ? 'text-amber-600 font-medium' : 'text-muted-foreground'}`}>
-                                  Exp: {new Date(lot.expiresAt).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                <p className={`text-xs mt-0.5 ${isExpired ? 'text-destructive font-medium' : isNearExpiry ? 'text-warning font-medium' : 'text-muted-foreground'}`}>
+                                  Exp: {formatDate(lot.expiresAt)}
                                 </p>
                               )}
                               {!lot.expiresAt && <p className="text-xs text-muted-foreground/40 mt-0.5">No expiry</p>}

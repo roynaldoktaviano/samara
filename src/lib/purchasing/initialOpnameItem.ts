@@ -21,12 +21,12 @@ export async function parseOpnameItemForm(db: PrismaClient, body: Record<string,
   const baseUnit = str(body.baseUnit)
   const purchaseUnit = str(body.purchaseUnit)
   if (!sku || !name || !type || !category || !baseUnit || !purchaseUnit) {
-    return { error: 'SKU, nama, type, kategori, base unit, dan purchase unit wajib diisi' } as const
+    return { error: 'SKU, name, type, category, base unit and purchase unit are required' } as const
   }
   const typeConfig = await db.purchaseItemTypeConfig.findUnique({ where: { code: type } })
-  if (!typeConfig || !typeConfig.isActive) return { error: 'Type tidak valid' } as const
+  if (!typeConfig || !typeConfig.isActive) return { error: 'Invalid type' } as const
   const skuConflict = await db.purchaseItem.findFirst({ where: { sku, ...(editingId ? { NOT: { id: editingId } } : {}) }, select: { id: true } })
-  if (skuConflict) return { error: `SKU "${sku}" sudah digunakan` } as const
+  if (skuConflict) return { error: `SKU "${sku}" is already in use` } as const
 
   return {
     data: {

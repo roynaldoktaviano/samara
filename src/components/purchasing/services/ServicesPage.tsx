@@ -17,10 +17,11 @@ import { Timeline, type TimelineStep } from '@/components/purchasing/Timeline'
 import { roleMatches } from '@/lib/role-utils'
 import {
   SupplierCombobox, EmployeeCombobox, ReimburseAccountCombobox,
-  fmtDate, fmtDateTime, fmtMoney,
   type SupplierOption, type EmployeeOption, type ReimburseAccountOption,
 } from '@/components/purchasing/orders/OrdersPage'
 import { renderLocationOptions } from '@/components/purchasing/LocationOptions'
+import { formatMoney, formatNumber, formatDate } from '@/lib/format'
+import { StatusBadge, type StatusTone } from '@/components/ui/status-badge'
 import { TripPicker, tripDates, tripShortLabel, tripLinkBody, type TripOption } from '@/components/purchasing/TripPicker'
 
 interface PaymentRequest {
@@ -59,12 +60,21 @@ interface ServiceOrderDetail extends ServiceOrder {
 }
 type ServiceLine = { itemName: string; unit: string; orderedQty: number; unitCost: number }
 
-const STATUS_LABEL: Record<string, string> = { ORDERED: 'Ordered', COMPLETED: 'Completed', CANCELLED: 'Cancelled', REJECTED: 'Payment Rejected' }
-const STATUS_COLOR: Record<string, string> = { ORDERED: 'bg-blue-100 text-blue-700', COMPLETED: 'bg-green-100 text-green-700', CANCELLED: 'bg-red-100 text-red-700', REJECTED: 'bg-pink-100 text-pink-700' }
-const PAYMENT_STATUS_LABEL: Record<string, string> = { UNPAID: 'Unpaid', PENDING: 'Waiting for Payment', PARTIALLY_PAID: 'Partially Paid', PAID: 'Paid', REJECTED: 'Rejected' }
-const PAYMENT_STATUS_COLOR: Record<string, string> = { UNPAID: 'bg-muted text-muted-foreground', PENDING: 'bg-amber-100 text-amber-700', PARTIALLY_PAID: 'bg-orange-100 text-orange-700', PAID: 'bg-green-100 text-green-700', REJECTED: 'bg-red-100 text-red-700' }
+const STATUS: Record<string, { label: string; tone: StatusTone }> = {
+  ORDERED:   { label: 'Ordered',          tone: 'info' },
+  COMPLETED: { label: 'Completed',        tone: 'success' },
+  CANCELLED: { label: 'Cancelled',        tone: 'neutral' },
+  REJECTED:  { label: 'Payment Rejected', tone: 'destructive' },
+}
+const PAYMENT_STATUS: Record<string, { label: string; tone: StatusTone }> = {
+  UNPAID:         { label: 'Unpaid',              tone: 'neutral' },
+  PENDING:        { label: 'Waiting for Payment', tone: 'warning' },
+  PARTIALLY_PAID: { label: 'Partially Paid',      tone: 'warning' },
+  PAID:           { label: 'Paid',                tone: 'success' },
+  REJECTED:       { label: 'Rejected',            tone: 'destructive' },
+}
 const PAGE_SIZE = 20
-const inp = 'w-full h-9 border rounded-md px-3 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white transition-colors'
+const inp = 'w-full h-9 border rounded-md px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring bg-card transition-colors'
 
 export default function ServicesPage() {
   const { data: session } = useSession()
@@ -258,7 +268,7 @@ export default function ServicesPage() {
   async function submitPaymentRequest() {
     if (!detail) return
     if (!paymentAmount || Number(paymentAmount) <= 0) { setPaymentError('Amount must be greater than 0'); return }
-    if (paymentPhotos.length === 0) { setPaymentError('At least one receipt/nota photo is required'); return }
+    if (paymentPhotos.length === 0) { setPaymentError('At least one receipt photo is required'); return }
     setPaymentSaving(true); setPaymentError('')
     const res = await fetch(`/api/purchasing/orders/${detail.id}/payment-request`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -274,7 +284,7 @@ export default function ServicesPage() {
   async function submitReimbursement() {
     if (!detail) return
     if (!reimburseAmount || Number(reimburseAmount) <= 0) { setReimburseError('Amount must be greater than 0'); return }
-    if (reimbursePhotos.length === 0) { setReimburseError('At least one receipt/nota photo is required'); return }
+    if (reimbursePhotos.length === 0) { setReimburseError('At least one receipt photo is required'); return }
     if (!reimburseRequesterName.trim()) { setReimburseError('Name is required'); return }
     if (!reimburseBankName.trim()) { setReimburseError('Bank name is required'); return }
     if (!reimburseAccountNumber.trim()) { setReimburseError('Account number is required'); return }
@@ -318,7 +328,7 @@ export default function ServicesPage() {
   const STATUS_TAB_ORDER = ['ORDERED', 'COMPLETED', 'REJECTED', 'CANCELLED']
   const statusTabs = [
     { key: 'ALL', label: 'All', count: filtered.length },
-    ...STATUS_TAB_ORDER.map(s => ({ key: s, label: STATUS_LABEL[s], count: filtered.filter(o => o.status === s).length })),
+    ...STATUS_TAB_ORDER.map(s => ({ key: s, label: STATUS[s].label, count: filtered.filter(o => o.status === s).length })),
   ]
   const visibleOrders = statusTab === 'ALL' ? filtered : filtered.filter(o => o.status === statusTab)
   const totalPages = Math.max(1, Math.ceil(visibleOrders.length / PAGE_SIZE))
@@ -328,13 +338,13 @@ export default function ServicesPage() {
   if (view === 'list') return (
     <div className="p-6 space-y-4">
       <div>
-        <h2 className="text-2xl font-bold tracking-tight flex items-center gap-2"><Briefcase className="h-5 w-5 text-amber-600" /> Services</h2>
+        <h2 className="text-2xl font-bold tracking-tight flex items-center gap-2"><Briefcase className="h-5 w-5 text-warning" /> Services</h2>
         <p className="text-muted-foreground text-sm mt-1">Book and track services — drivers, photographers, guides, and other non-goods purchases.</p>
       </div>
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">{visibleOrders.length} service order{visibleOrders.length !== 1 ? 's' : ''}</p>
         {canManage && (
-          <button onClick={() => { resetForm(); setView('create') }} className="flex items-center gap-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium px-4 py-2 rounded-md transition-colors">
+          <button onClick={() => { resetForm(); setView('create') }} className="flex items-center gap-2 bg-primary hover:bg-primary-hover text-primary-foreground text-sm font-medium px-4 py-2 rounded-md transition-colors">
             <Plus className="h-4 w-4" /> Book Service
           </button>
         )}
@@ -342,7 +352,7 @@ export default function ServicesPage() {
       <div className="flex items-center gap-1 overflow-x-auto border-b">
         {statusTabs.map(t => (
           <button key={t.key} onClick={() => { setStatusTab(t.key); setPage(1) }}
-            className={`shrink-0 px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${statusTab === t.key ? 'border-amber-600 text-amber-700' : 'border-transparent text-muted-foreground hover:text-foreground'}`}>
+            className={`shrink-0 px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${statusTab === t.key ? 'border-primary text-primary-strong' : 'border-transparent text-muted-foreground hover:text-foreground'}`}>
             {t.label} <span className="text-xs">({t.count})</span>
           </button>
         ))}
@@ -350,15 +360,15 @@ export default function ServicesPage() {
       <div className="space-y-2.5 rounded-lg border bg-muted/20 px-3 py-2.5">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-          <input className="h-9 w-full border rounded-md pl-9 pr-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500 transition-colors"
-            placeholder="Search service or SV number..." value={search} onChange={e => { setSearch(e.target.value); setPage(1) }} />
+          <input className="h-9 w-full border rounded-md pl-9 pr-3 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-ring transition-colors"
+            placeholder="Search service or SV number…" value={search} onChange={e => { setSearch(e.target.value); setPage(1) }} />
         </div>
         <div className="grid grid-cols-2 gap-2.5">
-          <select className="h-9 w-full border rounded-md px-2.5 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500 transition-colors" value={filterSupplier} onChange={e => { setFilterSupplier(e.target.value); setPage(1) }}>
+          <select className="h-9 w-full border rounded-md px-2.5 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-ring transition-colors" value={filterSupplier} onChange={e => { setFilterSupplier(e.target.value); setPage(1) }}>
             <option value="">All suppliers</option>
             {supplierOptions.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
-          <select className="h-9 w-full border rounded-md px-2.5 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500 transition-colors" value={filterRequestedBy} onChange={e => { setFilterRequestedBy(e.target.value); setPage(1) }}>
+          <select className="h-9 w-full border rounded-md px-2.5 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-ring transition-colors" value={filterRequestedBy} onChange={e => { setFilterRequestedBy(e.target.value); setPage(1) }}>
             <option value="">All requesters</option>
             {requestedByOptions.map(r => <option key={r} value={r}>{r}</option>)}
           </select>
@@ -391,9 +401,9 @@ export default function ServicesPage() {
                   {o.items.length > 1 && <span className="text-muted-foreground"> +{o.items.length - 1} more</span>}
                 </td>
                 <td className="px-4 py-3 text-xs">{o.supplierName ?? '—'}</td>
-                <td className="px-4 py-3 text-muted-foreground text-xs whitespace-nowrap">{fmtDate(o.orderedAt)}</td>
-                <td className="px-4 py-3"><span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLOR[o.status] ?? ''}`}>{STATUS_LABEL[o.status] ?? o.status}</span></td>
-                <td className="px-4 py-3"><span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${PAYMENT_STATUS_COLOR[o.paymentStatus] ?? ''}`}>{PAYMENT_STATUS_LABEL[o.paymentStatus] ?? o.paymentStatus}</span></td>
+                <td className="px-4 py-3 text-muted-foreground text-xs whitespace-nowrap">{formatDate(o.orderedAt)}</td>
+                <td className="px-4 py-3"><StatusBadge tone={STATUS[o.status]?.tone}>{STATUS[o.status]?.label ?? o.status}</StatusBadge></td>
+                <td className="px-4 py-3"><StatusBadge tone={PAYMENT_STATUS[o.paymentStatus]?.tone}>{PAYMENT_STATUS[o.paymentStatus]?.label ?? o.paymentStatus}</StatusBadge></td>
                 <td className="px-4 py-3 text-xs text-muted-foreground">{o.requestedByName ?? '—'}</td>
                 <td className="px-4 py-3 text-muted-foreground text-xs">→</td>
               </tr>
@@ -426,18 +436,18 @@ export default function ServicesPage() {
         </div>
         <h2 className="text-2xl font-bold tracking-tight">Book a Service</h2>
 
-        {saveError && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2">{saveError}</div>}
+        {saveError && <div className="rounded-lg bg-destructive/10 border border-destructive/30 text-destructive text-sm px-3 py-2">{saveError}</div>}
 
-        <div className="rounded-xl border bg-white">
+        <div className="rounded-xl border bg-card">
           <div className="px-5 py-4 border-b"><h3 className="text-sm font-semibold">Service Info</h3></div>
           <div className="p-5 space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
-                <label className="text-sm font-medium">Supplier <span className="text-red-500">*</span></label>
+                <label className="text-sm font-medium">Supplier <span className="text-destructive">*</span></label>
                 <SupplierCombobox value={supplier} suppliers={suppliers} onChange={(name, id) => { setSupplier(name); setSupplierId(id) }} onAdded={s => setSuppliers(prev => [...prev, s])} />
               </div>
               <div className="space-y-1.5">
-                <label className="text-sm font-medium">Requested By <span className="text-red-500">*</span></label>
+                <label className="text-sm font-medium">Requested By <span className="text-destructive">*</span></label>
                 <EmployeeCombobox value={requestedByEmployeeId} employees={employees} onChange={setRequestedByEmployeeId} />
               </div>
               <div className="space-y-1.5">
@@ -458,16 +468,16 @@ export default function ServicesPage() {
             </div>
             <div className="space-y-1.5">
               <label className="text-sm font-medium text-muted-foreground">Notes <span className="font-normal">(optional)</span></label>
-              <textarea className="w-full border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white resize-none transition-colors"
+              <textarea className="w-full border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring bg-card resize-none transition-colors"
                 rows={2} placeholder="Special instructions, schedule details, etc." value={notes} onChange={e => setNotes(e.target.value)} />
             </div>
           </div>
         </div>
 
-        <div className="rounded-xl border bg-white">
+        <div className="rounded-xl border bg-card">
           <div className="flex items-center justify-between px-5 py-4 border-b">
             <h3 className="text-sm font-semibold">Service Lines</h3>
-            <button onClick={addLine} className="flex items-center gap-1.5 text-xs font-semibold text-amber-700 hover:text-amber-900 border border-amber-200 bg-amber-50 hover:bg-amber-100 px-3 py-1.5 rounded-lg transition-colors">
+            <button onClick={addLine} className="flex items-center gap-1.5 text-xs font-semibold text-warning hover:text-warning border border-warning/30 bg-warning/10 hover:bg-warning/15 px-3 py-1.5 rounded-lg transition-colors">
               <Plus className="h-3.5 w-3.5" /> Add Row
             </button>
           </div>
@@ -504,9 +514,9 @@ export default function ServicesPage() {
                       <input type="number" min={0} step="any" className={numInp} value={line.unitCost || ''} placeholder="0"
                         onChange={e => setLines(l => l.map((li, i) => i !== idx ? li : { ...li, unitCost: Number(e.target.value) }))} />
                     </td>
-                    <td className="px-4 py-2.5 text-right font-semibold whitespace-nowrap">{subtotal > 0 ? fmtMoney(subtotal) : <span className="text-muted-foreground font-normal">—</span>}</td>
+                    <td className="px-4 py-2.5 text-right font-semibold whitespace-nowrap">{subtotal > 0 ? formatMoney(subtotal) : <span className="text-muted-foreground font-normal">—</span>}</td>
                     <td className="px-2 py-2.5 text-center">
-                      <button onClick={() => removeLine(idx)} disabled={lines.length === 1} className="p-1.5 text-muted-foreground/40 hover:text-red-500 hover:bg-red-50 rounded-md transition-colors disabled:opacity-0 disabled:pointer-events-none">
+                      <button onClick={() => removeLine(idx)} disabled={lines.length === 1} className="p-1.5 text-muted-foreground/40 hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors disabled:opacity-0 disabled:pointer-events-none">
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
                     </td>
@@ -518,43 +528,43 @@ export default function ServicesPage() {
           <div className="px-5 py-4 bg-muted/20 border-t space-y-2.5">
             <div className="flex items-center justify-between">
               <span className="text-sm text-muted-foreground">{lines.length} line{lines.length > 1 ? 's' : ''}</span>
-              <span className="text-sm text-muted-foreground">Subtotal <span className="ml-3 text-foreground font-medium">{fmtMoney(itemsTotal)}</span></span>
+              <span className="text-sm text-muted-foreground">Subtotal <span className="ml-3 text-foreground font-medium">{formatMoney(itemsTotal)}</span></span>
             </div>
             {extraCharges.map((c, i) => (
               <div key={i} className="flex items-center justify-end gap-2">
-                <input className="h-8 w-48 border rounded-md px-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white" placeholder="e.g. Service fee"
+                <input className="h-8 w-48 border rounded-md px-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-ring bg-card" placeholder="e.g. Service fee"
                   value={c.label} onChange={e => setExtraCharges(prev => prev.map((ch, idx) => idx !== i ? ch : { ...ch, label: e.target.value }))} />
-                <input type="number" step="any" className="h-8 w-32 border rounded-md px-2.5 text-xs text-right focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                <input type="number" step="any" className="h-8 w-32 border rounded-md px-2.5 text-xs text-right focus:outline-none focus:ring-1 focus:ring-ring bg-card [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                   placeholder="0" value={c.amount || ''} onChange={e => setExtraCharges(prev => prev.map((ch, idx) => idx !== i ? ch : { ...ch, amount: Number(e.target.value) || 0 }))} />
-                <button onClick={() => removeCharge(i)} className="p-1.5 text-muted-foreground/40 hover:text-red-500 hover:bg-red-50 rounded-md transition-colors"><Trash2 className="h-3.5 w-3.5" /></button>
+                <button onClick={() => removeCharge(i)} className="p-1.5 text-muted-foreground/40 hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors"><Trash2 className="h-3.5 w-3.5" /></button>
               </div>
             ))}
             <div className="flex justify-end">
-              <button onClick={addCharge} className="flex items-center gap-1.5 text-xs font-semibold text-amber-700 hover:text-amber-900 border border-amber-200 bg-amber-50 hover:bg-amber-100 px-3 py-1.5 rounded-lg transition-colors">
+              <button onClick={addCharge} className="flex items-center gap-1.5 text-xs font-semibold text-warning hover:text-warning border border-warning/30 bg-warning/10 hover:bg-warning/15 px-3 py-1.5 rounded-lg transition-colors">
                 <Plus className="h-3.5 w-3.5" /> Add Pricing (Tax, Fee, etc.)
               </button>
             </div>
             <div className="flex items-center justify-end gap-2 pt-1">
               <span className="text-xs text-muted-foreground">Discount</span>
               <div className="flex rounded-md border overflow-hidden h-8">
-                <button type="button" onClick={() => setDiscountType('PERCENT')} className={`px-2.5 text-xs font-medium transition-colors ${discountType === 'PERCENT' ? 'bg-amber-500 text-white' : 'text-muted-foreground hover:bg-muted'}`}>%</button>
-                <button type="button" onClick={() => setDiscountType('FIXED')} className={`px-2.5 text-xs font-medium transition-colors border-l ${discountType === 'FIXED' ? 'bg-amber-500 text-white' : 'text-muted-foreground hover:bg-muted'}`}>Rp</button>
+                <button type="button" onClick={() => setDiscountType('PERCENT')} className={`px-2.5 text-xs font-medium transition-colors ${discountType === 'PERCENT' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}>%</button>
+                <button type="button" onClick={() => setDiscountType('FIXED')} className={`px-2.5 text-xs font-medium transition-colors border-l ${discountType === 'FIXED' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}>Rp</button>
               </div>
-              <input type="number" step="any" min={0} className="h-8 w-32 border rounded-md px-2.5 text-xs text-right focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+              <input type="number" step="any" min={0} className="h-8 w-32 border rounded-md px-2.5 text-xs text-right focus:outline-none focus:ring-1 focus:ring-ring bg-card [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 placeholder="0" value={discountValue || ''} onChange={e => setDiscountValue(Number(e.target.value) || 0)} />
-              {discountAmount > 0 && <span className="text-xs text-muted-foreground w-32 text-right">-{fmtMoney(discountAmount)}</span>}
+              {discountAmount > 0 && <span className="text-xs text-muted-foreground w-32 text-right">-{formatMoney(discountAmount)}</span>}
             </div>
             <div className="flex items-center justify-between pt-2 border-t">
               <span className="text-sm text-muted-foreground">Order Total</span>
-              <span className="text-lg font-bold">{fmtMoney(total)}</span>
+              <span className="text-lg font-bold">{formatMoney(total)}</span>
             </div>
           </div>
         </div>
 
         <div className="flex justify-end gap-3">
           <button onClick={() => setView('list')} className="px-4 py-2 text-sm border rounded-md hover:bg-muted transition-colors">Cancel</button>
-          <button onClick={submit} disabled={saving} className="px-5 py-2 text-sm bg-amber-600 text-white rounded-md hover:bg-amber-700 font-medium disabled:opacity-50 transition-colors">
-            {saving ? 'Saving...' : 'Book Service'}
+          <button onClick={submit} disabled={saving} className="px-5 py-2 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary-hover font-medium disabled:opacity-50 transition-colors">
+            {saving ? 'Saving…' : 'Book Service'}
           </button>
         </div>
       </div>
@@ -563,10 +573,10 @@ export default function ServicesPage() {
 
   // ---- Detail view ----
   const steps: TimelineStep[] = detail ? [
-    { key: 'ordered', done: true, label: 'Ordered', date: fmtDateTime(detail.orderedAt), sub: [detail.createdByName ? `by ${detail.createdByName}` : null] },
+    { key: 'ordered', done: true, label: 'Ordered', date: formatDate(detail.orderedAt, 'datetime'), sub: [detail.createdByName ? `by ${detail.createdByName}` : null] },
     detail.status === 'CANCELLED'
-      ? { key: 'cancelled', done: true, cancelled: true, label: 'Cancelled', date: detail.cancelledAt ? fmtDateTime(detail.cancelledAt) : null, sub: [detail.cancelledByName ? `by ${detail.cancelledByName}` : null, detail.cancellationReason] }
-      : { key: 'completed', done: detail.status === 'COMPLETED', label: 'Completed', date: detail.completedAt ? fmtDateTime(detail.completedAt) : null, sub: [detail.completedByName ? `by ${detail.completedByName}` : null] },
+      ? { key: 'cancelled', done: true, cancelled: true, label: 'Cancelled', date: detail.cancelledAt ? formatDate(detail.cancelledAt, 'datetime') : null, sub: [detail.cancelledByName ? `by ${detail.cancelledByName}` : null, detail.cancellationReason] }
+      : { key: 'completed', done: detail.status === 'COMPLETED', label: 'Completed', date: detail.completedAt ? formatDate(detail.completedAt, 'datetime') : null, sub: [detail.completedByName ? `by ${detail.completedByName}` : null] },
   ] : []
 
   return (
@@ -577,7 +587,7 @@ export default function ServicesPage() {
         <span className="text-sm text-muted-foreground">{detail?.poNumber}</span>
       </div>
 
-      {detailLoading && <p className="text-sm text-muted-foreground">Loading...</p>}
+      {detailLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
 
       {detail && (
         <>
@@ -585,8 +595,8 @@ export default function ServicesPage() {
             <div className="min-w-0">
               <h2 className="text-2xl font-bold tracking-tight whitespace-nowrap">{detail.poNumber}</h2>
               <p className="text-muted-foreground text-sm mt-0.5">
-                {detail.supplierName ?? <span className="italic">No supplier</span>} · {fmtDate(detail.orderedAt)} ·{' '}
-                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLOR[detail.status] ?? ''}`}>{STATUS_LABEL[detail.status] ?? detail.status}</span>
+                {detail.supplierName ?? <span className="italic">No supplier</span>} · {formatDate(detail.orderedAt)} ·{' '}
+                <StatusBadge tone={STATUS[detail.status]?.tone}>{STATUS[detail.status]?.label ?? detail.status}</StatusBadge>
               </p>
               {detail.requestedByName && (
                 <p className="text-muted-foreground text-xs mt-1">
@@ -633,12 +643,12 @@ export default function ServicesPage() {
                   </button>
                 )}
                 {detail.status === 'ORDERED' && detail.paymentStatus === 'PAID' && (
-                  <button onClick={markCompleted} disabled={completing} className="flex items-center gap-2 px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium disabled:opacity-50 transition-colors">
-                    <CheckCircle2 className="h-3.5 w-3.5" /> {completing ? 'Saving...' : 'Mark Completed'}
+                  <button onClick={markCompleted} disabled={completing} className="flex items-center gap-2 px-4 py-2 text-sm bg-success text-success-foreground rounded-lg hover:bg-success/90 font-medium disabled:opacity-50 transition-colors">
+                    <CheckCircle2 className="h-3.5 w-3.5" /> {completing ? 'Saving…' : 'Mark Completed'}
                   </button>
                 )}
                 {detail.status === 'ORDERED' && (
-                  <button onClick={() => { setCancelReason(''); setCancelError(''); setCancelModal(true) }} className="flex items-center gap-2 px-4 py-2 text-sm border border-red-200 text-red-600 rounded-lg hover:bg-red-50 transition-colors">
+                  <button onClick={() => { setCancelReason(''); setCancelError(''); setCancelModal(true) }} className="flex items-center gap-2 px-4 py-2 text-sm border border-destructive/30 text-destructive rounded-lg hover:bg-destructive/10 transition-colors">
                     <XCircle className="h-3.5 w-3.5" /> Cancel
                   </button>
                 )}
@@ -664,50 +674,50 @@ export default function ServicesPage() {
                       <tr key={i.id}>
                         <td className="px-4 py-3">{i.itemName}</td>
                         <td className="px-4 py-3">{i.orderedQty} {i.unit ?? ''}</td>
-                        <td className="px-4 py-3 text-right">{fmtMoney(i.unitCost)}</td>
-                        <td className="px-4 py-3 text-right font-medium">{fmtMoney(i.orderedQty * i.unitCost)}</td>
+                        <td className="px-4 py-3 text-right">{formatMoney(i.unitCost)}</td>
+                        <td className="px-4 py-3 text-right font-medium">{formatMoney(i.orderedQty * i.unitCost)}</td>
                       </tr>
                     ))}
                   </tbody>
                   <tfoot className="border-t bg-muted/10">
                     {detail.extraCharges?.map((c, i) => (
-                      <tr key={i}><td colSpan={3} className="px-4 py-2 text-right text-muted-foreground">{c.label || 'Charge'}</td><td className="px-4 py-2 text-right">{fmtMoney(c.amount)}</td></tr>
+                      <tr key={i}><td colSpan={3} className="px-4 py-2 text-right text-muted-foreground">{c.label || 'Charge'}</td><td className="px-4 py-2 text-right">{formatMoney(c.amount)}</td></tr>
                     ))}
                     {!!detail.discountType && (detail.discountValue ?? 0) > 0 && (
-                      <tr><td colSpan={3} className="px-4 py-2 text-right text-muted-foreground">Discount{detail.discountType === 'PERCENT' ? ` (${detail.discountValue}%)` : ''}</td><td className="px-4 py-2 text-right">-{fmtMoney(detail.grandTotal < 0 ? 0 : (detail.items.reduce((s, i) => s + i.orderedQty * i.unitCost, 0) - detail.grandTotal + (detail.extraCharges?.reduce((s, c) => s + c.amount, 0) ?? 0)))}</td></tr>
+                      <tr><td colSpan={3} className="px-4 py-2 text-right text-muted-foreground">Discount{detail.discountType === 'PERCENT' ? ` (${detail.discountValue}%)` : ''}</td><td className="px-4 py-2 text-right">-{formatMoney(detail.grandTotal < 0 ? 0 : (detail.items.reduce((s, i) => s + i.orderedQty * i.unitCost, 0) - detail.grandTotal + (detail.extraCharges?.reduce((s, c) => s + c.amount, 0) ?? 0)))}</td></tr>
                     )}
-                    <tr><td colSpan={3} className="px-4 py-3 text-right font-semibold">Total</td><td className="px-4 py-3 text-right font-bold">{fmtMoney(detail.grandTotal)}</td></tr>
+                    <tr><td colSpan={3} className="px-4 py-3 text-right font-semibold">Total</td><td className="px-4 py-3 text-right font-bold">{formatMoney(detail.grandTotal)}</td></tr>
                   </tfoot>
                 </table></div>
               </div>
 
               {detail.notes && (
-                <div className="rounded-xl border bg-white p-5">
+                <div className="rounded-xl border bg-card p-5">
                   <h3 className="text-sm font-semibold mb-1.5">Notes</h3>
                   <p className="text-sm text-muted-foreground whitespace-pre-wrap">{detail.notes}</p>
                 </div>
               )}
 
               {(detail.paymentRequests.length > 0 || detail.reimbursements.length > 0) && (
-                <div className="rounded-xl border bg-white">
+                <div className="rounded-xl border bg-card">
                   <div className="px-5 py-3 border-b"><h3 className="text-sm font-semibold">Payments</h3></div>
                   <div className="divide-y">
                     {detail.paymentRequests.map(p => (
                       <div key={p.id} className="px-5 py-3 flex items-center justify-between text-sm">
                         <div>
-                          <p className="font-medium">{fmtMoney(p.amount)} <span className="text-xs text-muted-foreground font-normal">· {p.paymentMethod === 'DIRECT_DEBIT' ? 'Debit Paid' : 'Payment Request'}</span></p>
-                          <p className="text-xs text-muted-foreground">{fmtDateTime(p.createdAt)} · by {p.requestedBy?.name ?? '—'}</p>
+                          <p className="font-medium">{formatMoney(p.amount)} <span className="text-xs text-muted-foreground font-normal">· {p.paymentMethod === 'DIRECT_DEBIT' ? 'Debit Paid' : 'Payment Request'}</span></p>
+                          <p className="text-xs text-muted-foreground">{formatDate(p.createdAt, 'datetime')} · by {p.requestedBy?.name ?? '—'}</p>
                         </div>
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${PAYMENT_STATUS_COLOR[p.status] ?? ''}`}>{p.status}</span>
+                        <StatusBadge tone={PAYMENT_STATUS[p.status]?.tone}>{p.status}</StatusBadge>
                       </div>
                     ))}
                     {detail.reimbursements.map(r => (
                       <div key={r.id} className="px-5 py-3 flex items-center justify-between text-sm">
                         <div>
-                          <p className="font-medium">{fmtMoney(r.amount)} <span className="text-xs text-muted-foreground font-normal">· Reimburse · {r.requesterName}</span></p>
-                          <p className="text-xs text-muted-foreground">{fmtDateTime(r.createdAt)} · {r.bankName} {r.accountNumber}</p>
+                          <p className="font-medium">{formatMoney(r.amount)} <span className="text-xs text-muted-foreground font-normal">· Reimburse · {r.requesterName}</span></p>
+                          <p className="text-xs text-muted-foreground">{formatDate(r.createdAt, 'datetime')} · {r.bankName} {r.accountNumber}</p>
                         </div>
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${PAYMENT_STATUS_COLOR[r.status] ?? ''}`}>{r.status}</span>
+                        <StatusBadge tone={PAYMENT_STATUS[r.status]?.tone}>{r.status}</StatusBadge>
                       </div>
                     ))}
                   </div>
@@ -723,21 +733,21 @@ export default function ServicesPage() {
       {/* Cancel modal */}
       {cancelModal && detail && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setCancelModal(false)}>
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm" onClick={e => e.stopPropagation()}>
+          <div className="bg-card rounded-xl shadow-xl w-full max-w-sm" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between px-5 py-4 border-b">
               <h3 className="font-semibold">Cancel Service Order</h3>
               <button onClick={() => setCancelModal(false)}><X className="h-4 w-4 text-muted-foreground" /></button>
             </div>
             <div className="p-5 space-y-3">
-              {cancelError && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2">{cancelError}</div>}
-              <label className="text-sm font-medium">Reason <span className="text-red-500">*</span></label>
-              <textarea className="w-full border rounded-md px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-amber-500" rows={3}
+              {cancelError && <div className="rounded-lg bg-destructive/10 border border-destructive/30 text-destructive text-sm px-3 py-2">{cancelError}</div>}
+              <label className="text-sm font-medium">Reason <span className="text-destructive">*</span></label>
+              <textarea className="w-full border rounded-md px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-ring" rows={3}
                 value={cancelReason} onChange={e => setCancelReason(e.target.value)} />
             </div>
             <div className="flex justify-end gap-2 px-5 py-4 border-t">
               <button onClick={() => setCancelModal(false)} className="px-4 py-2 text-sm border rounded-md hover:bg-muted">Back</button>
-              <button onClick={submitCancel} disabled={cancelSaving} className="px-4 py-2 text-sm bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50">
-                {cancelSaving ? 'Saving...' : 'Cancel Order'}
+              <button onClick={submitCancel} disabled={cancelSaving} className="px-4 py-2 text-sm bg-destructive text-destructive-foreground rounded-md hover:bg-destructive/90 disabled:opacity-50">
+                {cancelSaving ? 'Saving…' : 'Cancel Order'}
               </button>
             </div>
           </div>
@@ -747,7 +757,7 @@ export default function ServicesPage() {
       {/* Payment modal */}
       {paymentModal && detail && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setPaymentModal(false)}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+          <div className="bg-card rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between px-5 py-4 border-b">
               <div>
                 <h3 className="font-semibold">{paymentMode === 'DIRECT' ? 'Debit Paid' : 'Request Payment'}</h3>
@@ -756,33 +766,33 @@ export default function ServicesPage() {
               <button onClick={() => setPaymentModal(false)} className="text-muted-foreground hover:text-foreground text-xl leading-none">×</button>
             </div>
             <div className="p-5 space-y-4">
-              {paymentError && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2">{paymentError}</div>}
+              {paymentError && <div className="rounded-lg bg-destructive/10 border border-destructive/30 text-destructive text-sm px-3 py-2">{paymentError}</div>}
               <div className="space-y-1.5">
-                <label className="text-sm font-medium">Amount <span className="text-red-500">*</span></label>
+                <label className="text-sm font-medium">Amount <span className="text-destructive">*</span></label>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">Rp</span>
-                  <input type="text" inputMode="numeric" className="w-full h-10 border rounded-lg pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
-                    value={paymentAmount ? new Intl.NumberFormat('id-ID').format(Number(paymentAmount)) : ''} onChange={e => setPaymentAmount(e.target.value.replace(/\D/g, ''))} />
+                  <input type="text" inputMode="numeric" className="w-full h-10 border rounded-lg pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                    value={paymentAmount ? formatNumber(paymentAmount) : ''} onChange={e => setPaymentAmount(e.target.value.replace(/\D/g, ''))} />
                 </div>
               </div>
               <div className="space-y-1.5">
-                <label className="text-sm font-medium">Receipt / Nota <span className="text-red-500">*</span></label>
+                <label className="text-sm font-medium">Receipt <span className="text-destructive">*</span></label>
                 <MultiFilePicker files={paymentPhotos} onChange={setPaymentPhotos} />
               </div>
               <div className="space-y-1.5">
-                <label className="text-sm font-medium">Nota Date</label>
-                <input type="date" className="w-full h-10 border rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500" value={paymentNotaDate} onChange={e => setPaymentNotaDate(e.target.value)} />
+                <label className="text-sm font-medium">Receipt Date</label>
+                <input type="date" className="w-full h-10 border rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring" value={paymentNotaDate} onChange={e => setPaymentNotaDate(e.target.value)} />
               </div>
               <div className="space-y-1.5">
                 <label className="text-sm font-medium">Notes</label>
-                <textarea rows={2} className="w-full border rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-amber-500" value={paymentNotes} onChange={e => setPaymentNotes(e.target.value)} />
+                <textarea rows={2} className="w-full border rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring" value={paymentNotes} onChange={e => setPaymentNotes(e.target.value)} />
               </div>
             </div>
             <div className="flex justify-end gap-2 px-5 py-4 border-t">
               <button onClick={() => setPaymentModal(false)} className="px-4 py-2 text-sm border rounded-lg hover:bg-muted">Cancel</button>
               <button onClick={submitPaymentRequest} disabled={!paymentAmount || paymentPhotos.length === 0 || paymentSaving}
-                className={`px-5 py-2 text-sm text-white rounded-lg disabled:opacity-40 font-semibold ${paymentMode === 'DIRECT' ? 'bg-green-600 hover:bg-green-700' : 'bg-amber-600 hover:bg-amber-700'}`}>
-                {paymentSaving ? 'Saving...' : paymentMode === 'DIRECT' ? 'Mark as Paid' : 'Send to Finance'}
+                className={`px-5 py-2 text-sm rounded-lg disabled:opacity-40 font-semibold ${paymentMode === 'DIRECT' ? 'bg-success text-success-foreground hover:bg-success/90' : 'bg-primary text-primary-foreground hover:bg-primary-hover'}`}>
+                {paymentSaving ? 'Saving…' : paymentMode === 'DIRECT' ? 'Mark as Paid' : 'Send to Finance'}
               </button>
             </div>
           </div>
@@ -793,7 +803,7 @@ export default function ServicesPage() {
       {/* Reimburse modal */}
       {reimburseModal && detail && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setReimburseModal(false)}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+          <div className="bg-card rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between px-5 py-4 border-b">
               <div>
                 <h3 className="font-semibold">Reimburse</h3>
@@ -802,55 +812,55 @@ export default function ServicesPage() {
               <button onClick={() => setReimburseModal(false)} className="text-muted-foreground hover:text-foreground text-xl leading-none">×</button>
             </div>
             <div className="p-5 space-y-4">
-              {reimburseError && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2">{reimburseError}</div>}
+              {reimburseError && <div className="rounded-lg bg-destructive/10 border border-destructive/30 text-destructive text-sm px-3 py-2">{reimburseError}</div>}
               <div className="space-y-1.5">
-                <label className="text-sm font-medium">Amount <span className="text-red-500">*</span></label>
+                <label className="text-sm font-medium">Amount <span className="text-destructive">*</span></label>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">Rp</span>
-                  <input type="text" inputMode="numeric" className="w-full h-10 border rounded-lg pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
-                    value={reimburseAmount ? new Intl.NumberFormat('id-ID').format(Number(reimburseAmount)) : ''} onChange={e => setReimburseAmount(e.target.value.replace(/\D/g, ''))} />
+                  <input type="text" inputMode="numeric" className="w-full h-10 border rounded-lg pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                    value={reimburseAmount ? formatNumber(reimburseAmount) : ''} onChange={e => setReimburseAmount(e.target.value.replace(/\D/g, ''))} />
                 </div>
               </div>
               <div className="space-y-1.5">
-                <label className="text-sm font-medium">Name <span className="text-red-500">*</span></label>
-                <input className="w-full h-10 border rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500" value={reimburseRequesterName} onChange={e => setReimburseRequesterName(e.target.value)} />
+                <label className="text-sm font-medium">Name <span className="text-destructive">*</span></label>
+                <input className="w-full h-10 border rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring" value={reimburseRequesterName} onChange={e => setReimburseRequesterName(e.target.value)} />
               </div>
               <ReimburseAccountCombobox accounts={reimburseAccounts} onPick={a => { setReimburseBankName(a.bankName); setReimburseAccountNumber(a.accountNumber); setReimburseAccountHolderName(a.accountHolderName); setReimburseSaveAccount(false) }} />
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <label className="text-sm font-medium">Bank Name <span className="text-red-500">*</span></label>
-                  <input className="w-full h-10 border rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500" value={reimburseBankName} onChange={e => setReimburseBankName(e.target.value)} />
+                  <label className="text-sm font-medium">Bank Name <span className="text-destructive">*</span></label>
+                  <input className="w-full h-10 border rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring" value={reimburseBankName} onChange={e => setReimburseBankName(e.target.value)} />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-sm font-medium">Account Number <span className="text-red-500">*</span></label>
-                  <input className="w-full h-10 border rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500" value={reimburseAccountNumber} onChange={e => setReimburseAccountNumber(e.target.value)} />
+                  <label className="text-sm font-medium">Account Number <span className="text-destructive">*</span></label>
+                  <input className="w-full h-10 border rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring" value={reimburseAccountNumber} onChange={e => setReimburseAccountNumber(e.target.value)} />
                 </div>
               </div>
               <div className="space-y-1.5">
-                <label className="text-sm font-medium">Account Holder Name <span className="text-red-500">*</span></label>
-                <input className="w-full h-10 border rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500" value={reimburseAccountHolderName} onChange={e => setReimburseAccountHolderName(e.target.value)} />
+                <label className="text-sm font-medium">Account Holder Name <span className="text-destructive">*</span></label>
+                <input className="w-full h-10 border rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring" value={reimburseAccountHolderName} onChange={e => setReimburseAccountHolderName(e.target.value)} />
               </div>
               <label className="flex items-center gap-2 text-sm cursor-pointer">
                 <input type="checkbox" checked={reimburseSaveAccount} onChange={e => setReimburseSaveAccount(e.target.checked)} />
                 Save this account for future reimbursements
               </label>
               <div className="space-y-1.5">
-                <label className="text-sm font-medium">Receipt / Nota <span className="text-red-500">*</span></label>
+                <label className="text-sm font-medium">Receipt <span className="text-destructive">*</span></label>
                 <MultiFilePicker files={reimbursePhotos} onChange={setReimbursePhotos} />
               </div>
               <div className="space-y-1.5">
-                <label className="text-sm font-medium">Nota Date</label>
-                <input type="date" className="w-full h-10 border rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500" value={reimburseNotaDate} onChange={e => setReimburseNotaDate(e.target.value)} />
+                <label className="text-sm font-medium">Receipt Date</label>
+                <input type="date" className="w-full h-10 border rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring" value={reimburseNotaDate} onChange={e => setReimburseNotaDate(e.target.value)} />
               </div>
               <div className="space-y-1.5">
                 <label className="text-sm font-medium">Notes</label>
-                <textarea rows={2} className="w-full border rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-amber-500" value={reimburseNotes} onChange={e => setReimburseNotes(e.target.value)} />
+                <textarea rows={2} className="w-full border rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring" value={reimburseNotes} onChange={e => setReimburseNotes(e.target.value)} />
               </div>
             </div>
             <div className="flex justify-end gap-2 px-5 py-4 border-t">
               <button onClick={() => setReimburseModal(false)} className="px-4 py-2 text-sm border rounded-lg hover:bg-muted">Cancel</button>
-              <button onClick={submitReimbursement} disabled={reimburseSaving} className="px-5 py-2 text-sm bg-amber-600 hover:bg-amber-700 text-white rounded-lg disabled:opacity-40 font-semibold">
-                {reimburseSaving ? 'Saving...' : 'Submit'}
+              <button onClick={submitReimbursement} disabled={reimburseSaving} className="px-5 py-2 text-sm bg-primary hover:bg-primary-hover text-primary-foreground rounded-lg disabled:opacity-40 font-semibold">
+                {reimburseSaving ? 'Saving…' : 'Submit'}
               </button>
             </div>
           </div>
@@ -860,7 +870,7 @@ export default function ServicesPage() {
       {/* Edit modal — Service Lines + Notes */}
       {editModal && detail && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setEditModal(false)}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+          <div className="bg-card rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between px-5 py-4 border-b">
               <div>
                 <h3 className="font-semibold">Edit Service Order</h3>
@@ -869,11 +879,11 @@ export default function ServicesPage() {
               <button onClick={() => setEditModal(false)} className="text-muted-foreground hover:text-foreground text-xl leading-none">×</button>
             </div>
             <div className="p-5 space-y-4">
-              {editError && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2">{editError}</div>}
+              {editError && <div className="rounded-lg bg-destructive/10 border border-destructive/30 text-destructive text-sm px-3 py-2">{editError}</div>}
               <div className="rounded-xl border overflow-hidden">
                 <div className="flex items-center justify-between px-4 py-3 bg-muted/30 border-b">
                   <h4 className="text-sm font-semibold">Service Lines</h4>
-                  <button onClick={addEditLine} className="flex items-center gap-1.5 text-xs font-semibold text-amber-700 hover:text-amber-900 border border-amber-200 bg-amber-50 hover:bg-amber-100 px-3 py-1.5 rounded-lg transition-colors">
+                  <button onClick={addEditLine} className="flex items-center gap-1.5 text-xs font-semibold text-warning hover:text-warning border border-warning/30 bg-warning/10 hover:bg-warning/15 px-3 py-1.5 rounded-lg transition-colors">
                     <Plus className="h-3.5 w-3.5" /> Add Row
                   </button>
                 </div>
@@ -907,7 +917,7 @@ export default function ServicesPage() {
                               onChange={e => setEditLines(l => l.map((li, i) => i !== idx ? li : { ...li, unitCost: Number(e.target.value) }))} />
                           </td>
                           <td className="px-2 py-2 text-center">
-                            <button onClick={() => removeEditLine(idx)} disabled={editLines.length === 1} className="p-1.5 text-muted-foreground/40 hover:text-red-500 hover:bg-red-50 rounded-md transition-colors disabled:opacity-0 disabled:pointer-events-none">
+                            <button onClick={() => removeEditLine(idx)} disabled={editLines.length === 1} className="p-1.5 text-muted-foreground/40 hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors disabled:opacity-0 disabled:pointer-events-none">
                               <Trash2 className="h-3.5 w-3.5" />
                             </button>
                           </td>
@@ -919,13 +929,13 @@ export default function ServicesPage() {
               </div>
               <div className="space-y-1.5">
                 <label className="text-sm font-medium">Notes</label>
-                <textarea rows={2} className="w-full border rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-amber-500" value={editNotes} onChange={e => setEditNotes(e.target.value)} />
+                <textarea rows={2} className="w-full border rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring" value={editNotes} onChange={e => setEditNotes(e.target.value)} />
               </div>
             </div>
             <div className="flex justify-end gap-2 px-5 py-4 border-t">
               <button onClick={() => setEditModal(false)} className="px-4 py-2 text-sm border rounded-lg hover:bg-muted">Cancel</button>
-              <button onClick={submitEdit} disabled={editSaving} className="px-5 py-2 text-sm bg-amber-600 hover:bg-amber-700 text-white rounded-lg disabled:opacity-40 font-semibold">
-                {editSaving ? 'Saving...' : 'Save Changes'}
+              <button onClick={submitEdit} disabled={editSaving} className="px-5 py-2 text-sm bg-primary hover:bg-primary-hover text-primary-foreground rounded-lg disabled:opacity-40 font-semibold">
+                {editSaving ? 'Saving…' : 'Save Changes'}
               </button>
             </div>
           </div>

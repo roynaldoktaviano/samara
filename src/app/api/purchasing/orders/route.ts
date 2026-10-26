@@ -129,9 +129,9 @@ export async function POST(req: NextRequest) {
   const body = await req.json()
   const { supplierId, supplierName, deliveryLocationId, expectedAt, notes, items, requestedByEmployeeId, extraCharges, discountType, discountValue, bookingId, openTripId, transitStops } = body
   const orderType = body.orderType === 'SERVICE' ? 'SERVICE' : 'GOODS'
-  if (!supplierName) return NextResponse.json({ error: 'Nama supplier wajib diisi' }, { status: 400 })
-  if (!requestedByEmployeeId) return NextResponse.json({ error: 'Requested by wajib diisi' }, { status: 400 })
-  if (!items || !Array.isArray(items) || items.length === 0) return NextResponse.json({ error: 'Minimal 1 item dibutuhkan' }, { status: 400 })
+  if (!supplierName) return NextResponse.json({ error: 'Supplier name is required' }, { status: 400 })
+  if (!requestedByEmployeeId) return NextResponse.json({ error: 'Requested by is required' }, { status: 400 })
+  if (!items || !Array.isArray(items) || items.length === 0) return NextResponse.json({ error: 'At least 1 item is required' }, { status: 400 })
 
   // An ASSET line on a PO to a ship must say which Inventory Room/Category it lands in —
   // receiveGoods turns it into an InventoryItem there (see src/lib/purchasing/treatment.ts).
@@ -148,7 +148,7 @@ export async function POST(req: NextRequest) {
     if (deliveryLocation?.type === 'VESSEL') {
       const assetLines = typedItems.filter((_, i) => treatments[i] === 'ASSET')
       if (assetLines.some(it => !it.inventoryRoomId || !it.inventoryCategoryId)) {
-        return NextResponse.json({ error: 'Item Asset wajib menentukan Ruangan dan Kategori Barang' }, { status: 400 })
+        return NextResponse.json({ error: 'Asset items must specify a Room and Item Category' }, { status: 400 })
       }
       const roomIds = [...new Set(typedItems.map(it => it.inventoryRoomId).filter((x): x is string => !!x))]
       const categoryIds = [...new Set(typedItems.map(it => it.inventoryCategoryId).filter((x): x is string => !!x))]
@@ -157,7 +157,7 @@ export async function POST(req: NextRequest) {
         db.inventoryCategory.count({ where: { id: { in: categoryIds }, room: { locationId: deliveryLocationId } } }),
       ])
       if (validRooms !== roomIds.length || validCategories !== categoryIds.length) {
-        return NextResponse.json({ error: 'Ruangan/Kategori tidak valid untuk lokasi ini' }, { status: 400 })
+        return NextResponse.json({ error: 'Room/Category is not valid for this location' }, { status: 400 })
       }
     }
   }
@@ -169,10 +169,10 @@ export async function POST(req: NextRequest) {
     Array.isArray(transitStops) ? transitStops.filter((x: unknown): x is string => typeof x === 'string' && !!x) : []
   )]
   if (deliveryLocationId && cleanTransitStopIds.includes(deliveryLocationId))
-    return NextResponse.json({ error: 'Transit stop tidak boleh sama dengan Delivery Location' }, { status: 400 })
+    return NextResponse.json({ error: 'Transit stop cannot be the same as the Delivery Location' }, { status: 400 })
   if (cleanTransitStopIds.length > 0) {
     const validCount = await db.stockLocation.count({ where: { id: { in: cleanTransitStopIds } } })
-    if (validCount !== cleanTransitStopIds.length) return NextResponse.json({ error: 'Salah satu transit stop tidak valid' }, { status: 400 })
+    if (validCount !== cleanTransitStopIds.length) return NextResponse.json({ error: 'One of the transit stops is invalid' }, { status: 400 })
   }
 
   // Resolve supplierId by name if not provided, so order history stays linked even for raw API callers

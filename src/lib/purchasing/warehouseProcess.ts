@@ -108,8 +108,8 @@ export async function addRestockLines(db: Db, request: WarehouseRequest, lineIds
           select: { id: true, prNumber: true },
         })
     await notifyPurchasingForRequest(
-      db, request.division, 'PR_RESTOCK_CREATED', 'Restock Gudang',
-      `${restock.prNumber} — perlu dibeli: ${whLines.map(l => l.item.itemName).join(', ')} (To Be Order dari ${request.prNumber}).`,
+      db, request.division, 'PR_RESTOCK_CREATED', 'Warehouse Restock',
+      `${restock.prNumber} — to purchase: ${whLines.map(l => l.item.itemName).join(', ')} (To Be Order from ${request.prNumber}).`,
       restock.id,
     )
     touched.push(restock.prNumber)
@@ -133,7 +133,7 @@ export async function finishWarehouseCheck(db: Db, id: string, userId: string) {
   const remaining = items.filter(i => !i.convertedAt && !i.verifyRejectedAt)
   const backordered = items.filter(i => i.backorderQty > 0)
   const toPurchasing = items.filter(i => i.viaWarehouse && i.warehouseDecision === 'PURCHASE' && !i.convertedAt && !i.verifyRejectedAt)
-  const backorderNote = backordered.length ? ` ${backordered.length} item dikirim sebagian — sisanya menyusul setelah restock tiba di gudang.` : ''
+  const backorderNote = backordered.length ? ` ${backordered.length} ${backordered.length === 1 ? 'item was' : 'items were'} partially shipped — the rest will follow once the restock arrives at the warehouse.` : ''
   const now = new Date()
 
   if (remaining.length === 0) {
@@ -143,10 +143,10 @@ export async function finishWarehouseCheck(db: Db, id: string, userId: string) {
     })
     await notifyRequester(db, id, {
       type: 'PR_FULFILLED_FROM_STOCK',
-      title: backordered.length ? 'Request Diproses Gudang' : 'Request Selesai dari Stok Gudang',
+      title: backordered.length ? 'Request Processed by Warehouse' : 'Request Fulfilled from Warehouse Stock',
       body: backordered.length
-        ? `${request.prNumber} diproses gudang.${backorderNote}`
-        : `${request.prNumber} sudah dipenuhi dari stok gudang.`,
+        ? `${request.prNumber} was processed by the warehouse.${backorderNote}`
+        : `${request.prNumber} has been fulfilled from warehouse stock.`,
       skipUserId: userId,
     })
     return { updated, restocks, remaining: [] as string[] }
@@ -158,8 +158,8 @@ export async function finishWarehouseCheck(db: Db, id: string, userId: string) {
   })
   await notifyRequester(db, id, {
     type: 'PR_FORWARDED_FROM_WAREHOUSE',
-    title: 'Cek gudang selesai',
-    body: `${request.prNumber} sudah dicek Gudang${toPurchasing.length ? ` — ${toPurchasing.length} item tidak ada di gudang dan dibelikan Purchasing` : ''}.${backorderNote}`,
+    title: 'Warehouse check complete',
+    body: `${request.prNumber} has been checked by Warehouse${toPurchasing.length ? ` — ${toPurchasing.length} ${toPurchasing.length === 1 ? 'item is' : 'items are'} not in the warehouse and will be purchased by Purchasing` : ''}.${backorderNote}`,
     skipUserId: userId,
   })
   return { updated, restocks, remaining: remaining.map(i => i.itemName) }

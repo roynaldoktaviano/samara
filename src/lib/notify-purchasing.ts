@@ -150,10 +150,10 @@ export function notifyPoArrivalToRequester(
 ) {
   notifyRequesterForOrder(db, orderId, {
     type: newStatus === 'RECEIVED' ? 'PR_PO_RECEIVED' : 'PR_PO_PARTIALLY_RECEIVED',
-    title: newStatus === 'RECEIVED' ? 'Barang request kamu sudah sampai' : 'Barang request kamu sampai sebagian',
+    title: newStatus === 'RECEIVED' ? 'Your request items have arrived' : 'Your request items have partially arrived',
     body: newStatus === 'RECEIVED'
-      ? `${poNumber ?? 'PO'} sudah diterima lengkap di lokasi tujuan.`
-      : `${poNumber ?? 'PO'} baru diterima sebagian di lokasi tujuan.`,
+      ? `${poNumber ?? 'PO'} has been fully received at the destination.`
+      : `${poNumber ?? 'PO'} has only been partially received at the destination.`,
     skipUserId: actingUserId ?? undefined,
   }).catch(console.error)
 }
@@ -213,8 +213,8 @@ export async function notifyIfPOFullyPaid(db: Db, orderId: string) {
   if (paymentStatus !== 'PAID') return
 
   await notifyByRole(db, ['PURCHASING', 'ADMIN', 'SUPER_ADMIN'], 'PO_FULLY_PAID',
-    'PO Lunas — Siap Dikirim',
-    `${order.poNumber}${order.supplierName ? ` — ${order.supplierName}` : ''} sudah lunas. Yuk proses pengiriman barangnya.`,
+    'PO Fully Paid — Ready to Ship',
+    `${order.poNumber}${order.supplierName ? ` — ${order.supplierName}` : ''} is fully paid. Please proceed with shipping the items.`,
     orderId,
   )
 }

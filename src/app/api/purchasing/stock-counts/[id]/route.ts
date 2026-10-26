@@ -27,7 +27,7 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
       },
     },
   })
-  if (!count) return NextResponse.json({ error: 'Tidak ditemukan' }, { status: 404 })
+  if (!count) return NextResponse.json({ error: 'Not found' }, { status: 404 })
   return NextResponse.json(count)
 }
 
@@ -41,13 +41,13 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   const { items, status, notes, photoKey } = await req.json()
 
   const count = await db.stockCount.findUnique({ where: { id } })
-  if (!count) return NextResponse.json({ error: 'Tidak ditemukan' }, { status: 404 })
-  if (count.status === 'APPROVED') return NextResponse.json({ error: 'Opname yang sudah disetujui tidak bisa diubah' }, { status: 400 })
+  if (!count) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  if (count.status === 'APPROVED') return NextResponse.json({ error: 'An approved opname cannot be edited' }, { status: 400 })
 
   // Validate photo required on approve
   const incomingPhoto = photoKey ?? count.photoKey
   if (status === 'APPROVED' && !incomingPhoto) {
-    return NextResponse.json({ error: 'Foto wajib diupload sebelum approve' }, { status: 400 })
+    return NextResponse.json({ error: 'Photo is required before approval' }, { status: 400 })
   }
 
   // Update each item's counted qty + reason
@@ -128,7 +128,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
             locationName: updated.location.name,
             qty: Math.abs(variance),
             value: varianceValue,
-            reason: ci.reason ?? `Variance ${variance > 0 ? '+' : ''}${variance} ${ci.item?.baseUnit ?? ''} saat opname ${updated.countNumber}`,
+            reason: ci.reason ?? `Variance ${variance > 0 ? '+' : ''}${variance} ${ci.item?.baseUnit ?? ''} during opname ${updated.countNumber}`,
             referenceId: updated.id,
             referenceType: 'StockCount',
             status: 'OPEN',
@@ -150,8 +150,8 @@ export async function DELETE(_: NextRequest, { params }: { params: Promise<{ id:
   const db = await getDb(session)
 
   const count = await db.stockCount.findUnique({ where: { id } })
-  if (!count) return NextResponse.json({ error: 'Tidak ditemukan' }, { status: 404 })
-  if (count.status === 'APPROVED') return NextResponse.json({ error: 'Opname yang sudah disetujui tidak bisa dihapus' }, { status: 400 })
+  if (!count) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  if (count.status === 'APPROVED') return NextResponse.json({ error: 'An approved opname cannot be deleted' }, { status: 400 })
 
   await db.stockCount.delete({ where: { id } })
   return NextResponse.json({ ok: true })

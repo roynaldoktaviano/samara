@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { ChevronLeft, ChevronRight, CalendarSearch, X, RotateCw } from 'lucide-react'
-import { getEffectiveBookingStatus } from '@/lib/booking-status'
+import { getEffectiveBookingStatus, bookingStatusStyle } from '@/lib/booking-status'
+import { formatDate } from '@/lib/format'
 
 /* ── Types ── */
 interface PublicBooking {
@@ -27,34 +28,31 @@ const DAY_FULL      = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Frida
 const DAY_H         = 44
 const LANE_H        = 62
 
-const STATUS_BADGE: Record<string, { bg: string; color: string; label: string }> = {
-  on_hold:        { bg: '#dcfce7', color: '#16a34a', label: 'On Hold'              },
-  pending:        { bg: '#fef9c3', color: '#a16207', label: 'Waiting for Payment'  },
-  confirmed:      { bg: '#fee2e2', color: '#dc2626', label: 'Confirmed'            },
-  partially_paid: { bg: '#fee2e2', color: '#dc2626', label: 'Confirmed'            },
-  fully_paid:     { bg: '#fee2e2', color: '#dc2626', label: 'Confirmed'            },
-  on_trip:        { bg: '#f1f5f9', color: '#64748b', label: 'On Trip'              },
-  completed:      { bg: '#f1f5f9', color: '#64748b', label: 'Completed'            },
-  cancelled:      { bg: '#f1f5f9', color: '#64748b', label: 'Cancelled'            },
+// Public-facing labels (payment detail hidden from guests); colours come from bookingStatusStyle().
+const STATUS_LABEL: Record<string, string> = {
+  on_hold:        'On Hold',
+  pending:        'Waiting for Payment',
+  confirmed:      'Confirmed',
+  partially_paid: 'Confirmed',
+  fully_paid:     'Confirmed',
+  on_trip:        'On Trip',
+  completed:      'Completed',
+  cancelled:      'Cancelled',
 }
-const STATUS_BADGE_BAR: Record<string, { bg: string; label: string }> = {
-  on_hold:        { bg: 'rgba(34,197,94,0.85)',   label: 'ON HOLD'              },
-  pending:        { bg: 'rgba(234,179,8,0.85)',   label: 'WAITING FOR PAYMENT'  },
-  confirmed:      { bg: 'rgba(239,68,68,0.85)',   label: 'CONFIRMED'            },
-  partially_paid: { bg: 'rgba(239,68,68,0.85)',   label: 'CONFIRMED'            },
-  fully_paid:     { bg: 'rgba(239,68,68,0.85)',   label: 'CONFIRMED'            },
-  on_trip:        { bg: 'rgba(148,163,184,0.85)', label: 'ON TRIP'              },
-  completed:      { bg: 'rgba(148,163,184,0.85)', label: 'COMPLETED'            },
-  cancelled:      { bg: 'rgba(148,163,184,0.85)', label: 'CANCELLED'            },
+// Public view shows partially_paid as "Confirmed", so it must use the confirmed colour too.
+function publicStatusStyle(status: string) {
+  return bookingStatusStyle(status === 'partially_paid' ? 'confirmed' : status)
 }
+const STATUS_BADGE: Record<string, { badge: string; label: string }> = Object.fromEntries(
+  Object.entries(STATUS_LABEL).map(([k, label]) => [k, { badge: publicStatusStyle(k).badge, label }])
+)
+const STATUS_BADGE_BAR: Record<string, { bg: string; label: string }> = Object.fromEntries(
+  Object.entries(STATUS_LABEL).map(([k, label]) => [k, { bg: `color-mix(in srgb, ${publicStatusStyle(k).color} 85%, transparent)`, label: label.toUpperCase() }])
+)
 
 /* ── Helpers ── */
 function bookingBarColor(status: string) {
-  if (status === 'on_hold') return '#22c55e'
-  if (status === 'pending') return '#eab308'
-  if (status === 'on_trip' || status === 'completed') return '#94a3b8'
-  if (['confirmed','partially_paid','fully_paid'].includes(status)) return '#ef4444'
-  return '#94a3b8'
+  return publicStatusStyle(status).color
 }
 function buildColorMap(yachts: Yacht[]): Record<string, string> {
   const sorted = [...yachts].sort((a, b) => a.name.localeCompare(b.name))
@@ -76,11 +74,6 @@ function weeksOf(year: number, month: number): number[][] {
 }
 function dateStr(year: number, month: number, day: number) {
   return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-}
-function fmtFilterDate(iso: string) {
-  if (!iso) return ''
-  const [y, m, d] = iso.split('-')
-  return `${d} ${MONTH_NAMES[parseInt(m) - 1]?.slice(0, 3)} ${y}`
 }
 
 function getEventsForDate(day: number, year: number, month: number, bookings: PublicBooking[], trips: PublicOpenTrip[]) {
@@ -138,7 +131,7 @@ function buildSegments(bookings: PublicBooking[], openTrips: PublicOpenTrip[], c
   })
   openTrips.forEach(t => {
     const isFull  = t.status === 'full' || (t.status !== 'closed' && t.spotsAvailable === 0)
-    const otColor = t.status === 'closed' ? '#94a3b8' : isFull ? '#ef4444' : '#22c55e'
+    const otColor = t.status === 'closed' ? '#94a3b8' : isFull ? 'var(--destructive)' : 'var(--success)'
     add(t.id, t.title, otColor, true, new Date(t.startDate.split('T')[0] + 'T00:00:00'), new Date(t.endDate.split('T')[0] + 'T00:00:00'), undefined, t)
   })
   const laned: Omit<Segment, 'showDetails'>[] = []
@@ -294,7 +287,7 @@ function MobileView({ data, loading, year, month, yachtFilter, setFilter, prev, 
     })
     filteredOpenTrips.forEach(t => {
       const isFull = t.status === 'full' || (t.status !== 'closed' && t.spotsAvailable === 0)
-      const activeColor = t.status === 'closed' ? '#94a3b8' : isFull ? '#ef4444' : '#22c55e'
+      const activeColor = t.status === 'closed' ? '#94a3b8' : isFull ? 'var(--destructive)' : 'var(--success)'
       const s = t.startDate.split('T')[0]
       const e = t.endDate.split('T')[0]
       for (let d = 1; d <= daysInMonth; d++) {
@@ -342,27 +335,28 @@ function MobileView({ data, loading, year, month, yachtFilter, setFilter, prev, 
       <div style={{ backgroundColor: 'white', padding: '12px 16px 0', flexShrink: 0 }}>
 
         {/* Top row: nav + month + logo icon */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <button onClick={prev} style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid #e2e8f0', background: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+            <button onClick={prev} aria-label="Previous month" style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid #e2e8f0', background: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
               <ChevronLeft size={16} color="#64748b" />
             </button>
-            <button onClick={next} style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid #e2e8f0', background: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <button onClick={next} aria-label="Next month" style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid #e2e8f0', background: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
               <ChevronRight size={16} color="#64748b" />
             </button>
             <span style={{ fontSize: 20, fontWeight: 800, color: '#1e293b' }}>{MONTH_NAMES[month]}</span>
             <span style={{ fontSize: 13, color: '#94a3b8', fontWeight: 500 }}>{year}</span>
           </div>
           {/* Full Samara logo + refresh */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
             <img
               src="https://samaraliveaboard.com/wp-content/uploads/2020/07/Element-1Samara-logo-72ppi-.png.webp"
               alt="Samara Liveaboard"
-              style={{ height: 28, width: 'auto', objectFit: 'contain', flexShrink: 0 }}
+              style={{ height: 28, width: 'auto', objectFit: 'contain', flexShrink: 1, minWidth: 0 }}
             />
             <button
               onClick={onRefresh}
               disabled={refreshing}
+              aria-label="Refresh schedule"
               style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid #e2e8f0', background: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
             >
               <RotateCw size={14} color="#64748b" style={{ animation: refreshing ? 'spin 1s linear infinite' : 'none' }} />
@@ -372,25 +366,27 @@ function MobileView({ data, loading, year, month, yachtFilter, setFilter, prev, 
 
         {/* Date filter row */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
-          <div style={{ width: 28, height: 28, borderRadius: 7, backgroundColor: filterActive ? '#e0f2f7' : '#f8fafc', border: filterActive ? '1px solid #bae6fd' : '1px solid #f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-            <CalendarSearch size={13} color={filterActive ? '#1a5f6e' : '#94a3b8'} />
+          <div style={{ width: 28, height: 28, borderRadius: 7, backgroundColor: filterActive ? 'color-mix(in srgb, var(--brand) 12%, transparent)' : '#f8fafc', border: filterActive ? '1px solid color-mix(in srgb, var(--brand) 30%, transparent)' : '1px solid #f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <CalendarSearch size={13} style={{ color: filterActive ? 'var(--brand)' : '#94a3b8' }} />
           </div>
           <input
             type="date"
+            aria-label="From date"
             onKeyDown={e => e.preventDefault()}
             value={filterStart}
             onChange={e => setFilterStart(e.target.value)}
             style={{
               flex: 1, fontSize: 14, padding: '7px 10px', borderRadius: 8,
-              border: filterStart ? '1.5px solid #1a5f6e' : '1px solid #e2e8f0',
-              backgroundColor: filterStart ? '#e0f2f7' : '#f8fafc',
-              color: filterStart ? '#0f766e' : '#94a3b8',
+              border: filterStart ? '1.5px solid var(--brand)' : '1px solid #e2e8f0',
+              backgroundColor: filterStart ? 'color-mix(in srgb, var(--brand) 12%, transparent)' : '#f8fafc',
+              color: filterStart ? 'var(--brand)' : '#94a3b8',
               outline: 'none', minWidth: 0,
             }}
           />
           <span style={{ color: '#cbd5e1', fontSize: 13, flexShrink: 0 }}>—</span>
           <input
             type="date"
+            aria-label="To date"
             onKeyDown={e => e.preventDefault()}
             value={filterEnd}
             onChange={e => {
@@ -400,15 +396,16 @@ function MobileView({ data, loading, year, month, yachtFilter, setFilter, prev, 
             }}
             style={{
               flex: 1, fontSize: 14, padding: '7px 10px', borderRadius: 8,
-              border: filterEnd ? '1.5px solid #1a5f6e' : '1px solid #e2e8f0',
-              backgroundColor: filterEnd ? '#e0f2f7' : '#f8fafc',
-              color: filterEnd ? '#0f766e' : '#94a3b8',
+              border: filterEnd ? '1.5px solid var(--brand)' : '1px solid #e2e8f0',
+              backgroundColor: filterEnd ? 'color-mix(in srgb, var(--brand) 12%, transparent)' : '#f8fafc',
+              color: filterEnd ? 'var(--brand)' : '#94a3b8',
               outline: 'none', minWidth: 0,
             }}
           />
           {filterActive && (
             <button
               onClick={() => { setFilterStart(''); setFilterEnd('') }}
+              aria-label="Clear date filter"
               style={{ width: 28, height: 28, borderRadius: 7, border: '1px solid #e2e8f0', background: '#f8fafc', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
             >
               <X size={12} color="#94a3b8" />
@@ -470,7 +467,7 @@ function MobileView({ data, loading, year, month, yachtFilter, setFilter, prev, 
                       position: 'absolute', top: 3, height: 36, zIndex: 1,
                       left:  fHasPrev ? '0%' : '50%',
                       right: fHasNext ? '0%' : '50%',
-                      backgroundColor: 'rgba(26,95,110,0.12)',
+                      backgroundColor: 'color-mix(in srgb, var(--brand) 12%, transparent)',
                       borderRadius: fHasPrev && fHasNext ? 0 : !fHasPrev ? '18px 0 0 18px' : '0 18px 18px 0',
                       pointerEvents: 'none',
                     }} />
@@ -480,16 +477,16 @@ function MobileView({ data, loading, year, month, yachtFilter, setFilter, prev, 
                   <span style={{
                     position: 'relative', zIndex: 2,
                     width: 36, height: 36, borderRadius: '50%',
-                    backgroundColor: isSelected ? '#1a5f6e' : hl ? hl.color : isToday ? '#e0f2f7' : 'transparent',
-                    color: isSelected ? 'white' : hl ? 'white' : isToday ? '#1a5f6e' : day > 0 ? (di === 0 ? '#94a8b8' : '#1e293b') : 'transparent',
+                    backgroundColor: isSelected ? 'var(--brand)' : hl ? hl.color : isToday ? 'color-mix(in srgb, var(--brand) 12%, transparent)' : 'transparent',
+                    color: isSelected ? 'var(--brand-foreground)' : hl ? 'white' : isToday ? 'var(--brand)' : day > 0 ? (di === 0 ? '#94a8b8' : '#1e293b') : 'transparent',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     fontSize: 14, fontWeight: (isToday || isSelected || !!hl) ? 700 : 400,
                     transition: 'background-color 0.15s',
                     // Filter ring: outer glow ring for start/end, lighter for middle
                     boxShadow: inFilt && !isSelected
                       ? (isFiltSt || isFiltEnd)
-                        ? '0 0 0 2px white, 0 0 0 4px #1a5f6e'
-                        : '0 0 0 1.5px rgba(26,95,110,0.45)'
+                        ? '0 0 0 2px white, 0 0 0 4px var(--brand)'
+                        : '0 0 0 1.5px color-mix(in srgb, var(--brand) 45%, transparent)'
                       : 'none',
                   }}>
                     {day > 0 ? day : ''}
@@ -543,19 +540,19 @@ function MobileView({ data, loading, year, month, yachtFilter, setFilter, prev, 
                       ) : isClosed ? (
                         <span style={{ fontSize: 10, fontWeight: 700, color: '#64748b', backgroundColor: '#f1f5f9', borderRadius: 6, padding: '3px 8px', whiteSpace: 'nowrap', flexShrink: 0 }}>CLOSED</span>
                       ) : isFull ? (
-                        <span style={{ fontSize: 10, fontWeight: 700, color: '#dc2626', backgroundColor: '#fee2e2', borderRadius: 6, padding: '3px 8px', whiteSpace: 'nowrap', flexShrink: 0 }}>FULL</span>
+                        <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--destructive)', backgroundColor: 'color-mix(in srgb, var(--destructive) 15%, transparent)', borderRadius: 6, padding: '3px 8px', whiteSpace: 'nowrap', flexShrink: 0 }}>FULL</span>
                       ) : (
-                        <span style={{ fontSize: 10, fontWeight: 700, color: '#16a34a', backgroundColor: '#dcfce7', borderRadius: 6, padding: '3px 8px', whiteSpace: 'nowrap', flexShrink: 0 }}>AVAILABLE</span>
+                        <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--success)', backgroundColor: 'color-mix(in srgb, var(--success) 15%, transparent)', borderRadius: 6, padding: '3px 8px', whiteSpace: 'nowrap', flexShrink: 0 }}>AVAILABLE</span>
                       )}
                     </div>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 12px' }}>
                       {t.cabinStatuses.map(c => {
                         const bs = c.bookingStatus
                         const dotColor = isPastTrip ? '#c8d4de'
-                          : isClosed ? '#ef4444'
+                          : isClosed ? 'var(--destructive)'
                           : bs === null ? '#ffffff'
-                          : bs === 'on_hold' ? '#22c55e'
-                          : bs === 'pending' ? '#eab308' : '#ef4444'
+                          : bs === 'on_hold' ? 'var(--success)'
+                          : bs === 'pending' ? 'var(--warning)' : 'var(--destructive)'
                         const dotBorder = dotColor === '#ffffff' ? '1.5px solid #94a3b8' : 'none'
                         return (
                           <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
@@ -571,7 +568,7 @@ function MobileView({ data, loading, year, month, yachtFilter, setFilter, prev, 
               {eventsForDay.bookings.filter(b => b.tripType === 'PRIVATE_CHARTER').map(b => {
                 const effStatus = getEffectiveBookingStatus(b.status, b.startDate, b.endDate)
                 const isDone    = effStatus === 'on_trip' || effStatus === 'completed'
-                const badge     = STATUS_BADGE[effStatus] ?? { bg: '#f1f5f9', color: '#64748b', label: effStatus }
+                const badge     = STATUS_BADGE[effStatus] ?? { badge: bookingStatusStyle(effStatus).badge, label: effStatus }
                 const barColor  = bookingBarColor(effStatus)
                 return (
                   <div key={b.id} style={{
@@ -586,7 +583,7 @@ function MobileView({ data, loading, year, month, yachtFilter, setFilter, prev, 
                         <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: isDone ? '#94a3b8' : '#1e293b' }}>{b.yachtName}</p>
                         <p style={{ margin: '2px 0 0', fontSize: 11, color: '#94a3b8' }}>Private Charter</p>
                       </div>
-                      <span style={{ fontSize: 11, fontWeight: 700, color: badge.color, backgroundColor: badge.bg, borderRadius: 6, padding: '3px 10px', whiteSpace: 'nowrap', flexShrink: 0 }}>{badge.label}</span>
+                      <span className={badge.badge} style={{ fontSize: 11, fontWeight: 700, borderRadius: 6, padding: '3px 10px', whiteSpace: 'nowrap', flexShrink: 0 }}>{badge.label}</span>
                     </div>
                   </div>
                 )
@@ -619,7 +616,7 @@ function MobileView({ data, loading, year, month, yachtFilter, setFilter, prev, 
         <button onClick={() => setFilterOpen(v => !v)}
           style={{
             height: 44, paddingLeft: 18, paddingRight: 18, borderRadius: 22,
-            backgroundColor: colorMap[yachtFilter] ?? '#1a5f6e',
+            backgroundColor: colorMap[yachtFilter] ?? 'var(--brand)',
             border: 'none', cursor: 'pointer',
             boxShadow: '0 4px 18px rgba(0,0,0,0.22)',
             display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap',
@@ -801,7 +798,7 @@ export function PublicCalendarView() {
   const filterActive = !!(filterStart || filterEnd)
 
   const watermarkText = agentName
-    ? `${agentName} · ${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}`
+    ? `${agentName} · ${formatDate(new Date())}`
     : 'Samara Liveaboard'
 
   return (
@@ -830,9 +827,9 @@ export function PublicCalendarView() {
         {/* Right: legend */}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 14px', alignItems: 'center' }}>
           {[
-            { color: '#ef4444', label: 'Booked',    border: 'none' },
-            { color: '#eab308', label: 'Pending',   border: 'none' },
-            { color: '#22c55e', label: 'On Hold',   border: 'none' },
+            { color: 'var(--destructive)', label: 'Booked',    border: 'none' },
+            { color: 'var(--warning)', label: 'Pending',   border: 'none' },
+            { color: 'var(--success)', label: 'On Hold',   border: 'none' },
             { color: '#ffffff', label: 'Available', border: '1.5px solid #475569' },
           ].map(l => (
             <div key={l.label} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
@@ -841,7 +838,7 @@ export function PublicCalendarView() {
             </div>
           ))}
           <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-            <span style={{ width: 20, height: 9, borderRadius: 2, background: 'repeating-linear-gradient(45deg,#22c55e 0,#22c55e 3px,#22c55e44 3px,#22c55e44 8px)', flexShrink: 0 }} />
+            <span style={{ width: 20, height: 9, borderRadius: 2, background: 'repeating-linear-gradient(45deg,var(--success) 0,var(--success) 3px,color-mix(in srgb, var(--success) 27%, transparent) 3px,color-mix(in srgb, var(--success) 27%, transparent) 8px)', flexShrink: 0 }} />
             <span style={{ fontSize: 11, color: '#64748b' }}>Open Trip</span>
           </div>
         </div>
@@ -874,51 +871,54 @@ export function PublicCalendarView() {
             onClick={() => fetchData(true)}
             disabled={refreshing}
             title="Refresh schedule"
+            aria-label="Refresh schedule"
             style={{
               width: 32, height: 32, borderRadius: 8, border: '1px solid #e2e8f0',
-              background: refreshing ? '#f0f9ff' : 'white', cursor: refreshing ? 'not-allowed' : 'pointer',
+              background: refreshing ? 'color-mix(in srgb, var(--brand) 8%, transparent)' : 'white', cursor: refreshing ? 'not-allowed' : 'pointer',
               display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
               marginTop: 14,
             }}
           >
-            <RotateCw size={14} color={refreshing ? '#1a5f6e' : '#64748b'} style={{ animation: refreshing ? 'spin 1s linear infinite' : 'none' }} />
+            <RotateCw size={14} style={{ color: refreshing ? 'var(--brand)' : '#64748b', animation: refreshing ? 'spin 1s linear infinite' : 'none' }} />
           </button>
         </div>
 
         {/* CENTER: month navigation */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <button onClick={prev} style={{ width: 32, height: 32, borderRadius: 6, border: '1px solid #e2e8f0', background: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <button onClick={prev} aria-label="Previous month" style={{ width: 32, height: 32, borderRadius: 6, border: '1px solid #e2e8f0', background: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <ChevronLeft size={16} color="#475569" />
           </button>
           <span style={{ fontSize: 14, fontWeight: 700, color: '#1e293b', minWidth: 148, textAlign: 'center' }}>{MONTH_NAMES[month]} {year}</span>
-          <button onClick={next} style={{ width: 32, height: 32, borderRadius: 6, border: '1px solid #e2e8f0', background: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <button onClick={next} aria-label="Next month" style={{ width: 32, height: 32, borderRadius: 6, border: '1px solid #e2e8f0', background: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <ChevronRight size={16} color="#475569" />
           </button>
         </div>
 
         {/* RIGHT: date range filter */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'flex-end' }}>
-          <CalendarSearch size={14} color={filterActive ? '#1a5f6e' : '#94a3b8'} style={{ flexShrink: 0 }} />
+          <CalendarSearch size={14} style={{ color: filterActive ? 'var(--brand)' : '#94a3b8', flexShrink: 0 }} />
           <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-            <span style={{ fontSize: 9, fontWeight: 700, color: '#94a3b8', letterSpacing: '0.05em' }}>FROM</span>
+            <label htmlFor="public-cal-from" style={{ fontSize: 9, fontWeight: 700, color: '#94a3b8', letterSpacing: '0.05em' }}>FROM</label>
             <input
+              id="public-cal-from"
               type="date"
               onKeyDown={e => e.preventDefault()}
               value={filterStart}
               onChange={e => setFilterStart(e.target.value)}
               style={{
                 fontSize: 12, padding: '4px 8px', borderRadius: 6,
-                border: filterStart ? '1.5px solid #1a5f6e' : '1px solid #e2e8f0',
-                backgroundColor: filterStart ? '#e0f2f7' : 'white',
-                color: filterStart ? '#1a5f6e' : '#475569',
+                border: filterStart ? '1.5px solid var(--brand)' : '1px solid #e2e8f0',
+                backgroundColor: filterStart ? 'color-mix(in srgb, var(--brand) 12%, transparent)' : 'white',
+                color: filterStart ? 'var(--brand)' : '#475569',
                 outline: 'none', cursor: 'pointer',
               }}
             />
           </div>
           <span style={{ color: '#94a3b8', fontSize: 13, paddingTop: 13, flexShrink: 0 }}>→</span>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-            <span style={{ fontSize: 9, fontWeight: 700, color: '#94a3b8', letterSpacing: '0.05em' }}>TO</span>
+            <label htmlFor="public-cal-to" style={{ fontSize: 9, fontWeight: 700, color: '#94a3b8', letterSpacing: '0.05em' }}>TO</label>
             <input
+              id="public-cal-to"
               type="date"
               onKeyDown={e => e.preventDefault()}
               value={filterEnd}
@@ -929,9 +929,9 @@ export function PublicCalendarView() {
               }}
               style={{
                 fontSize: 12, padding: '4px 8px', borderRadius: 6,
-                border: filterEnd ? '1.5px solid #1a5f6e' : '1px solid #e2e8f0',
-                backgroundColor: filterEnd ? '#e0f2f7' : 'white',
-                color: filterEnd ? '#1a5f6e' : '#475569',
+                border: filterEnd ? '1.5px solid var(--brand)' : '1px solid #e2e8f0',
+                backgroundColor: filterEnd ? 'color-mix(in srgb, var(--brand) 12%, transparent)' : 'white',
+                color: filterEnd ? 'var(--brand)' : '#475569',
                 outline: 'none', cursor: 'pointer',
               }}
             />
@@ -941,6 +941,7 @@ export function PublicCalendarView() {
               onClick={() => { setFilterStart(''); setFilterEnd('') }}
               style={{ width: 22, height: 22, borderRadius: 5, border: '1px solid #e2e8f0', background: '#f8fafc', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: 13, flexShrink: 0 }}
               title="Clear date filter"
+              aria-label="Clear date filter"
             >
               <X size={11} color="#64748b" />
             </button>
@@ -992,7 +993,7 @@ export function PublicCalendarView() {
                           <div key={di} style={{
                             borderRight: di < 6 ? '1px solid #f1f5f9' : 'none',
                             padding: '5px 6px',
-                            backgroundColor: isPast ? '#f8fafc' : isOccupied ? '#fff5f5' : di === 0 ? '#fafafa' : 'white',
+                            backgroundColor: isPast ? '#f8fafc' : isOccupied ? 'color-mix(in srgb, var(--destructive) 5%, transparent)' : di === 0 ? '#fafafa' : 'white',
                             position: 'relative',
                           }}>
                             {/* Filter range bar behind date */}
@@ -1002,7 +1003,7 @@ export function PublicCalendarView() {
                                 top: 4, height: 24,
                                 left:  prevInFilt || isFiltSt  ? (isFiltSt  ? '50%' : '0')   : '0',
                                 right: nextInFilt || isFiltEnd ? (isFiltEnd ? '50%' : '0') : '0',
-                                backgroundColor: 'rgba(26,95,110,0.1)',
+                                backgroundColor: 'color-mix(in srgb, var(--brand) 10%, transparent)',
                                 zIndex: 0,
                                 // no border-radius so it joins adjacent cells seamlessly
                               }} />
@@ -1011,21 +1012,21 @@ export function PublicCalendarView() {
                               <span style={{
                                 fontSize: 12,
                                 fontWeight: isToday || isFiltSt || isFiltEnd ? 700 : 500,
-                                color: (isFiltSt || isFiltEnd) ? 'white'
-                                  : isToday ? '#1a5f6e'
+                                color: (isFiltSt || isFiltEnd) ? 'var(--brand-foreground)'
+                                  : isToday ? 'var(--brand)'
                                   : isPast ? '#c1cdd8'
-                                  : inFilt ? '#1a5f6e'
-                                  : isOccupied ? '#f87171'
+                                  : inFilt ? 'var(--brand)'
+                                  : isOccupied ? 'color-mix(in srgb, var(--destructive) 75%, transparent)'
                                   : di === 0 ? '#94a3b8' : '#475569',
                                 display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                                 width: 24, height: 24, borderRadius: '50%',
-                                backgroundColor: (isFiltSt || isFiltEnd) ? '#1a5f6e'
-                                  : isToday ? '#e0f2f7'
+                                backgroundColor: (isFiltSt || isFiltEnd) ? 'var(--brand)'
+                                  : isToday ? 'color-mix(in srgb, var(--brand) 12%, transparent)'
                                   : 'transparent',
                                 position: 'relative', zIndex: 1,
                                 // Ring for in-range days (not start/end)
                                 boxShadow: inFilt && !isFiltSt && !isFiltEnd
-                                  ? '0 0 0 1.5px rgba(26,95,110,0.35)'
+                                  ? '0 0 0 1.5px color-mix(in srgb, var(--brand) 35%, transparent)'
                                   : 'none',
                               }}>
                                 {day}
@@ -1068,7 +1069,7 @@ export function PublicCalendarView() {
                         filter: isPastSeg ? 'grayscale(60%)' : 'none',
                       }
                       if (seg.isStripe) {
-                        const gap = `${seg.color}44`
+                        const gap = `color-mix(in srgb, ${seg.color} 27%, transparent)`
                         barStyle.background = `repeating-linear-gradient(45deg,${seg.color} 0px,${seg.color} 3px,${gap} 3px,${gap} 8px)`
                         barStyle.outline = `1.5px solid ${seg.color}`; barStyle.outlineOffset = '-1px'
                       } else { barStyle.backgroundColor = seg.color }
@@ -1079,8 +1080,8 @@ export function PublicCalendarView() {
                         fontSize: 9, fontWeight: 800, letterSpacing: '0.03em',
                         borderRadius: 4, padding: '2px 5px', whiteSpace: 'nowrap',
                         backgroundColor: 'rgba(255,255,255,0.92)',
-                        color: seg.isStripe ? '#15803d' : seg.color,
-                        border: `1px solid ${seg.isStripe ? '#86efac' : 'rgba(255,255,255,0.4)'}`,
+                        color: seg.isStripe ? 'var(--success)' : seg.color,
+                        border: `1px solid ${seg.isStripe ? 'color-mix(in srgb, var(--success) 50%, transparent)' : 'rgba(255,255,255,0.4)'}`,
                         zIndex: 11,
                       }
 
@@ -1110,12 +1111,12 @@ export function PublicCalendarView() {
                                 <span style={{ fontSize: 11, fontWeight: 600, color: '#475569', whiteSpace: 'nowrap', flexShrink: 0 }}>{ot.yacht.name}</span>
                                 <span style={{ fontSize: 10, color: '#94a3b8', whiteSpace: 'nowrap', flexShrink: 0 }}>{nights + 1}D/{nights}N</span>
                                 {ot.status === 'closed' && !ot.closedReason?.includes('Private Charter') && <span style={{ fontSize: 10, fontWeight: 700, color: '#fff', backgroundColor: '#64748b', borderRadius: 3, padding: '1px 5px', whiteSpace: 'nowrap', flexShrink: 0 }}>CLOSED</span>}
-                                {ot.status === 'full' && <span style={{ fontSize: 10, fontWeight: 700, color: '#fff', backgroundColor: '#ef4444', borderRadius: 3, padding: '1px 5px', whiteSpace: 'nowrap', flexShrink: 0 }}>FULL</span>}
+                                {ot.status === 'full' && <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--destructive-foreground)', backgroundColor: 'var(--destructive)', borderRadius: 3, padding: '1px 5px', whiteSpace: 'nowrap', flexShrink: 0 }}>FULL</span>}
                               </div>
                               <div style={{ display: 'flex', flexWrap: 'nowrap', gap: '3px 10px', overflow: 'hidden' }}>
                                 {ot.cabinStatuses.map(c => {
                                   const bs = c.bookingStatus
-                                  const dotColor = ot.status === 'closed' ? '#ef4444' : bs === null ? '#ffffff' : bs === 'on_hold' ? '#22c55e' : bs === 'pending' ? '#eab308' : '#ef4444'
+                                  const dotColor = ot.status === 'closed' ? 'var(--destructive)' : bs === null ? '#ffffff' : bs === 'on_hold' ? 'var(--success)' : bs === 'pending' ? 'var(--warning)' : 'var(--destructive)'
                                   const dotBorder = dotColor === '#ffffff' ? '1.5px solid #475569' : 'none'
                                   return (
                                     <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>

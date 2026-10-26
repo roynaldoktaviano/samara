@@ -17,7 +17,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const db = await getDb(session)
 
   const employee = await db.employee.findUnique({ where: { userId: session.user.id }, select: { id: true } })
-  if (!employee) return NextResponse.json({ error: 'Akun kamu belum terhubung ke data karyawan — hubungi Admin/HR.' }, { status: 403 })
+  if (!employee) return NextResponse.json({ error: 'Your account is not linked to an employee record — contact Admin/HR.' }, { status: 403 })
 
   const body = await req.json()
   const { action, reason } = body as { action?: 'approve' | 'reject'; reason?: string }
@@ -28,8 +28,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     select: { id: true, prNumber: true, status: true, approverEmployeeId: true, division: true, items: { select: { viaWarehouse: true } } },
   })
   if (!request) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-  if (request.status !== 'PENDING_APPROVAL') return NextResponse.json({ error: 'PR ini tidak sedang menunggu approval' }, { status: 409 })
-  if (request.approverEmployeeId !== employee.id) return NextResponse.json({ error: 'PR ini bukan untuk kamu approve' }, { status: 403 })
+  if (request.status !== 'PENDING_APPROVAL') return NextResponse.json({ error: 'This PR is not pending approval' }, { status: 409 })
+  if (request.approverEmployeeId !== employee.id) return NextResponse.json({ error: 'You are not the approver for this PR' }, { status: 403 })
 
   // Route was snapshotted per line at submit (routePrLines): only an all-Warehouse PR waits
   // in DRAFT; any direct line goes to Purchasing now, in parallel with Warehouse's check.
@@ -50,14 +50,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   await notifyRequester(db, id, action === 'approve'
     ? {
         type: 'PR_APPROVED',
-        title: 'Request disetujui atasan',
-        body: `${request.prNumber} sudah disetujui atasan — ${!via.some(Boolean) ? 'diteruskan ke Purchasing' : via.every(Boolean) ? 'sekarang dicek stoknya oleh Gudang' : 'diproses Purchasing & dicek Gudang bersamaan'}.`,
+        title: 'Request approved by manager',
+        body: `${request.prNumber} was approved by your manager — ${!via.some(Boolean) ? 'forwarded to Purchasing' : via.every(Boolean) ? 'now being stock-checked by Warehouse' : 'being processed by Purchasing and stock-checked by Warehouse in parallel'}.`,
         skipUserId: session.user.id,
       }
     : {
         type: 'PR_REJECTED',
-        title: 'Request ditolak atasan',
-        body: `${request.prNumber} ditolak oleh atasan.${reason?.trim() ? ` Alasan: ${reason.trim()}` : ''}`,
+        title: 'Request rejected by manager',
+        body: `${request.prNumber} was rejected by your manager.${reason?.trim() ? ` Reason: ${reason.trim()}` : ''}`,
         skipUserId: session.user.id,
       })
 

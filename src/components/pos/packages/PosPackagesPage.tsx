@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Plus, Search, PackagePlus, Pencil, Trash2, X, Globe, Anchor } from 'lucide-react'
+import { StatusBadge } from '@/components/ui/status-badge'
+import { formatMoney } from '@/lib/format'
 
 interface Yacht { id: string; name: string }
 interface Category { id: string; name: string; isActive: boolean }
@@ -12,8 +14,7 @@ interface Pkg {
   category: { id: string; name: string }; yacht: { id: string; name: string } | null; items: PackageItem[]
 }
 
-const fmtMoney = (n: number) => 'Rp ' + new Intl.NumberFormat('id-ID').format(n)
-const inp = 'w-full h-9 border rounded-md px-3 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white transition-colors'
+const inp = 'w-full h-9 border rounded-md px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring bg-card transition-colors'
 const BLANK_FORM = { name: '', description: '', categoryId: '', price: '', items: [] as { itemId: string; name: string; unit: string; qty: number }[] }
 
 export default function PosPackagesPage() {
@@ -112,19 +113,19 @@ export default function PosPackagesPage() {
           <h2 className="text-2xl font-bold tracking-tight">POS Packages</h2>
           <p className="text-muted-foreground text-sm mt-1">Bundles sold at a set price in the Cashier app</p>
         </div>
-        <button onClick={openAdd} className="flex items-center gap-1.5 h-9 px-4 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium rounded-md transition-colors">
+        <button onClick={openAdd} className="flex items-center gap-1.5 h-9 px-4 bg-primary hover:bg-primary-hover text-primary-foreground text-sm font-medium rounded-md transition-colors">
           <Plus className="h-3.5 w-3.5" /> Add Package
         </button>
       </div>
 
       <div className="flex gap-1.5 flex-wrap">
         <button onClick={() => setScope('global')}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${scope === 'global' ? 'bg-amber-600 text-white' : 'bg-muted text-muted-foreground hover:bg-muted/70'}`}>
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${scope === 'global' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/70'}`}>
           <Globe className="h-3 w-3" /> Global (all yachts)
         </button>
         {yachts.map(y => (
           <button key={y.id} onClick={() => setScope(y.id)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${scope === y.id ? 'bg-blue-600 text-white' : 'bg-muted text-muted-foreground hover:bg-muted/70'}`}>
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${scope === y.id ? 'bg-info text-info-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/70'}`}>
             <Anchor className="h-3 w-3" /> {y.name}
           </button>
         ))}
@@ -145,21 +146,21 @@ export default function PosPackagesPage() {
                 <p className="font-semibold truncate">{p.name}</p>
                 <p className="text-xs text-muted-foreground">{p.category.name}</p>
               </div>
-              <span className={`px-2 py-0.5 rounded-full text-xs font-medium shrink-0 ${p.isActive ? 'bg-green-100 text-green-700' : 'bg-muted text-muted-foreground'}`}>
+              <StatusBadge tone={p.isActive ? 'success' : 'neutral'} className="shrink-0">
                 {p.isActive ? 'Active' : 'Inactive'}
-              </span>
+              </StatusBadge>
             </div>
             {p.description && <p className="text-xs text-muted-foreground line-clamp-2">{p.description}</p>}
             <p className="text-xs text-muted-foreground">{p.items.length} item{p.items.length !== 1 ? 's' : ''}: {p.items.map(i => `${i.qty}× ${i.item.name}`).join(', ')}</p>
             <div className="flex items-center justify-between pt-1">
-              <span className="font-bold text-amber-700">{fmtMoney(p.price)}</span>
+              <span className="font-bold text-primary-strong">{formatMoney(p.price)}</span>
               <div className="flex items-center gap-1">
                 <button onClick={() => openEdit(p)} className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-md transition-colors"><Pencil className="h-3.5 w-3.5" /></button>
                 <button onClick={() => toggleActive(p)} className="px-2 py-1 text-xs border rounded-md text-muted-foreground hover:bg-muted transition-colors">{p.isActive ? 'Off' : 'On'}</button>
-                <button onClick={() => del(p)} className="p-1.5 text-muted-foreground hover:text-red-500 hover:bg-red-50 rounded-md transition-colors"><Trash2 className="h-3.5 w-3.5" /></button>
+                <button onClick={() => del(p)} className="p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors"><Trash2 className="h-3.5 w-3.5" /></button>
               </div>
             </div>
-            {!p.yachtId && <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-100 text-amber-700">Global</span>}
+            {!p.yachtId && <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-medium bg-primary/15 text-primary-strong">Global</span>}
           </div>
         ))}
       </div>
@@ -168,43 +169,43 @@ export default function PosPackagesPage() {
         <>
           <div className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm" onClick={() => setShowForm(false)} />
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
-            <div className="pointer-events-auto bg-white rounded-2xl shadow-2xl w-full max-w-md flex flex-col max-h-[85vh]">
+            <div className="pointer-events-auto bg-card rounded-2xl shadow-2xl w-full max-w-md flex flex-col max-h-[85vh]">
               <div className="flex items-center justify-between px-5 py-4 border-b shrink-0">
                 <h3 className="text-sm font-semibold">{editId ? 'Edit Package' : `Add Package to ${scope === 'global' ? 'Global' : yachts.find(y => y.id === scope)?.name}`}</h3>
                 <button onClick={() => setShowForm(false)} className="p-1 hover:bg-muted rounded-md"><X className="h-4 w-4" /></button>
               </div>
               <div className="p-5 space-y-4 overflow-y-auto flex-1">
-                {saveError && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2">{saveError}</div>}
+                {saveError && <div className="rounded-lg bg-destructive/10 border border-destructive/30 text-destructive text-sm px-3 py-2">{saveError}</div>}
                 <div className="space-y-1.5">
-                  <label className="text-sm font-medium">Name <span className="text-red-500">*</span></label>
+                  <label className="text-sm font-medium">Name <span className="text-destructive">*</span></label>
                   <input className={inp} placeholder="e.g. Sunset BBQ Set" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-sm font-medium text-muted-foreground">Description</label>
-                  <textarea className="w-full border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white resize-none" rows={2}
+                  <textarea className="w-full border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring bg-card resize-none" rows={2}
                     value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} />
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
-                    <label className="text-sm font-medium">POS Category <span className="text-red-500">*</span></label>
+                    <label className="text-sm font-medium">POS Category <span className="text-destructive">*</span></label>
                     <select className={inp} value={form.categoryId} onChange={e => setForm(f => ({ ...f, categoryId: e.target.value }))}>
                       <option value="">Select…</option>
                       {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                     </select>
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-sm font-medium">Price <span className="text-red-500">*</span></label>
+                    <label className="text-sm font-medium">Price <span className="text-destructive">*</span></label>
                     <input className={inp} type="number" min="0" value={form.price} onChange={e => setForm(f => ({ ...f, price: e.target.value }))} />
                   </div>
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Included Items <span className="text-red-500">*</span></label>
+                  <label className="text-sm font-medium">Included Items <span className="text-destructive">*</span></label>
                   <div className="relative">
                     <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                     <input className={`${inp} pl-8`} placeholder="Search Item Master to add…" value={itemSearch} onChange={e => setItemSearch(e.target.value)} />
                     {itemResults.length > 0 && (
-                      <div className="absolute left-0 right-0 top-full mt-1 bg-white border rounded-lg shadow-lg z-10 max-h-40 overflow-y-auto">
+                      <div className="absolute left-0 right-0 top-full mt-1 bg-popover border rounded-lg shadow-lg z-10 max-h-40 overflow-y-auto">
                         {itemResults.map(c => (
                           <button key={c.id} type="button" onClick={() => addItem(c)} className="w-full text-left px-3 py-2 text-sm hover:bg-muted/40 transition-colors">
                             {c.name} <span className="text-xs text-muted-foreground">· {c.category}</span>
@@ -223,7 +224,7 @@ export default function PosPackagesPage() {
                           <input type="number" min="1" value={it.qty} onChange={e => setItemQty(it.itemId, Number(e.target.value) || 1)}
                             className="w-14 h-7 border rounded px-1.5 text-xs text-center" />
                           <span className="text-xs text-muted-foreground">{it.unit}</span>
-                          <button onClick={() => removeItem(it.itemId)} className="text-muted-foreground hover:text-red-500 transition-colors"><X className="h-3.5 w-3.5" /></button>
+                          <button onClick={() => removeItem(it.itemId)} className="text-muted-foreground hover:text-destructive transition-colors"><X className="h-3.5 w-3.5" /></button>
                         </div>
                       ))}
                     </div>
@@ -233,7 +234,7 @@ export default function PosPackagesPage() {
               <div className="flex justify-end gap-2 px-5 py-4 border-t shrink-0">
                 <button onClick={() => setShowForm(false)} className="px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">Cancel</button>
                 <button onClick={save} disabled={saving}
-                  className="flex items-center gap-2 px-5 py-2 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700 font-semibold disabled:opacity-50 transition-colors">
+                  className="flex items-center gap-2 px-5 py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary-hover font-semibold disabled:opacity-50 transition-colors">
                   {saving ? 'Saving…' : editId ? 'Save Changes' : 'Add Package'}
                 </button>
               </div>

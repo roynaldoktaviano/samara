@@ -6,6 +6,7 @@ import { Shield, LogIn, Plus, Pencil, Trash2, CheckCircle2, XCircle, ChevronLeft
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { formatNumber } from '@/lib/format'
 
 interface Log {
   id:        string
@@ -29,19 +30,19 @@ const ACTION_ICON: Record<string, React.ElementType> = {
 }
 
 const ACTION_COLOR: Record<string, string> = {
-  LOGIN:   'bg-blue-100 text-blue-700',
-  CREATE:  'bg-emerald-100 text-emerald-700',
-  UPDATE:  'bg-amber-100 text-amber-700',
-  DELETE:  'bg-red-100 text-red-700',
-  CONFIRM: 'bg-green-100 text-green-700',
-  REJECT:  'bg-red-100 text-red-700',
+  LOGIN:   'bg-info/15 text-info',
+  CREATE:  'bg-success/15 text-success',
+  UPDATE:  'bg-warning/15 text-warning',
+  DELETE:  'bg-destructive/15 text-destructive',
+  CONFIRM: 'bg-success/15 text-success',
+  REJECT:  'bg-destructive/15 text-destructive',
 }
 
 const ROLE_COLOR: Record<string, string> = {
-  ADMIN:     'bg-purple-100 text-purple-700',
-  SALES:     'bg-blue-100 text-blue-700',
-  FINANCE:   'bg-emerald-100 text-emerald-700',
-  MARKETING: 'bg-orange-100 text-orange-700',
+  ADMIN:     'bg-purple-100 text-purple-700 dark:bg-purple-500/15 dark:text-purple-300',
+  SALES:     'bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300',
+  FINANCE:   'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300',
+  MARKETING: 'bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-300',
 }
 
 function fmtDateTime(d: string) {
@@ -103,12 +104,12 @@ export default function ActivityLog() {
     <div className="p-6 space-y-5">
       {/* Header */}
       <div className="flex items-center gap-3">
-        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-purple-100">
-          <Shield className="h-5 w-5 text-purple-700" />
+        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-purple-100 dark:bg-purple-500/15">
+          <Shield className="h-5 w-5 text-purple-700 dark:text-purple-300" />
         </div>
         <div>
           <h2 className="text-lg font-semibold">Activity Log</h2>
-          <p className="text-xs text-muted-foreground">{total.toLocaleString()} entries recorded · visible to admins only</p>
+          <p className="text-xs text-muted-foreground">{formatNumber(total)} entries recorded · visible to admins only</p>
         </div>
       </div>
 
@@ -214,7 +215,7 @@ export default function ActivityLog() {
                         animate={{ opacity: 1 }}
                         className="flex justify-center"
                       >
-                        <div className="h-5 w-5 rounded-full border-2 border-[#bdac7e] border-t-transparent animate-spin" />
+                        <div className="h-5 w-5 rounded-full border-2 border-primary border-t-transparent animate-spin" />
                       </motion.div>
                     </td>
                   </tr>
@@ -242,12 +243,12 @@ export default function ActivityLog() {
                           {log.userName}
                         </td>
                         <td className="px-4 py-3">
-                          <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold ${ROLE_COLOR[log.userRole] ?? 'bg-gray-100 text-gray-600'}`}>
+                          <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold ${ROLE_COLOR[log.userRole] ?? 'bg-muted text-muted-foreground'}`}>
                             {log.userRole}
                           </span>
                         </td>
                         <td className="px-4 py-3">
-                          <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${ACTION_COLOR[log.action] ?? 'bg-gray-100 text-gray-600'}`}>
+                          <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${ACTION_COLOR[log.action] ?? 'bg-muted text-muted-foreground'}`}>
                             <Icon className="h-3 w-3" />
                             {log.action}
                           </span>
@@ -304,7 +305,7 @@ export default function ActivityLog() {
                     key={p}
                     variant={page === p ? 'default' : 'outline'}
                     size="icon" className="h-8 w-8 text-xs"
-                    style={page === p ? { backgroundColor: '#bdac7e', borderColor: '#bdac7e' } : {}}
+                    style={page === p ? { backgroundColor: 'var(--primary)', borderColor: 'var(--primary)' } : {}}
                     onClick={() => { setPage(p as number); fetchLogs(p as number) }}
                   >
                     {p}

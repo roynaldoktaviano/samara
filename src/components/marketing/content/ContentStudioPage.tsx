@@ -8,8 +8,7 @@ import { PageHeader, ModuleHero } from '@/components/marketing/shared/MarketingU
 import ContentEditor from './ContentEditor'
 import ContentDetailSheet from './ContentDetailSheet'
 import { FORMAT_LABELS, STATUS_LABELS, STATUS_STYLE, STATUS_ORDER, type ContentItem, type ContentStatus } from './contentTypes'
-
-const fmtDate = (d: string | null) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : null
+import { formatDate } from '@/lib/format'
 
 export default function ContentStudioPage() {
   const [items, setItems] = useState<ContentItem[]>([])
@@ -44,7 +43,7 @@ export default function ContentStudioPage() {
         eyebrow="CREATE & PUBLISH" title="Content Studio"
         subtitle="Produce, review and approve content — social, video, ads — in one shared queue."
         action={
-          <Button onClick={() => setEditorOpen(true)} style={{ backgroundColor: '#bdac7e', color: 'white' }} className="hover:opacity-90">
+          <Button onClick={() => setEditorOpen(true)} className="bg-primary text-primary-foreground hover:bg-primary-hover">
             <Plus className="h-4 w-4 mr-2" /> New content
           </Button>
         }
@@ -83,7 +82,7 @@ function FilterTab({ label, count, active, onClick }: { label: string; count: nu
   return (
     <button
       onClick={onClick}
-      className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${active ? 'bg-[#bdac7e] text-white border-[#bdac7e]' : 'bg-white text-muted-foreground border-border hover:bg-muted/50'}`}
+      className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${active ? 'bg-primary text-primary-foreground border-primary' : 'bg-card text-muted-foreground border-border hover:bg-muted/50'}`}
     >
       {label} <span className={active ? 'opacity-80' : 'opacity-60'}>{count}</span>
     </button>
@@ -92,9 +91,9 @@ function FilterTab({ label, count, active, onClick }: { label: string; count: nu
 
 function ContentCard({ item, onClick }: { item: ContentItem; onClick: () => void }) {
   const latest = item.versions?.[0] ?? null
-  const due = fmtDate(item.dueDate)
+  const due = formatDate(item.dueDate, 'short', { empty: '' })
   return (
-    <button onClick={onClick} className="text-left border rounded-xl bg-white overflow-hidden hover:shadow-md hover:border-[#bdac7e]/50 transition-all">
+    <button onClick={onClick} className="text-left border rounded-xl bg-card overflow-hidden hover:shadow-md hover:border-primary/50 transition-all">
       <div className="h-36 bg-muted/40 flex items-center justify-center relative">
         {latest?.mediaUrl ? (
           latest.mediaType === 'video' ? (

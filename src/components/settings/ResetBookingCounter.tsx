@@ -46,14 +46,14 @@ export default function ResetBookingCounter() {
             Reset Booking Code Counter
           </CardTitle>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Reset counter urutan booking code ke awal (0001). Hanya bisa dilakukan saat tidak ada data booking.
+            Restart the booking code sequence from 0001. Only possible when there are no bookings.
           </p>
         </CardHeader>
         <CardContent>
           <Button
             variant="outline"
             size="sm"
-            className="h-8 text-xs border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
+            className="h-8 text-xs border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
             onClick={() => setOpen(true)}
             disabled={loading}
           >
@@ -62,7 +62,7 @@ export default function ResetBookingCounter() {
           </Button>
 
           {toast && (
-            <div className={`mt-3 flex items-center gap-2 text-xs rounded-md px-3 py-2 ${toast.type === 'success' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'}`}>
+            <div className={`mt-3 flex items-center gap-2 text-xs rounded-md px-3 py-2 ${toast.type === 'success' ? 'bg-success/10 text-success' : 'bg-destructive/10 text-destructive'}`}>
               {toast.type === 'success'
                 ? <CheckCircle className="h-3.5 w-3.5 shrink-0" />
                 : <AlertTriangle className="h-3.5 w-3.5 shrink-0" />}
@@ -77,21 +77,21 @@ export default function ResetBookingCounter() {
           <AlertDialogHeader>
             <AlertDialogTitle>Reset Booking Code Counter?</AlertDialogTitle>
             <AlertDialogDescription>
-              Semua counter booking code (SL1-ST-xxxx, SL1-PC-xxxx, dll) akan direset ke 0.
-              Booking berikutnya akan mulai dari <strong>0001</strong> lagi.
+              All booking code counters (SL1-ST-xxxx, SL1-PC-xxxx, etc.) will be reset to 0.
+              The next booking will start from <strong>0001</strong> again.
               <br /><br />
-              Pastikan semua data booking sudah dihapus sebelum melakukan reset ini.
+              Make sure all bookings have been deleted before running this reset.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Batal</AlertDialogCancel>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleReset}
               disabled={loading}
-              className="bg-red-600 hover:bg-red-700 text-white"
+              className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
             >
               {loading && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-              Ya, Reset Counter
+              Yes, Reset Counter
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

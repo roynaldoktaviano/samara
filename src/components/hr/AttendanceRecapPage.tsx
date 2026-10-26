@@ -1,8 +1,14 @@
 'use client'
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { CalendarCheck, Loader2, X } from 'lucide-react'
+import { CalendarCheck } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import { NativeSelect } from '@/components/ui/native-select'
+import { Label } from '@/components/ui/label'
 
 interface EmployeeLite { id: string; fullName: string; employeeNumber: string; department: string | null; isCrew: boolean; locationId: string | null }
 interface CellRecord { status: string; note: string | null; leaveRequestId: string | null }
@@ -17,13 +23,13 @@ interface AttendanceData {
 const STATUSES = ['HADIR', 'WFH', 'IZIN', 'SAKIT', 'CUTI', 'ALPHA', 'LIBUR'] as const
 
 const STATUS_META: Record<string, { label: string; dot: string }> = {
-  HADIR: { label: 'Present', dot: 'bg-emerald-500' },
+  HADIR: { label: 'Present', dot: 'bg-success' },
   WFH: { label: 'WFH', dot: 'bg-sky-500' },
-  IZIN: { label: 'Permission', dot: 'bg-amber-500' },
-  SAKIT: { label: 'Sick', dot: 'bg-blue-500' },
+  IZIN: { label: 'Permission', dot: 'bg-warning' },
+  SAKIT: { label: 'Sick', dot: 'bg-info' },
   CUTI: { label: 'Leave', dot: 'bg-purple-500' },
-  ALPHA: { label: 'Absent', dot: 'bg-red-500' },
-  LIBUR: { label: 'Day Off', dot: 'bg-gray-400' },
+  ALPHA: { label: 'Absent', dot: 'bg-destructive' },
+  LIBUR: { label: 'Day Off', dot: 'bg-muted-foreground/60' },
 }
 
 // Parsed as UTC so the grid's day-of-week labeling never shifts with the viewer's local
@@ -146,29 +152,26 @@ export default function AttendanceRecapPage() {
         </div>
       </div>
 
-      <div className="border rounded-xl bg-white px-4 py-3 flex items-center gap-5 flex-wrap">
+      <div className="border rounded-xl bg-card px-4 py-3 flex items-center gap-5 flex-wrap">
         <div className="flex items-center gap-2">
-          <label className="text-xs font-medium text-muted-foreground">Month</label>
-          <select value={month} onChange={e => setMonth(Number(e.target.value))}
-            className="h-9 border rounded-md px-2.5 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500">
+          <Label htmlFor="attendance-month" className="text-xs font-medium text-muted-foreground">Month</Label>
+          <NativeSelect id="attendance-month" value={month} onChange={e => setMonth(Number(e.target.value))} className="w-auto">
             {MONTH_NAMES.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
-          </select>
+          </NativeSelect>
         </div>
         <div className="flex items-center gap-2">
-          <label className="text-xs font-medium text-muted-foreground">Year</label>
-          <select value={year} onChange={e => setYear(Number(e.target.value))}
-            className="h-9 border rounded-md px-2.5 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500">
+          <Label htmlFor="attendance-year" className="text-xs font-medium text-muted-foreground">Year</Label>
+          <NativeSelect id="attendance-year" value={year} onChange={e => setYear(Number(e.target.value))} className="w-auto">
             {yearOptions.map(y => <option key={y} value={y}>{y}</option>)}
-          </select>
+          </NativeSelect>
         </div>
         <div className="flex items-center gap-2">
-          <label className="text-xs font-medium text-muted-foreground">Location</label>
-          <select value={locationId} onChange={e => setLocationId(e.target.value)}
-            className="h-9 border rounded-md px-2.5 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-amber-500">
+          <Label htmlFor="attendance-location" className="text-xs font-medium text-muted-foreground">Location</Label>
+          <NativeSelect id="attendance-location" value={locationId} onChange={e => setLocationId(e.target.value)} className="w-auto">
             <option value="office">Office</option>
             <option value="">All locations</option>
             {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
-          </select>
+          </NativeSelect>
         </div>
         <div className="h-6 w-px bg-border hidden sm:block" />
         <div className="flex items-center gap-3.5 flex-wrap sm:ml-auto">
@@ -211,8 +214,8 @@ export default function AttendanceRecapPage() {
               <tbody className="divide-y">
                 {data.employees.map(emp => (
                   <tr key={emp.id} className="hover:bg-muted/10">
-                    <td className="sticky left-0 bg-white px-4 py-2 z-10">
-                      <button onClick={() => openBulk(emp.id, emp.fullName, emp.isCrew)} className="text-left hover:text-amber-700 transition-colors" title="Bulk edit this employee">
+                    <td className="sticky left-0 bg-card px-4 py-2 z-10">
+                      <button onClick={() => openBulk(emp.id, emp.fullName, emp.isCrew)} className="text-left hover:text-primary-strong transition-colors" title="Bulk edit this employee">
                         <p className="font-medium">{emp.fullName}</p>
                         <p className="text-xs text-muted-foreground font-mono">{emp.employeeNumber}</p>
                       </button>
@@ -230,23 +233,24 @@ export default function AttendanceRecapPage() {
                           <Popover open={cellPopover?.employeeId === emp.id && cellPopover?.date === d} onOpenChange={v => !v && setCellPopover(null)}>
                             <PopoverTrigger asChild>
                               <button onClick={() => openCell(emp.id, d)}
-                                className={`h-3 w-3 rounded-full ${STATUS_META[rec.status]?.dot ?? 'bg-emerald-500'} ${rec.leaveRequestId ? 'ring-2 ring-offset-1 ring-purple-300' : ''} hover:scale-125 transition-transform`}
-                                title={`${STATUS_META[rec.status]?.label ?? rec.status}${rec.note ? ` — ${rec.note}` : ''}`} />
+                                className={`h-3 w-3 rounded-full ${STATUS_META[rec.status]?.dot ?? 'bg-success'} ${rec.leaveRequestId ? 'ring-2 ring-offset-1 ring-offset-card ring-purple-300 dark:ring-purple-500/60' : ''} hover:scale-125 transition-transform`}
+                                title={`${STATUS_META[rec.status]?.label ?? rec.status}${rec.note ? ` — ${rec.note}` : ''}`}
+                                aria-label={`${emp.fullName}, ${d}: ${STATUS_META[rec.status]?.label ?? rec.status}${rec.note ? ` — ${rec.note}` : ''}`} />
                             </PopoverTrigger>
                             <PopoverContent className="w-56 p-3" align="center">
                               <p className="text-xs font-semibold mb-2">{emp.fullName} · {d}</p>
                               <div className="grid grid-cols-3 gap-1.5 mb-2">
                                 {STATUSES.map(s => (
-                                  <button key={s} onClick={() => saveCell(s)} disabled={saving}
-                                    className={`flex flex-col items-center gap-1 px-1.5 py-1.5 rounded-md border text-[10px] transition-colors ${rec.status === s ? 'border-amber-400 bg-amber-50' : 'border-transparent hover:bg-muted'}`}>
+                                  <button key={s} onClick={() => saveCell(s)} disabled={saving} aria-pressed={rec.status === s}
+                                    className={`flex flex-col items-center gap-1 px-1.5 py-1.5 rounded-md border text-[10px] transition-colors ${rec.status === s ? 'border-primary bg-primary/10' : 'border-transparent hover:bg-muted'}`}>
                                     <span className={`h-2.5 w-2.5 rounded-full ${STATUS_META[s].dot}`} />
                                     {STATUS_META[s].label}
                                   </button>
                                 ))}
                               </div>
-                              <textarea rows={2} placeholder="Note (optional)" value={cellNote} onChange={e => setCellNote(e.target.value)}
-                                className="w-full border rounded-md px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 resize-none" />
-                              {rec.leaveRequestId && <p className="text-[10px] text-purple-600 mt-1">Set automatically from an approved leave/WFH request.</p>}
+                              <Textarea rows={2} placeholder="Note (optional)" aria-label="Note (optional)" value={cellNote} onChange={e => setCellNote(e.target.value)}
+                                className="min-h-12 px-2 py-1.5 text-xs md:text-xs resize-none" />
+                              {rec.leaveRequestId && <p className="text-[10px] text-purple-600 dark:text-purple-400 mt-1">Set automatically from an approved leave/WFH request.</p>}
                             </PopoverContent>
                           </Popover>
                         </td>
@@ -261,60 +265,50 @@ export default function AttendanceRecapPage() {
       )}
 
       {/* Bulk edit modal */}
-      {bulkTarget && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
-            <div className="flex items-center justify-between px-6 py-4 border-b">
-              <h3 className="font-bold text-sm">Bulk Edit — {bulkTarget.fullName}</h3>
-              <button onClick={() => setBulkTarget(null)} className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors">
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <div className="px-6 py-5 space-y-4">
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">From</label>
-                  <input type="date" value={bulkStart} min={startDate} max={endDate} onChange={e => setBulkStart(e.target.value)}
-                    className="w-full h-9 border rounded-md px-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500" />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">To</label>
-                  <input type="date" value={bulkEnd} min={startDate} max={endDate} onChange={e => setBulkEnd(e.target.value)}
-                    className="w-full h-9 border rounded-md px-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500" />
-                </div>
+      <Dialog open={!!bulkTarget} onOpenChange={o => { if (!o) setBulkTarget(null) }}>
+        <DialogContent aria-describedby={undefined} className="sm:max-w-sm p-0 gap-0 overflow-hidden" onInteractOutside={e => e.preventDefault()}>
+          <DialogHeader className="px-6 py-4 border-b">
+            <DialogTitle className="font-bold text-sm pr-6">Bulk Edit — {bulkTarget?.fullName}</DialogTitle>
+          </DialogHeader>
+          <div className="px-6 py-5 space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label htmlFor="attendance-bulk-from" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">From</Label>
+                <Input id="attendance-bulk-from" type="date" value={bulkStart} min={startDate} max={endDate} onChange={e => setBulkStart(e.target.value)} />
               </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Status</label>
-                <div className="grid grid-cols-3 gap-1.5">
-                  {STATUSES.map(s => (
-                    <button key={s} onClick={() => setBulkStatus(s)}
-                      className={`flex flex-col items-center gap-1 px-1.5 py-2 rounded-md border text-[11px] transition-colors ${bulkStatus === s ? 'border-amber-400 bg-amber-50' : 'border-muted hover:bg-muted'}`}>
-                      <span className={`h-2.5 w-2.5 rounded-full ${STATUS_META[s].dot}`} />
-                      {STATUS_META[s].label}
-                    </button>
-                  ))}
-                </div>
+              <div className="space-y-1">
+                <Label htmlFor="attendance-bulk-to" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">To</Label>
+                <Input id="attendance-bulk-to" type="date" value={bulkEnd} min={startDate} max={endDate} onChange={e => setBulkEnd(e.target.value)} />
               </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Note (optional)</label>
-                <textarea rows={2} value={bulkNote} onChange={e => setBulkNote(e.target.value)}
-                  className="w-full border rounded-md px-2.5 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500 resize-none" />
+            </div>
+            <div className="space-y-1.5">
+              <p id="attendance-bulk-status-label" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide leading-none">Status</p>
+              <div role="group" aria-labelledby="attendance-bulk-status-label" className="grid grid-cols-3 gap-1.5">
+                {STATUSES.map(s => (
+                  <button key={s} type="button" onClick={() => setBulkStatus(s)} aria-pressed={bulkStatus === s}
+                    className={`flex flex-col items-center gap-1 px-1.5 py-2 rounded-md border text-[11px] transition-colors ${bulkStatus === s ? 'border-primary bg-primary/10' : 'border-muted hover:bg-muted'}`}>
+                    <span className={`h-2.5 w-2.5 rounded-full ${STATUS_META[s].dot}`} />
+                    {STATUS_META[s].label}
+                  </button>
+                ))}
               </div>
-              {!bulkTarget.isCrew && (
-                <p className="text-[11px] text-muted-foreground">Weekends in this range are skipped automatically — they're never working days.</p>
-              )}
             </div>
-            <div className="flex items-center justify-end gap-2 px-6 py-4 border-t bg-gray-50/80">
-              <button onClick={() => setBulkTarget(null)} className="px-4 py-2 text-sm border rounded-lg hover:bg-white transition-colors">Cancel</button>
-              <button onClick={saveBulk} disabled={bulkSaving}
-                className="px-5 py-2 text-sm text-white rounded-lg font-semibold bg-amber-600 hover:bg-amber-700 disabled:opacity-50 transition-colors flex items-center gap-2">
-                {bulkSaving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                Apply
-              </button>
+            <div className="space-y-1.5">
+              <Label htmlFor="attendance-bulk-note" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Note (optional)</Label>
+              <Textarea id="attendance-bulk-note" rows={2} value={bulkNote} onChange={e => setBulkNote(e.target.value)} className="resize-none" />
             </div>
+            {bulkTarget && !bulkTarget.isCrew && (
+              <p className="text-[11px] text-muted-foreground">Weekends in this range are skipped automatically — they're never working days.</p>
+            )}
           </div>
-        </div>
-      )}
+          <DialogFooter className="px-6 py-4 border-t bg-muted/50">
+            <Button variant="outline" onClick={() => setBulkTarget(null)}>Cancel</Button>
+            <Button onClick={saveBulk} loading={bulkSaving} className="font-semibold">
+              Apply
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

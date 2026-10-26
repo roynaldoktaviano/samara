@@ -42,9 +42,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (!(await canUseInitialOpname(db, role, id))) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
   const count = await db.stockCount.findUnique({ where: { id } })
-  if (!count || count.type !== 'INITIAL') return NextResponse.json({ error: 'Tidak ditemukan' }, { status: 404 })
+  if (!count || count.type !== 'INITIAL') return NextResponse.json({ error: 'Not found' }, { status: 404 })
   if (count.status === 'COMPLETED' && count.countedById !== session.user.id) {
-    return NextResponse.json({ error: 'Hanya orang yang melakukan opname ini yang bisa mengoreksi' }, { status: 403 })
+    return NextResponse.json({ error: 'Only the person who did this opname can correct it' }, { status: 403 })
   }
 
   const body = await req.json()
@@ -54,9 +54,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     // Adding an existing catalog item that wasn't already pre-filled (e.g. it has
     // no stock at this location yet).
     const already = await db.stockCountItem.findFirst({ where: { countId: id, itemId: body.itemId } })
-    if (already) return NextResponse.json({ error: 'Produk ini sudah ada di daftar' }, { status: 409 })
+    if (already) return NextResponse.json({ error: 'This product is already in the list' }, { status: 409 })
     const item = await db.purchaseItem.findUnique({ where: { id: body.itemId } })
-    if (!item) return NextResponse.json({ error: 'Produk tidak ditemukan' }, { status: 404 })
+    if (!item) return NextResponse.json({ error: 'Product not found' }, { status: 404 })
     const lot = await db.stockLot.findFirst({ where: { itemId: item.id, locationId: count.locationId } })
     const created = await db.stockCountItem.create({
       data: { id: crypto.randomUUID(), countId: id, itemId: item.id, itemName: item.name, systemQty: lot?.quantity ?? 0, countedQty: qty },

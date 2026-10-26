@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { RefreshCw, Download } from 'lucide-react'
+import { formatDate, formatMoney, formatNumber } from '@/lib/format'
 
 interface VesselSummary { qty: number; value: number }
 interface PeriodRow {
@@ -182,7 +183,7 @@ export default function WithdrawalsPage() {
           <button
             onClick={() => data && buildPdf(data, tab, year)}
             disabled={!data || data.rowCount === 0}
-            className="flex items-center gap-1.5 h-9 px-3 text-sm border rounded-md bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            className="flex items-center gap-1.5 h-9 px-3 text-sm border rounded-md bg-destructive/10 text-destructive border-destructive/30 hover:bg-destructive/15 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
             <Download className="h-3.5 w-3.5" /> Export PDF
           </button>
@@ -216,13 +217,13 @@ export default function WithdrawalsPage() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="rounded-xl border bg-card p-4">
               <p className="text-xs text-muted-foreground">Total Withdrawn</p>
-              <p className="text-2xl font-bold mt-1">{fmtNum(data.totalQty)}</p>
+              <p className="text-2xl font-bold mt-1">{formatNumber(data.totalQty)}</p>
               <p className="text-xs text-muted-foreground mt-0.5">units</p>
             </div>
             {data.totalValue > 0 && (
               <div className="rounded-xl border bg-card p-4">
                 <p className="text-xs text-muted-foreground">Est. Total Value</p>
-                <p className="text-2xl font-bold mt-1">{fmtMoney(data.totalValue)}</p>
+                <p className="text-2xl font-bold mt-1">{formatMoney(data.totalValue)}</p>
                 <p className="text-xs text-muted-foreground mt-0.5">based on standard cost</p>
               </div>
             )}
@@ -250,10 +251,10 @@ export default function WithdrawalsPage() {
                   <div key={v} className="flex items-center gap-3">
                     <span className="text-sm text-muted-foreground w-28 shrink-0 truncate">⚓ {v}</span>
                     <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
-                      <div className="h-2 rounded-full bg-rose-500" style={{ width: `${pct}%` }} />
+                      <div className="h-2 rounded-full bg-destructive" style={{ width: `${pct}%` }} />
                     </div>
-                    <span className="text-sm font-semibold w-20 text-right shrink-0">{fmtNum(s.qty)}</span>
-                    {s.value > 0 && <span className="text-xs text-muted-foreground w-32 text-right shrink-0">{fmtMoney(s.value)}</span>}
+                    <span className="text-sm font-semibold w-20 text-right shrink-0">{formatNumber(s.qty)}</span>
+                    {s.value > 0 && <span className="text-xs text-muted-foreground w-32 text-right shrink-0">{formatMoney(s.value)}</span>}
                   </div>
                 )
               })}
@@ -269,7 +270,7 @@ export default function WithdrawalsPage() {
                   onClick={() => setTab(t.key)}
                   className={`px-5 py-3 text-sm font-medium whitespace-nowrap transition-colors border-b-2 ${
                     tab === t.key
-                      ? 'border-rose-500 text-rose-700 bg-white'
+                      ? 'border-destructive text-destructive bg-card'
                       : 'border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/50'
                   }`}
                 >
@@ -290,7 +291,7 @@ export default function WithdrawalsPage() {
                   <table className="w-full text-sm">
                     <thead className="bg-muted/40 text-xs text-muted-foreground">
                       <tr>
-                        <th className="text-left px-5 py-3 font-medium">{tab === 'monthly' ? 'Bulan' : 'Minggu'}</th>
+                        <th className="text-left px-5 py-3 font-medium">{tab === 'monthly' ? 'Month' : 'Week'}</th>
                         <th className="text-right px-5 py-3 font-medium">Total</th>
                         {data.vessels.map(v => (
                           <th key={v} className="text-right px-4 py-3 font-medium">{v}</th>
@@ -302,15 +303,15 @@ export default function WithdrawalsPage() {
                       {active.map((p, i) => (
                         <tr key={i} className="hover:bg-muted/20">
                           <td className="px-5 py-3 font-medium">{p.label}</td>
-                          <td className="px-5 py-3 text-right font-semibold tabular-nums">{fmtNum(p.total)}</td>
+                          <td className="px-5 py-3 text-right font-semibold tabular-nums">{formatNumber(p.total)}</td>
                           {data.vessels.map(v => (
                             <td key={v} className="px-4 py-3 text-right tabular-nums text-muted-foreground">
-                              {(p.byVessel[v] ?? 0) > 0 ? fmtNum(p.byVessel[v]) : '—'}
+                              {(p.byVessel[v] ?? 0) > 0 ? formatNumber(p.byVessel[v]) : '—'}
                             </td>
                           ))}
                           {data.totalValue > 0 && (
                             <td className="px-5 py-3 text-right tabular-nums text-muted-foreground">
-                              {p.value > 0 ? fmtMoney(p.value) : '—'}
+                              {p.value > 0 ? formatMoney(p.value) : '—'}
                             </td>
                           )}
                         </tr>
@@ -319,14 +320,14 @@ export default function WithdrawalsPage() {
                     <tfoot className="bg-muted/30 border-t text-sm font-semibold">
                       <tr>
                         <td className="px-5 py-3">TOTAL</td>
-                        <td className="px-5 py-3 text-right tabular-nums">{fmtNum(data.totalQty)}</td>
+                        <td className="px-5 py-3 text-right tabular-nums">{formatNumber(data.totalQty)}</td>
                         {data.vessels.map(v => (
                           <td key={v} className="px-4 py-3 text-right tabular-nums">
-                            {(data.byVessel[v]?.qty ?? 0) > 0 ? fmtNum(data.byVessel[v].qty) : '—'}
+                            {(data.byVessel[v]?.qty ?? 0) > 0 ? formatNumber(data.byVessel[v].qty) : '—'}
                           </td>
                         ))}
                         {data.totalValue > 0 && (
-                          <td className="px-5 py-3 text-right tabular-nums">{fmtMoney(data.totalValue)}</td>
+                          <td className="px-5 py-3 text-right tabular-nums">{formatMoney(data.totalValue)}</td>
                         )}
                       </tr>
                     </tfoot>
@@ -350,8 +351,8 @@ export default function WithdrawalsPage() {
                             <span className="text-xs text-muted-foreground">{items.length} records</span>
                           </div>
                           <div className="flex items-center gap-4 text-sm">
-                            <span className="font-semibold tabular-nums">{fmtNum(totQty)} units</span>
-                            {totVal > 0 && <span className="text-muted-foreground">{fmtMoney(totVal)}</span>}
+                            <span className="font-semibold tabular-nums">{formatNumber(totQty)} units</span>
+                            {totVal > 0 && <span className="text-muted-foreground">{formatMoney(totVal)}</span>}
                           </div>
                         </div>
                         <table className="w-full text-sm">
@@ -370,15 +371,15 @@ export default function WithdrawalsPage() {
                           <tbody className="divide-y">
                             {items.map((r, i) => (
                               <tr key={i} className="hover:bg-muted/20">
-                                <td className="px-5 py-2.5 text-muted-foreground whitespace-nowrap text-xs">{fmtDate(r.date)}</td>
+                                <td className="px-5 py-2.5 text-muted-foreground whitespace-nowrap text-xs">{formatDate(r.date)}</td>
                                 <td className="px-5 py-2.5 font-mono text-xs text-muted-foreground">{r.transferNumber}</td>
                                 <td className="px-5 py-2.5 font-medium">{r.itemName}</td>
                                 <td className="px-4 py-2.5 text-muted-foreground text-xs">{r.category ?? '—'}</td>
                                 <td className="px-4 py-2.5 text-muted-foreground text-xs">{r.fromLocation}</td>
-                                <td className="px-5 py-2.5 text-right tabular-nums font-medium">{fmtNum(r.receivedQty)}</td>
+                                <td className="px-5 py-2.5 text-right tabular-nums font-medium">{formatNumber(r.receivedQty)}</td>
                                 {totVal > 0 && (
                                   <td className="px-5 py-2.5 text-right tabular-nums text-muted-foreground">
-                                    {r.totalValue > 0 ? fmtMoney(r.totalValue) : '—'}
+                                    {r.totalValue > 0 ? formatMoney(r.totalValue) : '—'}
                                   </td>
                                 )}
                                 <td className="px-4 py-2.5 text-xs text-muted-foreground">{r.receivedBy ?? '—'}</td>
@@ -388,8 +389,8 @@ export default function WithdrawalsPage() {
                           <tfoot className="bg-muted/20 border-t text-sm font-semibold">
                             <tr>
                               <td colSpan={5} className="px-5 py-2.5 text-muted-foreground">Total {v}</td>
-                              <td className="px-5 py-2.5 text-right tabular-nums">{fmtNum(totQty)}</td>
-                              {totVal > 0 && <td className="px-5 py-2.5 text-right tabular-nums">{fmtMoney(totVal)}</td>}
+                              <td className="px-5 py-2.5 text-right tabular-nums">{formatNumber(totQty)}</td>
+                              {totVal > 0 && <td className="px-5 py-2.5 text-right tabular-nums">{formatMoney(totVal)}</td>}
                               <td />
                             </tr>
                           </tfoot>

@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { Plus, Percent, Pencil, Trash2, X } from 'lucide-react'
+import { StatusBadge } from '@/components/ui/status-badge'
+import { formatDate, formatMoney } from '@/lib/format'
 
 interface Yacht { id: string; name: string }
 interface Discount {
@@ -10,9 +12,7 @@ interface Discount {
   yacht: { id: string; name: string } | null
 }
 
-const fmtMoney = (n: number) => 'Rp ' + new Intl.NumberFormat('id-ID').format(n)
-const fmtDate = (s: string) => new Date(s).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
-const inp = 'w-full h-9 border rounded-md px-3 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white transition-colors'
+const inp = 'w-full h-9 border rounded-md px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring bg-card transition-colors'
 const BLANK = { name: '', type: 'PERCENT' as 'PERCENT' | 'FIXED', value: '', yachtId: '', startDate: '', endDate: '' }
 
 export default function PosDiscountsPage() {
@@ -85,7 +85,7 @@ export default function PosDiscountsPage() {
           <h2 className="text-2xl font-bold tracking-tight">POS Discounts</h2>
           <p className="text-muted-foreground text-sm mt-1">Applied by staff at checkout in the Cashier app</p>
         </div>
-        <button onClick={openAdd} className="flex items-center gap-1.5 h-9 px-4 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium rounded-md transition-colors">
+        <button onClick={openAdd} className="flex items-center gap-1.5 h-9 px-4 bg-primary hover:bg-primary-hover text-primary-foreground text-sm font-medium rounded-md transition-colors">
           <Plus className="h-3.5 w-3.5" /> Add Discount
         </button>
       </div>
@@ -115,21 +115,21 @@ export default function PosDiscountsPage() {
             ) : discounts.map(d => (
               <tr key={d.id} className="hover:bg-muted/30">
                 <td className="px-4 py-3 font-medium">{d.name}</td>
-                <td className="px-4 py-3">{d.type === 'PERCENT' ? `${d.value}%` : fmtMoney(d.value)}</td>
+                <td className="px-4 py-3">{d.type === 'PERCENT' ? `${d.value}%` : formatMoney(d.value)}</td>
                 <td className="px-4 py-3">
                   {d.yachtId ? (
-                    <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700">{d.yacht?.name}</span>
+                    <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-info/15 text-info">{d.yacht?.name}</span>
                   ) : (
-                    <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">Global</span>
+                    <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-primary/15 text-primary-strong">Global</span>
                   )}
                 </td>
                 <td className="px-4 py-3 text-muted-foreground text-xs">
-                  {d.startDate || d.endDate ? `${d.startDate ? fmtDate(d.startDate) : '…'} – ${d.endDate ? fmtDate(d.endDate) : '…'}` : 'Always'}
+                  {d.startDate || d.endDate ? `${d.startDate ? formatDate(d.startDate) : '…'} – ${d.endDate ? formatDate(d.endDate) : '…'}` : 'Always'}
                 </td>
                 <td className="px-4 py-3 text-center">
-                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${d.isActive ? 'bg-green-100 text-green-700' : 'bg-muted text-muted-foreground'}`}>
+                  <StatusBadge tone={d.isActive ? 'success' : 'neutral'}>
                     {d.isActive ? 'Active' : 'Inactive'}
-                  </span>
+                  </StatusBadge>
                 </td>
                 <td className="px-4 py-3 text-right">
                   <div className="flex items-center justify-end gap-2">
@@ -137,7 +137,7 @@ export default function PosDiscountsPage() {
                     <button onClick={() => toggleActive(d)} className="px-2.5 py-1 text-xs border rounded-md text-muted-foreground hover:bg-muted transition-colors">
                       {d.isActive ? 'Deactivate' : 'Activate'}
                     </button>
-                    <button onClick={() => del(d)} className="p-1.5 text-muted-foreground hover:text-red-500 hover:bg-red-50 rounded-md transition-colors"><Trash2 className="h-3.5 w-3.5" /></button>
+                    <button onClick={() => del(d)} className="p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors"><Trash2 className="h-3.5 w-3.5" /></button>
                   </div>
                 </td>
               </tr>
@@ -150,15 +150,15 @@ export default function PosDiscountsPage() {
         <>
           <div className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm" onClick={() => setShowForm(false)} />
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
-            <div className="pointer-events-auto bg-white rounded-2xl shadow-2xl w-full max-w-sm flex flex-col">
+            <div className="pointer-events-auto bg-card rounded-2xl shadow-2xl w-full max-w-sm flex flex-col">
               <div className="flex items-center justify-between px-5 py-4 border-b">
                 <h3 className="text-sm font-semibold">{editId ? 'Edit Discount' : 'Add Discount'}</h3>
                 <button onClick={() => setShowForm(false)} className="p-1 hover:bg-muted rounded-md"><X className="h-4 w-4" /></button>
               </div>
               <div className="p-5 space-y-4">
-                {saveError && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2">{saveError}</div>}
+                {saveError && <div className="rounded-lg bg-destructive/10 border border-destructive/30 text-destructive text-sm px-3 py-2">{saveError}</div>}
                 <div className="space-y-1.5">
-                  <label className="text-sm font-medium">Name <span className="text-red-500">*</span></label>
+                  <label className="text-sm font-medium">Name <span className="text-destructive">*</span></label>
                   <input className={inp} placeholder="e.g. Crew Discount" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
                 </div>
                 <div className="grid grid-cols-2 gap-3">
@@ -170,7 +170,7 @@ export default function PosDiscountsPage() {
                     </select>
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-sm font-medium">Value <span className="text-red-500">*</span></label>
+                    <label className="text-sm font-medium">Value <span className="text-destructive">*</span></label>
                     <input className={inp} type="number" min="0" value={form.value} onChange={e => setForm(f => ({ ...f, value: e.target.value }))} />
                   </div>
                 </div>
@@ -195,7 +195,7 @@ export default function PosDiscountsPage() {
               <div className="flex justify-end gap-2 px-5 py-4 border-t">
                 <button onClick={() => setShowForm(false)} className="px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">Cancel</button>
                 <button onClick={save} disabled={saving}
-                  className="flex items-center gap-2 px-5 py-2 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700 font-semibold disabled:opacity-50 transition-colors">
+                  className="flex items-center gap-2 px-5 py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary-hover font-semibold disabled:opacity-50 transition-colors">
                   {saving ? 'Saving…' : editId ? 'Save Changes' : 'Add Discount'}
                 </button>
               </div>

@@ -59,7 +59,7 @@ export function ProofFilesInput({ value, onChange }: { value: string[]; onChange
               <button
                 type="button"
                 onClick={() => onChange(value.filter((_, j) => j !== i))}
-                className="absolute top-1 right-1 h-6 w-6 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-black/80"
+                className="absolute top-1 right-1 size-7 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-black/80"
                 aria-label="Remove file"
               >
                 <X className="h-3.5 w-3.5" />

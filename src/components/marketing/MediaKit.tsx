@@ -20,7 +20,7 @@ import { useFileDrop } from '@/hooks/useFileDrop'
 import { uploadToR2WithProgress } from '@/lib/r2-client'
 import { Checkbox } from '@/components/ui/checkbox'
 
-const ACCENT = '#bdac7e'
+const ACCENT = 'var(--primary)'
 
 type MediaFileType = 'image' | 'document' | 'video'
 
@@ -73,7 +73,7 @@ function QueueFileIcon({ mime }: { mime: string }) {
   const isPdf = mime === 'application/pdf'
   return (
     <div className="h-10 w-10 rounded-lg flex flex-col items-center justify-center text-white shrink-0"
-      style={{ backgroundColor: isPdf ? '#DC2626' : '#2563EB' }}>
+      style={{ backgroundColor: isPdf ? 'var(--destructive)' : 'var(--info)' }}>
       {isPdf ? <FileText className="h-3.5 w-3.5 mb-0.5" /> : <ImageIcon className="h-3.5 w-3.5 mb-0.5" />}
       <span className="text-[7px] font-bold tracking-wide">{isPdf ? 'PDF' : 'IMG'}</span>
     </div>
@@ -87,7 +87,7 @@ function FileCard({
   selectMode: boolean; selected: boolean; onToggleSelect: (id: string) => void
 }) {
   return (
-    <Card className={cn(selected && 'border-[#bdac7e] ring-1 ring-[#bdac7e]/40')}>
+    <Card className={cn(selected && 'border-primary ring-1 ring-ring/40')}>
       <CardContent className="py-3 px-4 flex items-start gap-3">
         {selectMode && (
           <Checkbox
@@ -117,7 +117,7 @@ function FileCard({
         <button
           onClick={() => onDelete(file)}
           disabled={deleting}
-          className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-red-600 transition-colors shrink-0"
+          className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-destructive transition-colors shrink-0"
           title="Delete"
         >
           {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
@@ -961,7 +961,7 @@ export default function MediaKit() {
                     <button
                       onClick={() => handleDeletePromo(p)}
                       disabled={deletingPromoId === p.id}
-                      className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-red-600 transition-colors"
+                      className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-destructive transition-colors"
                       title="Delete"
                     >
                       {deletingPromoId === p.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
@@ -1056,7 +1056,7 @@ export default function MediaKit() {
                 <button
                   onClick={() => openDeleteFolderDialog(activeFolder)}
                   disabled={deletingFolder}
-                  className="flex items-center gap-1 text-muted-foreground hover:text-red-600 transition-colors ml-2"
+                  className="flex items-center gap-1 text-muted-foreground hover:text-destructive transition-colors ml-2"
                 >
                   <Trash2 className="h-3 w-3" /> Delete this folder
                 </button>
@@ -1101,14 +1101,14 @@ export default function MediaKit() {
                 {uploading ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <FolderUp className="h-3.5 w-3.5 mr-1.5" />}
                 Upload Folder
               </Button>
-              <Button size="sm" style={{ backgroundColor: ACCENT }} className="text-white" onClick={openLinkDialog}>
+              <Button size="sm" className="text-primary-foreground" onClick={openLinkDialog}>
                 <Link2 className="h-3.5 w-3.5 mr-1.5" /> Add video link
               </Button>
             </div>
           </div>
 
           {selectMode && currentFiles.length > 0 && (
-            <div className="flex items-center gap-3 rounded-lg border px-3 py-2 flex-wrap" style={{ backgroundColor: `${ACCENT}0d` }}>
+            <div className="flex items-center gap-3 rounded-lg border px-3 py-2 flex-wrap" style={{ backgroundColor: 'color-mix(in srgb, var(--primary) 5%, transparent)' }}>
               <label className="flex items-center gap-2 text-xs cursor-pointer select-none">
                 <Checkbox
                   checked={selectedIds.size > 0 && selectedIds.size === currentFiles.length}
@@ -1121,7 +1121,7 @@ export default function MediaKit() {
                   <Button size="sm" variant="outline" className="h-7 text-xs px-2.5" onClick={openMoveDialog}>
                     <FolderInput className="h-3.5 w-3.5 mr-1.5" /> Move
                   </Button>
-                  <Button size="sm" variant="outline" className="h-7 text-xs px-2.5 text-red-600 hover:text-red-600" disabled={bulkDeleting} onClick={handleBulkDelete}>
+                  <Button size="sm" variant="outline" className="h-7 text-xs px-2.5 text-destructive hover:text-destructive" disabled={bulkDeleting} onClick={handleBulkDelete}>
                     {bulkDeleting ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5 mr-1.5" />}
                     Delete
                   </Button>
@@ -1134,11 +1134,11 @@ export default function MediaKit() {
             {...dropProps}
             className={cn(
               'rounded-xl transition-colors',
-              isDragging && 'ring-2 ring-[#bdac7e] ring-offset-2 bg-[#bdac7e]/5'
+              isDragging && 'ring-2 ring-ring ring-offset-2 bg-primary/5'
             )}
           >
             {isDragging && (
-              <div className="rounded-xl border-2 border-dashed border-[#bdac7e] py-10 text-center text-sm font-medium" style={{ color: ACCENT }}>
+              <div className="rounded-xl border-2 border-dashed border-primary py-10 text-center text-sm font-medium" style={{ color: ACCENT }}>
                 Drop files or folders to upload
               </div>
             )}
@@ -1149,7 +1149,7 @@ export default function MediaKit() {
             ) : (
               <div className={cn('grid gap-3', viewMode === 'grid' ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3' : 'grid-cols-1')}>
                 {currentFolders.map(folder => (
-                  <Card key={folder.id} className="cursor-pointer hover:border-[#bdac7e]/50 transition-colors" onClick={() => setActiveFolderId(folder.id)}>
+                  <Card key={folder.id} className="cursor-pointer hover:border-primary/50 transition-colors" onClick={() => setActiveFolderId(folder.id)}>
                     <CardContent className="py-3 px-4 flex items-center gap-3">
                       <FolderOpen className="h-4 w-4 text-muted-foreground shrink-0" />
                       <div className="min-w-0 flex-1">
@@ -1167,7 +1167,7 @@ export default function MediaKit() {
                       </button>
                       <button
                         onClick={e => { e.stopPropagation(); openDeleteFolderDialog(folder) }}
-                        className="p-1.5 rounded text-muted-foreground hover:text-red-600 hover:bg-red-50 transition-colors shrink-0"
+                        className="p-1.5 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors shrink-0"
                         title="Delete folder"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
@@ -1190,7 +1190,7 @@ export default function MediaKit() {
       <Dialog open={linkDialogOpen} onOpenChange={setLinkDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><Link2 className="h-4 w-4 text-[#bdac7e]" /> Add Video Link</DialogTitle>
+            <DialogTitle className="flex items-center gap-2"><Link2 className="h-4 w-4 text-primary" /> Add Video Link</DialogTitle>
             <DialogDescription>Paste a YouTube or Vimeo (unlisted) link — it will show up in the Agent Portal's {activeCategory?.name} section.</DialogDescription>
           </DialogHeader>
           <div className="space-y-3 py-2">
@@ -1205,7 +1205,7 @@ export default function MediaKit() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setLinkDialogOpen(false)}>Cancel</Button>
-            <Button disabled={linkSaving} onClick={handleSaveLink} style={{ backgroundColor: ACCENT }} className="text-white">
+            <Button disabled={linkSaving} onClick={handleSaveLink} className="text-primary-foreground">
               {linkSaving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
               Add Link
             </Button>
@@ -1216,7 +1216,7 @@ export default function MediaKit() {
       <Dialog open={promoDialogOpen} onOpenChange={setPromoDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><Megaphone className="h-4 w-4 text-[#bdac7e]" /> {editingPromoId ? 'Edit Promo' : 'Add Promo'}</DialogTitle>
+            <DialogTitle className="flex items-center gap-2"><Megaphone className="h-4 w-4 text-primary" /> {editingPromoId ? 'Edit Promo' : 'Add Promo'}</DialogTitle>
             <DialogDescription>
               {selectedYachtId
                 ? 'Shown as a popup in the Agent Portal when an agent picks this yacht.'
@@ -1257,7 +1257,7 @@ export default function MediaKit() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setPromoDialogOpen(false)}>Cancel</Button>
-            <Button disabled={promoSaving} onClick={handleSavePromo} style={{ backgroundColor: ACCENT }} className="text-white">
+            <Button disabled={promoSaving} onClick={handleSavePromo} className="text-primary-foreground">
               {promoSaving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
               {editingPromoId ? 'Save Changes' : 'Create Promo'}
             </Button>
@@ -1268,7 +1268,7 @@ export default function MediaKit() {
       <Dialog open={yachtSettingsDialogOpen} onOpenChange={setYachtSettingsDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><MapPin className="h-4 w-4 text-[#bdac7e]" /> Agent Portal Display</DialogTitle>
+            <DialogTitle className="flex items-center gap-2"><MapPin className="h-4 w-4 text-primary" /> Agent Portal Display</DialogTitle>
             <DialogDescription>
               {yachts.find(y => y.id === selectedYachtId)?.name ?? ''} — shown on the yacht picker and hero in the Agent Portal.
             </DialogDescription>
@@ -1308,7 +1308,7 @@ export default function MediaKit() {
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setYachtSettingsDialogOpen(false)}>Cancel</Button>
-            <Button disabled={yachtSettingsSaving || yachtSettingsLoading} onClick={handleSaveYachtSettings} style={{ backgroundColor: ACCENT }} className="text-white">
+            <Button disabled={yachtSettingsSaving || yachtSettingsLoading} onClick={handleSaveYachtSettings} className="text-primary-foreground">
               {yachtSettingsSaving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
               Save Changes
             </Button>
@@ -1319,14 +1319,14 @@ export default function MediaKit() {
       <Dialog open={!!folderToDelete} onOpenChange={open => { if (!open && !deletingFolder) setFolderToDelete(null) }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><Trash2 className="h-4 w-4 text-red-600" /> Delete Folder</DialogTitle>
+            <DialogTitle className="flex items-center gap-2"><Trash2 className="h-4 w-4 text-destructive" /> Delete Folder</DialogTitle>
             <DialogDescription>
               You are about to delete the folder <span className="font-medium text-foreground">&quot;{folderToDelete?.name}&quot;</span>.
             </DialogDescription>
           </DialogHeader>
           {folderToDeleteContents.files > 0 || folderToDeleteContents.subfolders > 0 ? (
             <div className="space-y-3 py-2">
-              <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700">
+              <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2.5 text-sm text-destructive">
                 All contents of this folder will be permanently deleted:{' '}
                 <span className="font-medium">
                   {folderToDeleteContents.files} file{folderToDeleteContents.files === 1 ? '' : 's'}
@@ -1363,7 +1363,7 @@ export default function MediaKit() {
       <Dialog open={newFolderDialogOpen} onOpenChange={setNewFolderDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><FolderPlus className="h-4 w-4 text-[#bdac7e]" /> New Folder</DialogTitle>
+            <DialogTitle className="flex items-center gap-2"><FolderPlus className="h-4 w-4 text-primary" /> New Folder</DialogTitle>
             <DialogDescription>
               {activeFolder ? `Inside "${activeFolder.name}"` : `Inside ${activeCategory?.name}`} — this also shows as a folder in the Agent Portal.
             </DialogDescription>
@@ -1381,7 +1381,7 @@ export default function MediaKit() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setNewFolderDialogOpen(false)}>Cancel</Button>
-            <Button disabled={creatingFolder} onClick={handleCreateFolder} style={{ backgroundColor: ACCENT }} className="text-white">
+            <Button disabled={creatingFolder} onClick={handleCreateFolder} className="text-primary-foreground">
               {creatingFolder && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
               Create Folder
             </Button>
@@ -1392,7 +1392,7 @@ export default function MediaKit() {
       <Dialog open={!!renameTarget} onOpenChange={open => { if (!open && !renaming) setRenameTarget(null) }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><Pencil className="h-4 w-4 text-[#bdac7e]" /> Rename {renameTarget?.kind === 'folder' ? 'Folder' : 'File'}</DialogTitle>
+            <DialogTitle className="flex items-center gap-2"><Pencil className="h-4 w-4 text-primary" /> Rename {renameTarget?.kind === 'folder' ? 'Folder' : 'File'}</DialogTitle>
             <DialogDescription>The new name also shows in the Agent Portal.</DialogDescription>
           </DialogHeader>
           <div className="space-y-1.5 py-2">
@@ -1412,7 +1412,7 @@ export default function MediaKit() {
           </div>
           <DialogFooter>
             <Button variant="outline" disabled={renaming} onClick={() => setRenameTarget(null)}>Cancel</Button>
-            <Button disabled={renaming} onClick={handleRename} style={{ backgroundColor: ACCENT }} className="text-white">
+            <Button disabled={renaming} onClick={handleRename} className="text-primary-foreground">
               {renaming && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
               Save
             </Button>
@@ -1423,7 +1423,7 @@ export default function MediaKit() {
       <Dialog open={manageCategoriesOpen} onOpenChange={setManageCategoriesOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><Settings className="h-4 w-4 text-[#bdac7e]" /> Manage Categories</DialogTitle>
+            <DialogTitle className="flex items-center gap-2"><Settings className="h-4 w-4 text-primary" /> Manage Categories</DialogTitle>
             <DialogDescription>Rename, add, or remove the tabs shown here and in the Agent Portal. A category can't be removed while it still has files.</DialogDescription>
           </DialogHeader>
           <div className="space-y-1.5 py-2 max-h-80 overflow-y-auto">
@@ -1441,7 +1441,7 @@ export default function MediaKit() {
                     <button
                       onClick={() => handleSaveCategoryName(c.id)}
                       disabled={savingCategoryId === c.id}
-                      className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-emerald-600 transition-colors shrink-0"
+                      className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-success transition-colors shrink-0"
                       title="Save"
                     >
                       {savingCategoryId === c.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
@@ -1463,7 +1463,7 @@ export default function MediaKit() {
                     <button
                       onClick={() => handleDeleteCategory(c)}
                       disabled={deletingCategoryId === c.id}
-                      className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-red-600 transition-colors shrink-0"
+                      className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-destructive transition-colors shrink-0"
                       title="Delete"
                     >
                       {deletingCategoryId === c.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
@@ -1481,7 +1481,7 @@ export default function MediaKit() {
               onKeyDown={e => e.key === 'Enter' && handleAddCategory()}
               placeholder="New category name…"
             />
-            <Button size="sm" disabled={addingCategory} onClick={handleAddCategory} style={{ backgroundColor: ACCENT }} className="text-white shrink-0">
+            <Button size="sm" disabled={addingCategory} onClick={handleAddCategory} className="text-primary-foreground shrink-0">
               {addingCategory ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
             </Button>
           </div>
@@ -1518,11 +1518,11 @@ export default function MediaKit() {
                       <span className="text-[11px] text-muted-foreground w-8 text-right shrink-0">{q.progress}%</span>
                     </div>
                   )}
-                  {q.status === 'error' && <p className="text-[11px] text-red-600 mt-0.5 truncate">{q.error ?? 'Failed to upload'}</p>}
+                  {q.status === 'error' && <p className="text-[11px] text-destructive mt-0.5 truncate">{q.error ?? 'Failed to upload'}</p>}
                 </div>
                 <div className="shrink-0">
                   {q.status === 'uploading' && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
-                  {q.status === 'done' && <Check className="h-4 w-4 text-green-600" />}
+                  {q.status === 'done' && <Check className="h-4 w-4 text-success" />}
                   {q.status === 'error' && (
                     <button onClick={() => setUploadQueue(prev => prev.filter(x => x.id !== q.id))} className="text-muted-foreground hover:text-foreground">
                       <X className="h-4 w-4" />
@@ -1543,7 +1543,7 @@ export default function MediaKit() {
       <Dialog open={moveDialogOpen} onOpenChange={setMoveDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><FolderInput className="h-4 w-4 text-[#bdac7e]" /> Move {selectedIds.size} file{selectedIds.size > 1 ? 's' : ''}</DialogTitle>
+            <DialogTitle className="flex items-center gap-2"><FolderInput className="h-4 w-4 text-primary" /> Move {selectedIds.size} file{selectedIds.size > 1 ? 's' : ''}</DialogTitle>
             <DialogDescription>Pick a destination folder within {activeCategory?.name}.</DialogDescription>
           </DialogHeader>
           <div className="py-2">
@@ -1559,7 +1559,7 @@ export default function MediaKit() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setMoveDialogOpen(false)}>Cancel</Button>
-            <Button disabled={moving} onClick={handleBulkMove} style={{ backgroundColor: ACCENT }} className="text-white">
+            <Button disabled={moving} onClick={handleBulkMove} className="text-primary-foreground">
               {moving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
               Move
             </Button>

@@ -29,7 +29,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     if (!yachtCanViewOrder(order, yachtId)) return NextResponse.json({ error: 'Not found' }, { status: 404 })
   }
   if (!['IN_TRANSIT', 'PARTIALLY_RECEIVED'].includes(order.status))
-    return NextResponse.json({ error: 'PO harus berstatus In Transit dulu' }, { status: 400 })
+    return NextResponse.json({ error: 'PO must be In Transit first' }, { status: 400 })
 
   const { token, expiresAt } = await getOrCreatePoReceiveToken(db, id)
   const link = `${resolveBaseUrl(req)}/po-receive/${token}`

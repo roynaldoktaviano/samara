@@ -58,8 +58,8 @@ export async function POST(req: NextRequest) {
   const db = await getDb(session)
   const body = await req.json()
   const { name, type, yachtId, parentId, manager, address, storageClass, managedBy, consumptionMode, isPosBar } = body
-  if (!name?.trim() || !type) return NextResponse.json({ error: 'name dan type wajib diisi' }, { status: 400 })
-  if (type === 'VESSEL' && !yachtId) return NextResponse.json({ error: 'yachtId wajib untuk lokasi kapal' }, { status: 400 })
+  if (!name?.trim() || !type) return NextResponse.json({ error: 'Name and type are required' }, { status: 400 })
+  if (type === 'VESSEL' && !yachtId) return NextResponse.json({ error: 'A vessel is required for a vessel location' }, { status: 400 })
   if (consumptionMode && !CONSUMPTION_MODES.includes(consumptionMode)) return NextResponse.json({ error: 'Invalid consumption mode' }, { status: 400 })
   const posBar = type === 'VESSEL' && Boolean(isPosBar)
   const location = await db.$transaction(async (tx) => {

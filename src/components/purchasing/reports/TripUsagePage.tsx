@@ -2,6 +2,7 @@
 
 import { Fragment, useState, useEffect, useCallback, useMemo } from 'react'
 import { RefreshCw, Search, ChevronRight, ChevronDown, Download } from 'lucide-react'
+import { formatDate, formatDateRange, formatMoney, formatNumber } from '@/lib/format'
 
 // Purchasing › Trip Usage — what each trip took as usage (pemakaian), per yacht & year.
 // Same ledger and trip-matching rule as Finance › Trip Stats (see api/purchasing/reports/trip-usage).
@@ -33,10 +34,6 @@ interface Data {
 }
 
 const USAGE_LABEL: Record<UsageKey, string> = { SHIP_USAGE: 'Ship Usage', BAR_COGS: 'Bar Sale', COMPLIMENTARY: 'Complimentary', SHRINKAGE: 'Shrinkage', MAINTENANCE: 'Maintenance' }
-const fmtNum = (n: number) => new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 }).format(n)
-const fmtMoney = (n: number) => `${n < 0 ? '-' : ''}Rp ${new Intl.NumberFormat('id-ID').format(Math.round(Math.abs(n)))}`
-const fmtDate = (s: string) => new Date(s).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
-const fmtShortDate = (s: string) => new Date(s).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
 const refLabel = (r: Line['ref']) =>
   r.kind === 'TR' ? (r.number ?? 'Transfer')
   : r.kind === 'GR' ? (r.poNumber ? `${r.poNumber}${r.number ? ` · ${r.number}` : ''}` : (r.number ?? 'PO receipt'))
@@ -61,7 +58,7 @@ function Stat({ label, value, sub, tone }: { label: string; value: string; sub?:
   return (
     <div className="px-4 py-3">
       <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</p>
-      <p className={`text-lg font-semibold tabular-nums mt-0.5 ${tone === 'amber' ? 'text-amber-600' : 'text-foreground'}`}>
+      <p className={`text-lg font-semibold tabular-nums mt-0.5 ${tone === 'amber' ? 'text-warning' : 'text-foreground'}`}>
         {value}
         {sub && <span className="ml-1.5 text-xs font-normal text-muted-foreground">{sub}</span>}
       </p>
@@ -106,8 +103,8 @@ function LinesTable({ lines, mode }: { lines: Line[]; mode: 'item' | 'detail' })
               <td className={`${td} pl-5 font-medium`}>{r.itemName}</td>
               <td className={`${td} text-muted-foreground`}>{r.category ?? '—'}</td>
               <td className={`${td} text-muted-foreground text-xs`}>{USAGE_LABEL[r.usageType]}</td>
-              <td className={`${td} text-right tabular-nums whitespace-nowrap ${r.qty < 0 ? 'text-red-600' : ''}`}>{fmtNum(r.qty)} <span className="text-xs text-muted-foreground">{r.unit}</span></td>
-              <td className={`${td} text-right tabular-nums whitespace-nowrap pr-5 ${r.cost < 0 ? 'text-red-600' : ''}`}>{fmtMoney(r.cost)}</td>
+              <td className={`${td} text-right tabular-nums whitespace-nowrap ${r.qty < 0 ? 'text-destructive' : ''}`}>{formatNumber(r.qty, { decimals: 2 })} <span className="text-xs text-muted-foreground">{r.unit}</span></td>
+              <td className={`${td} text-right tabular-nums whitespace-nowrap pr-5 ${r.cost < 0 ? 'text-destructive' : ''}`}>{formatMoney(r.cost)}</td>
             </tr>
           ))}
         </tbody>
@@ -129,15 +126,15 @@ function LinesTable({ lines, mode }: { lines: Line[]; mode: 'item' | 'detail' })
       <tbody className="divide-y">
         {lines.map((l, i) => (
           <tr key={i} className="hover:bg-muted/20">
-            <td className={`${td} pl-5 whitespace-nowrap text-muted-foreground`}>{fmtShortDate(l.date)}</td>
+            <td className={`${td} pl-5 whitespace-nowrap text-muted-foreground`}>{formatDate(l.date, 'short')}</td>
             <td className={`${td} whitespace-nowrap`}>
               <span className="text-xs font-medium">{refLabel(l.ref)}</span>
-              {l.byDate && <span className="ml-1.5 text-[9px] font-semibold text-amber-600" title="Not linked to a trip on its Transfer/PO — allocated by date">BY DATE</span>}
+              {l.byDate && <span className="ml-1.5 text-[9px] font-semibold text-warning" title="Not linked to a trip on its Transfer/PO — allocated by date">BY DATE</span>}
             </td>
             <td className={`${td} font-medium`}>{l.itemName}</td>
             <td className={`${td} text-muted-foreground text-xs`}>{l.qty < 0 ? 'Returned' : USAGE_LABEL[l.usageType]}</td>
-            <td className={`${td} text-right tabular-nums whitespace-nowrap ${l.qty < 0 ? 'text-red-600' : ''}`}>{fmtNum(l.qty)} <span className="text-xs text-muted-foreground">{l.unit}</span></td>
-            <td className={`${td} text-right tabular-nums whitespace-nowrap pr-5 ${l.cost < 0 ? 'text-red-600' : ''}`}>{fmtMoney(l.cost)}</td>
+            <td className={`${td} text-right tabular-nums whitespace-nowrap ${l.qty < 0 ? 'text-destructive' : ''}`}>{formatNumber(l.qty, { decimals: 2 })} <span className="text-xs text-muted-foreground">{l.unit}</span></td>
+            <td className={`${td} text-right tabular-nums whitespace-nowrap pr-5 ${l.cost < 0 ? 'text-destructive' : ''}`}>{formatMoney(l.cost)}</td>
           </tr>
         ))}
       </tbody>
@@ -194,9 +191,9 @@ function OrderPattern({ trips }: { trips: Trip[] }) {
           <tr>
             <th className="sticky left-0 z-10 bg-background text-left px-4 py-2 font-medium border-b min-w-[200px]">Item</th>
             {cols.map(t => (
-              <th key={t.id} className={`${th} border-b min-w-[52px]`} title={`${t.label} · ${fmtShortDate(t.startDate)} – ${fmtDate(t.endDate)} · ${t.pax} pax`}>
+              <th key={t.id} className={`${th} border-b min-w-[52px]`} title={`${t.label} · ${formatDateRange(t.startDate, t.endDate)} · ${t.pax} pax`}>
                 <div className="text-foreground">#{t.tripNumber ?? '—'}</div>
-                <div className="font-normal text-[10px]">{fmtShortDate(t.startDate)}</div>
+                <div className="font-normal text-[10px]">{formatDate(t.startDate, 'short')}</div>
               </th>
             ))}
             <th className={`${th} border-b border-l pl-4`}>Lasts</th>
@@ -215,19 +212,19 @@ function OrderPattern({ trips }: { trips: Trip[] }) {
                 return (
                   <td key={t.id} className="px-2 py-2 text-center tabular-nums border-b group-hover:bg-muted/40">
                     {q > 0
-                      ? <span className="inline-block min-w-[32px] rounded bg-emerald-50 text-emerald-800 font-medium px-1.5 py-0.5">{fmtNum(q)}</span>
-                      : q < 0 ? <span className="text-red-600">{fmtNum(q)}</span>
+                      ? <span className="inline-block min-w-[32px] rounded bg-success/10 text-success font-medium px-1.5 py-0.5">{formatNumber(q, { decimals: 2 })}</span>
+                      : q < 0 ? <span className="text-destructive">{formatNumber(q, { decimals: 2 })}</span>
                       : <span className="text-muted-foreground/40">·</span>}
                   </td>
                 )
               })}
               <td className="px-2 py-2 pl-4 text-center whitespace-nowrap border-b border-l group-hover:bg-muted/40">
                 {r.lasts !== null
-                  ? <span className="font-medium tabular-nums">±{fmtNum(Math.round(r.lasts * 10) / 10)} trip{r.lasts === 1 ? '' : 's'}</span>
+                  ? <span className="font-medium tabular-nums">±{formatNumber(Math.round(r.lasts * 10) / 10, { decimals: 2 })} trip{r.lasts === 1 ? '' : 's'}</span>
                   : <span className="text-xs text-muted-foreground" title="Only one order so far — no next order to measure against">running</span>}
               </td>
               <td className="px-2 py-2 pr-4 text-center whitespace-nowrap tabular-nums border-b group-hover:bg-muted/40">
-                {r.perPaxDay !== null ? <>{fmtNum(Math.round(r.perPaxDay * 1000) / 1000)} <span className="text-xs text-muted-foreground">{r.unit}</span></> : <span className="text-muted-foreground/60">—</span>}
+                {r.perPaxDay !== null ? <>{formatNumber(Math.round(r.perPaxDay * 1000) / 1000, { decimals: 2 })} <span className="text-xs text-muted-foreground">{r.unit}</span></> : <span className="text-muted-foreground/60">—</span>}
               </td>
             </tr>
           ))}
@@ -355,7 +352,7 @@ export default function TripUsagePage() {
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold tracking-tight">Trip Usage</h2>
-          <p className="text-muted-foreground text-sm mt-1">Goods taken as usage (pemakaian) per trip</p>
+          <p className="text-muted-foreground text-sm mt-1">Goods taken as usage per trip</p>
         </div>
         <div className="flex items-center gap-1">
           <button onClick={load} title="Refresh"
@@ -398,9 +395,9 @@ export default function TripUsagePage() {
       {/* Summary strip */}
       <div className="grid grid-cols-2 md:grid-cols-4 rounded-lg border divide-y md:divide-y-0 md:divide-x">
         <Stat label="Trips with usage" value={String(withUsage.length)} sub={`of ${data?.trips.length ?? 0} in ${year}`} />
-        <Stat label="Total cost" value={fmtMoney(grandTotal)} />
-        <Stat label="Avg per trip" value={withUsage.length ? fmtMoney(grandTotal / withUsage.length) : '—'} />
-        <Stat label="Unassigned" value={fmtMoney(unassignedTotal)} sub={unassigned.length ? `${unassigned.length} lines` : undefined} tone={unassigned.length ? 'amber' : undefined} />
+        <Stat label="Total cost" value={formatMoney(grandTotal)} />
+        <Stat label="Avg per trip" value={withUsage.length ? formatMoney(grandTotal / withUsage.length) : '—'} />
+        <Stat label="Unassigned" value={formatMoney(unassignedTotal)} sub={unassigned.length ? `${unassigned.length} lines` : undefined} tone={unassigned.length ? 'amber' : undefined} />
       </div>
 
       {view === 'maintenance' ? (
@@ -410,7 +407,7 @@ export default function TripUsagePage() {
               {yachtName ?? 'Ship'} <span className="text-muted-foreground font-normal">· spare parts received in {year} — ship upkeep, not charged to any trip</span>
             </p>
             <div className="flex items-center gap-4">
-              <p className="text-sm font-semibold tabular-nums">{fmtMoney(maintenance.reduce((s, l) => s + l.cost, 0))}</p>
+              <p className="text-sm font-semibold tabular-nums">{formatMoney(maintenance.reduce((s, l) => s + l.cost, 0))}</p>
               <div className="inline-flex rounded-md bg-muted p-0.5 text-xs">
                 {(['item', 'detail'] as const).map(m => (
                   <button key={m} onClick={() => setMode(m)}
@@ -485,13 +482,13 @@ export default function TripUsagePage() {
                         <td className="px-3 py-3 tabular-nums font-semibold">{t.tripNumber ?? '—'}</td>
                         <td className="px-3 py-3">
                           <span className="font-medium">{t.label}</span>
-                          <span className={`ml-2 text-[10px] font-medium px-1.5 py-0.5 rounded-full ${t.kind === 'OPEN_TRIP' ? 'bg-sky-50 text-sky-700' : 'bg-violet-50 text-violet-700'}`}>
+                          <span className={`ml-2 text-[10px] font-medium px-1.5 py-0.5 rounded-full ${t.kind === 'OPEN_TRIP' ? 'bg-info/10 text-info' : 'bg-violet-50 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300'}`}>
                             {t.kind === 'OPEN_TRIP' ? 'Open Trip' : 'Private Charter'}
                           </span>
                         </td>
-                        <td className="px-3 py-3 whitespace-nowrap text-muted-foreground">{fmtShortDate(t.startDate)} – {fmtDate(t.endDate)}</td>
+                        <td className="px-3 py-3 whitespace-nowrap text-muted-foreground">{formatDateRange(t.startDate, t.endDate)}</td>
                         <td className="px-3 py-3 text-right tabular-nums">{itemCount}</td>
-                        <td className="px-5 py-3 text-right tabular-nums font-semibold whitespace-nowrap">{fmtMoney(t.total)}</td>
+                        <td className="px-5 py-3 text-right tabular-nums font-semibold whitespace-nowrap">{formatMoney(t.total)}</td>
                       </tr>
                       {isOpen && (
                         <tr>
@@ -510,10 +507,10 @@ export default function TripUsagePage() {
       </div>
 
       {unassigned.length > 0 && (
-        <div className="rounded-lg border border-amber-200 overflow-hidden">
-          <div className="px-5 py-3 bg-amber-50 border-b border-amber-200 flex items-center justify-between gap-3">
-            <p className="text-sm font-medium text-amber-800">Unassigned usage — no trip on this yacht to charge it to</p>
-            <p className="text-sm font-semibold text-amber-800 tabular-nums">{fmtMoney(unassignedTotal)}</p>
+        <div className="rounded-lg border border-warning/30 overflow-hidden">
+          <div className="px-5 py-3 bg-warning/10 border-b border-warning/30 flex items-center justify-between gap-3">
+            <p className="text-sm font-medium text-warning">Unassigned usage — no trip on this yacht to charge it to</p>
+            <p className="text-sm font-semibold text-warning tabular-nums">{formatMoney(unassignedTotal)}</p>
           </div>
           <div className="overflow-x-auto"><LinesTable lines={unassigned} mode={mode} /></div>
         </div>

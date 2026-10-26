@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { NativeSelect } from '@/components/ui/native-select'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Separator } from '@/components/ui/separator'
@@ -62,7 +63,7 @@ const ALL_TABS: { id: SheetTab; label: string }[] = [
 ]
 
 
-function NationalitySelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+function NationalitySelect({ id, value, onChange }: { id?: string; value: string; onChange: (v: string) => void }) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const filtered = query.trim()
@@ -73,9 +74,13 @@ function NationalitySelect({ value, onChange }: { value: string; onChange: (v: s
     <Popover open={open} onOpenChange={v => { setOpen(v); if (!v) setQuery('') }}>
       <PopoverTrigger asChild>
         <Button
+          id={id}
+          type="button"
           variant="outline"
           role="combobox"
-          className="h-8 w-full justify-between text-sm font-normal px-3"
+          aria-haspopup="listbox"
+          aria-expanded={open}
+          className="w-full justify-between font-normal px-3 border-input"
         >
           <span className={value ? '' : 'text-muted-foreground'}>{value || 'Select nationality'}</span>
           <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 opacity-50 ml-2" />
@@ -87,6 +92,7 @@ function NationalitySelect({ value, onChange }: { value: string; onChange: (v: s
             <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
             <input
               autoFocus
+              aria-label="Search nationality"
               className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
               placeholder="Search nationality…"
               value={query}
@@ -123,10 +129,10 @@ function getInitials(name: string) {
   return name.split(' ').filter(Boolean).map(w => w[0]).slice(0, 2).join('').toUpperCase()
 }
 
-function Field({ label, hint, children, col2 }: { label: string; hint?: string; children: React.ReactNode; col2?: boolean }) {
+function Field({ label, htmlFor, hint, children, col2 }: { label: string; htmlFor?: string; hint?: string; children: React.ReactNode; col2?: boolean }) {
   return (
-    <div className={col2 ? 'col-span-2' : ''}>
-      <Label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</Label>
+    <div className={col2 ? 'sm:col-span-2' : ''}>
+      <Label htmlFor={htmlFor} className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</Label>
       <div className="mt-1.5">{children}</div>
       {hint && <p className="text-[10px] text-muted-foreground/60 mt-1 leading-relaxed">{hint}</p>}
     </div>
@@ -142,16 +148,16 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
   )
 }
 
-function YesNo({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+function YesNo({ value, onChange, label }: { value: string; onChange: (v: string) => void; label?: string }) {
   return (
-    <div className="flex gap-1.5">
-      <button type="button" onClick={() => onChange(value === 'yes' ? '' : 'yes')}
+    <div role="group" aria-label={label} className="flex gap-1.5">
+      <button type="button" aria-pressed={value === 'yes'} onClick={() => onChange(value === 'yes' ? '' : 'yes')}
         className={['flex-1 h-7 rounded text-xs font-semibold border transition-all',
-          value === 'yes' ? 'bg-emerald-500 text-white border-emerald-500' : 'bg-background text-muted-foreground border-border hover:bg-muted/40',
+          value === 'yes' ? 'bg-success text-success-foreground border-success' : 'bg-background text-muted-foreground border-border hover:bg-muted/40',
         ].join(' ')}>Yes</button>
-      <button type="button" onClick={() => onChange(value === 'no' ? '' : 'no')}
+      <button type="button" aria-pressed={value === 'no'} onClick={() => onChange(value === 'no' ? '' : 'no')}
         className={['flex-1 h-7 rounded text-xs font-semibold border transition-all',
-          value === 'no' ? 'bg-red-400 text-white border-red-400' : 'bg-background text-muted-foreground border-border hover:bg-muted/40',
+          value === 'no' ? 'bg-destructive text-destructive-foreground border-destructive' : 'bg-background text-muted-foreground border-border hover:bg-muted/40',
         ].join(' ')}>No</button>
     </div>
   )
@@ -183,18 +189,20 @@ function ImageUpload({ label, value, onChange }: { label: string; value: string;
               type="button"
               onClick={() => downloadDataUrl(value, `${label.replace(/\s+/g, '-')}.${extFromDataUrl(value)}`)}
               title="Download"
-              className="absolute top-1.5 right-8 bg-black/60 text-white rounded-full w-5 h-5 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+              aria-label="Download"
+              className="absolute top-1.5 right-8 bg-black/60 text-white rounded-full w-5 h-5 flex items-center justify-center opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 focus-visible:opacity-100 transition-opacity"
             ><Download className="h-3 w-3" /></button>
             <button
               type="button"
               onClick={() => onChange('')}
               title="Remove"
-              className="absolute top-1.5 right-1.5 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+              aria-label="Remove"
+              className="absolute top-1.5 right-1.5 bg-destructive text-destructive-foreground rounded-full w-5 h-5 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 focus-visible:opacity-100 transition-opacity"
             >✕</button>
           </div>
         ) : (
           <label {...dropProps} className={`flex flex-col items-center justify-center w-full h-24 border-2 border-dashed rounded-lg cursor-pointer transition-colors ${
-            isDragging ? 'border-[#1a5f6e] bg-[#1a5f6e]/5' : 'border-border hover:bg-muted/30'
+            isDragging ? 'border-brand bg-brand/5' : 'border-border hover:bg-muted/30'
           }`}>
             <span className="text-xs text-muted-foreground">{isDragging ? 'Drop to upload' : 'Click or drag file to upload'}</span>
             <span className="text-[10px] text-muted-foreground/60 mt-0.5">JPG, PNG, PDF</span>
@@ -218,13 +226,13 @@ function EquipmentTable({ items, onChange }: { items: any[]; onChange: (items: a
       </div>
       {rows.map((r, i) => (
         <div key={i} className="grid grid-cols-[1fr_110px_80px_28px] gap-2 items-center">
-          <Input value={r.item ?? ''} onChange={e => update(i, 'item', e.target.value)} placeholder="e.g. Wetsuit, BCD, Fins, Mask" className="h-8 text-sm" />
-          <Input value={r.size ?? ''} onChange={e => update(i, 'size', e.target.value)} placeholder="Size" className="h-8 text-sm" />
-          <Input value={r.qty ?? ''} onChange={e => update(i, 'qty', e.target.value)} placeholder="Qty" className="h-8 text-sm" />
-          <button type="button" onClick={() => removeRow(i)} aria-label="Remove item" className="text-red-400 hover:text-red-600 text-base leading-none">✕</button>
+          <Input value={r.item ?? ''} onChange={e => update(i, 'item', e.target.value)} placeholder="e.g. Wetsuit, BCD, Fins, Mask" aria-label="Equipment" />
+          <Input value={r.size ?? ''} onChange={e => update(i, 'size', e.target.value)} placeholder="Size" aria-label="Size" />
+          <Input value={r.qty ?? ''} onChange={e => update(i, 'qty', e.target.value)} placeholder="Qty" aria-label="Qty" />
+          <Button type="button" variant="ghost" size="icon" onClick={() => removeRow(i)} aria-label="Remove item" className="size-7 text-destructive/70 hover:text-destructive text-base leading-none">✕</Button>
         </div>
       ))}
-      <button type="button" onClick={addRow} className="text-xs font-semibold text-primary">+ Add Item</button>
+      <Button type="button" variant="link" onClick={addRow} className="h-auto p-0 text-xs font-semibold">+ Add Item</Button>
     </div>
   )
 }
@@ -266,15 +274,16 @@ function MultiFileUpload({ label, values, onChange }: { label: string; values: s
             <button type="button"
               onClick={() => downloadDataUrl(v, `${label.replace(/\s+/g, '-')}-${i + 1}.${extFromDataUrl(v)}`)}
               title="Download"
-              className="absolute top-1 left-1 bg-black/60 text-white rounded-full w-4 h-4 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+              aria-label="Download"
+              className="absolute top-1 left-1 bg-black/60 text-white rounded-full w-4 h-4 flex items-center justify-center opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 focus-visible:opacity-100 transition-opacity">
               <Download className="h-2.5 w-2.5" />
             </button>
-            <button type="button" onClick={() => removeAt(i)} title="Remove"
-              className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-4 h-4 flex items-center justify-center text-[10px] opacity-0 group-hover:opacity-100 transition-opacity">✕</button>
+            <button type="button" onClick={() => removeAt(i)} title="Remove" aria-label="Remove"
+              className="absolute top-1 right-1 bg-destructive text-destructive-foreground rounded-full w-4 h-4 flex items-center justify-center text-[10px] opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 focus-visible:opacity-100 transition-opacity">✕</button>
           </div>
         ))}
         <label {...dropProps} className={`aspect-square flex flex-col items-center justify-center border-2 border-dashed rounded-lg cursor-pointer transition-colors ${
-          isDragging ? 'border-[#1a5f6e] bg-[#1a5f6e]/5' : 'border-border hover:bg-muted/30'
+          isDragging ? 'border-brand bg-brand/5' : 'border-border hover:bg-muted/30'
         }`}>
           <span className="text-sm text-muted-foreground">{isDragging ? '⬇' : '＋'}</span>
           <span className="text-[9px] text-muted-foreground/60">{isDragging ? 'Drop' : 'Add'}</span>
@@ -301,16 +310,16 @@ function ProfileTab({ form, setForm, passportImage, onPassportImage }: {
     <div className="space-y-6">
       <div>
         <SectionTitle>Personal Information</SectionTitle>
-        <div className="grid grid-cols-2 gap-4">
-          <Field label="First Name *" hint="Legal name exactly as on passport">
-            <Input value={form.firstName} onChange={set('firstName')} placeholder="First name" className="h-8 text-sm" />
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Field label="First Name *" htmlFor="guest-first-name" hint="Legal name exactly as on passport">
+            <Input id="guest-first-name" value={form.firstName} onChange={set('firstName')} placeholder="First name" />
           </Field>
-          <Field label="Last Name" hint="Legal surname exactly as on passport">
-            <Input value={form.lastName} onChange={set('lastName')} placeholder="Last name" className="h-8 text-sm" />
+          <Field label="Last Name" htmlFor="guest-last-name" hint="Legal surname exactly as on passport">
+            <Input id="guest-last-name" value={form.lastName} onChange={set('lastName')} placeholder="Last name" />
           </Field>
-          <Field label="Gender" hint="Used for crew briefing and cabin assignment">
+          <Field label="Gender" htmlFor="guest-gender" hint="Used for crew briefing and cabin assignment">
             <Select value={form.gender} onValueChange={v => setForm({ ...form, gender: v })}>
-              <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Select" /></SelectTrigger>
+              <SelectTrigger id="guest-gender" className="w-full"><SelectValue placeholder="Select" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="Male">Male</SelectItem>
                 <SelectItem value="Female">Female</SelectItem>
@@ -318,29 +327,29 @@ function ProfileTab({ form, setForm, passportImage, onPassportImage }: {
               </SelectContent>
             </Select>
           </Field>
-          <Field label="Date of Birth" hint="Used to determine age category (adult / child)">
-            <Input type="date" value={form.dateOfBirth} onChange={set('dateOfBirth')} className="h-8 text-sm" />
+          <Field label="Date of Birth" htmlFor="guest-dob" hint="Used to determine age category (adult / child)">
+            <Input id="guest-dob" type="date" value={form.dateOfBirth} onChange={set('dateOfBirth')} />
           </Field>
-          <Field label="Nationality" hint="Country of citizenship as stated on passport">
-            <NationalitySelect value={form.nationality} onChange={v => setForm({ ...form, nationality: v })} />
+          <Field label="Nationality" htmlFor="guest-nationality" hint="Country of citizenship as stated on passport">
+            <NationalitySelect id="guest-nationality" value={form.nationality} onChange={v => setForm({ ...form, nationality: v })} />
           </Field>
-          <Field label="Email" hint="Used for booking confirmations and communications">
-            <Input type="email" value={form.email} onChange={set('email')} placeholder="email@example.com" className="h-8 text-sm" />
+          <Field label="Email" htmlFor="guest-email" hint="Used for booking confirmations and communications">
+            <Input id="guest-email" type="email" value={form.email} onChange={set('email')} placeholder="email@example.com" />
           </Field>
-          <Field label="Phone" hint="WhatsApp number preferred, with country code">
-            <Input type="tel" value={form.phone} onChange={set('phone')} placeholder="+62 812 3456 7890" className="h-8 text-sm" />
+          <Field label="Phone" htmlFor="guest-phone" hint="WhatsApp number preferred, with country code">
+            <Input id="guest-phone" type="tel" value={form.phone} onChange={set('phone')} placeholder="+62 812 3456 7890" />
           </Field>
-          <Field label="Emergency Contact" hint="Full name and phone number of the emergency contact">
-            <Input value={form.emergencyContact} onChange={set('emergencyContact')} placeholder="Name & phone" className="h-8 text-sm" />
+          <Field label="Emergency Contact" htmlFor="guest-emergency-contact" hint="Full name and phone number of the emergency contact">
+            <Input id="guest-emergency-contact" value={form.emergencyContact} onChange={set('emergencyContact')} placeholder="Name & phone" />
           </Field>
-          <Field label="Passport / ID Number" hint="As printed on the travel document">
-            <Input value={form.passport} onChange={set('passport')} placeholder="A1234567" className="h-8 text-sm" />
+          <Field label="Passport / ID Number" htmlFor="guest-passport" hint="As printed on the travel document">
+            <Input id="guest-passport" value={form.passport} onChange={set('passport')} placeholder="A1234567" />
           </Field>
-          <Field label="Passport Expiry" hint="Must be valid for at least 6 months past travel date">
-            <Input type="date" value={form.passportExpiry} onChange={set('passportExpiry')} className="h-8 text-sm" />
+          <Field label="Passport Expiry" htmlFor="guest-passport-expiry" hint="Must be valid for at least 6 months past travel date">
+            <Input id="guest-passport-expiry" type="date" value={form.passportExpiry} onChange={set('passportExpiry')} />
           </Field>
-          <Field label="Address" hint="City and country of residence" col2>
-            <Input value={form.address} onChange={set('address')} placeholder="City, Country" className="h-8 text-sm" />
+          <Field label="Address" htmlFor="guest-address" hint="City and country of residence" col2>
+            <Input id="guest-address" value={form.address} onChange={set('address')} placeholder="City, Country" />
           </Field>
           <Field label="Passport Scan" hint="Upload a photo or scan of the passport data page" col2>
             <ImageUpload label="Passport Scan" value={passportImage} onChange={onPassportImage} />
@@ -351,7 +360,7 @@ function ProfileTab({ form, setForm, passportImage, onPassportImage }: {
       <div>
         <SectionTitle>Notes</SectionTitle>
         <Textarea rows={3} value={form.operationalNotes} onChange={set('operationalNotes')}
-          placeholder="Internal crew notes…" className="text-sm resize-none" />
+          placeholder="Internal crew notes…" aria-label="Notes" className="resize-none" />
         <p className="text-[10px] text-muted-foreground/60 mt-1.5 leading-relaxed">Internal notes visible to crew and operations team only</p>
       </div>
     </div>
@@ -364,38 +373,37 @@ function JsonTab({ data, onChange, fields }: {
   fields: { key: string; label: string; hint?: string; type?: string; options?: string[]; rows?: number; col2?: boolean }[]
 }) {
   return (
-    <div className="grid grid-cols-2 gap-x-5 gap-y-4 items-start">
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-4 items-start">
       {fields.map(f => {
         if (f.type === 'section') {
           return (
-            <div key={f.key} className={`${f.col2 ? 'col-span-2' : ''} flex items-center gap-2 pt-1`}>
+            <div key={f.key} className={`${f.col2 ? 'sm:col-span-2' : ''} flex items-center gap-2 pt-1`}>
               <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground whitespace-nowrap">{f.label}</span>
               <div className="h-px flex-1 bg-border" />
             </div>
           )
         }
         return (
-          <Field key={f.key} label={f.label} hint={f.hint} col2={f.col2}>
+          <Field key={f.key} label={f.label} htmlFor={f.type === 'yesno' ? undefined : `guest-${f.key}`} hint={f.hint} col2={f.col2}>
             {f.options ? (
               <Select value={data[f.key] ?? ''} onValueChange={v => onChange(f.key, v)}>
-                <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Select" /></SelectTrigger>
+                <SelectTrigger id={`guest-${f.key}`} className="w-full"><SelectValue placeholder="Select" /></SelectTrigger>
                 <SelectContent>
                   {f.options.map(o => <SelectItem key={o} value={o}>{o}</SelectItem>)}
                 </SelectContent>
               </Select>
             ) : f.type === 'yesno' ? (
-              <YesNo value={data[f.key] ?? ''} onChange={v => onChange(f.key, v)} />
+              <YesNo label={f.label} value={data[f.key] ?? ''} onChange={v => onChange(f.key, v)} />
             ) : f.rows ? (
-              <Textarea rows={f.rows}
+              <Textarea id={`guest-${f.key}`} rows={f.rows}
                 value={data[f.key] ?? ''}
                 onChange={e => onChange(f.key, e.target.value)}
-                className="text-sm resize-none"
+                className="resize-none"
               />
             ) : (
-              <Input type={f.type ?? 'text'}
+              <Input id={`guest-${f.key}`} type={f.type ?? 'text'}
                 value={data[f.key] ?? ''}
                 onChange={e => onChange(f.key, e.target.value)}
-                className="h-8 text-sm"
               />
             )}
           </Field>
@@ -570,7 +578,7 @@ export default function GuestEditSheet({ open, guestId, bookingGuestId, hasDivin
         <SheetTitle className="sr-only">{isEdit ? 'Edit Guest' : 'Add Guest'}</SheetTitle>
 
         {/* Header */}
-        <div className="bg-[#1a5f6e] px-5 pt-5 pb-4 text-white shrink-0">
+        <div className="bg-brand px-5 pt-5 pb-4 text-brand-foreground shrink-0">
           <div className="flex items-center gap-3.5">
             <div className="h-11 w-11 rounded-full bg-white/20 ring-2 ring-white/25 flex items-center justify-center font-bold text-sm shrink-0">
               {loading
@@ -592,16 +600,18 @@ export default function GuestEditSheet({ open, guestId, bookingGuestId, hasDivin
         </div>
 
         {/* Tab bar */}
-        <div className="shrink-0 bg-white border-b">
+        <div className="shrink-0 bg-card border-b">
           <div className="flex overflow-x-auto scrollbar-none">
             {visibleTabs.map(tab => (
               <button
                 key={tab.id}
+                type="button"
+                aria-pressed={activeTab === tab.id}
                 onClick={() => setActiveTab(tab.id)}
                 className={[
                   'px-4 py-2.5 text-xs font-medium whitespace-nowrap border-b-2 transition-colors shrink-0',
                   activeTab === tab.id
-                    ? 'border-[#1a5f6e] text-[#1a5f6e]'
+                    ? 'border-brand text-brand'
                     : 'border-transparent text-muted-foreground hover:text-foreground',
                 ].join(' ')}
               >
@@ -640,9 +650,9 @@ export default function GuestEditSheet({ open, guestId, bookingGuestId, hasDivin
             )}
             {activeTab === 'diving' && (
               <div className="space-y-6">
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <Field label="Is Diver" hint="Is the guest a certified diver?">
-                    <YesNo value={divData.isDiver ?? ''} onChange={v => setDivData((prev: any) => ({ ...prev, isDiver: v }))} />
+                    <YesNo label="Is Diver" value={divData.isDiver ?? ''} onChange={v => setDivData((prev: any) => ({ ...prev, isDiver: v }))} />
                   </Field>
                 </div>
                 <div className={divData.isDiver === 'no' ? 'opacity-40 pointer-events-none select-none' : ''}>
@@ -694,44 +704,44 @@ export default function GuestEditSheet({ open, guestId, bookingGuestId, hasDivin
             )}
             {activeTab === 'surfing' && (
               <div className="space-y-6">
-                <div className="grid grid-cols-2 gap-4">
-                  <Field label="Surf Level" hint="Guest's surfing skill level">
-                    <select
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <Field label="Surf Level" htmlFor="guest-surf-level" hint="Guest's surfing skill level">
+                    <NativeSelect
+                      id="guest-surf-level"
                       value={surfData.surfLevel ?? ''}
                       onChange={e => setSurfData((p: any) => ({ ...p, surfLevel: e.target.value }))}
-                      className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                     >
                       <option value="">Select level</option>
                       {['Beginner','Intermediate','Advanced','Professional'].map(l => <option key={l} value={l}>{l}</option>)}
-                    </select>
+                    </NativeSelect>
                   </Field>
                   <Field label="Own Surfboard" hint="Does the guest bring their own board?">
-                    <YesNo value={surfData.ownBoard ?? ''} onChange={v => setSurfData((p: any) => ({ ...p, ownBoard: v }))} />
+                    <YesNo label="Own Surfboard" value={surfData.ownBoard ?? ''} onChange={v => setSurfData((p: any) => ({ ...p, ownBoard: v }))} />
                   </Field>
-                  <Field label="Number of Boards" hint="If they bring own board, how many?">
-                    <input type="number" min="0" value={surfData.ownBoardCount ?? ''} onChange={e => setSurfData((p: any) => ({ ...p, ownBoardCount: e.target.value }))} className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm" />
+                  <Field label="Number of Boards" htmlFor="guest-surf-board-count" hint="If they bring own board, how many?">
+                    <Input id="guest-surf-board-count" type="number" min="0" value={surfData.ownBoardCount ?? ''} onChange={e => setSurfData((p: any) => ({ ...p, ownBoardCount: e.target.value }))} />
                   </Field>
-                  <Field label="Board Type" hint="Funboard / Shortboard / Longboard">
-                    <select
+                  <Field label="Board Type" htmlFor="guest-surf-board-type" hint="Funboard / Shortboard / Longboard">
+                    <NativeSelect
+                      id="guest-surf-board-type"
                       value={surfData.boardType ?? ''}
                       onChange={e => setSurfData((p: any) => ({ ...p, boardType: e.target.value }))}
-                      className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                     >
                       <option value="">Select type</option>
                       {['Funboard','Shortboard','Longboard'].map(t => <option key={t} value={t}>{t}</option>)}
-                    </select>
+                    </NativeSelect>
                   </Field>
-                  <Field label="Board Length" hint="e.g. 6'2&quot;">
-                    <input value={surfData.boardLength ?? ''} onChange={e => setSurfData((p: any) => ({ ...p, boardLength: e.target.value }))} placeholder="e.g. 6'2&quot;" className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm" />
+                  <Field label="Board Length" htmlFor="guest-surf-board-length" hint="e.g. 6'2&quot;">
+                    <Input id="guest-surf-board-length" value={surfData.boardLength ?? ''} onChange={e => setSurfData((p: any) => ({ ...p, boardLength: e.target.value }))} placeholder="e.g. 6'2&quot;" />
                   </Field>
-                  <Field label="Board Width" hint='e.g. 19.5"'>
-                    <input value={surfData.boardWidth ?? ''} onChange={e => setSurfData((p: any) => ({ ...p, boardWidth: e.target.value }))} placeholder='e.g. 19.5"' className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm" />
+                  <Field label="Board Width" htmlFor="guest-surf-board-width" hint='e.g. 19.5"'>
+                    <Input id="guest-surf-board-width" value={surfData.boardWidth ?? ''} onChange={e => setSurfData((p: any) => ({ ...p, boardWidth: e.target.value }))} placeholder='e.g. 19.5"' />
                   </Field>
-                  <Field label="Board Volume" hint="e.g. 32L">
-                    <input value={surfData.boardVolume ?? ''} onChange={e => setSurfData((p: any) => ({ ...p, boardVolume: e.target.value }))} placeholder="e.g. 32L" className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm" />
+                  <Field label="Board Volume" htmlFor="guest-surf-board-volume" hint="e.g. 32L">
+                    <Input id="guest-surf-board-volume" value={surfData.boardVolume ?? ''} onChange={e => setSurfData((p: any) => ({ ...p, boardVolume: e.target.value }))} placeholder="e.g. 32L" />
                   </Field>
-                  <Field label="Additional Details" hint="Extra surfing requests or notes" col2>
-                    <textarea rows={3} value={surfData.surfingNotes ?? ''} onChange={e => setSurfData((p: any) => ({ ...p, surfingNotes: e.target.value }))} className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm" />
+                  <Field label="Additional Details" htmlFor="guest-surf-notes" hint="Extra surfing requests or notes" col2>
+                    <Textarea id="guest-surf-notes" rows={3} value={surfData.surfingNotes ?? ''} onChange={e => setSurfData((p: any) => ({ ...p, surfingNotes: e.target.value }))} />
                   </Field>
                 </div>
               </div>
@@ -744,13 +754,13 @@ export default function GuestEditSheet({ open, guestId, bookingGuestId, hasDivin
         <div className="shrink-0 px-5 py-3.5 border-t space-y-2.5">
 
           <div className="flex items-center justify-end gap-2">
-            <Button variant="outline" onClick={onClose} disabled={saving} className="h-8 px-4 text-sm">Cancel</Button>
+            <Button variant="outline" onClick={onClose} disabled={saving}>Cancel</Button>
             <Button
+              variant="brand"
               onClick={handleSave}
-              disabled={saving || loading || !form.firstName.trim()}
-              className="h-8 px-5 text-sm bg-[#1a5f6e] hover:bg-[#145260] text-white"
+              loading={saving}
+              disabled={loading || !form.firstName.trim()}
             >
-              {saving && <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />}
               {isEdit ? 'Save Changes' : 'Add Guest'}
             </Button>
           </div>

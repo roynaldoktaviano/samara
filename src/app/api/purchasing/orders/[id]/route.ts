@@ -170,17 +170,17 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const effectiveDeliveryLocationId = deliveryLocationId !== undefined ? (deliveryLocationId || null) : poForRoute.deliveryLocationId
     cleanTransitStopIds = [...new Set((Array.isArray(transitStops) ? transitStops : []).filter((x): x is string => typeof x === 'string' && !!x))]
     if (effectiveDeliveryLocationId && cleanTransitStopIds.includes(effectiveDeliveryLocationId))
-      return NextResponse.json({ error: 'Transit stop tidak boleh sama dengan Delivery Location' }, { status: 400 })
+      return NextResponse.json({ error: 'Transit stop cannot be the same as the Delivery Location' }, { status: 400 })
     if (cleanTransitStopIds.length > 0) {
       const validCount = await db.stockLocation.count({ where: { id: { in: cleanTransitStopIds } } })
-      if (validCount !== cleanTransitStopIds.length) return NextResponse.json({ error: 'Salah satu transit stop tidak valid' }, { status: 400 })
+      if (validCount !== cleanTransitStopIds.length) return NextResponse.json({ error: 'One of the transit stops is invalid' }, { status: 400 })
     }
   }
 
   // Requested By is mandatory (same as Supplier) — unlike deliveryLocationId, an
   // empty string here isn't a valid "clear" signal, just a rejected edit.
   if (requestedByEmployeeId !== undefined && !requestedByEmployeeId) {
-    return NextResponse.json({ error: 'Requested by wajib diisi' }, { status: 400 })
+    return NextResponse.json({ error: 'Requested by is required' }, { status: 400 })
   }
 
   // Any of these being present means the caller is editing the PO's content (as
@@ -224,7 +224,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       if (hasReceipts || hasPayments) {
         return NextResponse.json({ error: 'Items and pricing can no longer be edited — this PO already has receipts or payment records against it' }, { status: 400 })
       }
-      if (!items || items.length === 0) return NextResponse.json({ error: 'Minimal 1 item dibutuhkan' }, { status: 400 })
+      if (!items || items.length === 0) return NextResponse.json({ error: 'At least 1 item is required' }, { status: 400 })
 
       // Same rule as PO creation: an ASSET line on a ship-bound PO must say which Inventory
       // Room/Category it lands in. Never applies to services.
@@ -234,7 +234,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         const deliveryLocation = await db.stockLocation.findUnique({ where: { id: effectiveDeliveryLocationId }, select: { type: true } })
         if (deliveryLocation?.type === 'VESSEL') {
           if (items.some((it, i) => lineTreatments[i] === 'ASSET' && !it.sourceInventoryItemId && (!it.inventoryRoomId || !it.inventoryCategoryId))) {
-            return NextResponse.json({ error: 'Item Asset wajib menentukan Ruangan dan Kategori Barang' }, { status: 400 })
+            return NextResponse.json({ error: 'Asset items must specify a Room and Item Category' }, { status: 400 })
           }
           const roomIds = [...new Set(items.map(it => it.inventoryRoomId).filter((x): x is string => !!x))]
           const categoryIds = [...new Set(items.map(it => it.inventoryCategoryId).filter((x): x is string => !!x))]
@@ -243,7 +243,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
             db.inventoryCategory.count({ where: { id: { in: categoryIds }, room: { locationId: effectiveDeliveryLocationId } } }),
           ])
           if (validRooms !== roomIds.length || validCategories !== categoryIds.length) {
-            return NextResponse.json({ error: 'Ruangan/Kategori tidak valid untuk lokasi ini' }, { status: 400 })
+            return NextResponse.json({ error: 'Room/Category is not valid for this location' }, { status: 400 })
           }
         }
       }
@@ -433,18 +433,18 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const notifyRoles = involvesWarehouse ? ['WAREHOUSE', 'ADMIN'] : ['ADMIN']
     // Name where the goods are actually heading next (first transit stop, else the final
     // destination) — this used to always say "menuju gudang", even for a PO going to a yacht.
-    const nextStopName = forNotify?.transitStops[0]?.location.name ?? forNotify?.deliveryLocation?.name ?? 'lokasi tujuan'
+    const nextStopName = forNotify?.transitStops[0]?.location.name ?? forNotify?.deliveryLocation?.name ?? 'the destination'
 
     notifyByRole(db, notifyRoles, 'PO_IN_TRANSIT',
-      `Barang Dalam Pengiriman`,
-      `${poNum} dari ${supplier} sedang dalam perjalanan menuju ${nextStopName} — harap siapkan penerimaan barang`,
+      `Items In Transit`,
+      `${poNum} from ${supplier} is on the way to ${nextStopName} — please prepare to receive the items`,
       id,
     ).catch(console.error)
     if (prevStatus !== 'IN_TRANSIT') {
       notifyRequesterForOrder(db, id, {
         type: 'PR_PO_IN_TRANSIT',
-        title: 'Barang request kamu sedang dikirim',
-        body: `${poNum} sedang dalam perjalanan menuju ${nextStopName}.`,
+        title: 'Your request items have shipped',
+        body: `${poNum} is on the way to ${nextStopName}.`,
         skipUserId: session.user.id,
       }).catch(console.error)
     }
@@ -462,8 +462,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         const link = `${resolveBaseUrl(req)}/po-receive/${token}`
         notifyAssignedYachtCaptains(db, yachtId, {
           type: 'PO_IN_TRANSIT_RECEIVE',
-          title: 'Barang Menuju Kapal Anda',
-          body: `${poNum} dari ${supplier} sedang dalam perjalanan. Konfirmasi penerimaan di sini: ${link}`,
+          title: 'Items On the Way to Your Vessel',
+          body: `${poNum} from ${supplier} is on the way. Confirm receipt here: ${link}`,
           url: `/po-receive/${token}`,
           orderId: id,
         }).catch(console.error)
@@ -474,20 +474,20 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     // their request has actually been ordered from a supplier.
     notifyRequesterForOrder(db, id, {
       type: 'PR_PO_ORDERED',
-      title: 'Barang request kamu sudah dipesan',
-      body: `${poNum} sudah dipesan ke ${supplier} — kamu akan dikabari lagi saat barangnya dikirim.`,
+      title: 'Your request items have been ordered',
+      body: `${poNum} has been ordered from ${supplier} — you'll be notified again once the items ship.`,
       skipUserId: session.user.id,
     }).catch(console.error)
   } else if (status === 'RECEIVED') {
     notifyByRole(db, ['PURCHASING', 'ADMIN'], 'PO_RECEIVED',
-      `Barang Diterima`,
-      `${poNum} dari ${supplier} telah diterima lengkap`,
+      `Items Received`,
+      `${poNum} from ${supplier} has been fully received`,
       id,
     ).catch(console.error)
   } else if (status === 'PARTIALLY_RECEIVED') {
     notifyByRole(db, ['PURCHASING', 'ADMIN'], 'PO_PARTIALLY_RECEIVED',
-      `Barang Diterima Sebagian`,
-      `${poNum} dari ${supplier} diterima sebagian — cek detail penerimaan`,
+      `Items Partially Received`,
+      `${poNum} from ${supplier} was partially received — check the receipt details`,
       id,
     ).catch(console.error)
   }

@@ -45,7 +45,7 @@ export async function POST(req: NextRequest) {
   const db = await getDb(session)
 
   const { locationId } = await req.json()
-  if (!locationId) return NextResponse.json({ error: 'locationId wajib diisi' }, { status: 400 })
+  if (!locationId) return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
 
   if (isWarehouseOnly(role)) {
     const location = await db.stockLocation.findUnique({ where: { id: locationId }, select: { type: true } })
@@ -54,7 +54,7 @@ export async function POST(req: NextRequest) {
 
   const existing = await db.stockCount.findFirst({ where: { type: 'INITIAL', locationId, status: { not: 'APPROVED' } } })
   if (existing?.status === 'COMPLETED') {
-    return NextResponse.json({ error: 'Lokasi ini sudah punya Stock Opname Awal yang selesai' }, { status: 409 })
+    return NextResponse.json({ error: 'This location already has a completed Initial Stock Opname' }, { status: 409 })
   }
   if (existing) {
     // A draft already exists for this location — resume it instead of creating a duplicate.

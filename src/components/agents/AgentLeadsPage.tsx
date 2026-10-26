@@ -3,6 +3,10 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Users, Download, CheckCircle2, XCircle, RotateCcw, ExternalLink } from 'lucide-react'
 import { toast } from 'sonner'
+import { StatusBadge, type StatusTone } from '@/components/ui/status-badge'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 
 interface LeadContact {
   id: string
@@ -25,9 +29,7 @@ interface AgentLead {
 }
 
 const STATUS_LABEL: Record<string, string> = { NEW: 'New', PROMOTED: 'Promoted', DISCARDED: 'Discarded' }
-const STATUS_COLOR: Record<string, string> = {
-  NEW: 'bg-amber-100 text-amber-700', PROMOTED: 'bg-green-100 text-green-700', DISCARDED: 'bg-muted text-muted-foreground',
-}
+const STATUS_TONE: Record<string, StatusTone> = { NEW: 'warning', PROMOTED: 'success', DISCARDED: 'neutral' }
 
 export default function AgentLeadsPage() {
   const [leads, setLeads] = useState<AgentLead[]>([])
@@ -105,46 +107,43 @@ export default function AgentLeadsPage() {
   return (
     <div className="p-4 md:p-6 space-y-6">
       <div className="flex items-center gap-2">
-        <Users className="h-5 w-5 text-amber-600" />
+        <Users className="h-5 w-5 text-primary-strong" />
         <div>
           <h1 className="text-xl font-semibold">Agent Leads</h1>
           <p className="text-sm text-muted-foreground">Staging area for agent contacts pulled from Freshsales — review before they become real Agents.</p>
         </div>
       </div>
 
-      <div className="rounded-xl border bg-white p-5 space-y-3">
+      <div className="rounded-xl border bg-card p-5 space-y-3">
         <h3 className="text-sm font-semibold">Import from Freshsales</h3>
         <p className="text-xs text-muted-foreground">
           Pulls every contact from the given Freshsales view, groups contacts that share the exact same name into one lead
           (e.g. one company with two different emails), and adds them here as <strong>New</strong> — nothing touches the real Agent list yet.
         </p>
-        <div className="flex items-center gap-2">
-          <label className="text-sm font-medium">View ID</label>
-          <input
+        <div className="flex flex-wrap items-center gap-2">
+          <Label htmlFor="agent-leads-view-id" className="shrink-0">View ID</Label>
+          <Input
+            id="agent-leads-view-id"
             value={viewId}
             onChange={e => setViewId(e.target.value)}
-            className="h-9 w-48 border rounded-md px-3 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
+            className="w-48"
           />
-          <button
-            onClick={runImport}
-            disabled={importing}
-            className="flex items-center gap-2 px-4 py-2 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50 font-semibold transition-colors"
-          >
-            {importing ? <><div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Importing...</> : <><Download className="h-3.5 w-3.5" /> Import Now</>}
-          </button>
+          <Button onClick={runImport} loading={importing} className="font-semibold">
+            {importing ? 'Importing…' : <><Download className="size-3.5" /> Import Now</>}
+          </Button>
         </div>
-        {importResult && <p className="text-xs text-green-700 bg-green-50 border border-green-200 rounded-md px-3 py-2">{importResult}</p>}
+        {importResult && <p className="text-xs text-success bg-success/10 border border-success/30 rounded-md px-3 py-2">{importResult}</p>}
       </div>
 
-      <div className="flex gap-1.5">
+      <div className="flex flex-wrap gap-1.5">
         {([
           ['NEW', `New${counts.NEW ? ` (${counts.NEW})` : ''}`],
           ['PROMOTED', `Promoted${counts.PROMOTED ? ` (${counts.PROMOTED})` : ''}`],
           ['DISCARDED', `Discarded${counts.DISCARDED ? ` (${counts.DISCARDED})` : ''}`],
           ['ALL', 'All'],
         ] as const).map(([key, label]) => (
-          <button key={key} onClick={() => setFilter(key)}
-            className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${filter === key ? 'bg-amber-500 text-white' : 'bg-muted text-muted-foreground hover:bg-muted/70'}`}>
+          <button key={key} type="button" onClick={() => setFilter(key)} aria-pressed={filter === key}
+            className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${filter === key ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/70'}`}>
             {label}
           </button>
         ))}
@@ -154,19 +153,19 @@ export default function AgentLeadsPage() {
         {loading ? (
           [...Array(4)].map((_, i) => <div key={i} className="h-16 rounded-lg bg-muted/50 animate-pulse" />)
         ) : filtered.length === 0 ? (
-          <div className="rounded-xl border bg-white py-12 text-center text-sm text-muted-foreground">
+          <div className="rounded-xl border bg-card py-12 text-center text-sm text-muted-foreground">
             <Users className="h-8 w-8 mx-auto mb-2 opacity-30" />
             No {filter !== 'ALL' ? STATUS_LABEL[filter].toLowerCase() : ''} agent leads yet.
           </div>
         ) : filtered.map(lead => (
-          <div key={lead.id} className="rounded-xl border bg-white overflow-hidden">
-            <div className="flex items-center justify-between px-4 py-3 bg-muted/20 border-b">
-              <div className="flex items-center gap-2">
+          <div key={lead.id} className="rounded-xl border bg-card overflow-hidden">
+            <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 bg-muted/20 border-b">
+              <div className="flex flex-wrap items-center gap-2 min-w-0">
                 <span className="font-medium text-sm">{lead.name}</span>
-                <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLOR[lead.status]}`}>{STATUS_LABEL[lead.status]}</span>
+                <StatusBadge tone={STATUS_TONE[lead.status]}>{STATUS_LABEL[lead.status]}</StatusBadge>
                 <span className="text-xs text-muted-foreground">{lead.contacts.length} contact{lead.contacts.length > 1 ? 's' : ''}</span>
               </div>
-              <div className="flex items-center gap-1.5">
+              <div className="flex flex-wrap items-center gap-1.5">
                 {lead.status === 'PROMOTED' && lead.promotedAgent && (
                   <span className="text-xs text-muted-foreground flex items-center gap-1">
                     <ExternalLink className="h-3 w-3" /> {lead.promotedAgent.name}{lead.promotedBy?.name && ` · by ${lead.promotedBy.name}`}
@@ -174,21 +173,21 @@ export default function AgentLeadsPage() {
                 )}
                 {lead.status === 'NEW' && (
                   <>
-                    <button disabled={busyId === lead.id} onClick={() => promote(lead)}
-                      className="flex items-center gap-1.5 text-xs font-semibold text-green-700 hover:text-green-900 border border-green-200 bg-green-50 hover:bg-green-100 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
-                      <CheckCircle2 className="h-3.5 w-3.5" /> Promote to Agent
-                    </button>
-                    <button disabled={busyId === lead.id} onClick={() => setStatus(lead, 'DISCARDED')}
-                      className="flex items-center gap-1.5 text-xs font-medium text-red-600 hover:text-red-800 border border-red-200 hover:bg-red-50 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
-                      <XCircle className="h-3.5 w-3.5" /> Discard
-                    </button>
+                    <Button variant="success-soft" size="sm" disabled={busyId === lead.id} onClick={() => promote(lead)}
+                      className="text-xs font-semibold">
+                      <CheckCircle2 className="size-3.5" /> Promote to Agent
+                    </Button>
+                    <Button variant="destructive-soft" size="sm" disabled={busyId === lead.id} onClick={() => setStatus(lead, 'DISCARDED')}
+                      className="text-xs">
+                      <XCircle className="size-3.5" /> Discard
+                    </Button>
                   </>
                 )}
                 {lead.status === 'DISCARDED' && (
-                  <button disabled={busyId === lead.id} onClick={() => setStatus(lead, 'NEW')}
-                    className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground border px-3 py-1.5 rounded-lg hover:bg-muted transition-colors disabled:opacity-50">
-                    <RotateCcw className="h-3.5 w-3.5" /> Restore
-                  </button>
+                  <Button variant="outline" size="sm" disabled={busyId === lead.id} onClick={() => setStatus(lead, 'NEW')}
+                    className="text-xs text-muted-foreground hover:text-foreground">
+                    <RotateCcw className="size-3.5" /> Restore
+                  </Button>
                 )}
               </div>
             </div>

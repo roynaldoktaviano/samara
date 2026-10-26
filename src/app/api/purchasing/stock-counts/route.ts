@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
   const db = await getDb(session)
 
   const { locationId, notes, countedById: bodyCountedById } = await req.json()
-  if (!locationId) return NextResponse.json({ error: 'locationId wajib diisi' }, { status: 400 })
+  if (!locationId) return NextResponse.json({ error: 'Location is required' }, { status: 400 })
   const countedById = bodyCountedById ?? session.user.id
 
   // Build count number

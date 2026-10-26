@@ -5,6 +5,8 @@ import { useSession } from 'next-auth/react'
 import { Plus, ChevronRight, Search, Package, Wallet, CheckCircle2, Banknote, Pencil, Truck } from 'lucide-react'
 import { FilePreview, MultiFilePicker } from '@/components/ui/file-preview'
 import { poLineTotal, poLineDiscount } from '@/lib/po-payment'
+import { formatDate, formatMoney } from '@/lib/format'
+import { StatusBadge, type StatusTone } from '@/components/ui/status-badge'
 
 interface PaymentRequest {
   id: string; amount: number; notePhotoKeys: string[]; notes: string | null; notaDate: string | null; status: string; paymentMethod: string
@@ -40,22 +42,24 @@ interface DeliveryFeeDetail extends DeliveryFee {
   reimbursements: Reimbursement[]
 }
 
-const PO_STATUS_LABEL: Record<string, string> = {
-  DRAFT: 'Draft', ORDERED: 'Ordered', IN_TRANSIT: 'On Delivery', PARTIALLY_RECEIVED: 'Partially Received', RECEIVED: 'Received', CANCELLED: 'Cancelled',
-}
-const PO_STATUS_COLOR: Record<string, string> = {
-  DRAFT: 'bg-muted text-muted-foreground', ORDERED: 'bg-amber-100 text-amber-700', IN_TRANSIT: 'bg-blue-100 text-blue-700',
-  PARTIALLY_RECEIVED: 'bg-amber-100 text-amber-700', RECEIVED: 'bg-green-100 text-green-700', CANCELLED: 'bg-red-100 text-red-700',
+const PO_STATUS: Record<string, { label: string; tone: StatusTone }> = {
+  DRAFT:              { label: 'Draft',              tone: 'neutral' },
+  ORDERED:            { label: 'Ordered',            tone: 'info' },
+  IN_TRANSIT:         { label: 'On Delivery',        tone: 'info' },
+  PARTIALLY_RECEIVED: { label: 'Partially Received', tone: 'warning' },
+  RECEIVED:           { label: 'Received',           tone: 'success' },
+  CANCELLED:          { label: 'Cancelled',          tone: 'neutral' },
 }
 
-const fmtDate = (s: string) => new Date(s).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
 const toDateInputValue = (s: string) => {
   const d = new Date(s)
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
-const fmtMoney = (n: number) => 'Rp ' + new Intl.NumberFormat('id-ID').format(n)
-const PAYMENT_STATUS_LABEL: Record<string, string> = { UNPAID: 'Unpaid', PENDING: 'Waiting for Payment', PAID: 'Paid' }
-const PAYMENT_STATUS_COLOR: Record<string, string> = { UNPAID: 'bg-muted text-muted-foreground', PENDING: 'bg-amber-100 text-amber-700', PAID: 'bg-green-100 text-green-700' }
+const PAYMENT_STATUS: Record<string, { label: string; tone: StatusTone }> = {
+  UNPAID:  { label: 'Unpaid',              tone: 'neutral' },
+  PENDING: { label: 'Waiting for Payment', tone: 'warning' },
+  PAID:    { label: 'Paid',                tone: 'success' },
+}
 
 function PoSummaryCard({ po }: { po: PoSummary }) {
   const itemsSubtotal = po.items.reduce((s, it) => s + poLineTotal(it), 0)
@@ -75,15 +79,15 @@ function PoSummaryCard({ po }: { po: PoSummary }) {
             {po.supplierName ?? 'No supplier'}{po.deliveryLocation ? ` · ${po.deliveryLocation.name}` : ''}
           </p>
         </div>
-        <span className={`px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${PO_STATUS_COLOR[po.status] ?? ''}`}>
-          {PO_STATUS_LABEL[po.status] ?? po.status}
-        </span>
+        <StatusBadge tone={PO_STATUS[po.status]?.tone ?? 'neutral'}>
+          {PO_STATUS[po.status]?.label ?? po.status}
+        </StatusBadge>
       </div>
       <p className="text-xs text-muted-foreground">
-        Ordered {fmtDate(po.orderedAt)}{po.expectedAt ? ` · Expected ${fmtDate(po.expectedAt)}` : ''}
+        Ordered {formatDate(po.orderedAt)}{po.expectedAt ? ` · Expected ${formatDate(po.expectedAt)}` : ''}
       </p>
 
-      <div className="rounded-md border overflow-hidden bg-white">
+      <div className="rounded-md border overflow-hidden bg-card">
         <div className="overflow-x-auto"><table className="w-full text-xs">
           <thead className="bg-muted/50 text-muted-foreground">
             <tr>
@@ -98,8 +102,8 @@ function PoSummaryCard({ po }: { po: PoSummary }) {
               <tr key={it.id}>
                 <td className="px-3 py-1.5">{it.itemName}</td>
                 <td className="px-3 py-1.5 text-right text-muted-foreground">{it.orderedQty}{it.unit ? ` ${it.unit}` : ''}</td>
-                <td className="px-3 py-1.5 text-right text-muted-foreground">{fmtMoney(it.unitCost)}</td>
-                <td className="px-3 py-1.5 text-right font-medium">{poLineDiscount(it) > 0 && <span className="block text-[10px] font-normal text-green-700">−{it.discountType === 'PERCENT' ? `${it.discountValue}%` : fmtMoney(poLineDiscount(it))}</span>}{fmtMoney(poLineTotal(it))}</td>
+                <td className="px-3 py-1.5 text-right text-muted-foreground">{formatMoney(it.unitCost)}</td>
+                <td className="px-3 py-1.5 text-right font-medium">{poLineDiscount(it) > 0 && <span className="block text-[10px] font-normal text-success">−{it.discountType === 'PERCENT' ? `${it.discountValue}%` : formatMoney(poLineDiscount(it))}</span>}{formatMoney(poLineTotal(it))}</td>
               </tr>
             ))}
           </tbody>
@@ -110,22 +114,22 @@ function PoSummaryCard({ po }: { po: PoSummary }) {
         {hasBreakdown && (
           <>
             <div className="flex items-center justify-between text-xs text-muted-foreground">
-              <span>Subtotal</span><span>{fmtMoney(itemsSubtotal)}</span>
+              <span>Subtotal</span><span>{formatMoney(itemsSubtotal)}</span>
             </div>
             {discountAmount > 0 && (
               <div className="flex items-center justify-between text-xs text-muted-foreground">
-                <span>Discount{po.discountType === 'PERCENT' ? ` (${po.discountValue}%)` : ''}</span><span>-{fmtMoney(discountAmount)}</span>
+                <span>Discount{po.discountType === 'PERCENT' ? ` (${po.discountValue}%)` : ''}</span><span>-{formatMoney(discountAmount)}</span>
               </div>
             )}
             {po.extraCharges?.map((c, i) => (
               <div key={i} className="flex items-center justify-between text-xs text-muted-foreground">
-                <span>{c.label || 'Additional charge'}</span><span>{fmtMoney(c.amount)}</span>
+                <span>{c.label || 'Additional charge'}</span><span>{formatMoney(c.amount)}</span>
               </div>
             ))}
           </>
         )}
         <div className="flex items-center justify-between text-sm font-semibold pt-1 border-t">
-          <span>PO Total</span><span>{fmtMoney(grandTotal)}</span>
+          <span>PO Total</span><span>{formatMoney(grandTotal)}</span>
         </div>
       </div>
 
@@ -149,26 +153,26 @@ function ReimburseAccountCombobox({ accounts, onPick }: {
   return (
     <div className="relative">
       <button type="button" onClick={() => { setOpen(o => !o); setSearch('') }}
-        className="w-full h-9 border rounded-md px-3 text-sm text-left flex items-center justify-between bg-white focus:outline-none focus:ring-1 focus:ring-amber-500 transition-colors">
-        <span className="text-muted-foreground">Pick a saved account...</span>
+        className="w-full h-9 border rounded-md px-3 text-sm text-left flex items-center justify-between bg-card focus:outline-none focus:ring-1 focus:ring-ring transition-colors">
+        <span className="text-muted-foreground">Pick a saved account…</span>
         <Banknote className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
       </button>
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute left-0 right-0 top-full mt-1 bg-white border rounded-lg shadow-xl z-50 max-h-60 flex flex-col">
+          <div className="absolute left-0 right-0 top-full mt-1 bg-popover border rounded-lg shadow-xl z-50 max-h-60 flex flex-col">
             <div className="p-2 border-b shrink-0">
               <div className="relative">
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
-                <input autoFocus className="w-full h-8 border rounded px-2.5 pl-8 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500"
-                  placeholder="Search saved accounts..." value={search} onChange={e => setSearch(e.target.value)} />
+                <input autoFocus className="w-full h-8 border rounded px-2.5 pl-8 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                  placeholder="Search saved accounts…" value={search} onChange={e => setSearch(e.target.value)} />
               </div>
             </div>
             <div className="overflow-y-auto">
               {opts.length === 0 && <p className="px-3 py-3 text-sm text-muted-foreground">No matches</p>}
               {opts.map(a => (
                 <button key={a.id} type="button" onClick={() => { onPick(a); setOpen(false); setSearch('') }}
-                  className="w-full text-left px-3 py-2 text-sm hover:bg-amber-50 transition-colors">
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-warning/10 transition-colors">
                   <p className="font-medium">{a.accountHolderName}</p>
                   <p className="text-xs text-muted-foreground">{a.bankName} · {a.accountNumber}</p>
                 </button>
@@ -277,7 +281,7 @@ export default function DeliveryFeesPage() {
   async function submitPaymentRequest() {
     if (!detail) return
     if (!paymentAmount || Number(paymentAmount) <= 0) { setPaymentError('Amount must be greater than 0'); return }
-    if (paymentPhotos.length === 0) { setPaymentError('At least one receipt/nota photo is required'); return }
+    if (paymentPhotos.length === 0) { setPaymentError('At least one receipt photo is required'); return }
     setPaymentSaving(true); setPaymentError('')
     const url = paymentEditId
       ? `/api/purchasing/delivery-fees/${detail.id}/payment-request/${paymentEditId}`
@@ -296,7 +300,7 @@ export default function DeliveryFeesPage() {
   async function submitReimbursement() {
     if (!detail) return
     if (!reimburseAmount || Number(reimburseAmount) <= 0) { setReimburseError('Amount must be greater than 0'); return }
-    if (reimbursePhotos.length === 0) { setReimburseError('At least one receipt/nota photo is required'); return }
+    if (reimbursePhotos.length === 0) { setReimburseError('At least one receipt photo is required'); return }
     if (!reimburseRequesterName.trim()) { setReimburseError('Name is required'); return }
     if (!reimburseBankName.trim()) { setReimburseError('Bank name is required'); return }
     if (!reimburseAccountNumber.trim()) { setReimburseError('Account number is required'); return }
@@ -350,7 +354,7 @@ export default function DeliveryFeesPage() {
     }
   }
 
-  const inp = 'w-full h-9 border rounded-md px-3 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white transition-colors'
+  const inp = 'w-full h-9 border rounded-md px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring bg-card transition-colors'
 
   // ── List ──
   if (view === 'list') {
@@ -361,7 +365,7 @@ export default function DeliveryFeesPage() {
             <h2 className="text-2xl font-bold tracking-tight">Delivery Fees</h2>
             <p className="text-muted-foreground text-sm mt-1">Shipping/delivery charges tied to a purchase order.</p>
           </div>
-          <button onClick={openNew} className="flex items-center gap-2 px-4 py-2 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700 font-semibold transition-colors">
+          <button onClick={openNew} className="flex items-center gap-2 px-4 py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary-hover font-semibold transition-colors">
             <Plus className="h-4 w-4" /> New Delivery Fee
           </button>
         </div>
@@ -395,9 +399,9 @@ export default function DeliveryFeesPage() {
                     {f.purchaseOrder ? `${f.purchaseOrder.poNumber}${f.purchaseOrder.supplierName ? ` · ${f.purchaseOrder.supplierName}` : ''}` : <span className="italic">No PO — {f.notes || 'consolidated/cargo'}</span>}
                   </td>
                   <td className="px-4 py-3 text-muted-foreground">{f.createdByName ?? '—'}</td>
-                  <td className="px-4 py-3 text-muted-foreground">{fmtDate(f.createdAt)}</td>
+                  <td className="px-4 py-3 text-muted-foreground">{formatDate(f.createdAt)}</td>
                   <td className="px-4 py-3">
-                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${PAYMENT_STATUS_COLOR[f.paymentStatus] ?? ''}`}>{PAYMENT_STATUS_LABEL[f.paymentStatus] ?? f.paymentStatus}</span>
+                    <StatusBadge tone={PAYMENT_STATUS[f.paymentStatus]?.tone ?? 'neutral'}>{PAYMENT_STATUS[f.paymentStatus]?.label ?? f.paymentStatus}</StatusBadge>
                   </td>
                   <td className="px-4 py-3"><ChevronRight className="h-4 w-4 text-muted-foreground" /></td>
                 </tr>
@@ -422,9 +426,9 @@ export default function DeliveryFeesPage() {
           <span className="text-sm font-medium">New Delivery Fee</span>
         </div>
 
-        {saveError && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3">{saveError}</div>}
+        {saveError && <div className="rounded-lg bg-destructive/10 border border-destructive/30 text-destructive text-sm px-4 py-3">{saveError}</div>}
 
-        <div className="rounded-xl border bg-white">
+        <div className="rounded-xl border bg-card">
           <div className="px-5 py-4 border-b">
             <h3 className="text-sm font-semibold">Delivery Info</h3>
           </div>
@@ -437,15 +441,15 @@ export default function DeliveryFeesPage() {
                   <div className="relative z-50">
                     <div className="relative">
                       <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
-                      <input autoFocus className={`${inp} pl-8`} placeholder="Search PO number or supplier..."
+                      <input autoFocus className={`${inp} pl-8`} placeholder="Search PO number or supplier…"
                         value={poSearch} onChange={e => setPoSearch(e.target.value)} />
                     </div>
-                    <div className="absolute left-0 right-0 top-full mt-0.5 bg-white border rounded-lg shadow-xl max-h-52 overflow-y-auto">
+                    <div className="absolute left-0 right-0 top-full mt-0.5 bg-popover border rounded-lg shadow-xl max-h-52 overflow-y-auto">
                       {filteredOrders.length === 0 ? (
                         <p className="px-3 py-3 text-sm text-muted-foreground">No purchase orders found</p>
                       ) : filteredOrders.map(o => (
                         <button key={o.id} onClick={() => selectPo(o)}
-                          className="w-full text-left px-3 py-2.5 text-sm hover:bg-amber-50 flex items-center gap-2.5 border-b last:border-0 transition-colors">
+                          className="w-full text-left px-3 py-2.5 text-sm hover:bg-warning/10 flex items-center gap-2.5 border-b last:border-0 transition-colors">
                           <Package className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                           <span className="font-medium flex-1">{o.poNumber}</span>
                           <span className="text-muted-foreground text-xs">{o.supplierName ?? '—'}</span>
@@ -465,7 +469,7 @@ export default function DeliveryFeesPage() {
                   </button>
                   {poId && (
                     <button onClick={() => { setPoId(''); setPoLabel(''); setPoPreview(null) }}
-                      className="shrink-0 text-xs text-muted-foreground hover:text-red-600 underline underline-offset-2 transition-colors">
+                      className="shrink-0 text-xs text-muted-foreground hover:text-destructive underline underline-offset-2 transition-colors">
                       Clear
                     </button>
                   )}
@@ -479,8 +483,8 @@ export default function DeliveryFeesPage() {
             ) : poPreview && <PoSummaryCard po={poPreview} />}
 
             <div className="space-y-1.5">
-              <label className="text-sm font-medium">Notes {!poId && <span className="text-red-500">*</span>}</label>
-              <textarea className="w-full border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white resize-none"
+              <label className="text-sm font-medium">Notes {!poId && <span className="text-destructive">*</span>}</label>
+              <textarea className="w-full border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring bg-card resize-none"
                 rows={2} placeholder={poId ? 'Courier, shipment details, etc. (optional)' : 'Describe this delivery — e.g. "Consolidated cargo for PO-2607-012 & 013"'}
                 value={notes} onChange={e => setNotes(e.target.value)} />
             </div>
@@ -490,8 +494,8 @@ export default function DeliveryFeesPage() {
         <div className="flex justify-end gap-3 pb-4">
           <button onClick={() => setView('list')} className="px-5 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">Cancel</button>
           <button onClick={submit} disabled={saving}
-            className="flex items-center gap-2 px-6 py-2 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50 font-semibold transition-colors">
-            {saving ? <><div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Saving...</> : 'Create Delivery Fee'}
+            className="flex items-center gap-2 px-6 py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary-hover disabled:opacity-50 font-semibold transition-colors">
+            {saving ? <><div className="h-4 w-4 border-2 border-current/30 border-t-current rounded-full animate-spin" /> Saving…</> : 'Create Delivery Fee'}
           </button>
         </div>
       </div>
@@ -504,7 +508,7 @@ export default function DeliveryFeesPage() {
       <div className="flex items-center gap-3">
         <button onClick={() => { setView('list'); setDetail(null) }} className="text-sm text-muted-foreground hover:text-foreground transition-colors">← Back</button>
         <span className="text-muted-foreground">/</span>
-        <span className="text-sm font-medium">{detail?.feeNumber ?? 'Loading...'}</span>
+        <span className="text-sm font-medium">{detail?.feeNumber ?? 'Loading…'}</span>
       </div>
 
       {detailLoading || !detail ? (
@@ -527,7 +531,7 @@ export default function DeliveryFeesPage() {
                 )}
               </p>
               <p className="text-xs text-muted-foreground mt-1">
-                Created {fmtDate(detail.createdAt)}{detail.createdByName && ` · by ${detail.createdByName}`}
+                Created {formatDate(detail.createdAt)}{detail.createdByName && ` · by ${detail.createdByName}`}
               </p>
               {detail.notes && <p className="text-sm text-muted-foreground mt-2 bg-muted/40 rounded-lg px-3 py-2">{detail.notes}</p>}
             </div>
@@ -577,15 +581,15 @@ export default function DeliveryFeesPage() {
                   <div key={p.id} className="rounded-xl border overflow-hidden">
                     <div className="flex items-center justify-between px-4 py-3 bg-muted/30 border-b">
                       <div>
-                        <p className="font-semibold text-base">{fmtMoney(p.amount)}</p>
+                        <p className="font-semibold text-base">{formatMoney(p.amount)}</p>
                         <p className="text-xs text-muted-foreground mt-0.5">
-                          {isCard ? 'Paid' : 'Requested'} {fmtDate(p.createdAt)}{p.requestedBy?.name && ` · by ${p.requestedBy.name}`}
+                          {isCard ? 'Paid' : 'Requested'} {formatDate(p.createdAt)}{p.requestedBy?.name && ` · by ${p.requestedBy.name}`}
                         </p>
                       </div>
                       <div className="flex flex-col items-end gap-1">
-                        <span className={`shrink-0 px-2.5 py-1 rounded-full text-xs font-medium ${PAYMENT_STATUS_COLOR[p.status === 'PAID' ? 'PAID' : 'PENDING']}`}>
-                          {PAYMENT_STATUS_LABEL[p.status === 'PAID' ? 'PAID' : 'PENDING']}
-                        </span>
+                        <StatusBadge tone={PAYMENT_STATUS[p.status === 'PAID' ? 'PAID' : 'PENDING'].tone} className="px-2.5 py-1">
+                          {PAYMENT_STATUS[p.status === 'PAID' ? 'PAID' : 'PENDING'].label}
+                        </StatusBadge>
                         {isCard && <span className="text-[10px] text-muted-foreground">Debit Paid</span>}
                       </div>
                     </div>
@@ -593,30 +597,30 @@ export default function DeliveryFeesPage() {
                       {p.notes && <p className="text-sm text-muted-foreground">{p.notes}</p>}
                       <div className={p.status === 'PAID' && p.transferProofKeys.length > 0 ? 'grid grid-cols-2 gap-4' : ''}>
                         <div>
-                          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Receipt / Nota{p.notePhotoKeys.length > 1 ? ` (${p.notePhotoKeys.length})` : ''}</p>
+                          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Receipt{p.notePhotoKeys.length > 1 ? ` (${p.notePhotoKeys.length})` : ''}</p>
                           <div className="grid grid-cols-2 gap-2">
                             {p.notePhotoKeys.map((k, i) => (
-                              <FilePreview key={i} src={k} alt={`Nota ${i + 1}`} onClick={() => setPaymentPhotoView(k)}
+                              <FilePreview key={i} src={k} alt={`Receipt ${i + 1}`} onClick={() => setPaymentPhotoView(k)}
                                 className="w-full h-28 rounded-lg object-contain bg-muted/20 border cursor-zoom-in hover:opacity-90 transition-opacity" />
                             ))}
                           </div>
                         </div>
                         {p.status === 'PAID' && p.transferProofKeys.length > 0 && (
                           <div>
-                            <p className="text-xs font-semibold text-green-700 uppercase tracking-wide mb-1.5">Transfer Proof{p.transferProofKeys.length > 1 ? ` (${p.transferProofKeys.length})` : ''}</p>
+                            <p className="text-xs font-semibold text-success uppercase tracking-wide mb-1.5">Transfer Proof{p.transferProofKeys.length > 1 ? ` (${p.transferProofKeys.length})` : ''}</p>
                             <div className="grid grid-cols-2 gap-2">
                               {p.transferProofKeys.map((k, i) => (
                                 <FilePreview key={i} src={k} alt={`Transfer proof ${i + 1}`} onClick={() => setPaymentPhotoView(k)}
                                   className="w-full h-28 rounded-lg object-contain bg-muted/20 border cursor-zoom-in hover:opacity-90 transition-opacity" />
                               ))}
                             </div>
-                            <p className="text-xs text-green-700 mt-1.5">
-                              Paid {p.paidAt && fmtDate(p.paidAt)}{p.paidBy?.name && ` · by ${p.paidBy.name}`}
+                            <p className="text-xs text-success mt-1.5">
+                              Paid {p.paidAt && formatDate(p.paidAt)}{p.paidBy?.name && ` · by ${p.paidBy.name}`}
                             </p>
                           </div>
                         )}
                         {isCard && p.status === 'PAID' && (
-                          <p className="text-xs text-green-700">
+                          <p className="text-xs text-success">
                             Debit Paid directly by {p.paidBy?.name ?? p.requestedBy?.name ?? 'purchasing'} — no bank transfer needed.
                           </p>
                         )}
@@ -635,14 +639,14 @@ export default function DeliveryFeesPage() {
                 <div key={r.id} className="rounded-xl border overflow-hidden">
                   <div className="flex items-center justify-between px-4 py-3 bg-muted/30 border-b">
                     <div>
-                      <p className="font-semibold text-base">{fmtMoney(r.amount)}</p>
+                      <p className="font-semibold text-base">{formatMoney(r.amount)}</p>
                       <p className="text-xs text-muted-foreground mt-0.5">
-                        Requested {fmtDate(r.createdAt)}{r.requestedBy?.name && ` · by ${r.requestedBy.name}`}
+                        Requested {formatDate(r.createdAt)}{r.requestedBy?.name && ` · by ${r.requestedBy.name}`}
                       </p>
                     </div>
-                    <span className={`shrink-0 px-2.5 py-1 rounded-full text-xs font-medium ${PAYMENT_STATUS_COLOR[r.status === 'PAID' ? 'PAID' : 'PENDING']}`}>
-                      {PAYMENT_STATUS_LABEL[r.status === 'PAID' ? 'PAID' : 'PENDING']}
-                    </span>
+                    <StatusBadge tone={PAYMENT_STATUS[r.status === 'PAID' ? 'PAID' : 'PENDING'].tone} className="px-2.5 py-1">
+                      {PAYMENT_STATUS[r.status === 'PAID' ? 'PAID' : 'PENDING'].label}
+                    </StatusBadge>
                   </div>
                   <div className="p-4 space-y-3">
                     <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
@@ -654,25 +658,25 @@ export default function DeliveryFeesPage() {
                     {r.notes && <p className="text-sm text-muted-foreground">{r.notes}</p>}
                     <div className={r.status === 'PAID' && r.transferProofKeys.length > 0 ? 'grid grid-cols-2 gap-4' : ''}>
                       <div>
-                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Receipt / Nota{r.notePhotoKeys.length > 1 ? ` (${r.notePhotoKeys.length})` : ''}</p>
+                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Receipt{r.notePhotoKeys.length > 1 ? ` (${r.notePhotoKeys.length})` : ''}</p>
                         <div className="grid grid-cols-2 gap-2">
                           {r.notePhotoKeys.map((k, i) => (
-                            <FilePreview key={i} src={k} alt={`Nota ${i + 1}`} onClick={() => setPaymentPhotoView(k)}
+                            <FilePreview key={i} src={k} alt={`Receipt ${i + 1}`} onClick={() => setPaymentPhotoView(k)}
                               className="w-full h-28 rounded-lg object-contain bg-muted/20 border cursor-zoom-in hover:opacity-90 transition-opacity" />
                           ))}
                         </div>
                       </div>
                       {r.status === 'PAID' && r.transferProofKeys.length > 0 && (
                         <div>
-                          <p className="text-xs font-semibold text-green-700 uppercase tracking-wide mb-1.5">Transfer Proof{r.transferProofKeys.length > 1 ? ` (${r.transferProofKeys.length})` : ''}</p>
+                          <p className="text-xs font-semibold text-success uppercase tracking-wide mb-1.5">Transfer Proof{r.transferProofKeys.length > 1 ? ` (${r.transferProofKeys.length})` : ''}</p>
                           <div className="grid grid-cols-2 gap-2">
                             {r.transferProofKeys.map((k, i) => (
                               <FilePreview key={i} src={k} alt={`Transfer proof ${i + 1}`} onClick={() => setPaymentPhotoView(k)}
                                 className="w-full h-28 rounded-lg object-contain bg-muted/20 border cursor-zoom-in hover:opacity-90 transition-opacity" />
                             ))}
                           </div>
-                          <p className="text-xs text-green-700 mt-1.5">
-                            Paid {r.paidAt && fmtDate(r.paidAt)}{r.paidBy?.name && ` · by ${r.paidBy.name}`}
+                          <p className="text-xs text-success mt-1.5">
+                            Paid {r.paidAt && formatDate(r.paidAt)}{r.paidBy?.name && ` · by ${r.paidBy.name}`}
                           </p>
                         </div>
                       )}
@@ -690,7 +694,7 @@ export default function DeliveryFeesPage() {
         <>
           <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50" onClick={() => setPaymentModal(false)} />
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
-            <div className="pointer-events-auto bg-white rounded-2xl shadow-2xl w-full max-w-md">
+            <div className="pointer-events-auto bg-card rounded-2xl shadow-2xl w-full max-w-md">
               <div className="flex items-center justify-between px-5 py-4 border-b">
                 <div>
                   <h3 className="font-semibold">{paymentEditId ? 'Edit ' : ''}{paymentMode === 'DIRECT' ? 'Debit Paid' : 'Request Payment'}</h3>
@@ -700,37 +704,37 @@ export default function DeliveryFeesPage() {
               </div>
               <div className="p-5 space-y-4">
                 {paymentMode === 'DIRECT' && (
-                  <div className="rounded-lg bg-green-50 border border-green-200 px-3 py-2.5 text-sm text-green-800">
+                  <div className="rounded-lg bg-success/10 border border-success/30 px-3 py-2.5 text-sm text-success">
                     Use this when purchasing already paid via debit. This will be recorded as paid immediately — finance is just notified, no approval needed.
                   </div>
                 )}
-                {paymentError && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2">{paymentError}</div>}
+                {paymentError && <div className="rounded-lg bg-destructive/10 border border-destructive/30 text-destructive text-sm px-3 py-2">{paymentError}</div>}
 
                 <div className="space-y-1.5">
-                  <label className="text-sm font-medium">Amount <span className="text-red-500">*</span></label>
+                  <label className="text-sm font-medium">Amount <span className="text-destructive">*</span></label>
                   <input type="number" min={0} autoFocus
-                    className="w-full h-10 border rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    className="w-full h-10 border rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                     placeholder="e.g. 150000"
                     value={paymentAmount} onChange={e => setPaymentAmount(e.target.value)} />
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-sm font-medium">Receipt / Nota <span className="text-red-500">*</span></label>
+                  <label className="text-sm font-medium">Receipt <span className="text-destructive">*</span></label>
                   <p className="text-xs text-muted-foreground">JPG, PNG, or PDF — you can attach more than one file</p>
                   <MultiFilePicker files={paymentPhotos} onChange={setPaymentPhotos} />
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-sm font-medium">Nota Date</label>
+                  <label className="text-sm font-medium">Receipt Date</label>
                   <input type="date"
-                    className="w-full h-10 border rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    className="w-full h-10 border rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                     value={paymentNotaDate} onChange={e => setPaymentNotaDate(e.target.value)} />
                 </div>
 
                 <div className="space-y-1.5">
                   <label className="text-sm font-medium">Notes</label>
                   <textarea rows={2}
-                    className="w-full border rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    className="w-full border rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring"
                     placeholder="Courier, urgency, etc. (optional)"
                     value={paymentNotes} onChange={e => setPaymentNotes(e.target.value)} />
                 </div>
@@ -742,9 +746,9 @@ export default function DeliveryFeesPage() {
               <div className="flex justify-end gap-2 px-5 py-4 border-t">
                 <button onClick={() => setPaymentModal(false)} className="px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">Cancel</button>
                 <button onClick={submitPaymentRequest} disabled={!paymentAmount || paymentPhotos.length === 0 || paymentSaving}
-                  className={`flex items-center gap-2 px-5 py-2 text-sm text-white rounded-lg disabled:opacity-40 font-semibold transition-colors ${paymentMode === 'DIRECT' ? 'bg-green-600 hover:bg-green-700' : 'bg-amber-600 hover:bg-amber-700'}`}>
+                  className={`flex items-center gap-2 px-5 py-2 text-sm rounded-lg disabled:opacity-40 font-semibold transition-colors ${paymentMode === 'DIRECT' ? 'bg-success text-success-foreground hover:bg-success/90' : 'bg-primary text-primary-foreground hover:bg-primary-hover'}`}>
                   {paymentSaving
-                    ? <><div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Saving...</>
+                    ? <><div className="h-4 w-4 border-2 border-current/30 border-t-current rounded-full animate-spin" />Saving…</>
                     : paymentMode === 'DIRECT' ? <><CheckCircle2 className="h-3.5 w-3.5" />Mark as Paid</> : <><Wallet className="h-3.5 w-3.5" />Send to Finance</>}
                 </button>
               </div>
@@ -764,7 +768,7 @@ export default function DeliveryFeesPage() {
         <>
           <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50" onClick={() => setReimburseModal(false)} />
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
-            <div className="pointer-events-auto bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[92vh] overflow-y-auto">
+            <div className="pointer-events-auto bg-card rounded-2xl shadow-2xl w-full max-w-md max-h-[92vh] overflow-y-auto">
               <div className="flex items-center justify-between px-5 py-4 border-b">
                 <div>
                   <h3 className="font-semibold">{reimburseEditId ? 'Edit Reimbursement' : 'Reimburse'}</h3>
@@ -773,20 +777,20 @@ export default function DeliveryFeesPage() {
                 <button onClick={() => setReimburseModal(false)} className="text-muted-foreground hover:text-foreground text-xl leading-none">×</button>
               </div>
               <div className="p-5 space-y-4">
-                {reimburseError && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2">{reimburseError}</div>}
+                {reimburseError && <div className="rounded-lg bg-destructive/10 border border-destructive/30 text-destructive text-sm px-3 py-2">{reimburseError}</div>}
 
                 <div className="space-y-1.5">
-                  <label className="text-sm font-medium">Amount <span className="text-red-500">*</span></label>
+                  <label className="text-sm font-medium">Amount <span className="text-destructive">*</span></label>
                   <input type="number" min={0} autoFocus
-                    className="w-full h-10 border rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    className="w-full h-10 border rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                     placeholder="e.g. 150000"
                     value={reimburseAmount} onChange={e => setReimburseAmount(e.target.value)} />
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-sm font-medium">Name <span className="text-red-500">*</span></label>
+                  <label className="text-sm font-medium">Name <span className="text-destructive">*</span></label>
                   <input
-                    className="w-full h-10 border rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    className="w-full h-10 border rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                     placeholder="Requester's full name"
                     value={reimburseRequesterName} onChange={e => setReimburseRequesterName(e.target.value)} />
                 </div>
@@ -803,25 +807,25 @@ export default function DeliveryFeesPage() {
 
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
-                    <label className="text-sm font-medium">Bank Name <span className="text-red-500">*</span></label>
+                    <label className="text-sm font-medium">Bank Name <span className="text-destructive">*</span></label>
                     <input
-                      className="w-full h-10 border rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                      className="w-full h-10 border rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                       placeholder="e.g. BCA, Mandiri"
                       value={reimburseBankName} onChange={e => setReimburseBankName(e.target.value)} />
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-sm font-medium">Account Number <span className="text-red-500">*</span></label>
+                    <label className="text-sm font-medium">Account Number <span className="text-destructive">*</span></label>
                     <input
-                      className="w-full h-10 border rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                      className="w-full h-10 border rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                       placeholder="e.g. 1234567890"
                       value={reimburseAccountNumber} onChange={e => setReimburseAccountNumber(e.target.value)} />
                   </div>
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-sm font-medium">Account Holder Name <span className="text-red-500">*</span></label>
+                  <label className="text-sm font-medium">Account Holder Name <span className="text-destructive">*</span></label>
                   <input
-                    className="w-full h-10 border rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    className="w-full h-10 border rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                     placeholder="Name on the bank account"
                     value={reimburseAccountHolderName} onChange={e => setReimburseAccountHolderName(e.target.value)} />
                 </div>
@@ -832,22 +836,22 @@ export default function DeliveryFeesPage() {
                 </label>
 
                 <div className="space-y-1.5">
-                  <label className="text-sm font-medium">Receipt / Nota <span className="text-red-500">*</span></label>
+                  <label className="text-sm font-medium">Receipt <span className="text-destructive">*</span></label>
                   <p className="text-xs text-muted-foreground">JPG, PNG, or PDF — you can attach more than one file</p>
                   <MultiFilePicker files={reimbursePhotos} onChange={setReimbursePhotos} />
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-sm font-medium">Nota Date</label>
+                  <label className="text-sm font-medium">Receipt Date</label>
                   <input type="date"
-                    className="w-full h-10 border rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    className="w-full h-10 border rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                     value={reimburseNotaDate} onChange={e => setReimburseNotaDate(e.target.value)} />
                 </div>
 
                 <div className="space-y-1.5">
                   <label className="text-sm font-medium">Notes</label>
                   <textarea rows={2}
-                    className="w-full border rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    className="w-full border rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring"
                     placeholder="What is this reimbursement for? (optional)"
                     value={reimburseNotes} onChange={e => setReimburseNotes(e.target.value)} />
                 </div>
@@ -860,9 +864,9 @@ export default function DeliveryFeesPage() {
                 <button onClick={() => setReimburseModal(false)} className="px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">Cancel</button>
                 <button onClick={submitReimbursement}
                   disabled={!reimburseAmount || reimbursePhotos.length === 0 || !reimburseRequesterName.trim() || !reimburseBankName.trim() || !reimburseAccountNumber.trim() || !reimburseAccountHolderName.trim() || reimburseSaving}
-                  className="flex items-center gap-2 px-5 py-2 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-40 font-semibold transition-colors">
+                  className="flex items-center gap-2 px-5 py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary-hover disabled:opacity-40 font-semibold transition-colors">
                   {reimburseSaving
-                    ? <><div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Saving...</>
+                    ? <><div className="h-4 w-4 border-2 border-current/30 border-t-current rounded-full animate-spin" />Saving…</>
                     : <><Banknote className="h-3.5 w-3.5" />Send to Finance</>}
                 </button>
               </div>

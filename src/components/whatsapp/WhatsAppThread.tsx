@@ -9,8 +9,10 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
 import { useFileDrop } from '@/hooks/useFileDrop'
+import { formatDate } from '@/lib/format'
 import WhatsappContactPanel from '@/components/whatsapp/WhatsappContactPanel'
 import { missingTemplateParams, renderWhatsappTemplateBody } from '@/lib/whatsapp-templates'
 import { WHATSAPP_BRAND_LABELS, type WhatsappBrand } from '@/lib/whatsapp-brands'
@@ -69,16 +71,15 @@ function initials(name: string | null, phone: string) {
   if (name?.trim()) return name.trim().split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase()
   return phone.slice(-2)
 }
-function fmtTime(iso: string) {
-  return new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
-}
 function dayLabel(iso: string) {
   const d = new Date(iso)
   const today = new Date()
   const yesterday = new Date(); yesterday.setDate(today.getDate() - 1)
   if (d.toDateString() === today.toDateString()) return 'Today'
   if (d.toDateString() === yesterday.toDateString()) return 'Yesterday'
-  return d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: d.getFullYear() === today.getFullYear() ? undefined : 'numeric' })
+  // Year is implied for the current year, so it's left off there ("Sat, 04 Oct").
+  const full = formatDate(d, 'long')
+  return d.getFullYear() === today.getFullYear() ? full.replace(/ \d{4}$/, '') : full
 }
 function quoteSnippet(q: QuotedMessage) {
   if (q.body) return q.body
@@ -469,20 +470,20 @@ export default function WhatsAppThread({ conversationId, onConversationUpdate, s
 
   return (
     <div className="flex-1 flex min-w-0 min-h-0">
-    <div className="flex-1 flex flex-col min-w-0 relative" style={{ backgroundColor: '#efeae2' }} {...dropProps}>
+    <div className="flex-1 flex flex-col min-w-0 relative bg-[#efeae2] dark:bg-[#0b141a]" {...dropProps}>
       {isDragging && (
-        <div className="absolute inset-0 z-20 flex items-center justify-center bg-white/80 border-2 border-dashed border-green-500 pointer-events-none">
-          <p className="flex items-center gap-2 text-sm font-medium" style={{ color: '#1b7a45' }}><Upload className="h-4 w-4" /> Drop to send</p>
+        <div className="absolute inset-0 z-20 flex items-center justify-center bg-card/80 border-2 border-dashed border-success pointer-events-none">
+          <p className="flex items-center gap-2 text-sm font-medium" style={{ color: 'var(--success)' }}><Upload className="h-4 w-4" /> Drop to send</p>
         </div>
       )}
-      <div className="px-3 md:px-5 py-2 md:py-3 border-b bg-white flex flex-wrap md:flex-nowrap items-center gap-x-3 gap-y-2 shrink-0">
+      <div className="px-3 md:px-5 py-2 md:py-3 border-b bg-card flex flex-wrap md:flex-nowrap items-center gap-x-3 gap-y-2 shrink-0">
         {onBack && (
-          <button onClick={onBack} title="Back to chats" className="md:hidden -ml-1 h-8 w-8 shrink-0 rounded-full flex items-center justify-center hover:bg-muted">
-            <ArrowLeft className="h-5 w-5" />
-          </button>
+          <Button type="button" variant="ghost" size="icon" onClick={onBack} title="Back to chats" aria-label="Back to chats" className="md:hidden -ml-1 size-8 shrink-0 rounded-full">
+            <ArrowLeft className="size-5" />
+          </Button>
         )}
         <Avatar>
-          <AvatarFallback className="text-xs font-semibold" style={{ backgroundColor: `${ACCENT}22`, color: '#1b7a45' }}>
+          <AvatarFallback className="text-xs font-semibold" style={{ backgroundColor: `${ACCENT}22`, color: 'var(--success)' }}>
             {initials(detail?.contactName ?? null, detail?.phone ?? '')}
           </AvatarFallback>
         </Avatar>
@@ -504,7 +505,7 @@ export default function WhatsAppThread({ conversationId, onConversationUpdate, s
           )}
           {detail && (
             <Select value={detail.category} onValueChange={v => setCategory(v as WhatsappChatCategory)} disabled={categorizing}>
-              <SelectTrigger className={`h-8 flex-1 min-w-0 md:flex-none md:w-40 text-xs ${detail.category === 'UNSORTED' ? 'border-amber-400 text-amber-800' : ''}`} title="Chat category (Sales = goes into the WhatsApp Pipeline)">
+              <SelectTrigger aria-label="Chat category" className={`h-8 flex-1 min-w-0 md:flex-none md:w-40 text-xs ${detail.category === 'UNSORTED' ? 'border-warning text-warning' : ''}`} title="Chat category (Sales = goes into the WhatsApp Pipeline)">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -514,7 +515,7 @@ export default function WhatsAppThread({ conversationId, onConversationUpdate, s
           )}
           {detail && isAdmin && (
             <Select value={detail.assignedToId ?? UNASSIGNED} onValueChange={v => assignTo(v === UNASSIGNED ? null : v)} disabled={assigning}>
-              <SelectTrigger className="h-8 flex-1 min-w-0 md:flex-none md:w-48 text-xs" title="Sales rep handling this chat">
+              <SelectTrigger aria-label="Sales rep handling this chat" className="h-8 flex-1 min-w-0 md:flex-none md:w-48 text-xs" title="Sales rep handling this chat">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -529,17 +530,17 @@ export default function WhatsAppThread({ conversationId, onConversationUpdate, s
           )}
         </div>
         {!panelOpen && (
-          <button onClick={() => togglePanel(true)} title="Show contact info"
-            className="h-8 w-8 shrink-0 rounded-md flex items-center justify-center text-muted-foreground hover:bg-muted transition-colors">
+          <Button type="button" variant="ghost" size="icon" onClick={() => togglePanel(true)} title="Show contact info" aria-label="Show contact info"
+            className="size-8 shrink-0 text-muted-foreground">
             <PanelRight className="h-4 w-4" />
-          </button>
+          </Button>
         )}
       </div>
       {detail && !isAdmin && detail.assignedToId === null && (
-        <div className="px-5 py-2 bg-amber-50 border-b text-xs flex items-center justify-between gap-2 shrink-0">
-          <span className="text-amber-800">No sales rep is handling this chat yet. Take it to add it to your list (replying also takes it automatically).</span>
-          <Button size="sm" variant="outline" className="h-7 shrink-0" disabled={assigning} onClick={() => session?.user?.id && assignTo(session.user.id)}>
-            {assigning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <><UserPlus className="h-3.5 w-3.5 mr-1" /> Take chat</>}
+        <div className="px-5 py-2 bg-warning/10 border-b text-xs flex items-center justify-between gap-2 shrink-0">
+          <span className="text-warning">No sales rep is handling this chat yet. Take it to add it to your list (replying also takes it automatically).</span>
+          <Button size="sm" variant="outline" className="h-7 shrink-0" loading={assigning} onClick={() => session?.user?.id && assignTo(session.user.id)}>
+            {!assigning && <UserPlus className="size-3.5" />} Take chat
           </Button>
         </div>
       )}
@@ -551,7 +552,7 @@ export default function WhatsAppThread({ conversationId, onConversationUpdate, s
           <>
             {hasMore && (
               <div className="flex justify-center">
-                <button onClick={loadOlder} disabled={loadingOlder} className="text-xs rounded-full bg-white/90 shadow-sm px-3 py-1 text-muted-foreground hover:text-foreground">
+                <button type="button" onClick={loadOlder} disabled={loadingOlder} aria-label={loadingOlder ? 'Loading older messages' : undefined} className="text-xs rounded-full bg-card/90 shadow-sm px-3 py-1 text-muted-foreground hover:text-foreground">
                   {loadingOlder ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Load older messages'}
                 </button>
               </div>
@@ -565,20 +566,20 @@ export default function WhatsAppThread({ conversationId, onConversationUpdate, s
                 <div key={m.id}>
                   {showDay && (
                     <div className="flex justify-center my-3">
-                      <span className="text-[11px] rounded-md bg-white/90 shadow-sm px-2.5 py-0.5 text-muted-foreground">{dayLabel(m.createdAt)}</span>
+                      <span className="text-[11px] rounded-md bg-card/90 shadow-sm px-2.5 py-0.5 text-muted-foreground">{dayLabel(m.createdAt)}</span>
                     </div>
                   )}
                   <div className={`group flex items-center gap-1.5 ${m.direction === 'OUT' ? 'justify-end' : 'justify-start'}`}>
                     {m.direction === 'OUT' && !isPending && (
-                      <button onClick={() => { setReplyTo(m); textareaRef.current?.focus() }} title="Reply"
-                        className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-foreground transition-opacity shrink-0">
+                      <button type="button" onClick={() => { setReplyTo(m); textareaRef.current?.focus() }} title="Reply" aria-label="Reply to message"
+                        className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 text-muted-foreground hover:text-foreground transition-opacity shrink-0">
                         <Reply className="h-3.5 w-3.5" />
                       </button>
                     )}
-                    <div className={`max-w-[85%] md:max-w-[70%] min-w-0 [overflow-wrap:anywhere] rounded-lg px-3 py-2 shadow-sm text-sm ${m.direction === 'OUT' ? 'text-white' : 'bg-white text-foreground'} ${isPending && !failed ? 'opacity-80' : ''}`}
+                    <div className={`max-w-[85%] md:max-w-[70%] min-w-0 [overflow-wrap:anywhere] rounded-lg px-3 py-2 shadow-sm text-sm ${m.direction === 'OUT' ? 'text-white' : 'bg-card text-foreground'} ${isPending && !failed ? 'opacity-80' : ''}`}
                       style={m.direction === 'OUT' ? { backgroundColor: '#005c4b' } : undefined}>
                       {m.replyTo && (
-                        <div className={`rounded px-2 py-1 mb-1.5 border-l-2 text-xs ${m.direction === 'OUT' ? 'bg-black/15 border-white/50 text-white/80' : 'bg-black/5 border-green-600 text-muted-foreground'}`}>
+                        <div className={`rounded px-2 py-1 mb-1.5 border-l-2 text-xs ${m.direction === 'OUT' ? 'bg-black/15 border-white/50 text-white/80' : 'bg-foreground/5 border-success text-muted-foreground'}`}>
                           <p className="font-medium">{m.replyTo.direction === 'OUT' ? 'You' : contactLabel}</p>
                           <p className="truncate">{quoteSnippet(m.replyTo)}</p>
                         </div>
@@ -587,7 +588,7 @@ export default function WhatsAppThread({ conversationId, onConversationUpdate, s
                       {/* Inbound media is re-hosted in the background by the webhook — placeholder until it lands. */}
                       {m.direction === 'IN' && !m.mediaUrl && m.mediaType && (
                         m.errorMessage
-                          ? <p className="flex items-center gap-1 text-xs text-red-600 mb-1"><AlertCircle className="h-3 w-3" /> {m.errorMessage}</p>
+                          ? <p className="flex items-center gap-1 text-xs text-destructive mb-1"><AlertCircle className="h-3 w-3" /> {m.errorMessage}</p>
                           : <p className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1"><Loader2 className="h-3 w-3 animate-spin" /> Loading {quoteSnippet({ ...m, body: null }).replace(/^\S+\s/, '').toLowerCase()}…</p>
                       )}
                       {isPending && m.uploading && (
@@ -601,14 +602,14 @@ export default function WhatsAppThread({ conversationId, onConversationUpdate, s
                       {m.body && <p className="whitespace-pre-wrap break-words">{m.body}</p>}
                       <div className={`flex items-center gap-1 mt-1 justify-end ${m.direction === 'OUT' ? 'text-white/70' : 'text-muted-foreground'}`}>
                         {m.direction === 'OUT' && m.sentByName && isAdmin && <span className="text-[10px] mr-1">{m.sentByName}</span>}
-                        <span className="text-[10px]">{fmtTime(m.createdAt)}</span>
+                        <span className="text-[10px]">{formatDate(m.createdAt, 'time')}</span>
                         {m.direction === 'OUT' && <StatusIcon status={m.status} />}
                       </div>
                       {m.direction === 'OUT' && failed && (m.errorMessage || canRetry) && (
-                        <div className="mt-1 flex items-start gap-1.5 text-[10px] text-red-100 bg-red-500/30 rounded px-1.5 py-0.5">
+                        <div className="mt-1 flex items-start gap-1.5 text-[10px] text-red-100 bg-destructive/30 rounded px-1.5 py-0.5">
                           {m.errorMessage && <span className="break-words flex-1">{m.errorMessage}</span>}
                           {canRetry && (
-                            <button onClick={() => retry(m)} className="shrink-0 inline-flex items-center gap-0.5 font-medium underline">
+                            <button type="button" onClick={() => retry(m)} className="shrink-0 inline-flex items-center gap-0.5 font-medium underline">
                               <RotateCcw className="h-2.5 w-2.5" /> Retry
                             </button>
                           )}
@@ -616,8 +617,8 @@ export default function WhatsAppThread({ conversationId, onConversationUpdate, s
                       )}
                     </div>
                     {m.direction === 'IN' && (
-                      <button onClick={() => { setReplyTo(m); textareaRef.current?.focus() }} title="Reply"
-                        className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-foreground transition-opacity shrink-0">
+                      <button type="button" onClick={() => { setReplyTo(m); textareaRef.current?.focus() }} title="Reply" aria-label="Reply to message"
+                        className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 text-muted-foreground hover:text-foreground transition-opacity shrink-0">
                         <Reply className="h-3.5 w-3.5" />
                       </button>
                     )}
@@ -629,53 +630,53 @@ export default function WhatsAppThread({ conversationId, onConversationUpdate, s
         )}
       </div>
 
-      <div className="border-t bg-white shrink-0">
+      <div className="border-t bg-card shrink-0">
         {detail && !windowOpen && (
           <div className="flex items-center justify-between gap-2 px-3 pt-2.5 pb-1 text-xs">
-            <span className="text-amber-700">
+            <span className="text-warning">
               {detail.windowExpiresAt
                 ? 'More than 24h since the customer last replied — WhatsApp only accepts a Message Template now.'
                 : 'The customer hasn’t messaged this number yet — start with a Message Template.'}
             </span>
-            <button onClick={openTemplatePicker} className="shrink-0 font-medium underline" style={{ color: '#1b7a45' }}>
+            <Button type="button" variant="link" onClick={openTemplatePicker} className="h-auto shrink-0 p-0 text-xs text-success underline">
               Send Template
-            </button>
+            </Button>
           </div>
         )}
         {windowClosingSoon && detail?.windowExpiresAt && (
-          <p className="px-3 pt-2 text-[11px] text-amber-700 flex items-center gap-1">
+          <p className="px-3 pt-2 text-[11px] text-warning flex items-center gap-1">
             <Clock className="h-3 w-3" /> Reply window closes in {windowLabel(detail.windowExpiresAt, now)} — after that only templates go through.
           </p>
         )}
         {replyTo && (
           <div className="flex items-center gap-2 px-3 pt-2.5">
-            <div className="flex-1 min-w-0 flex items-center gap-2 bg-muted/60 rounded-lg px-3 py-1.5 border-l-2 border-green-600">
+            <div className="flex-1 min-w-0 flex items-center gap-2 bg-muted/60 rounded-lg px-3 py-1.5 border-l-2 border-success">
               <div className="min-w-0">
                 <p className="text-xs font-medium">Replying to {replyTo.direction === 'OUT' ? 'yourself' : contactLabel}</p>
                 <p className="text-xs text-muted-foreground truncate">{quoteSnippet(replyTo)}</p>
               </div>
             </div>
-            <button onClick={() => setReplyTo(null)} className="text-muted-foreground hover:text-foreground shrink-0">
+            <Button type="button" variant="ghost" size="icon" onClick={() => setReplyTo(null)} aria-label="Cancel reply" className="size-8 shrink-0 text-muted-foreground hover:text-foreground">
               <X className="h-4 w-4" />
-            </button>
+            </Button>
           </div>
         )}
         <div className="p-3 flex items-end gap-2">
           <input ref={fileInputRef} type="file" accept="image/*,video/*,audio/*,application/pdf" className="hidden"
             onChange={e => { const f = e.target.files?.[0]; if (f) handleFilePicked(f); e.target.value = '' }} />
-          <button onClick={() => fileInputRef.current?.click()} disabled={!canFreeText}
-            title="Attach photo, video, audio or PDF (or drag & drop / paste)"
-            className="h-9 w-9 shrink-0 rounded-full flex items-center justify-center text-muted-foreground hover:bg-muted disabled:opacity-40 transition-colors">
+          <Button type="button" variant="ghost" size="icon" onClick={() => fileInputRef.current?.click()} disabled={!canFreeText}
+            title="Attach photo, video, audio or PDF (or drag & drop / paste)" aria-label="Attach photo, video, audio or PDF"
+            className="shrink-0 rounded-full text-muted-foreground">
             <ImageIcon className="h-4 w-4" />
-          </button>
+          </Button>
           <Popover open={templateOpen} onOpenChange={setTemplateOpen}>
             <PopoverTrigger asChild>
-              <button onClick={openTemplatePicker} title="Send a Message Template"
-                className="h-9 w-9 shrink-0 rounded-full flex items-center justify-center text-muted-foreground hover:bg-muted transition-colors">
+              <Button type="button" variant="ghost" size="icon" onClick={openTemplatePicker} title="Send a Message Template" aria-label="Send a Message Template"
+                className="shrink-0 rounded-full text-muted-foreground">
                 <FileText className="h-4 w-4" />
-              </button>
+              </Button>
             </PopoverTrigger>
-            <PopoverContent className="w-80 space-y-3" side="top" align="start">
+            <PopoverContent className="w-80 max-w-[calc(100vw-2rem)] space-y-3" side="top" align="start">
               <div className="space-y-1">
                 <p className="text-xs font-medium">Message Template</p>
                 <p className="text-[11px] text-muted-foreground">For customers who haven&apos;t messaged yet, or whose last reply was more than 24h ago.</p>
@@ -684,14 +685,14 @@ export default function WhatsAppThread({ conversationId, onConversationUpdate, s
                 <p className="text-xs text-muted-foreground">No templates registered for this number yet (Chat &gt; WhatsApp Templates).</p>
               ) : (
                 <Select value={templateName} onValueChange={v => { setTemplateName(v); setTemplateParams(new Array(templates.find(t => templateKey(t) === v)?.paramLabels?.length ?? 0).fill('')) }}>
-                  <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Choose template" /></SelectTrigger>
+                  <SelectTrigger aria-label="Message Template" className="h-9 w-full text-sm"><SelectValue placeholder="Choose template" /></SelectTrigger>
                   <SelectContent>
                     {templates.map(t => <SelectItem key={templateKey(t)} value={templateKey(t)}>{t.label} ({t.language})</SelectItem>)}
                   </SelectContent>
                 </Select>
               )}
               {selectedTemplate?.paramLabels?.map((label, i) => (
-                <Input key={i} placeholder={label} value={templateParams[i] ?? ''}
+                <Input key={i} placeholder={label} aria-label={label} value={templateParams[i] ?? ''}
                   onChange={e => setTemplateParams(prev => { const next = [...prev]; next[i] = e.target.value; return next })}
                   className="h-9 text-sm" />
               ))}
@@ -700,16 +701,17 @@ export default function WhatsAppThread({ conversationId, onConversationUpdate, s
                   {renderWhatsappTemplateBody(selectedTemplate, templateParams)}
                 </p>
               )}
-              <Button onClick={sendTemplate} disabled={!selectedTemplate || sendingTemplate || missingTemplateParams(selectedTemplate, templateParams)} className="w-full h-9" style={{ backgroundColor: ACCENT }}>
-                {sendingTemplate ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Send Template'}
+              <Button onClick={sendTemplate} loading={sendingTemplate} disabled={!selectedTemplate || missingTemplateParams(selectedTemplate, templateParams)} className="w-full" style={{ backgroundColor: ACCENT }}>
+                Send Template
               </Button>
             </PopoverContent>
           </Popover>
-          <textarea
+          <Textarea
             ref={textareaRef}
             rows={1}
             disabled={!canFreeText}
-            className="flex-1 resize-none border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-green-500 max-h-36 disabled:bg-muted/50 disabled:cursor-not-allowed"
+            aria-label="Message"
+            className="flex-1 min-h-9 max-h-36 resize-none rounded-lg disabled:bg-muted/50"
             placeholder={canFreeText ? 'Type a message… (Shift+Enter for a new line)' : 'Reply window closed — use a Message Template'}
             value={draft}
             onChange={e => setDraft(e.target.value)}
@@ -719,11 +721,11 @@ export default function WhatsAppThread({ conversationId, onConversationUpdate, s
               if (file) { e.preventDefault(); handleFilePicked(file) }
             }}
           />
-          <button onClick={sendMessage} disabled={!draft.trim() || !canFreeText}
-            className="h-9 w-9 shrink-0 rounded-full flex items-center justify-center text-white disabled:opacity-40 transition-colors"
+          <Button type="button" size="icon" onClick={sendMessage} disabled={!draft.trim() || !canFreeText} aria-label="Send message"
+            className="shrink-0 rounded-full text-white"
             style={{ backgroundColor: ACCENT }}>
             <Send className="h-4 w-4" />
-          </button>
+          </Button>
         </div>
       </div>
     </div>
@@ -747,7 +749,7 @@ function MediaBlock({ url, type, out }: { url: string; type: string | null; out:
   if (type?.startsWith('audio/')) return <audio src={url} controls preload="metadata" className="mb-1.5 max-w-full" />
   return (
     <a href={url} target="_blank" rel="noopener noreferrer"
-      className={`flex items-center gap-1.5 mb-1.5 text-xs underline ${out ? 'text-white/90' : 'text-blue-600'}`}>
+      className={`flex items-center gap-1.5 mb-1.5 text-xs underline ${out ? 'text-white/90' : 'text-info'}`}>
       <Paperclip className="h-3 w-3 shrink-0" /> <span className="truncate">{attachmentName(url)}</span>
     </a>
   )

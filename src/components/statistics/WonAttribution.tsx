@@ -10,7 +10,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
+import { NativeSelect } from '@/components/ui/native-select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { formatDate, formatMoney, formatMoneyCompact, formatNumber } from '@/lib/format'
 
 type TouchKey = 'first' | 'last' | 'latest'
 interface Touch { source: string | null; medium: string | null; campaign: string | null }
@@ -40,9 +42,6 @@ const TOUCH_HELP: Record<TouchKey, string> = {
   latest: 'The most recent visit before winning',
 }
 
-const usd = (n: number) => `$${Math.round(n).toLocaleString('en-US')}`
-const usdShort = (n: number) => n >= 1e6 ? `$${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `$${Math.round(n / 1e3)}k` : `$${Math.round(n)}`
-const fmtDate = (d: string | null) => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
 
 interface Dim { key: string; title: string; get: (w: Win, t: TouchKey) => string | null }
 const DIMS: Dim[] = [
@@ -100,7 +99,7 @@ export default function WonAttribution() {
   return (
     <div className="p-4 md:p-6 space-y-5">
       <div>
-        <h1 className="text-xl font-semibold flex items-center gap-2"><Trophy className="h-5 w-5 text-amber-600" /> Won Attribution</h1>
+        <h1 className="text-xl font-semibold flex items-center gap-2"><Trophy className="h-5 w-5 text-warning" /> Won Attribution</h1>
         <p className="text-sm text-muted-foreground">Which campaign, source and medium the won business came from.</p>
       </div>
 
@@ -108,16 +107,16 @@ export default function WonAttribution() {
       <div className="flex flex-wrap items-center gap-2">
         <Segmented value={dataset} onChange={v => switchDataset(v as Dataset)} options={[['freshsales', 'Freshsales won deals'], ['erp', 'ERP bookings']]} />
         <Segmented value={touch} onChange={v => { setTouch(v as TouchKey); setDrill(null) }} options={(['first', 'last', 'latest'] as TouchKey[]).map(k => [k, TOUCH_LABEL[k]])} titles={TOUCH_HELP} />
-        <select className="h-9 rounded-md border bg-background px-2 text-sm" value={year} onChange={e => setYear(e.target.value)}>
+        <NativeSelect aria-label="Year" className="w-auto" value={year} onChange={e => setYear(e.target.value)}>
           <option value="">All years</option>
           {years.map(y => <option key={y} value={y}>{y}</option>)}
-        </select>
-        <select className="h-9 rounded-md border bg-background px-2 text-sm" value={pipeline} onChange={e => setPipeline(e.target.value)}>
+        </NativeSelect>
+        <NativeSelect aria-label="Pipeline" className="w-auto" value={pipeline} onChange={e => setPipeline(e.target.value)}>
           <option value="">{dataset === 'erp' ? 'Direct + Agent' : 'All pipelines'}</option>
           {pipelines.map(p => <option key={p} value={p}>{p}</option>)}
-        </select>
+        </NativeSelect>
         <label className="flex items-center gap-1.5 text-sm text-muted-foreground cursor-pointer select-none">
-          <input type="checkbox" checked={hideUntracked} onChange={e => setHideUntracked(e.target.checked)} className="accent-amber-600" />
+          <input type="checkbox" checked={hideUntracked} onChange={e => setHideUntracked(e.target.checked)} className="accent-primary" />
           Hide not tracked
         </label>
         <div className="ml-auto"><Segmented value={metric} onChange={v => setMetric(v as Metric)} options={[['count', 'Wins'], ['revenue', 'Revenue']]} /></div>
@@ -125,9 +124,9 @@ export default function WonAttribution() {
 
       {/* KPI tiles */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <Kpi icon={<Trophy className="h-4 w-4" />} label={dataset === 'erp' ? 'Bookings' : 'Won deals'} value={loading ? null : base.length.toLocaleString()} />
-        <Kpi icon={<DollarSign className="h-4 w-4" />} label="Revenue (USD)" value={loading ? null : usd(revenue)} />
-        <Kpi icon={<Radar className="h-4 w-4" />} label="With attribution" value={loading ? null : `${tracked.length.toLocaleString()} (${base.length ? Math.round((tracked.length / base.length) * 100) : 0}%)`}
+        <Kpi icon={<Trophy className="h-4 w-4" />} label={dataset === 'erp' ? 'Bookings' : 'Won deals'} value={loading ? null : formatNumber(base.length)} />
+        <Kpi icon={<DollarSign className="h-4 w-4" />} label="Revenue (USD)" value={loading ? null : formatMoney(revenue, { currency: 'USD', decimals: 0 })} />
+        <Kpi icon={<Radar className="h-4 w-4" />} label="With attribution" value={loading ? null : `${formatNumber(tracked.length)} (${base.length ? Math.round((tracked.length / base.length) * 100) : 0}%)`}
           hint={dataset === 'freshsales' ? 'Most older deals predate UTM tracking' : 'Agent bookings count as Agent; other guests via their inquiry, or matched to a Lead / Freshsales contact by email or phone'} />
         <Kpi icon={<Target className="h-4 w-4" />} label="Top channel" value={loading ? null : topChannel ? `${topChannel.name} · ${topChannel.count}` : '—'} />
       </div>
@@ -151,8 +150,8 @@ function Segmented({ value, onChange, options, titles }: { value: string; onChan
   return (
     <div className="inline-flex rounded-lg bg-muted p-0.5">
       {options.map(([v, label]) => (
-        <button key={v} onClick={() => onChange(v)} title={titles?.[v]}
-          className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${value === v ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
+        <button key={v} type="button" onClick={() => onChange(v)} title={titles?.[v]} aria-pressed={value === v}
+          className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${value === v ? 'bg-card shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
           {label}
         </button>
       ))}
@@ -193,7 +192,7 @@ function RankTooltip({ active, payload, total }: { active?: boolean; payload?: {
     <div className="rounded-lg border bg-background shadow-md px-3 py-2 text-xs space-y-0.5">
       <p className="font-medium mb-0.5 max-w-[260px] break-words">{r.name}</p>
       <p className="text-muted-foreground">{r.count} win{r.count === 1 ? '' : 's'} · {total ? Math.round((r.count / total) * 100) : 0}%</p>
-      <p className="text-muted-foreground">{usd(r.revenue)}</p>
+      <p className="text-muted-foreground">{formatMoney(r.revenue, { currency: 'USD', decimals: 0 })}</p>
       <p className="text-[10px] text-muted-foreground pt-0.5">Click to list these wins</p>
     </div>
   )
@@ -225,7 +224,7 @@ function RankCard({ dim, wins, touch, metric, loading, active, onPick }: {
                 <Tooltip content={<RankTooltip total={wins.length} />} cursor={{ fill: 'rgba(0,0,0,0.04)' }} />
                 <Bar dataKey={metric} radius={[0, 4, 4, 0]} maxBarSize={16} cursor="pointer"
                   onClick={(d: { payload?: Ranked }) => d.payload && onPick(d.payload.name)}
-                  label={{ position: 'right', fontSize: 11, fill: '#6b7280', formatter: (v: number) => (metric === 'count' ? v : usdShort(v)) }}>
+                  label={{ position: 'right', fontSize: 11, fill: '#6b7280', formatter: (v: number) => (metric === 'count' ? v : formatMoneyCompact(v, { currency: 'USD' })) }}>
                   {top.map(r => (
                     <Cell key={r.name} fill={r.name === NOT_TRACKED ? MISSING : BAR} fillOpacity={active && active !== r.name ? 0.35 : 1} />
                   ))}
@@ -264,14 +263,14 @@ function TrendCard({ wins, loading, metric, byMonth }: { wins: Win[]; loading: b
             <BarChart data={data} margin={{ top: 16, right: 8, left: 0, bottom: 0 }} barCategoryGap="25%">
               <XAxis dataKey="name" tickFormatter={label} tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
               <YAxis tick={{ fontSize: 10 }} axisLine={false} tickLine={false} width={48} allowDecimals={false}
-                tickFormatter={(v: number) => (metric === 'count' ? String(v) : usdShort(v))} />
+                tickFormatter={(v: number) => (metric === 'count' ? String(v) : formatMoneyCompact(v, { currency: 'USD' }))} />
               <Tooltip cursor={{ fill: 'rgba(0,0,0,0.04)' }} content={({ active, payload }) => {
                 if (!active || !payload?.length) return null
                 const r = payload[0].payload as Ranked
                 return (
                   <div className="rounded-lg border bg-background shadow-md px-3 py-2 text-xs space-y-0.5">
-                    <p className="font-medium">{byMonth ? new Date(`${r.name}-01`).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }) : r.name}</p>
-                    <p className="text-muted-foreground">{r.count} win{r.count === 1 ? '' : 's'} · {usd(r.revenue)}</p>
+                    <p className="font-medium">{byMonth ? formatDate(`${r.name}-01`, 'monthYear', { utc: true }) : r.name}</p>
+                    <p className="text-muted-foreground">{r.count} win{r.count === 1 ? '' : 's'} · {formatMoney(r.revenue, { currency: 'USD', decimals: 0 })}</p>
                   </div>
                 )
               }} />
@@ -308,16 +307,16 @@ function WinsTable({ wins, touch, drill, onClearDrill, loading, dataset, year }:
     <Card>
       <CardHeader className="pb-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <CardTitle className="text-base">{dataset === 'erp' ? 'Bookings' : 'Won deals'} <span className="text-muted-foreground font-normal text-sm">({rows.length.toLocaleString()})</span></CardTitle>
-          <div className="flex items-center gap-2">
+          <CardTitle className="text-base">{dataset === 'erp' ? 'Bookings' : 'Won deals'} <span className="text-muted-foreground font-normal text-sm">({formatNumber(rows.length)})</span></CardTitle>
+          <div className="flex flex-wrap items-center gap-2">
             {drill && (
-              <button onClick={onClearDrill} className="inline-flex items-center gap-1 rounded-full bg-amber-100 text-amber-800 px-2.5 py-1 text-xs font-medium">
+              <button type="button" onClick={onClearDrill} aria-label={`Clear filter ${DIM_BY_KEY.get(drill.dim)?.title}: ${drill.value}`} className="inline-flex items-center gap-1 rounded-full bg-warning/15 text-warning px-2.5 py-1 text-xs font-medium">
                 {DIM_BY_KEY.get(drill.dim)?.title}: {drill.value} <X className="h-3 w-3" />
               </button>
             )}
-            <div className="relative">
+            <div className="relative w-full sm:w-auto">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input value={q} onChange={e => { setQ(e.target.value); setPage(1) }} placeholder="Search…" className="pl-8 h-9 w-56" />
+              <Input value={q} onChange={e => { setQ(e.target.value); setPage(1) }} placeholder="Search…" aria-label="Search" className="pl-8 h-9 w-full sm:w-56" />
             </div>
             <Button variant="outline" size="sm" className="h-9" disabled={loading || !rows.length || exporting}
               onClick={async () => { setExporting(true); try { await exportXlsx(rows, touch, dataset, year, drill) } finally { setExporting(false) } }}>
@@ -350,9 +349,9 @@ function WinsTable({ wins, touch, drill, onClearDrill, loading, dataset, year }:
                 const t = w.touches[touch]
                 return (
                   <TableRow key={w.id}>
-                    <TableCell className="text-xs whitespace-nowrap text-muted-foreground">{fmtDate(w.date)}</TableCell>
+                    <TableCell className="text-xs whitespace-nowrap text-muted-foreground">{formatDate(w.date)}</TableCell>
                     <TableCell className="text-sm max-w-[280px] truncate" title={w.name}>{w.name}</TableCell>
-                    <TableCell className="text-right text-xs whitespace-nowrap tabular-nums">{w.amountUsd != null ? usd(w.amountUsd) : '—'}</TableCell>
+                    <TableCell className="text-right text-xs whitespace-nowrap tabular-nums">{w.amountUsd != null ? formatMoney(w.amountUsd, { currency: 'USD', decimals: 0 }) : '—'}</TableCell>
                     <TableCell className="text-xs whitespace-nowrap">
                       <span className={w.groups[touch] === NOT_TRACKED ? 'text-muted-foreground' : ''}>{w.groups[touch]}</span>
                       {(w.attributionFrom === 'lead-match' || w.attributionFrom === 'freshsales-match') && (
@@ -372,8 +371,8 @@ function WinsTable({ wins, touch, drill, onClearDrill, loading, dataset, year }:
         <div className="flex items-center justify-between text-sm pt-3">
           <p className="text-muted-foreground text-xs">Page {cur} of {pages}</p>
           <div className="flex items-center gap-1">
-            <Button variant="outline" size="icon" className="h-8 w-8" disabled={cur <= 1} onClick={() => setPage(cur - 1)}><ChevronLeft className="h-4 w-4" /></Button>
-            <Button variant="outline" size="icon" className="h-8 w-8" disabled={cur >= pages} onClick={() => setPage(cur + 1)}><ChevronRight className="h-4 w-4" /></Button>
+            <Button variant="outline" size="icon" className="size-8" aria-label="Previous page" disabled={cur <= 1} onClick={() => setPage(cur - 1)}><ChevronLeft className="h-4 w-4" /></Button>
+            <Button variant="outline" size="icon" className="size-8" aria-label="Next page" disabled={cur >= pages} onClick={() => setPage(cur + 1)}><ChevronRight className="h-4 w-4" /></Button>
           </div>
         </div>
       </CardContent>
