@@ -73,28 +73,30 @@ async function reconcileOwnership(db: PrismaClient, conversationId: string, lead
 // GUEST. An unknown number: with `createLead` (inbound webhook) it becomes SALES with a new
 // Lead named after the WhatsApp profile name (sales edit the details later, or re-triage the
 // chat if it's spam/vendor); otherwise ("New Chat" started by staff) it stays UNSORTED for a
-// human to triage. Best-effort by design.
-export async function autoLinkNewConversation(db: PrismaClient, conversationId: string, opts: { createLead?: boolean } = {}): Promise<void> {
+// human to triage. Also used by the webhook for an older chat still sitting UNSORTED without
+// a Lead. Best-effort by design. Returns the linked Lead (if any) and whether it was just created.
+export async function autoLinkNewConversation(db: PrismaClient, conversationId: string, opts: { createLead?: boolean } = {}): Promise<{ leadId: string | null; created: boolean }> {
   const conv = await db.whatsappConversation.findUnique({
     where: { id: conversationId },
     select: { phone: true, assignedToId: true, category: true, leadId: true },
   })
-  if (!conv || conv.leadId || conv.category !== 'UNSORTED') return
+  if (!conv || conv.leadId || conv.category !== 'UNSORTED') return { leadId: conv?.leadId ?? null, created: false }
 
   const leadId = await findLeadIdByPhone(db, conv.phone)
   if (leadId) {
     await db.whatsappConversation.update({ where: { id: conversationId }, data: { leadId, category: 'SALES' } })
     await reconcileOwnership(db, conversationId, leadId)
-    return
+    return { leadId, created: false }
   }
   if (await customerExistsByPhone(db, conv.phone)) {
     await db.whatsappConversation.update({ where: { id: conversationId }, data: { category: 'GUEST' } })
-    return
+    return { leadId: null, created: false }
   }
   if (opts.createLead) {
     await db.whatsappConversation.update({ where: { id: conversationId }, data: { category: 'SALES' } })
-    await ensureLeadForConversation(db, conversationId)
+    return { leadId: await ensureLeadForConversation(db, conversationId), created: true }
   }
+  return { leadId: null, created: false }
 }
 
 // Makes sure a SALES chat has a Lead — reusing one with the same number, else creating a
@@ -172,7 +174,7 @@ export async function recordStaffReply(db: PrismaClient, conversationId: string,
 }
 
 // The other direction of chat owner = lead owner: when a Lead changes hands (claimed or
-// reassigned from the Sales Pipeline), its WhatsApp chats move with it so the new owner
+// reassigned from the Sales Pipeline), its WhatsApp/Instagram chats move with it so the new owner
 // can reply. Returns false when `onlyIfUnowned` and someone else got it first.
 export async function setLeadOwner(db: PrismaClient, leadId: string, ownerId: string | null, reason: LeadAssignmentReason, onlyIfUnowned = false): Promise<boolean> {
   if (onlyIfUnowned) {
@@ -188,6 +190,7 @@ export async function setLeadOwner(db: PrismaClient, leadId: string, ownerId: st
     await recordLeadOwner(db, leadId, ownerId, reason)
   }
   await db.whatsappConversation.updateMany({ where: { leadId }, data: { assignedToId: ownerId } })
+  await db.instagramConversation.updateMany({ where: { leadId }, data: { assignedToId: ownerId } })
   return true
 }
 

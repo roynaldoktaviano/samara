@@ -103,7 +103,7 @@ export async function POST(request: NextRequest) {
   const db = await getDb(session)
   try {
     const body = await request.json()
-    const { bookingId, notes, amount: requestedAmount, billToType, paymentMethod, showNetAmount, showCommissionNote, linkedPaymentId, proofOfTransfer, proofOfTransferExtra, paymentDate, currency, exchangeRate } = body
+    const { bookingId, notes, amount: requestedAmount, billToType, paymentMethod, showNetAmount, showCommissionNote, linkedPaymentId, proofOfTransfer, proofOfTransferExtra, paymentDate, currency, exchangeRate, paymentType: linkedPaymentType } = body
     const parsedPaymentDate = paymentDate ? new Date(paymentDate) : new Date()
     // Currency the payment was actually received in — amount is always stored in USD;
     // currency/exchangeRate are display metadata (see print/invoice page's toLocal()).
@@ -157,7 +157,13 @@ export async function POST(request: NextRequest) {
         data: {
           bookingId,
           invoiceNumber,
-          paymentType: 'DP',
+          // An extra DP, or the balance (Pelunasan) paid against the same invoice — Sales says which.
+          paymentType: linkedPaymentType === 'PELUNASAN' ? 'PELUNASAN' : 'DP',
+          // Same Bill To / Net / commission-note view as the invoice it belongs to — otherwise
+          // Finance's history and balance for it are worked out on a different price.
+          billToType: parent.billToType,
+          showNetAmount: parent.showNetAmount,
+          showCommissionNote: parent.showCommissionNote,
           previouslyPaid,
           amount,
           paymentDate: parsedPaymentDate,
@@ -203,6 +209,16 @@ export async function POST(request: NextRequest) {
     }
 
     const paymentType       = previouslyPaid > 0 ? 'PELUNASAN' : 'DP'
+    // Every invoice on a booking shares one Bill To / Net / commission-note setting: a Pelunasan
+    // invoice follows the DP invoice already issued, whatever the form sent.
+    const priorInvoice = await db.payment.findFirst({
+      where: { bookingId, hasDocument: true, status: { notIn: ['cancelled', 'rejected'] } },
+      orderBy: { createdAt: 'desc' },
+      select: { billToType: true, showNetAmount: true, showCommissionNote: true },
+    })
+    const invoiceView = priorInvoice
+      ? { billToType: priorInvoice.billToType, showNetAmount: priorInvoice.showNetAmount, showCommissionNote: priorInvoice.showCommissionNote }
+      : { billToType: billToType || null, showNetAmount: !!showNetAmount, showCommissionNote: !!showCommissionNote }
     const { nextVal } = await import('@/lib/counter')
     const reqNum      = await nextVal(`payment_req:${booking.bookingCode}`)
     const invoiceNumber = `REQ-${booking.bookingCode}-${String(reqNum).padStart(2, '0')}`
@@ -223,10 +239,8 @@ export async function POST(request: NextRequest) {
         status: 'requested',
         submittedByUserId,
         submittedByName,
-        ...(billToType && { billToType }),
+        ...invoiceView,
         ...(paymentMethod && { paymentMethod }),
-        showNetAmount: !!showNetAmount,
-        showCommissionNote: !!showCommissionNote,
       },
     })
 

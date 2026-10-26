@@ -390,6 +390,9 @@ model Lead {
   email               String?
   phone               String?
   notes               String?
+  // Instagram handle (without @) — filled when the lead came in by Instagram DM, and used to
+  // match a later DM from the same person back to this lead (see src/lib/lead-contact.ts).
+  instagram           String?
   freshsalesContactId String?   @unique
   deletedAt           DateTime?
   createdAt           DateTime  @default(now())
@@ -430,9 +433,11 @@ model Lead {
 
   inquiries             Inquiry[]
   pageViews             PageView[]
-  whatsappConversations WhatsappConversation[]
-  assignmentLogs        LeadAssignmentLog[]
-  freshsalesContacts    FreshsalesContact[]
+  whatsappConversations  WhatsappConversation[]
+  instagramConversations InstagramConversation[]
+  contacts               LeadContact[]
+  assignmentLogs         LeadAssignmentLog[]
+  freshsalesContacts     FreshsalesContact[]
 
   @@index([deletedAt])
   @@index([name])
@@ -454,6 +459,34 @@ model LeadAssignmentLog {
   toUser     User?                @relation("LeadAssignmentTo", fields: [toUserId], references: [id], onDelete: SetNull)
   reason     LeadAssignmentReason
   createdAt  DateTime             @default(now())
+
+  @@index([leadId, createdAt])
+  @@index([createdAt])
+}
+
+enum LeadContactChannel {
+  WHATSAPP
+  INSTAGRAM
+  MESSENGER
+}
+
+// One row each time a lead reaches out to us by chat — the first message of a new contact
+// "session" (first ever, or after 24h of silence from them), written by the WhatsApp and
+// Instagram/Messenger webhooks via src/lib/lead-contact.ts. Shown in the lead's history next
+// to its website-form inquiries.
+model LeadContact {
+  id                      String             @id @default(cuid())
+  leadId                  String
+  lead                    Lead               @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  channel                 LeadContactChannel
+  brand                   WhatsappBrand?
+  whatsappConversationId  String?
+  instagramConversationId String?
+  // Their opening message of this contact (text or a media label like "📷 Photo").
+  message                 String?
+  // True on the contact that created the lead.
+  isFirstContact          Boolean            @default(false)
+  createdAt               DateTime           @default(now())
 
   @@index([leadId, createdAt])
   @@index([createdAt])
@@ -4691,6 +4724,9 @@ model InstagramConversation {
   // Sales rep holding this DM — set on first inbound via the INSTAGRAM distribution pool.
   assignedToId       String?
   assignedTo         User?          @relation("InstagramConversationAssignedTo", fields: [assignedToId], references: [id], onDelete: SetNull)
+  // The Lead this DM belongs to — set on the customer's first message (src/lib/lead-contact.ts).
+  leadId             String?
+  lead               Lead?          @relation(fields: [leadId], references: [id], onDelete: SetNull)
   lastMessageAt      DateTime       @default(now())
   lastMessagePreview String?
   unreadCount        Int            @default(0)
@@ -4702,6 +4738,7 @@ model InstagramConversation {
   @@unique([platform, externalUserId])
   @@index([lastMessageAt])
   @@index([assignedToId])
+  @@index([leadId])
 }
 
 enum MetaDmPlatform {

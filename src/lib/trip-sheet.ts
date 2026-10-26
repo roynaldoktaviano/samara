@@ -15,6 +15,7 @@ const guestInclude = {
   customer: { select: { name: true } },
   agent: { select: { name: true, commissionOpenTrip: true, commissionPrivateCharter: true, commissionB2B: true } },
   salespersonUser: { select: { name: true } },
+  clawbackEntries: { select: { amount: true } },
 }
 
 function isTbd(name: string | null | undefined) {
@@ -31,7 +32,8 @@ function bookingFinancials(booking: {
   useB2BCommission?: boolean
   agent: { commissionOpenTrip: number; commissionPrivateCharter: number; commissionB2B?: number } | null
   services: { price: number; quantity: number }[]
-  payments: { paymentType: string; status: string; amount: number; invoiceNumber: string; id: string; paymentMethod: string | null; createdAt: Date; hasDocument: boolean }[]
+  clawbackEntries: { amount: number }[]
+  payments: { paymentType: string; status: string; amount: number; invoiceNumber: string; id: string; paymentMethod: string | null; createdAt: Date; hasDocument: boolean; parentPaymentId: string | null }[]
 }) {
   // totalPrice is already net of discount + TNK (services), quoted in USD baseline
   // (see BookingWizard: total = max(0, base - discountAmt) + services)
@@ -41,37 +43,50 @@ function bookingFinancials(booking: {
   const publish = baseAfterDiscount + discount // reconstructed pre-discount price, for display only
   const discountPct = publish > 0 ? (discount / publish) * 100 : 0
 
+  // Agent clawback auto-deducted on this booking (stored negative) comes off the price first, and
+  // commission is on what's left — the same net the agent is invoiced and booking status is
+  // settled on (payments/[id] confirm, Bookings' netBook).
+  const clawback = booking.source === 'AGENT'
+    ? Math.abs(booking.clawbackEntries.reduce((s, e) => s + Math.min(0, e.amount), 0))
+    : 0
   const commPct = booking.source === 'AGENT' ? getAgentCommissionPct(booking.agent, booking.tripType, booking.useB2BCommission) : 0
-  const agentCommission = baseAfterDiscount * (Math.max(0, Math.min(commPct, 100)) / 100)
+  const agentCommission = Math.max(0, baseAfterDiscount - clawback) * (Math.max(0, Math.min(commPct, 100)) / 100)
 
-  // TRIP = published price net of discount AND agent commission
-  const trip = baseAfterDiscount - agentCommission
+  // TRIP = published price net of discount, clawback AND agent commission
+  const trip = baseAfterDiscount - clawback - agentCommission
   const totalUSD = trip + tnk
   const totalIDR = (booking.currency === 'IDR' && booking.exchangeRate) ? totalUSD * booking.exchangeRate : null
 
-  // A deposit can arrive as several installments (1st/2nd/... DP) — sum all confirmed ones
-  // rather than just the first, so `dp`/`balance` stay correct once a booking has more than one.
+  // Columns "DP" and "2nd DP / Payment": the first confirmed payment is the DP, everything
+  // confirmed after it (a 2nd DP installment or the balance) is the second column — by order,
+  // not by the stored type, which a balance paid onto an existing invoice can get wrong.
+  const confirmed = booking.payments.filter(p => p.status === 'confirmed')
   const dpPayments = booking.payments.filter(p => p.paymentType === 'DP' && p.status === 'confirmed')
   const pelunasanPayments = booking.payments.filter(p => p.paymentType === 'PELUNASAN' && p.status === 'confirmed')
-  const dp = dpPayments.reduce((s, p) => s + p.amount, 0)
-  const pelunasan = pelunasanPayments.reduce((s, p) => s + p.amount, 0)
+  const dp = confirmed[0]?.amount ?? 0
+  const pelunasan = confirmed.slice(1).reduce((s, p) => s + p.amount, 0)
   const balance = Math.max(0, totalUSD - dp - pelunasan)
 
   const latestPayment = booking.payments[booking.payments.length - 1] ?? null
   const referencePayment = pelunasanPayments[pelunasanPayments.length - 1] ?? dpPayments[dpPayments.length - 1] ?? latestPayment
 
-  const paymentStatusLabel = balance <= 0 && (dpPayments.length > 0 || pelunasanPayments.length > 0)
+  const paymentStatusLabel = balance <= 0 && confirmed.length > 0
     ? 'PAID'
     : (referencePayment?.status ?? 'unpaid')
 
-  // Every confirmed payment that got its own invoice document (hasDocument:false ones are
-  // top-up DPs folded into an earlier invoice, with no document of their own to link to).
-  const invoices = booking.payments
-    .filter(p => p.status === 'confirmed' && p.hasDocument !== false && p.invoiceNumber)
-    .map(p => ({ invoiceNumber: p.invoiceNumber, paymentId: p.id }))
+  // Every confirmed payment with its amount, in order — including ones paid onto an existing
+  // invoice (hasDocument:false, e.g. INV-…-01-2), which open their parent's invoice document.
+  const invoices = confirmed
+    .filter(p => p.invoiceNumber)
+    .map(p => ({
+      invoiceNumber: p.invoiceNumber,
+      paymentId: p.id,
+      documentId: p.hasDocument === false && p.parentPaymentId ? p.parentPaymentId : p.id,
+      amount: p.amount,
+    }))
 
   return {
-    publish, discount, discountPct, trip, tnk, totalUSD, totalIDR, agentCommission, dp, pelunasan, balance,
+    publish, discount, discountPct, trip, tnk, totalUSD, totalIDR, agentCommission, clawback, dp, pelunasan, balance,
     invoices,
     paymentMethod: referencePayment?.paymentMethod ?? null,
     paymentStatusLabel,
@@ -95,7 +110,8 @@ function bookingRows(booking: {
   totalPrice: number
   discount: number
   services: { price: number; quantity: number }[]
-  payments: { paymentType: string; status: string; amount: number; invoiceNumber: string; id: string; paymentMethod: string | null; createdAt: Date; hasDocument: boolean }[]
+  clawbackEntries: { amount: number }[]
+  payments: { paymentType: string; status: string; amount: number; invoiceNumber: string; id: string; paymentMethod: string | null; createdAt: Date; hasDocument: boolean; parentPaymentId: string | null }[]
 }) {
   const agentName = booking.source === 'AGENT' && booking.agent?.name ? booking.agent.name : 'Direct'
   const salespersonName = booking.salespersonUser?.name ?? booking.salesperson ?? '—'

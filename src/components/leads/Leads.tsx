@@ -15,7 +15,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Skeleton } from '@/components/ui/skeleton'
-import { UserPlus, Plus, Edit, MessageCircle, Send, Search, Mail, Phone, ChevronRight, ChevronLeft, Trash2, X, Globe, RotateCw, Download, ArrowUp, ArrowDown, Target, AlertTriangle, Loader2, Ship } from 'lucide-react'
+import { UserPlus, Plus, Edit, MessageCircle, Send, Search, Mail, Phone, ChevronRight, ChevronLeft, Trash2, X, Globe, RotateCw, Download, ArrowUp, ArrowDown, Target, AlertTriangle, Loader2, Ship, AtSign } from 'lucide-react'
 import LeadEditSheet from '@/components/leads/LeadEditSheet'
 import LostReasonDialog from '@/components/leads/LostReasonDialog'
 import { isHttpUrl } from '@/lib/url-safety'
@@ -25,6 +25,7 @@ import FreshsalesImportModal from '@/components/shared/FreshsalesImportModal'
 import { LEAD_STAGES, LEAD_STAGE_LABEL, LEAD_STAGE_COLOR, LEAD_TRANSITIONS, type LeadStage } from '@/lib/lead-pipeline'
 import { toast } from 'sonner'
 import { NewChatForm, type NewChatPayload } from '@/components/chat/UnifiedInbox'
+import { WHATSAPP_BRANDS, WHATSAPP_BRAND_LABELS, type WhatsappBrand } from '@/lib/whatsapp-brands'
 
 /* ─── Types ─────────────────────────────────────────────────────────────── */
 interface Lead {
@@ -34,6 +35,7 @@ interface Lead {
   lastName?: string
   email?: string
   phone?: string
+  instagram?: string | null
   nationality?: string
   notes?: string
   createdAt: string
@@ -51,6 +53,16 @@ interface Lead {
   budgetCurrency?: string | null
   // Only on the Instant Form tab: the latest instant-form inquiry.
   inquiries?: MetaInquiry[]
+  // Only on the WhatsApp / Instagram tabs: the latest chat thread.
+  whatsappConversations?: ChatThreadSummary[]
+  instagramConversations?: ChatThreadSummary[]
+}
+
+interface ChatThreadSummary {
+  platform?: 'INSTAGRAM' | 'MESSENGER'
+  brand?: WhatsappBrand | null
+  lastMessageAt: string
+  lastMessagePreview?: string | null
 }
 
 interface MetaInquiry {
@@ -63,13 +75,34 @@ interface MetaInquiry {
   guestCount?: number | null
 }
 
-type LeadChannel = 'all' | 'form' | 'meta'
+type LeadChannel = 'all' | 'form' | 'meta' | 'whatsapp' | 'instagram'
 const CHANNEL_TABS: { value: LeadChannel; label: string; title: string }[] = [
-  { value: 'all',  label: 'All Leads',      title: 'All Leads' },
-  { value: 'form', label: 'Website Form',   title: 'Website Form Leads' },
-  { value: 'meta', label: 'Instant Form',   title: 'Instant Form Leads' },
+  { value: 'all',       label: 'All Leads',    title: 'All Leads' },
+  { value: 'form',      label: 'Website Form', title: 'Website Form Leads' },
+  { value: 'meta',      label: 'Instant Form', title: 'Instant Form Leads' },
+  { value: 'whatsapp',  label: 'WhatsApp',     title: 'WhatsApp Leads' },
+  { value: 'instagram', label: 'Instagram',    title: 'Instagram & Messenger Leads' },
 ]
+// Tabs listing leads that came in by chat — filtered by brand instead of website/origin/source.
+const isChatChannel = (c: LeadChannel) => c === 'whatsapp' || c === 'instagram'
 
+
+// One chat contact — see src/lib/lead-contact.ts.
+interface LeadContact {
+  id: string
+  channel: 'WHATSAPP' | 'INSTAGRAM' | 'MESSENGER'
+  brand?: string | null
+  message?: string | null
+  isFirstContact: boolean
+  createdAt: string
+}
+
+const CONTACT_CHANNEL_LABEL: Record<LeadContact['channel'], string> = { WHATSAPP: 'WhatsApp', INSTAGRAM: 'Instagram DM', MESSENGER: 'Messenger' }
+const CONTACT_CHANNEL_COLOR: Record<LeadContact['channel'], string> = {
+  WHATSAPP: 'bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-200',
+  INSTAGRAM: 'bg-pink-100 text-pink-800 dark:bg-pink-950 dark:text-pink-200',
+  MESSENGER: 'bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-200',
+}
 
 interface Inquiry {
   id: string
@@ -160,6 +193,7 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail }: {
   const [dateTo, setDateTo] = useState('')
   const [campaignFilter, setCampaignFilter] = useState('all')
   const [yachtFilter, setYachtFilter] = useState('all')
+  const [brandFilter, setBrandFilter] = useState<WhatsappBrand | 'all'>('all')
   const [metaCampaigns, setMetaCampaigns] = useState<string[]>([])
   const [metaYachts, setMetaYachts] = useState<string[]>([])
   const [stageBusy, setStageBusy] = useState(false)
@@ -172,6 +206,7 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail }: {
   const [detailOpen, setDetailOpen] = useState(false)
   const [detail, setDetail] = useState<Lead | null>(null)
   const [inquiries, setInquiries] = useState<Inquiry[] | null>(null)
+  const [contacts, setContacts] = useState<LeadContact[] | null>(null)
   const [attributionInquiry, setAttributionInquiry] = useState<Inquiry | null>(null)
   const [pageViews, setPageViews] = useState<PageView[] | null>(null)
 
@@ -211,9 +246,13 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail }: {
     try {
       const params = new URLSearchParams({ page: String(p), limit: String(PAGE_SIZE), sort: sortDir })
       if (search) params.set('search', search)
-      if (websiteFilter !== 'all') params.set('website', websiteFilter)
-      if (sourceFilter !== 'all') params.set('source', sourceFilter)
-      if (originFilter !== 'all' && channel !== 'meta') params.set('origin', originFilter)
+      if (isChatChannel(channel)) {
+        if (brandFilter !== 'all') params.set('brand', brandFilter)
+      } else {
+        if (websiteFilter !== 'all') params.set('website', websiteFilter)
+        if (sourceFilter !== 'all') params.set('source', sourceFilter)
+        if (originFilter !== 'all' && channel !== 'meta') params.set('origin', originFilter)
+      }
       if (stageFilter !== 'all') params.set('stage', stageFilter)
       if (channel !== 'all') params.set('channel', channel)
       if (channel === 'meta') {
@@ -230,7 +269,7 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail }: {
     } finally {
       setLoading(false)
     }
-  }, [search, websiteFilter, sourceFilter, originFilter, stageFilter, sortDir, channel, dateFrom, dateTo, campaignFilter, yachtFilter])
+  }, [search, websiteFilter, sourceFilter, originFilter, stageFilter, sortDir, channel, dateFrom, dateTo, campaignFilter, yachtFilter, brandFilter])
 
   useEffect(() => { setPage(1); fetchLeads(1) }, [fetchLeads])
 
@@ -268,11 +307,13 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail }: {
     setDetailOpen(true)
     setInquiries(null)
     fetch(`/api/leads/${l.id}/inquiries`).then(r => r.ok ? r.json() : []).then(setInquiries).catch(() => setInquiries([]))
+    setContacts(null)
+    fetch(`/api/leads/${l.id}/contacts`).then(r => r.ok ? r.json() : []).then(setContacts).catch(() => setContacts([]))
     setPageViews(null)
     fetch(`/api/leads/${l.id}/page-views`).then(r => r.ok ? r.json() : []).then(setPageViews).catch(() => setPageViews([]))
   }
 
-  const closeDetail = () => { setDetailOpen(false); setDetail(null); setInquiries(null); setPageViews(null) }
+  const closeDetail = () => { setDetailOpen(false); setDetail(null); setInquiries(null); setContacts(null); setPageViews(null) }
 
   const changeStage = async (lead: Lead, stage: LeadStage, extra?: { lostReason: string; lostNote: string }) => {
     if (stage === 'CLOSED_LOST' && !extra) { setLostTarget(lead); return }
@@ -411,12 +452,12 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail }: {
       </div>
 
       {/* Channel tabs */}
-      <div className="flex gap-1 border-b">
+      <div className="flex gap-1 border-b overflow-x-auto">
         {CHANNEL_TABS.map(t => (
           <button
             key={t.value}
             onClick={() => setChannel(t.value)}
-            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${channel === t.value ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+            className={`px-4 py-2 text-sm font-medium whitespace-nowrap border-b-2 -mb-px transition-colors ${channel === t.value ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
           >
             {t.label}
           </button>
@@ -472,7 +513,18 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail }: {
                   <X className="h-3.5 w-3.5 mr-1" /> Reset
                 </Button>
               )}
-            </> : <>
+            </> : isChatChannel(channel) ? (
+              <Select value={brandFilter} onValueChange={v => setBrandFilter(v as WhatsappBrand | 'all')}>
+                <SelectTrigger aria-label="Filter by brand" className={`w-[160px] ${brandFilter !== 'all' ? 'border-primary text-primary font-medium' : ''}`}>
+                  <Ship className="h-3.5 w-3.5 mr-1.5 shrink-0" />
+                  <SelectValue placeholder="Brand" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Brands</SelectItem>
+                  {WHATSAPP_BRANDS.map(b => <SelectItem key={b} value={b}>{WHATSAPP_BRAND_LABELS[b]}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            ) : <>
             <Select value={websiteFilter} onValueChange={setWebsiteFilter}>
               <SelectTrigger className={`w-[180px] ${websiteFilter !== 'all' ? 'border-primary text-primary font-medium' : ''}`}>
                 <Globe className="h-3.5 w-3.5 mr-1.5 shrink-0" />
@@ -557,6 +609,10 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail }: {
                     <TableHead>Campaign</TableHead>
                     <TableHead>Trip</TableHead>
                   </>}
+                  {isChatChannel(channel) && <>
+                    <TableHead>Brand</TableHead>
+                    <TableHead>Last Message</TableHead>
+                  </>}
                   <TableHead>Contact</TableHead>
                   <TableHead>Subscribed</TableHead>
                   <TableHead>Country</TableHead>
@@ -589,6 +645,10 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail }: {
                         <TableCell><Skeleton className="h-3 w-32" /></TableCell>
                         <TableCell><Skeleton className="h-3 w-20" /></TableCell>
                       </>}
+                      {isChatChannel(channel) && <>
+                        <TableCell><Skeleton className="h-4 w-16 rounded-full" /></TableCell>
+                        <TableCell><Skeleton className="h-3 w-40" /></TableCell>
+                      </>}
                       <TableCell><div className="space-y-1.5"><Skeleton className="h-3 w-36" /><Skeleton className="h-3 w-24" /></div></TableCell>
                       <TableCell><Skeleton className="h-3 w-16" /></TableCell>
                       <TableCell><Skeleton className="h-3 w-20" /></TableCell>
@@ -598,7 +658,7 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail }: {
                   ))
                 ) : leads.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={(isAdmin ? 8 : 7) + (channel === 'meta' ? 3 : 0)} className="py-12 text-center text-muted-foreground">No leads found</TableCell>
+                    <TableCell colSpan={(isAdmin ? 8 : 7) + (channel === 'meta' ? 3 : isChatChannel(channel) ? 2 : 0)} className="py-12 text-center text-muted-foreground">No leads found</TableCell>
                   </TableRow>
                 ) : leads.map(l => (
                   <TableRow
@@ -642,10 +702,24 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail }: {
                         </TableCell>
                       </>
                     })()}
+                    {isChatChannel(channel) && (() => {
+                      const chat = (channel === 'whatsapp' ? l.whatsappConversations : l.instagramConversations)?.[0]
+                      return <>
+                        <TableCell>
+                          {chat?.brand ? <Badge variant="outline" className="whitespace-nowrap">{WHATSAPP_BRAND_LABELS[chat.brand]}</Badge> : <span className="text-muted-foreground text-xs">—</span>}
+                          {chat?.platform === 'MESSENGER' && <p className="text-[11px] text-muted-foreground mt-0.5">Messenger</p>}
+                        </TableCell>
+                        <TableCell className="max-w-[260px]">
+                          <p className="text-xs truncate" title={chat?.lastMessagePreview ?? ''}>{chat?.lastMessagePreview || '—'}</p>
+                          {chat && <p className="text-[11px] text-muted-foreground">{formatDate(chat.lastMessageAt, 'datetime')}</p>}
+                        </TableCell>
+                      </>
+                    })()}
                     <TableCell>
                       <div className="space-y-0.5">
                         {l.email && <div className="flex items-center gap-1 text-xs"><Mail className="h-3 w-3 text-muted-foreground" />{l.email}</div>}
                         {l.phone && <div className="flex items-center gap-1 text-xs"><Phone className="h-3 w-3 text-muted-foreground" />{l.phone}</div>}
+                        {l.instagram && <div className="flex items-center gap-1 text-xs"><AtSign className="h-3 w-3 text-muted-foreground" />{l.instagram}</div>}
                       </div>
                     </TableCell>
                     <TableCell>
@@ -819,6 +893,7 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail }: {
                   {[
                     ['Email', detail.email],
                     ['Phone', detail.phone],
+                    ['Instagram', detail.instagram ? `@${detail.instagram}` : null],
                     ['Country', detail.nationality],
                     ['Yacht / Product Interest', detail.productInterest],
                     ['Destination', detail.destinationId ? destinationMap[detail.destinationId] : null],
@@ -844,14 +919,30 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail }: {
                   </div>
                 )}
                 <div className="text-sm">
-                  <p className="text-xs text-muted-foreground uppercase tracking-wide mb-2">Inquiry History</p>
-                  {inquiries === null ? (
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide mb-2">Contact History</p>
+                  {inquiries === null || contacts === null ? (
                     <p className="text-xs text-muted-foreground">Loading…</p>
-                  ) : inquiries.length === 0 ? (
-                    <p className="text-xs text-muted-foreground">No form submissions yet</p>
+                  ) : inquiries.length === 0 && contacts.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">No form submissions or chats yet</p>
                   ) : (
                     <div className="space-y-2">
-                      {inquiries.map(inq => (
+                      {/* Website/Instant-form inquiries and chat contacts on one timeline, newest first. */}
+                      {[
+                        ...inquiries.map(inq => ({ at: inq.createdAt, inq, chat: null })),
+                        ...contacts.map(chat => ({ at: chat.createdAt, inq: null, chat })),
+                      ].sort((a, b) => b.at.localeCompare(a.at)).map(({ inq, chat }) => chat ? (
+                        <div key={chat.id} className="rounded-lg border px-3 py-2 space-y-1">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="flex items-center gap-1.5 min-w-0">
+                              <span className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${CONTACT_CHANNEL_COLOR[chat.channel]}`}>{CONTACT_CHANNEL_LABEL[chat.channel]}</span>
+                              {chat.brand && <span className="text-[11px] text-muted-foreground truncate">to {chat.brand.charAt(0) + chat.brand.slice(1).toLowerCase()}</span>}
+                              {chat.isFirstContact && <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">First contact</span>}
+                            </span>
+                            <span className="text-[11px] text-muted-foreground">{formatDate(chat.createdAt, 'datetime')}</span>
+                          </div>
+                          {chat.message && <p className="text-xs whitespace-pre-wrap line-clamp-4">{chat.message}</p>}
+                        </div>
+                      ) : inq && (
                         <div key={inq.id} className="rounded-lg border px-3 py-2 space-y-1">
                           <div className="flex items-center justify-between gap-2">
                             {(() => {

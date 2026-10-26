@@ -7,6 +7,7 @@ import { getTenantSecret } from '@/lib/tenant-secrets'
 import { emitTenantEvent } from '@/lib/realtime-bus'
 import { pickNextSalesUserId } from '@/lib/whatsapp-distribution'
 import { autoLinkNewConversation } from '@/lib/whatsapp-lead'
+import { isNewContactSession, recordLeadContact } from '@/lib/lead-contact'
 import { sendPushToUser } from '@/lib/push'
 import { isViewing } from '@/lib/chat-presence'
 import { WHATSAPP_BRANDS, WHATSAPP_BRAND_SECRET_KEYS, WHATSAPP_BRAND_WEBHOOK_SECRET_KEYS, WHATSAPP_GRAPH_VERSION, type WhatsappBrand } from '@/lib/whatsapp-brands'
@@ -251,7 +252,7 @@ export function createWhatsappWebhookHandlers(endpointBrand?: WhatsappBrand) {
             where: { id },
             data: { contactName: contactName ?? undefined, lastMessageAt: new Date(), lastInboundAt: new Date(), lastMessagePreview: preview, unreadCount: { increment: 1 } },
           })
-          const existing = await db.whatsappConversation.findUnique({ where: conversationKey, select: { id: true } })
+          const existing = await db.whatsappConversation.findUnique({ where: conversationKey, select: { id: true, leadId: true, category: true, lastInboundAt: true } })
           let isNewConversation = false
           let conversation
           if (existing) {
@@ -300,10 +301,23 @@ export function createWhatsappWebhookHandlers(endpointBrand?: WhatsappBrand) {
             })().catch(e => console.error('[whatsapp webhook] background media store failed', mediaId, e))
           }
 
-          // Existing Lead/Guest with this number → link/categorise the new chat right away;
-          // an unknown number gets a new Lead (see src/lib/whatsapp-lead.ts). Never blocks acking the webhook.
-          if (isNewConversation) {
-            await autoLinkNewConversation(db, conversation.id, { createLead: true }).catch(e => console.error('[whatsapp webhook] auto-link failed', e))
+          // Existing Lead/Guest with this number → link/categorise the chat right away; an
+          // unknown number gets a new Lead (see src/lib/whatsapp-lead.ts) — also for an older chat
+          // still UNSORTED without one. Then the contact goes into the lead's history: always when
+          // the chat just got its Lead, else when they'd been quiet 24h+ (src/lib/lead-contact.ts).
+          // Never blocks acking the webhook.
+          try {
+            let leadId = existing?.leadId ?? null
+            let created = false
+            if (!leadId && (isNewConversation || existing?.category === 'UNSORTED')) {
+              ({ leadId, created } = await autoLinkNewConversation(db, conversation.id, { createLead: true }))
+            }
+            const justLinked = !!leadId && !existing?.leadId
+            if (leadId && (justLinked || (existing && isNewContactSession(existing.lastInboundAt)))) {
+              await recordLeadContact(db, { leadId, channel: 'WHATSAPP', brand, whatsappConversationId: conversation.id, message: preview, isFirstContact: created })
+            }
+          } catch (e) {
+            console.error('[whatsapp webhook] lead link/history failed', e)
           }
 
           // Notice for whichever sales rep this chat is assigned to — in-app bell (toast +

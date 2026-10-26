@@ -6,6 +6,7 @@ import { logActivity } from '@/lib/activity'
 import { leadWebsiteWhere } from '@/lib/lead-website'
 import { leadOwnerScope } from '@/lib/lead-access'
 import { classifyLeadOrigin, LEAD_ORIGINS, LEAD_ORIGIN_SELECT, sourceLabel, type LeadOrigin } from '@/lib/lead-origin'
+import { WHATSAPP_BRANDS, type WhatsappBrand } from '@/lib/whatsapp-brands'
 
 export async function GET(request: NextRequest) {
   const session = await getServerSession(authOptions)
@@ -18,8 +19,11 @@ export async function GET(request: NextRequest) {
     const source  = searchParams.get('source')
     const origin  = searchParams.get('origin')
     const stage   = searchParams.get('stage')
-    // Tab on the Leads page: 'form' = website CF7 form, 'meta' = Meta Lead Ads instant form.
+    // Tab on the Leads page: 'form' = website CF7 form, 'meta' = Meta Lead Ads instant form,
+    // 'whatsapp' / 'instagram' = leads that came in by chat (Instagram tab covers Messenger too).
     const channel = searchParams.get('channel')
+    const brandParam = searchParams.get('brand')
+    const brand = WHATSAPP_BRANDS.includes(brandParam as WhatsappBrand) ? brandParam as WhatsappBrand : null
     const dateFrom = searchParams.get('dateFrom')
     const dateTo   = searchParams.get('dateTo')
     const campaign = searchParams.get('campaign')
@@ -35,6 +39,7 @@ export async function GET(request: NextRequest) {
         { name:  { contains: search, mode: 'insensitive' } },
         { email: { contains: search, mode: 'insensitive' } },
         { phone: { contains: search, mode: 'insensitive' } },
+        { instagram: { contains: search.replace(/^@/, ''), mode: 'insensitive' } },
       ]
     }
     // A lead can have inquiries from more than one site/source — match if any
@@ -76,6 +81,9 @@ export async function GET(request: NextRequest) {
         ...(yacht && { tripType: yacht }),
       } } })
     }
+    // A WhatsApp chat only counts while it's triaged SALES (vendor/spam/guest chats aren't leads).
+    if (channel === 'whatsapp') inquiryFilters.push({ whatsappConversations: { some: { category: 'SALES', ...(brand && { brand }) } } })
+    if (channel === 'instagram') inquiryFilters.push({ instagramConversations: { some: { ...(brand && { brand }) } } })
     if (inquiryFilters.length > 0) where.AND = inquiryFilters
 
     const [leads, total] = await Promise.all([
@@ -90,6 +98,18 @@ export async function GET(request: NextRequest) {
           orderBy: { createdAt: 'desc' as const },
           take: 1,
           select: { createdAt: true, utmSource: true, utmCampaign: true, tripType: true, checkInDate: true, checkOutDate: true, guestCount: true },
+        } } }),
+        // Chat tabs show the latest thread's brand + last message per row.
+        ...(channel === 'whatsapp' && { include: { whatsappConversations: {
+          where: { category: 'SALES' },
+          orderBy: { lastMessageAt: 'desc' as const },
+          take: 1,
+          select: { brand: true, lastMessageAt: true, lastMessagePreview: true },
+        } } }),
+        ...(channel === 'instagram' && { include: { instagramConversations: {
+          orderBy: { lastMessageAt: 'desc' as const },
+          take: 1,
+          select: { platform: true, brand: true, lastMessageAt: true, lastMessagePreview: true },
         } } }),
       }),
       db.lead.count({ where }),
@@ -119,7 +139,7 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const {
-      firstName, lastName, nationality, email, phone, notes,
+      firstName, lastName, nationality, email, phone, instagram, notes,
       productInterest, destinationId, travelStartDate, travelEndDate, travelSeason,
       guestCount, leadQuality, budgetMin, budgetMax, budgetCurrency,
     } = body
@@ -132,6 +152,7 @@ export async function POST(request: NextRequest) {
     const lead = await db.lead.create({
       data: {
         name, firstName, lastName, nationality, email, phone, notes,
+        ...(instagram !== undefined && { instagram: typeof instagram === 'string' ? instagram.trim().replace(/^@/, '') || null : null }),
         productInterest: productInterest || null,
         destinationId: destinationId || null,
         travelStartDate: travelStartDate ? new Date(travelStartDate) : null,

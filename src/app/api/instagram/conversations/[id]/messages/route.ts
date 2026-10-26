@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { salesCanAccessConversation } from '@/lib/whatsapp-distribution'
 import { sendMetaDm } from '@/lib/meta-dm'
+import { setLeadOwner } from '@/lib/whatsapp-lead'
 
 // Admin composes a reply from the Chat UI. The message is saved immediately
 // (so the thread always reflects what was sent), then sent through Meta's Send
@@ -26,6 +27,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (role === 'SALES' && conversation.assignedToId === null) {
     const { count } = await db.instagramConversation.updateMany({ where: { id, assignedToId: null }, data: { assignedToId: session.user.id } })
     if (count === 0) return NextResponse.json({ error: 'Another sales rep just took this chat' }, { status: 409 })
+    // Chat owner = lead owner — an unowned lead goes to whoever claimed its chat.
+    if (conversation.leadId) await setLeadOwner(db, conversation.leadId, session.user.id, 'CLAIM', true).catch(() => {})
   }
 
   if (replyToId) {
@@ -51,6 +54,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     where: { id },
     data: { lastMessageAt: new Date(), lastMessagePreview: text ?? (mediaUrl ? '📎 Attachment' : '') },
   })
+  // First staff reply moves a still-NEW lead to CONTACTED (as recordStaffReply does for WhatsApp).
+  if (conversation.leadId) {
+    await db.lead.updateMany({
+      where: { id: conversation.leadId, stage: 'NEW' },
+      data: { stage: 'CONTACTED', stageUpdatedAt: new Date(), stageUpdatedById: session.user.id },
+    }).catch(() => {})
+  }
 
   const tenantId = (session.user as { tenantId?: string }).tenantId
   const result = tenantId

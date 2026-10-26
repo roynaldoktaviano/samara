@@ -1172,10 +1172,13 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                   return acc
                 }, [])
                 const currentRow = historyRows.find(h => h.id === selected.id)
-                const isNet = selected.booking.source === 'AGENT' && selected.showNetAmount
-                const commPct = isNet ? getAgentCommissionPct(selected.booking.agent, selected.booking.tripType, selected.booking.useB2BCommission) : 0
+                // What's actually owed — for an agent booking always net of commission and clawback,
+                // the same figure booking status is settled on. Published/Net is only how the invoice
+                // document is shown; it must not change the balance.
+                const commPct = selected.booking.source === 'AGENT' ? getAgentCommissionPct(selected.booking.agent, selected.booking.tripType, selected.booking.useB2BCommission) : 0
                 const packageTotal = netOfCommission(selected.booking, commPct)
-                const isClosingPayment = !!currentRow && currentRow.cumAfter >= packageTotal - 0.01
+                // The balance payment is the closing one even when a few dollars short (bank fees).
+                const isClosingPayment = !!currentRow && (selected.paymentType === 'PELUNASAN' || currentRow.cumAfter >= packageTotal - 0.01)
                 const grandTotal = historyRows.length ? historyRows[historyRows.length - 1].cumAfter : selected.amount
                 const balanceAfterAll = Math.max(0, packageTotal - grandTotal)
 
@@ -1193,15 +1196,19 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                       ))}
                       <Separator />
                       <div className="flex justify-between items-center">
-                        <span className="text-xs font-semibold uppercase tracking-wide">{isClosingPayment ? 'Balance Due' : selected.status === 'confirmed' ? 'Total Deposit Paid' : 'Total Deposit Due'}</span>
-                        <span className="font-bold text-sm">{formatMoney(isClosingPayment ? selected.amount : grandTotal, { currency: 'USD' })}</span>
+                        <span className="text-xs font-semibold uppercase tracking-wide">{isClosingPayment ? 'Total Paid' : selected.status === 'confirmed' ? 'Total Deposit Paid' : 'Total Deposit Due'}</span>
+                        <span className="font-bold text-sm">{formatMoney(grandTotal, { currency: 'USD' })}</span>
                       </div>
-                      {!isClosingPayment && (
-                        <div className="flex justify-between items-center text-xs">
-                          <span className={balanceAfterAll > 0 ? 'text-warning' : 'text-success'}>{balanceAfterAll > 0 ? 'Balance Due' : 'Remaining'}</span>
-                          <span className={`font-medium ${balanceAfterAll > 0 ? 'text-warning' : 'text-success'}`}>{formatMoney(balanceAfterAll, { currency: 'USD' })}</span>
+                      {selected.booking.source === 'AGENT' && (
+                        <div className="flex justify-between items-center text-xs text-muted-foreground">
+                          <span>Agent total (net of commission{selected.booking.clawbackEntries.some(e => e.amount < 0) ? ' & clawback' : ''})</span>
+                          <span>{formatMoney(packageTotal, { currency: 'USD' })}</span>
                         </div>
                       )}
+                      <div className="flex justify-between items-center text-xs">
+                        <span className={balanceAfterAll > 0.01 ? 'text-warning' : 'text-success'}>{balanceAfterAll > 0.01 ? 'Balance Due' : 'Fully Paid'}</span>
+                        <span className={`font-medium ${balanceAfterAll > 0.01 ? 'text-warning' : 'text-success'}`}>{formatMoney(balanceAfterAll, { currency: 'USD' })}</span>
+                      </div>
                     </CardContent>
                   </Card>
                 )
@@ -1490,6 +1497,11 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                     })()}
 
                     {/* Bill To — only for AGENT bookings */}
+                    {selected.booking.source === 'AGENT' && selected.booking.agent && (
+                      <p className="text-[11px] text-muted-foreground">
+                        Bill To and Published/Net apply to every invoice on this booking — changing them here updates the DP and Pelunasan invoices together.
+                      </p>
+                    )}
                     {selected.booking.source === 'AGENT' && selected.booking.agent && (
                       <div className="space-y-1.5">
                         <Label className="text-xs flex items-center gap-1.5">

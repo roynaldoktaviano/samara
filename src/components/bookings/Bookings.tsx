@@ -111,6 +111,9 @@ interface PaymentRecord {
   hasDocument?: boolean
   parentPaymentId?: string | null
   parentPayment?: { invoiceNumber: string } | null
+  billToType?: string | null
+  showNetAmount?: boolean
+  showCommissionNote?: boolean
   // Optional "what changed" note Finance attaches when editing an already-generated invoice
   // — changeProofUrl itself is stripped from this list (like proofOfTransfer) and fetched
   // on demand from /api/payments/[id] only when Sales clicks to view it.
@@ -280,6 +283,8 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
   const [payShowNet,      setPayShowNet]      = useState(false)
   const [payShowNote,     setPayShowNote]     = useState(false)
   const [payMode,         setPayMode]         = useState<'new' | 'existing'>('new')
+  // Add-to-existing only: is this an extra DP or the balance? null = decide from the amount.
+  const [payLinkedType,   setPayLinkedType]   = useState<'DP' | 'PELUNASAN' | null>(null)
   const [payLinkedId,     setPayLinkedId]     = useState('')
   const [payProof,        setPayProof]        = useState<string[]>([])
   const [payDate,         setPayDate]         = useState('')
@@ -719,6 +724,13 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
   const eligibleParentInvoices = (bookingId: string) =>
     payments.filter(p => p.bookingId === bookingId && p.hasDocument !== false && ['invoice_ready', 'pending_confirmation', 'confirmed'].includes(p.status))
 
+  const latestInvoice = (bookingId: string) =>
+    eligibleParentInvoices(bookingId).slice().sort((a, b) => a.createdAt.localeCompare(b.createdAt)).pop() ?? null
+  // Paying (about) everything still open → it's the balance (Pelunasan), else an extra DP.
+  // A few dollars short (bank fees) still counts as the balance.
+  const autoLinkedType = (amount: number, remaining: number): 'DP' | 'PELUNASAN' =>
+    amount > 0 && amount >= remaining - Math.max(10, remaining * 0.01) ? 'PELUNASAN' : 'DP'
+
   const bookingDefaultCurrency = (b: BookingRecord): [CurrencyCode, number] => {
     const curRaw = b.currency ?? 'USD'
     const cur: CurrencyCode = curRaw in CURRENCIES ? (curRaw as CurrencyCode) : 'USD'
@@ -732,11 +744,15 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
     setPayAmtMode('amount')
     setPayAmtValue('')
     setPayPctValue('')
-    setPayBillTo(b.source === 'AGENT' ? 'AGENT' : 'CUSTOMER')
+    // A booking's invoices share one Bill To / Net view — a new invoice starts from (and the
+    // server enforces) the one already issued.
+    const prior = latestInvoice(b.id)
+    setPayBillTo(prior?.billToType === 'CUSTOMER' || prior?.billToType === 'AGENT' ? prior.billToType : (b.source === 'AGENT' ? 'AGENT' : 'CUSTOMER'))
     setPayMethod('Transfer Bank')
-    setPayShowNet(false)
-    setPayShowNote(false)
+    setPayShowNet(prior?.showNetAmount ?? false)
+    setPayShowNote(prior?.showCommissionNote ?? false)
     setPayMode('new')
+    setPayLinkedType(null)
     setPayLinkedId('')
     setPayProof([])
     setPayDate(new Date().toISOString().slice(0, 10))
@@ -774,6 +790,7 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
               notes: paymentNotes,
               amount,
               linkedPaymentId: payLinkedId,
+              paymentType: payLinkedType ?? autoLinkedType(amount, remaining),
               proofOfTransfer: payProof[0],
               proofOfTransferExtra: payProof.slice(1),
               paymentMethod: payMethod || undefined,
@@ -1479,6 +1496,8 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
               : rawInput
             const previewAmt = payAmtMode === 'percent' ? amtFromPct : amtDirect
             const payCurr = CURRENCIES[payCurrency]
+            // An invoice already exists → its Bill To / Net view is the booking's, not a choice.
+            const lockedView = latestInvoice(paymentBooking.id)
             return (
               <>
                 <DialogHeader>
@@ -1501,6 +1520,7 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                           onClick={() => {
                             setPayMode(opt.v)
                             setPayLinkedId('')
+                            setPayLinkedType(null)
                             setPayProof([])
                             const [bCur, bRate] = bookingDefaultCurrency(paymentBooking)
                             setPayCurrency(bCur)
@@ -1544,6 +1564,31 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                             ))}
                           </SelectContent>
                         </Select>
+                        {(() => {
+                          const linkedType = payLinkedType ?? autoLinkedType(previewAmt, remaining)
+                          return (
+                            <div className="space-y-1.5 pt-1">
+                              <Label id="pay-linked-type-label">This payment is</Label>
+                              <div role="group" aria-labelledby="pay-linked-type-label" className="flex rounded-lg border overflow-hidden text-xs">
+                                {([{ v: 'DP', l: 'Additional DP' }, { v: 'PELUNASAN', l: 'Balance (Pelunasan)' }] as const).map(opt => (
+                                  <button
+                                    key={opt.v}
+                                    type="button"
+                                    aria-pressed={linkedType === opt.v}
+                                    onClick={() => setPayLinkedType(opt.v)}
+                                    className={`flex-1 py-2 px-3 font-medium transition-colors ${linkedType === opt.v ? 'text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}
+                                    style={linkedType === opt.v ? { backgroundColor: ACCENT } : {}}
+                                  >
+                                    {opt.l}
+                                  </button>
+                                ))}
+                              </div>
+                              {payLinkedType === null && (
+                                <p className="text-[11px] text-muted-foreground">Set from the amount — paying what's left counts as the balance.</p>
+                              )}
+                            </div>
+                          )
+                        })()}
                       </>
                     )}
                   </div>
@@ -1771,6 +1816,11 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                 {/* Bill To + Agent Commission — AGENT bookings only, only relevant when an actual invoice doc is produced */}
                 {payMode === 'new' && paymentBooking.source === 'AGENT' && paymentBooking.agent && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {lockedView && (
+                    <p className="sm:col-span-2 text-[11px] text-muted-foreground rounded-md bg-muted/50 px-3 py-2">
+                      Same as {lockedView.invoiceNumber} — every invoice on this booking uses one Bill To / commission view. Finance can change it on the invoice.
+                    </p>
+                  )}
                   <div className="space-y-2">
                     <Label id="pay-bill-to-label">Bill To</Label>
                     <div role="group" aria-labelledby="pay-bill-to-label" className="flex rounded-lg border overflow-hidden text-xs">
@@ -1779,8 +1829,9 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                           key={opt}
                           type="button"
                           aria-pressed={payBillTo === opt}
+                          disabled={!!lockedView}
                           onClick={() => setPayBillTo(opt)}
-                          className={`flex-1 py-2 px-3 font-medium transition-colors flex items-center justify-center gap-1.5 ${payBillTo === opt ? 'text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}
+                          className={`flex-1 py-2 px-3 font-medium transition-colors flex items-center justify-center gap-1.5 disabled:cursor-not-allowed ${payBillTo === opt ? 'text-primary-foreground' : 'text-muted-foreground hover:bg-muted disabled:hover:bg-transparent disabled:opacity-50'}`}
                           style={payBillTo === opt ? { backgroundColor: ACCENT } : {}}
                         >
                           {opt === 'AGENT' ? (
@@ -1804,8 +1855,9 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                           key={String(opt.v)}
                           type="button"
                           aria-pressed={payShowNet === opt.v}
+                          disabled={!!lockedView}
                           onClick={() => setPayShowNet(opt.v)}
-                          className={`flex-1 py-2 px-3 font-medium transition-colors ${payShowNet === opt.v ? 'text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}
+                          className={`flex-1 py-2 px-3 font-medium transition-colors disabled:cursor-not-allowed ${payShowNet === opt.v ? 'text-primary-foreground' : 'text-muted-foreground hover:bg-muted disabled:hover:bg-transparent disabled:opacity-50'}`}
                           style={payShowNet === opt.v ? { backgroundColor: ACCENT } : {}}
                         >
                           {opt.l}
@@ -1829,8 +1881,9 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                           role="switch"
                           aria-checked={payShowNote}
                           aria-labelledby="pay-show-note-label"
+                          disabled={!!lockedView}
                           onClick={() => setPayShowNote(v => !v)}
-                          className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${payShowNote ? 'bg-warning' : 'bg-muted-foreground/30'}`}
+                          className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer disabled:cursor-not-allowed disabled:opacity-60 rounded-full border-2 border-transparent transition-colors ${payShowNote ? 'bg-warning' : 'bg-muted-foreground/30'}`}
                         >
                           <span className={`pointer-events-none block h-4 w-4 rounded-full bg-background shadow-lg transition-transform ${payShowNote ? 'translate-x-4' : 'translate-x-0'}`} />
                         </button>

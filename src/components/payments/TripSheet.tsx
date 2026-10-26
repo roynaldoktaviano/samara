@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, type ReactNode } from 'react'
+import { Fragment, useState, useEffect, useCallback, type ReactNode } from 'react'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -28,10 +28,11 @@ interface TripRow {
   totalUSD: number
   totalIDR: number | null
   agentCommission: number
+  clawback: number
   dp: number
   pelunasan: number
   balance: number
-  invoices: { invoiceNumber: string; paymentId: string }[]
+  invoices: { invoiceNumber: string; paymentId: string; documentId: string; amount: number }[]
   paymentMethod: string | null
   paymentStatusLabel: string
 }
@@ -220,6 +221,7 @@ export default function TripSheet() {
                 <TableHead className="text-center border-l">Publish</TableHead>
                 <TableHead className="text-center">Disc.</TableHead>
                 <TableHead className="text-center">Agent Com.</TableHead>
+                <TableHead className="text-center">Clawback</TableHead>
                 <TableHead className="text-center border-l">Total Price</TableHead>
                 <TableHead className="text-center">DP</TableHead>
                 <TableHead className="text-center">2nd DP / Payment</TableHead>
@@ -237,12 +239,12 @@ export default function TripSheet() {
                 const isNewMonth = gIdx === 0 || monthKey(g.startDate) !== monthKey(prevGroup.startDate)
                 const monthGapRow = isNewMonth && gIdx > 0 && (
                   <TableRow key={`gap-${g.id}`} className="hover:bg-transparent">
-                    <TableCell colSpan={14} className="h-4 p-0 border-0 bg-transparent" />
+                    <TableCell colSpan={15} className="h-4 p-0 border-0 bg-transparent" />
                   </TableRow>
                 )
                 const monthLabelRow = isNewMonth && (
                   <TableRow key={`month-${g.id}`} className="hover:bg-transparent">
-                    <TableCell colSpan={14} className="py-1.5 px-3 bg-muted/60 border-y">
+                    <TableCell colSpan={15} className="py-1.5 px-3 bg-muted/60 border-y">
                       <span className="text-xs font-bold tracking-wide text-foreground">
                         {formatDate(g.startDate, 'monthYear').toUpperCase()}
                       </span>
@@ -294,14 +296,18 @@ export default function TripSheet() {
                       {isFirstOfBooking && (
                         <>
                           <TableCell rowSpan={r.guestRowCount}>
+                            {/* Invoice number left, amount right — one aligned line per payment. */}
                             {r.invoices.length > 0 ? (
-                              <div className="flex flex-col gap-0.5">
+                              <div className="grid grid-cols-[auto_auto] items-center gap-x-4 gap-y-1 whitespace-nowrap">
                                 {r.invoices.map(inv => (
-                                  <a key={inv.paymentId} href={`/print/invoice/${inv.paymentId}`} target="_blank" rel="noopener noreferrer"
-                                    className="inline-flex items-center gap-1 text-brand hover:underline font-medium whitespace-nowrap">
-                                    {inv.invoiceNumber}
-                                    <ExternalLink className="h-3 w-3" />
-                                  </a>
+                                  <Fragment key={inv.paymentId}>
+                                    <a href={`/print/invoice/${inv.documentId}`} target="_blank" rel="noopener noreferrer"
+                                      className="inline-flex items-center gap-1 text-brand hover:underline font-medium">
+                                      {inv.invoiceNumber}
+                                      <ExternalLink className="h-3 w-3 shrink-0" />
+                                    </a>
+                                    <span className="text-right text-muted-foreground tabular-nums">{formatMoney(inv.amount, { currency: 'USD' })}</span>
+                                  </Fragment>
                                 ))}
                               </div>
                             ) : <span className="text-muted-foreground">—</span>}
@@ -309,6 +315,7 @@ export default function TripSheet() {
                           <TableCell rowSpan={r.guestRowCount} className="text-right border-l">{formatMoney(r.publish, { currency: 'USD' })}</TableCell>
                           <TableCell rowSpan={r.guestRowCount} className="text-right">{r.discountPct > 0 ? formatPercent(r.discountPct, { fraction: false, decimals: 2 }) : ''}</TableCell>
                           <TableCell rowSpan={r.guestRowCount} className="text-right">{r.agentCommission > 0 ? formatMoney(r.agentCommission, { currency: 'USD' }) : ''}</TableCell>
+                          <TableCell rowSpan={r.guestRowCount} className="text-right text-destructive">{r.clawback > 0 ? `-${formatMoney(r.clawback, { currency: 'USD' })}` : ''}</TableCell>
                           <TableCell rowSpan={r.guestRowCount} className="text-right border-l">
                             <div className="font-semibold">{formatMoney(r.totalUSD, { currency: 'USD' })}</div>
                             {r.totalIDR != null && <div className="text-[10px] text-muted-foreground">{formatMoney(r.totalIDR)}</div>}
@@ -411,19 +418,24 @@ export default function TripSheet() {
                         <div key={r0.bookingId} className="rounded-lg border p-3 text-xs space-y-2">
                           <div className="flex items-center justify-between flex-wrap gap-1.5">
                             <span className="font-mono text-[11px] text-muted-foreground">{r0.bookingCode}</span>
-                            <div className="flex items-center gap-1.5">
-                              <StatusBadge size="sm" tone={PAYMENT_STATUS_TONE[r0.paymentStatusLabel] ?? PAYMENT_STATUS_TONE.unpaid}>
-                                {r0.paymentStatusLabel === 'PAID' ? 'PAID' : r0.paymentStatusLabel.replace('_', ' ')}
-                              </StatusBadge>
+                            <StatusBadge size="sm" tone={PAYMENT_STATUS_TONE[r0.paymentStatusLabel] ?? PAYMENT_STATUS_TONE.unpaid}>
+                              {r0.paymentStatusLabel === 'PAID' ? 'PAID' : r0.paymentStatusLabel.replace('_', ' ')}
+                            </StatusBadge>
+                          </div>
+                          {r0.invoices.length > 0 && (
+                            <div className="rounded-md bg-muted/40 px-2.5 py-1.5 space-y-1">
                               {r0.invoices.map(inv => (
-                                <a key={inv.paymentId} href={`/print/invoice/${inv.paymentId}`} target="_blank" rel="noopener noreferrer"
-                                  className="inline-flex items-center gap-1 text-brand hover:underline font-medium">
-                                  {inv.invoiceNumber}
-                                  <ExternalLink className="h-3 w-3" />
-                                </a>
+                                <div key={inv.paymentId} className="flex items-center justify-between gap-3">
+                                  <a href={`/print/invoice/${inv.documentId}`} target="_blank" rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-1 text-brand hover:underline font-medium min-w-0">
+                                    <span className="truncate">{inv.invoiceNumber}</span>
+                                    <ExternalLink className="h-3 w-3 shrink-0" />
+                                  </a>
+                                  <span className="text-muted-foreground tabular-nums shrink-0">{formatMoney(inv.amount, { currency: 'USD' })}</span>
+                                </div>
                               ))}
                             </div>
-                          </div>
+                          )}
 
                           <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-3 gap-y-1.5 text-muted-foreground">
                             <span>Agent: <span className="text-foreground">{r0.agentName}</span></span>
@@ -445,6 +457,7 @@ export default function TripSheet() {
                             <span>Publish: <span className="text-foreground">{formatMoney(r0.publish, { currency: 'USD' })}</span></span>
                             {r0.discountPct > 0 && <span>Disc.: <span className="text-foreground">{formatPercent(r0.discountPct, { fraction: false, decimals: 2 })}</span></span>}
                             {r0.agentCommission > 0 && <span>Agent Com.: <span className="text-foreground">{formatMoney(r0.agentCommission, { currency: 'USD' })}</span></span>}
+                            {r0.clawback > 0 && <span>Clawback: <span className="text-destructive">-{formatMoney(r0.clawback, { currency: 'USD' })}</span></span>}
                             <span>TRIP: <span className="text-foreground">{formatMoney(r0.trip, { currency: 'USD' })}</span></span>
                             {r0.tnk > 0 && <span>TNK: <span className="text-foreground">{formatMoney(r0.tnk, { currency: 'USD' })}</span></span>}
                             <span>Total (USD): <span className="text-foreground font-semibold">{formatMoney(r0.totalUSD, { currency: 'USD' })}</span></span>

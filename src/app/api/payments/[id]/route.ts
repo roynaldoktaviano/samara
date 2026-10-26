@@ -150,6 +150,18 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         },
       }))
 
+      // Bill To / Net / commission note are one setting per booking — changing it on this invoice
+      // changes it on the booking's other invoices too, so DP and Pelunasan never disagree.
+      if (billToType !== undefined || body.showNetAmount !== undefined || body.showCommissionNote !== undefined) {
+        const view = await db.payment.findUnique({ where: { id }, select: { billToType: true, showNetAmount: true, showCommissionNote: true } })
+        if (view) {
+          await db.payment.updateMany({
+            where: { bookingId: existing.booking.id, id: { not: id }, status: { notIn: ['cancelled', 'rejected'] } },
+            data: view,
+          })
+        }
+      }
+
       logActivity({
         userId: actorId, userName: actorName, userRole: actorRole,
         action: isFirstGeneration ? 'GENERATE' : 'UPDATE',

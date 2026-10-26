@@ -7,6 +7,7 @@ import { emitTenantEvent } from '@/lib/realtime-bus'
 import { pickNextSalesUserId } from '@/lib/whatsapp-distribution'
 import { sendPushToUser } from '@/lib/push'
 import { isViewing } from '@/lib/chat-presence'
+import { ensureLeadForMetaDm, isNewContactSession, recordLeadContact } from '@/lib/lead-contact'
 
 // Facebook Messenger + Instagram Direct, both through the Messenger Platform (one Meta
 // App, each brand's Facebook Page with its linked Instagram account). Inbound events come
@@ -302,7 +303,8 @@ export async function handleMetaMessagingEvents(db: PrismaClient, tenantId: stri
           ...(!isEcho && { lastInboundAt: now, unreadCount: { increment: 1 } }),
         },
       })
-      let conversation = await db.instagramConversation.findUnique({ where: key, select: { id: true } }).then(c => c && touch(c.id))
+      const before = await db.instagramConversation.findUnique({ where: key, select: { id: true, leadId: true, lastInboundAt: true } })
+      let conversation = before && await touch(before.id)
       let isNew = false
       if (!conversation) {
         try {
@@ -360,6 +362,24 @@ export async function handleMetaMessagingEvents(db: PrismaClient, tenantId: stri
       changed = true
 
       if (isEcho) continue
+
+      // Every DM sender is a Lead — linked/created on their first message (also for an older
+      // thread that predates this), and each new contact (24h+ after their last message) goes
+      // into the lead's history. See src/lib/lead-contact.ts. Never blocks acking the webhook.
+      try {
+        const { leadId, created } = await ensureLeadForMetaDm(db, conversation.id)
+        const justLinked = !!leadId && !before?.leadId
+        if (leadId && (justLinked || (before && isNewContactSession(before.lastInboundAt, now)))) {
+          await recordLeadContact(db, { leadId, channel: platform, brand, instagramConversationId: conversation.id, message: preview, isFirstContact: created })
+        }
+        // Linking to an existing lead may have handed the chat to that lead's owner.
+        if (justLinked && !created) {
+          conversation = await db.instagramConversation.findUniqueOrThrow({ where: { id: conversation.id } })
+        }
+      } catch (e) {
+        console.error('[meta-dm] lead link/history failed', e)
+      }
+
       const who = conversation.displayName || (conversation.igUsername ? `@${conversation.igUsername}` : null) || profile?.displayName || 'customer'
       const label = META_DM_PLATFORM_LABELS[platform]
       const title = isNew ? `New ${label} DM: ${who}` : `${label}: ${who}`

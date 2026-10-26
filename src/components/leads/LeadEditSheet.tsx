@@ -15,7 +15,7 @@ import { NATIONALITIES } from '@/lib/nationalities'
 /* ── Types ── */
 export interface LeadFormState {
   firstName: string; lastName: string; nationality: string
-  email: string; phone: string; notes: string
+  email: string; phone: string; instagram: string; notes: string
   productInterest: string; destinationId: string
   travelStartDate: string; travelEndDate: string; travelSeason: string
   guestCount: string; leadQuality: string
@@ -23,7 +23,7 @@ export interface LeadFormState {
 }
 
 export const LEAD_FORM_EMPTY: LeadFormState = {
-  firstName: '', lastName: '', nationality: '', email: '', phone: '', notes: '',
+  firstName: '', lastName: '', nationality: '', email: '', phone: '', instagram: '', notes: '',
   productInterest: '', destinationId: '',
   travelStartDate: '', travelEndDate: '', travelSeason: '',
   guestCount: '', leadQuality: '',
@@ -38,6 +38,7 @@ export function toLeadFormState(data: any): LeadFormState {
     nationality: data.nationality ?? '',
     email:       data.email       ?? '',
     phone:       data.phone       ?? '',
+    instagram:   data.instagram   ?? '',
     notes:       data.notes       ?? '',
     productInterest: data.productInterest ?? '',
     destinationId:   data.destinationId   ?? '',
@@ -230,6 +231,9 @@ function ProfileFields({ form, setForm }: { form: LeadFormState; setForm: (f: Le
         </Field>
         <Field label="Phone" htmlFor="lead-phone">
           <Input id="lead-phone" type="tel" value={form.phone} onChange={set('phone')} placeholder="+62 812 3456 7890" />
+        </Field>
+        <Field label="Instagram" htmlFor="lead-instagram" col2>
+          <Input id="lead-instagram" value={form.instagram} onChange={set('instagram')} placeholder="username (without @)" />
         </Field>
         <Field label="Notes" htmlFor="lead-notes" col2>
           <Textarea id="lead-notes" value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} placeholder="Any additional context about this lead…" rows={3} />

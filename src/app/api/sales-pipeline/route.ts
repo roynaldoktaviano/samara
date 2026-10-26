@@ -15,7 +15,7 @@ const NEW_LOOKBACK_DAYS = 30
 const CLOSED_LOOKBACK_DAYS = 90
 const PER_COLUMN = 200
 
-export type PipelineChannel = 'website' | 'whatsapp' | 'manual'
+export type PipelineChannel = 'website' | 'whatsapp' | 'instagram' | 'manual'
 
 // Data for the "Sales Pipeline" board — every Lead regardless of channel (website form,
 // WhatsApp, manual), one card per person. SALES sees only the leads they own; ADMIN sees
@@ -54,10 +54,12 @@ export async function GET(req: NextRequest) {
   else if (ownerParam && ownerParam !== 'all') filters.push({ ownerId: ownerParam })
   if (channel === 'website') filters.push({ inquiries: { some: {} } })
   else if (channel === 'whatsapp') filters.push({ whatsappConversations: { some: salesChat } })
-  else if (channel === 'manual') filters.push({ inquiries: { none: {} }, whatsappConversations: { none: salesChat } })
-  // Brand = a SALES chat on that brand's number, or a website inquiry for that brand.
+  else if (channel === 'instagram') filters.push({ instagramConversations: { some: {} } })
+  else if (channel === 'manual') filters.push({ inquiries: { none: {} }, whatsappConversations: { none: salesChat }, instagramConversations: { none: {} } })
+  // Brand = a SALES chat on that brand's number, an IG/Messenger DM to that brand, or a website inquiry for that brand.
   if (brand) filters.push({ OR: [
     { whatsappConversations: { some: { ...salesChat, brand } } },
+    { instagramConversations: { some: { brand } } },
     { inquiries: { some: inquiryBrandWhere(brand) } },
   ] })
   if (q) filters.push({ OR: [

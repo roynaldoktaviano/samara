@@ -6,7 +6,7 @@ import { getGoogleAdsConversions, toGoogleAdsTime, GOOGLE_ADS_CONVERSION_HEADER 
 const HEADER = [
   'Month', 'Trip Date', 'Trip', 'Trip #', 'Type', 'Status',
   'Guest', 'Agent', 'Sales', 'Cabin', 'Invoice',
-  'Publish (USD)', 'Disc %', 'Agent Com (USD)', 'Total (USD)', 'Total (IDR)',
+  'Publish (USD)', 'Disc %', 'Agent Com (USD)', 'Clawback (USD)', 'Total (USD)', 'Total (IDR)',
   'DP (USD)', '2nd DP / Payment (USD)', 'Balance (USD)', 'Payment Status',
 ]
 
@@ -14,7 +14,7 @@ const MONTH_NAMES = ['JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE', 'JU
 
 // Column blocks that get merged across rows, mirroring the rowSpan cells in the in-app table.
 const TRIP_BLOCK    = { start: 1, end: 6 }   // B:F — Trip Date, Trip, Trip #, Type, Status
-const BOOKING_BLOCK = { start: 10, end: 20 } // K:T — Invoice ... Payment Status
+const BOOKING_BLOCK = { start: 10, end: 21 } // K:U — Invoice ... Payment Status
 const MONTH_COL = 0
 
 function fmtRange(start: Date, end: Date) {
@@ -97,6 +97,7 @@ function buildVesselSheet(groups: TripSheetGroup[]) {
           isFirstOfBooking ? round2(r.publish) : '',
           isFirstOfBooking ? (r.discountPct > 0 ? round2(r.discountPct) : '') : '',
           isFirstOfBooking ? (r.agentCommission > 0 ? round2(r.agentCommission) : '') : '',
+          isFirstOfBooking ? (r.clawback > 0 ? -round2(r.clawback) : '') : '',
           isFirstOfBooking ? round2(r.totalUSD) : '',
           isFirstOfBooking ? (r.totalIDR != null ? Math.round(r.totalIDR) : '') : '',
           isFirstOfBooking ? (r.dp > 0 ? round2(r.dp) : '') : '',

@@ -57,7 +57,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     }
     const body = await request.json()
     const {
-      firstName, lastName, nationality, email, phone, notes,
+      firstName, lastName, nationality, email, phone, instagram, notes,
       productInterest, destinationId, travelStartDate, travelEndDate, travelSeason,
       guestCount, leadQuality, budgetMin, budgetMax, budgetCurrency,
     } = body
@@ -69,6 +69,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       where: { id },
       data: {
         name, firstName, lastName, nationality, email, phone, notes,
+        ...(instagram !== undefined && { instagram: typeof instagram === 'string' ? instagram.trim().replace(/^@/, '') || null : null }),
         productInterest: productInterest || null,
         destinationId: destinationId || null,
         travelStartDate: travelStartDate ? new Date(travelStartDate) : null,

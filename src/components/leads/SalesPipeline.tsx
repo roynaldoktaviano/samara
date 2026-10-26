@@ -29,8 +29,8 @@ const TRIAGE_SHORT: Record<Exclude<WhatsappChatCategory, 'UNSORTED'>, string> = 
 const STAGNANT_HOURS = 24
 const UNOWNED = '__unowned__'
 
-type Channel = 'all' | 'website' | 'whatsapp' | 'manual'
-const CHANNEL_LABEL: Record<Channel, string> = { all: 'All channels', website: 'Website form', whatsapp: 'WhatsApp', manual: 'Manual' }
+type Channel = 'all' | 'website' | 'whatsapp' | 'instagram' | 'manual'
+const CHANNEL_LABEL: Record<Channel, string> = { all: 'All channels', website: 'Website form', whatsapp: 'WhatsApp', instagram: 'Instagram / Messenger', manual: 'Manual' }
 
 interface PipelineChat {
   id: string; brand: WhatsappBrand; lastMessageAt: string; lastMessagePreview: string | null; unreadCount: number
