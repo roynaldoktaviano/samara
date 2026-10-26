@@ -143,7 +143,8 @@ function dayStatusFromBookingStatus(status: string): DayStatus {
 function inRange(startDate: string, endDate: string, date: Date) {
   const start = new Date(startDate.split('T')[0] + 'T00:00:00')
   const end = new Date(endDate.split('T')[0] + 'T00:00:00')
-  return date >= start && date < end
+  // Inclusive of endDate — the checkout day is still a sailing day on the schedule.
+  return date >= start && date <= end
 }
 
 // Private charters / blocking events win; otherwise any day inside a shared (open) trip's

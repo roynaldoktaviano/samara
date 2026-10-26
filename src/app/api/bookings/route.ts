@@ -92,8 +92,9 @@ export async function GET(request: NextRequest) {
         guestCount: true, destination: true, destinationId: true, notes: true, salesperson: true, salespersonId: true, cancelReason: true,
         refundStatus: true, refundDecision: true, refundReason: true, refundProof: true, refundConfirmedAt: true, refundConfirmedBy: true,
         currency: true, exchangeRate: true, createdAt: true, hasDiving: true, hasSurfing: true, hasPhotoPackage: true,
-        useB2BCommission: true,
+        useB2BCommission: true, isComplimentary: true, complimentaryReason: true,
         salespersonUser: { select: { name: true } },
+        createdBy:       { select: { name: true } },
         yacht:     { select: { id: true, name: true, model: true, canDiving: true, canSurfing: true, capacity: true } },
         customer:  { select: { id: true, name: true, email: true, phone: true } },
         agent:        { select: { id: true, name: true, commissionOpenTrip: true, commissionPrivateCharter: true, commissionB2B: true } },
@@ -129,6 +130,7 @@ export async function GET(request: NextRequest) {
           startDate: b.startDate,
           endDate: b.endDate,
           status: b.status,
+          isComplimentary: b.isComplimentary,
           totalPrice: null,
           depositPaid: null,
           discount: null,
@@ -187,7 +189,31 @@ export async function POST(request: NextRequest) {
       holdCabinId,         // cabin id for open trip on-hold
       holdGuest,           // { name, phone } for on-hold bookings (no prior customer needed)
       holdUntil,           // ISO datetime string: hold expiry deadline
+      isComplimentary,     // boolean: free booking from Internal Event — no pricing/payment
+      complimentaryReason,
+      picId,               // complimentary only: Sales user who owns (is PIC of) the booking
     } = body
+
+    // Complimentary bookings are created from the Internal Event menu, which is Admin-only.
+    const comp = !!isComplimentary && !isOnHold
+    if (comp) {
+      const role = (session.user as { role?: string }).role ?? ''
+      if (!roleMatches(role, ['ADMIN', 'SUPER_ADMIN'])) {
+        return NextResponse.json({ error: 'Only Admin can create a complimentary booking' }, { status: 403 })
+      }
+      if (!String(complimentaryReason ?? '').trim()) {
+        return NextResponse.json({ error: 'Complimentary reason is required' }, { status: 400 })
+      }
+    }
+    // PIC of a complimentary booking must be a Sales user — the Admin stays recorded as creator.
+    let pic: { id: string; name: string | null } | null = null
+    if (comp) {
+      const u = picId ? await db.user.findUnique({ where: { id: String(picId) }, select: { id: true, name: true, email: true, role: true } }) : null
+      if (!u || !roleMatches(u.role, ['SALES'])) {
+        return NextResponse.json({ error: 'Choose a Sales user as PIC' }, { status: 400 })
+      }
+      pic = { id: u.id, name: u.name ?? u.email }
+    }
 
     if (isOnHold) {
       // On-hold: only need trip info + guest name (or existing customer id)
@@ -395,37 +421,40 @@ export async function POST(request: NextRequest) {
       data: {
         bookingCode,
         customerId:    leadCustomerId,
-        agentId:        agentId        || null,
-        agentContactId: agentContactId || null,
-        useB2BCommission: agentId ? !!useB2BCommission : false,
+        agentId:        comp ? null : (agentId        || null),
+        agentContactId: comp ? null : (agentContactId || null),
+        useB2BCommission: agentId && !comp ? !!useB2BCommission : false,
         openTripId:    openTripId || null,
-        source:        source || 'DIRECT',
+        source:        comp ? 'DIRECT' : (source || 'DIRECT'),
         tripType:      tripType || 'PRIVATE_CHARTER',
         yachtId:       yachtId || null,
         startDate:     new Date(startDate),
         endDate:       new Date(endDate),
         destination:   destination || null,
         destinationId: destinationId || null,
-        totalPrice:    isOnHold ? 0 : total,
-        depositPaid:   isOnHold ? 0 : paid,
-        discount:      parseFloat(discount) || 0,
-        vatType:       vatType || null,
-        vatValue:      parseFloat(vatValue) || 0,
-        depositDueDate: depositDueDate ? new Date(depositDueDate) : null,
-        finalDueDate:   finalDueDate   ? new Date(finalDueDate)   : null,
+        totalPrice:    isOnHold || comp ? 0 : total,
+        depositPaid:   isOnHold || comp ? 0 : paid,
+        discount:      comp ? 0 : (parseFloat(discount) || 0),
+        vatType:       comp ? null : (vatType || null),
+        vatValue:      comp ? 0 : (parseFloat(vatValue) || 0),
+        depositDueDate: depositDueDate && !comp ? new Date(depositDueDate) : null,
+        finalDueDate:   finalDueDate   && !comp ? new Date(finalDueDate)   : null,
         holdUntil:      isOnHold && holdUntil ? new Date(holdUntil) : null,
-        status:         isOnHold ? 'on_hold' : paymentStatus(paid, total),
+        status:         isOnHold ? 'on_hold' : comp ? 'confirmed' : paymentStatus(paid, total),
+        isComplimentary:     comp,
+        complimentaryReason: comp ? String(complimentaryReason).trim() : null,
         guestCount:     isOnHold ? 1 : resolvedGuests.length,
         crewRequired:   crewRequired ?? false,
         hasDiving:      hasDiving ?? false,
         hasSurfing:     hasSurfing ?? false,
         hasPhotoPackage: hasPhotoPackage ?? false,
         notes:          notes || null,
-        voucherCode:    voucherCode || null,
+        voucherCode:    comp ? null : (voucherCode || null),
         currency:       currency || 'USD',
         exchangeRate:   (currency && currency !== 'USD' && exchangeRate) ? parseFloat(exchangeRate) : null,
-        salesperson:    session?.user?.name || null,
-        salespersonId:  session?.user?.id   || null,
+        salesperson:    pic ? pic.name : (session?.user?.name || null),
+        salespersonId:  pic ? pic.id   : (session?.user?.id   || null),
+        createdById:    session?.user?.id   || null,
         guests: {
           create: isOnHold
             ? [{ customerId: leadCustomerId, isLead: true, cabinId: holdCabinId || null }]
@@ -435,7 +464,7 @@ export async function POST(request: NextRequest) {
                 isLead:     g.isLead ?? false,
               })),
         },
-        services: !isOnHold && (services ?? []).filter((s: { name?: string }) => s.name?.trim()).length > 0
+        services: !isOnHold && !comp && (services ?? []).filter((s: { name?: string }) => s.name?.trim()).length > 0
           ? {
               create: (services as { name: string; price: number | string; qty?: number }[])
                 .filter(s => s.name?.trim())
@@ -490,7 +519,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Increment voucher usage atomically — only if still under maxUses
-    if (voucherCode) {
+    if (voucherCode && !comp) {
       const code = String(voucherCode).toUpperCase().trim()
       await db.$executeRaw`
         UPDATE vouchers
@@ -505,7 +534,7 @@ export async function POST(request: NextRequest) {
     // the booking itself. See src/app/api/finance/agent-clawback/** for how Finance sets
     // rates/reviews the ledger, and src/lib/agent-clawback.ts for how the applicable rate
     // (possibly scoped to this yacht/trip type) is resolved.
-    if (!isOnHold && agentId) {
+    if (!isOnHold && !comp && agentId) {
       resolveClawbackRatePerNight(db, agentId, yachtId || null, tripType || 'PRIVATE_CHARTER')
         .then(async ratePerNight => {
           if (ratePerNight <= 0) return
@@ -530,7 +559,9 @@ export async function POST(request: NextRequest) {
     logActivity({
       userId, userName, userRole,
       action: 'CREATE', entity: 'Booking', entityId: booking.id,
-      detail: `New booking ${booking.bookingCode}`,
+      detail: comp
+        ? `New complimentary booking ${booking.bookingCode} — PIC: ${pic?.name ?? '-'}`
+        : `New booking ${booking.bookingCode}`,
     }, db).catch(() => {})
 
     scheduleTripSheetSync(db, tripSheetId)

@@ -22,7 +22,7 @@ import {
   Plus, Search, Edit, BedDouble, AlertCircle,
   CreditCard, Receipt, Upload, Trash2, Loader2, Pencil, PlaneTakeoff, FileText, User, Building2,
   SlidersHorizontal, X, Calendar, Ship, Tag, Layers, RotateCw, Waves, ChevronRight, ChevronLeft, Clock, Users,
-  Link2, Copy, Check, ExternalLink, Crown, FileCheck, UserPlus,
+  Link2, Copy, Check, ExternalLink, Crown, FileCheck, UserPlus, Gift,
 } from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
 import { BookingWizard } from './BookingWizard'
@@ -78,6 +78,9 @@ interface BookingRecord {
   agent?:        { id: string; name: string; commissionOpenTrip?: number; commissionPrivateCharter?: number; commissionB2B?: number }
   agentContact?: { id: string; name: string; email?: string | null; whatsapp?: string | null } | null
   useB2BCommission?: boolean
+  isComplimentary?: boolean
+  complimentaryReason?: string | null
+  createdBy?: { name: string | null } | null
   services?:     Array<{ id: string; name: string; price: number; quantity: number }>
   clawbackEntries?: Array<{ id: string; amount: number; bookingId: string | null }>
   salespersonId?: string | null
@@ -1401,6 +1404,11 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                           <BookingStatusBadge status={effStatus} />
                         )
                       })()}
+                      {b.isComplimentary && (
+                        <StatusBadge tone="success" size="sm" className="mt-1 font-semibold [&>svg]:size-2.5" title={b.complimentaryReason ?? undefined}>
+                          <Gift className="w-2.5 h-2.5" /> Complimentary
+                        </StatusBadge>
+                      )}
                       {b.status === 'on_hold' && b.holdUntil && (() => {
                         const exp = new Date(b.holdUntil)
                         const expired = exp < new Date()
@@ -2708,6 +2716,11 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                           </span>
                         )
                       })()}
+                      {db_.isComplimentary && (
+                        <StatusBadge tone="success" size="sm" className="font-semibold [&>svg]:size-2.5" title={db_.complimentaryReason ? `Reason: ${db_.complimentaryReason}` : undefined}>
+                          <Gift className="w-2.5 h-2.5" /> Complimentary
+                        </StatusBadge>
+                      )}
                       <button
                         type="button"
                         onClick={() => setDetailBooking(null)}
@@ -2939,8 +2952,20 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                         <div className="divide-y">
                           {(db_.salespersonUser?.name ?? db_.salesperson) && (
                             <div className="flex justify-between px-3 py-2">
-                              <span className="text-muted-foreground">Sales</span>
+                              <span className="text-muted-foreground">{db_.isComplimentary ? 'PIC (Sales)' : 'Sales'}</span>
                               <span className="font-medium">{db_.salespersonUser?.name ?? db_.salesperson}</span>
+                            </div>
+                          )}
+                          {db_.isComplimentary && db_.createdBy?.name && (
+                            <div className="flex justify-between px-3 py-2">
+                              <span className="text-muted-foreground">Created by</span>
+                              <span className="font-medium">{db_.createdBy.name}</span>
+                            </div>
+                          )}
+                          {db_.isComplimentary && db_.complimentaryReason && (
+                            <div className="flex justify-between gap-4 px-3 py-2">
+                              <span className="text-muted-foreground shrink-0">Complimentary reason</span>
+                              <span className="font-medium text-right">{db_.complimentaryReason}</span>
                             </div>
                           )}
                           {db_.source === 'AGENT' && db_.agent && (

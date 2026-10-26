@@ -8,6 +8,7 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -25,7 +26,7 @@ import { Calendar } from '@/components/ui/calendar'
 import { cn } from '@/lib/utils'
 import {
   User, Users, Ship, Map, Plus, Trash2, BookOpen,
-  ChevronLeft, ChevronRight, Check, Search, X, Loader2, Tag, AlertCircle, CalendarIcon, Crown, ChevronsUpDown,
+  ChevronLeft, ChevronRight, Check, Search, X, Loader2, Tag, AlertCircle, CalendarIcon, Crown, ChevronsUpDown, Gift,
 } from 'lucide-react'
 import type { DateRange } from 'react-day-picker'
 import { NATIONALITIES } from '@/lib/nationalities'
@@ -80,6 +81,7 @@ interface Props {
   preselectedOpenTripId?: string
   preselectedYachtId?: string
   completeBookingId?: string  // if set, wizard is in "complete on-hold booking" mode
+  complimentary?: boolean     // free booking from Internal Event — skips source + pricing/payment
 }
 
 function getAgeYears(dob: string | Date | null | undefined): number | null {
@@ -94,6 +96,12 @@ const STEPS = [
   { num: 1, label: 'Trip Info' },
   { num: 2, label: 'Guests & Cabins' },
   { num: 3, label: 'Pricing' },
+]
+// Complimentary bookings have no pricing — step 3 only asks for the reason.
+const COMP_STEPS = [
+  { num: 1, label: 'Trip Info' },
+  { num: 2, label: 'Guests & Cabins' },
+  { num: 3, label: 'Confirm' },
 ]
 
 /* ─── Helpers ────────────────────────────────────────────────────────────── */
@@ -112,10 +120,12 @@ const CURRENCIES: Record<CurrencyCode, { symbol: string; label: string; rateToUS
 
 const TODAY = new Date().toISOString().split('T')[0]
 
-export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, preselectedOpenTripId, preselectedYachtId, completeBookingId }: Props) {
+export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, preselectedOpenTripId, preselectedYachtId, completeBookingId, complimentary = false }: Props) {
   const { data: session } = useSession()
   const sharingCabin = !!(session?.user as { tenantFeatures?: Record<string, boolean> })?.tenantFeatures?.sharingCabin
   const isAdmin = roleMatches((session?.user as { role?: string })?.role, ['ADMIN', 'SUPER_ADMIN'])
+
+  const steps = complimentary ? COMP_STEPS : STEPS
 
   /* phase state */
   const [phase,   setPhase]   = useState<Phase>('source')
@@ -189,6 +199,11 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
   const [voucherApplied, setVoucherApplied] = useState<{ id: string; code: string; name: string; type: string; value: number } | null>(null)
   const [voucherError,   setVoucherError]   = useState('')
 
+  /* complimentary */
+  const [compReason, setCompReason] = useState('')
+  const [picId,      setPicId]      = useState('')
+  const [salesUsers, setSalesUsers] = useState<{ id: string; name: string }[]>([])
+
   /* remote data */
   const [yachts,    setYachts]    = useState<YachtOpt[]>([])
   const [agents,    setAgents]    = useState<AgentOpt[]>([])
@@ -249,6 +264,20 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
   const [quickNatOpen,         setQuickNatOpen]         = useState(false)
   const [quickNatQuery,        setQuickNatQuery]        = useState('')
   const [quickSaving,         setQuickSaving]         = useState(false)
+
+  /* complimentary: always Direct (no agent/commission), go straight to trip type */
+  useEffect(() => {
+    if (!open || !complimentary) return
+    setSource('DIRECT')
+    setPhase('tripType')
+    // PIC must be a Sales user (combined roles like SALES_MARKETING count too).
+    fetch('/api/users').then(r => r.ok ? r.json() : []).then((users: { id: string; name: string | null; email: string; role: string }[]) => {
+      setSalesUsers(users
+        .filter(u => roleMatches(u.role, ['SALES']))
+        .map(u => ({ id: u.id, name: u.name || u.email }))
+        .sort((a, b) => a.name.localeCompare(b.name)))
+    }).catch(() => setSalesUsers([]))
+  }, [open, complimentary])
 
   /* pre-select open trip from calendar — still ask source first */
   useEffect(() => {
@@ -616,6 +645,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
     setSvc([]); setDeposit(''); setDepDue(''); setFinalDue('')
     setManualRate(1); setBaseFocused(false); setSvcFocused(null)
     setVoucherApplied(null); setVoucherError('')
+    setCompReason(''); setPicId('')
     setBookedCustomerIds([]); setExistingCabinOccupancy({})
     setOriginalHoldCabins({})
     setCabinExtraBeds({})
@@ -813,6 +843,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
       if (tripType === 'OPEN_TRIP') return guests.every(g => !!g.cabinId)
       return true // PC: cabin optional
     }
+    if (step === 3 && complimentary) return !!picId && compReason.trim().length > 0
     if (step === 3) return !!(parseFloat(basePrice) > 0) && !!depositDueDate && !!finalDueDate
     return true
   }
@@ -963,6 +994,7 @@ notes:         resolvedNotes,
         guests: guests.map(guestPayload),
         services: services.filter(s => s.name.trim()).map(s => ({ name: s.name, price: s.price, qty: parseInt(s.qty) || 1 })),
         confirmCloseOpenTrips,
+        ...(complimentary && { isComplimentary: true, complimentaryReason: compReason.trim(), picId }),
       }
 
       const res = await fetch('/api/bookings', {
@@ -996,7 +1028,7 @@ notes:         resolvedNotes,
   /* ── Step indicator ── */
   const stepIndicator = () => (
     <div className="flex items-center justify-center gap-0 mb-4">
-      {STEPS.map((s, i) => (
+      {steps.map((s, i) => (
         <div key={s.num} className="flex items-center">
           <div className="flex items-center gap-1.5">
             <div
@@ -1014,7 +1046,7 @@ notes:         resolvedNotes,
               {s.label}
             </span>
           </div>
-          {i < STEPS.length - 1 && (
+          {i < steps.length - 1 && (
             <div className="h-px w-4 mx-1 sm:w-8 sm:mx-2 transition-colors"
               style={{ backgroundColor: step > s.num ? ACCENT : 'var(--border)' }} />
           )}
@@ -1353,7 +1385,7 @@ notes:         resolvedNotes,
         type="button"
         variant="ghost"
         size="sm"
-        onClick={() => setPhase(source === 'AGENT' ? 'agentInfo' : 'source')}
+        onClick={() => complimentary ? onOpenChange(false) : setPhase(source === 'AGENT' ? 'agentInfo' : 'source')}
         className="-ml-2.5 gap-1 text-muted-foreground hover:text-foreground"
       >
         <ChevronLeft className="w-4 h-4" /> Back
@@ -1911,7 +1943,7 @@ notes:         resolvedNotes,
     return (
       <div className="space-y-4">
         {/* On Hold checkbox — hidden in complete-booking mode */}
-        {completeBookingId ? null : <label className={cn(
+        {completeBookingId || complimentary ? null : <label className={cn(
           'flex items-center gap-3 rounded-lg border px-3 py-2.5 cursor-pointer select-none transition-colors',
           isOnHold ? 'border-warning/30 bg-warning/10' : 'border-border hover:bg-muted/30',
         )}>
@@ -2712,6 +2744,74 @@ notes:         resolvedNotes,
   }
 
   /* ════════════════════════════════════════════
+     STEP 3 — CONFIRM (complimentary: no pricing/payment)
+  ════════════════════════════════════════════ */
+  const stepComplimentary = () => {
+    const isOT     = tripType === 'OPEN_TRIP'
+    const vessel   = isOT ? selectedOT?.yacht.name : selectedYacht?.name
+    const from     = isOT ? selectedOT?.startDate : startDate
+    const to       = isOT ? selectedOT?.endDate   : endDate
+    const dest     = isOT ? selectedOT?.destination : destination
+    const named    = guests.filter(g => !g.isPlaceholder)
+    const leadName = guests.find(g => g.isLead)?.name
+    const cabinNames = [...new Set(guests.map(g => g.cabinId).filter(Boolean))]
+      .map(id => cabins.find(c => c.id === id)?.name ?? '—')
+    const rows: [string, string | undefined][] = [
+      ['Trip',        isOT ? selectedOT?.title : 'Private Charter'],
+      ['Vessel',      vessel],
+      ['Dates',       from && to ? `${formatDate(from)} – ${formatDate(to)}` : undefined],
+      ['Destination', dest || undefined],
+      ['Lead guest',  leadName],
+      ['Pax',         `${guests.length}${guests.length > named.length ? ` (${guests.length - named.length} TBA)` : ''}`],
+      ['Cabins',      cabinNames.length ? cabinNames.join(', ') : undefined],
+    ]
+    return (
+      <div className="space-y-4 max-w-xl mx-auto">
+        <div className="flex items-start gap-3 rounded-lg border border-success/30 bg-success/10 px-3 py-2.5">
+          <Gift className="w-4 h-4 text-success mt-0.5 shrink-0" />
+          <div className="text-sm">
+            <p className="font-medium text-foreground">Complimentary booking — no payment</p>
+            <p className="text-xs text-muted-foreground">Saved as Confirmed with a total of {formatMoney(0, { currency: 'USD' })}. No invoice, deposit or due dates.</p>
+          </div>
+        </div>
+
+        <div className="rounded-lg border divide-y text-sm">
+          {rows.filter(([, v]) => v).map(([k, v]) => (
+            <div key={k} className="flex justify-between gap-4 px-3 py-2">
+              <span className="text-muted-foreground">{k}</span>
+              <span className="font-medium text-right">{v}</span>
+            </div>
+          ))}
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="bw-comp-pic" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">PIC (Sales) <span className="text-destructive">*</span></Label>
+          <Select value={picId} onValueChange={setPicId}>
+            <SelectTrigger id="bw-comp-pic" className="h-9 w-full text-sm"><SelectValue placeholder="Select sales PIC" /></SelectTrigger>
+            <SelectContent>
+              {salesUsers.length === 0
+                ? <div className="px-2 py-1.5 text-xs text-muted-foreground">No sales users found</div>
+                : salesUsers.map(u => <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <p className="text-[11px] text-muted-foreground">The booking is owned by this sales person; you stay recorded as the creator.</p>
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="bw-comp-reason" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Reason <span className="text-destructive">*</span></Label>
+          <Textarea
+            id="bw-comp-reason"
+            rows={3}
+            placeholder="e.g. Owner's family trip, influencer collaboration, agent fam trip"
+            value={compReason}
+            onChange={e => setCompReason(e.target.value)}
+          />
+        </div>
+      </div>
+    )
+  }
+
+  /* ════════════════════════════════════════════
      STEP 3 — PRICING
   ════════════════════════════════════════════ */
   const step3 = () => {
@@ -3241,11 +3341,11 @@ notes:         resolvedNotes,
 
   /* ─── Dialog title ── */
   const dialogTitle =
-    completeBookingId     ? STEPS[step - 1].label :
+    completeBookingId     ? steps[step - 1].label :
     phase === 'source'    ? 'New Booking' :
     phase === 'agentInfo' ? 'Agent Information' :
-    phase === 'tripType'  ? 'Select Trip Type' :
-    STEPS[step - 1].label
+    phase === 'tripType'  ? (complimentary ? 'Complimentary Booking' : 'Select Trip Type') :
+    steps[step - 1].label
 
   return (
     <>
@@ -3258,7 +3358,9 @@ notes:         resolvedNotes,
               {completeBookingId && (
                 <Badge className="text-xs bg-warning/15 text-warning border-warning/30 border">Complete Booking</Badge>
               )}
-              <Badge variant="outline" className="text-xs">{source === 'AGENT' ? 'Via Agent' : 'Direct'}</Badge>
+              {complimentary
+                ? <Badge className="text-xs bg-success/15 text-success border-success/30 border"><Gift className="w-3 h-3 mr-1" />Complimentary</Badge>
+                : <Badge variant="outline" className="text-xs">{source === 'AGENT' ? 'Via Agent' : 'Direct'}</Badge>}
               <Badge variant="outline" className="text-xs">
                 {tripType === 'PRIVATE_CHARTER' ? 'Private Charter' : 'Open Trip'}
               </Badge>
@@ -3315,7 +3417,7 @@ notes:         resolvedNotes,
                 {step === 1 && tripType === 'PRIVATE_CHARTER' && step1PC()}
                 {step === 1 && tripType === 'OPEN_TRIP'       && step1OT()}
                 {step === 2 && step2()}
-                {step === 3 && step3()}
+                {step === 3 && (complimentary ? stepComplimentary() : step3())}
               </div>
             )}
             </>)}
@@ -3377,7 +3479,7 @@ notes:         resolvedNotes,
                 disabled={!canNext()}
                 onClick={() => handleSubmit()}
               >
-                {submitting ? 'Saving…' : completeBookingId ? 'Confirm & Complete' : 'Confirm Booking'}
+                {submitting ? 'Saving…' : completeBookingId ? 'Confirm & Complete' : complimentary ? 'Confirm Complimentary' : 'Confirm Booking'}
               </Button>
             )}
           </div>

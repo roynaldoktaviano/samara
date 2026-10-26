@@ -130,6 +130,7 @@ model User {
   createdAt                              DateTime                          @default(now())
   updatedAt                              DateTime                          @updatedAt
   bookings                               Booking[]                         @relation("SalespersonBookings")
+  createdBookings                        Booking[]                         @relation("BookingCreatedBy")
   leadStageUpdates                       Lead[]                            @relation("LeadStageUpdatedBy")
   ownedLeads                             Lead[]                            @relation("LeadOwner")
   leadAssignmentsFrom                    LeadAssignmentLog[]               @relation("LeadAssignmentFrom")
@@ -1043,6 +1044,14 @@ model Booking {
   voucherCode                   String?
   currency                      String                    @default("USD")
   exchangeRate                  Float?
+  // Complimentary booking (created from Calendar › Add Internal Event): no pricing or payment —
+  // totalPrice stays 0 and status stays 'confirmed' instead of the payment-derived pending/paid.
+  isComplimentary               Boolean                   @default(false)
+  complimentaryReason           String?
+  // Who actually entered the booking. Usually the same as salespersonId; differs for a
+  // complimentary booking, where an Admin creates it and assigns a Sales user as PIC.
+  createdById                   String?
+  createdBy                     User?                     @relation("BookingCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   createdAt                     DateTime                  @default(now())
   updatedAt                     DateTime                  @updatedAt
   customer                      Customer                  @relation(fields: [customerId], references: [id], onDelete: Restrict)

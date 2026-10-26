@@ -5,11 +5,11 @@ import { useSession } from 'next-auth/react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
-import { Calendar as CalendarIcon, List, CalendarRange, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Plus, Clock, DollarSign, Pencil, X, Loader2, Check, BookOpen, Anchor, CheckCircle, LayoutGrid, Waves, BedDouble, Crown, UserMinus, UserPlus, Search as SearchIcon, AlertCircle, Maximize2, Minimize2, Users, Trash2, ArrowRightLeft, Printer } from 'lucide-react'
+import { Calendar as CalendarIcon, List, CalendarRange, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Plus, Clock, DollarSign, Pencil, X, Loader2, Check, BookOpen, Anchor, CheckCircle, LayoutGrid, Waves, BedDouble, Crown, UserMinus, UserPlus, Search as SearchIcon, AlertCircle, Maximize2, Minimize2, Users, Trash2, ArrowRightLeft, Printer, Gift } from 'lucide-react'
 import { roleMatches } from '@/lib/role-utils'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Select, SelectContent, SelectItem, SelectSeparator, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -79,6 +79,8 @@ interface InternalEventItem {
 const INTERNAL_EVENT_LABEL: Record<InternalEventType, string> = {
   DOCKING: 'Docking', CROSSING: 'Crossing', OVERHAUL: 'Overhaul', COMPANY_NEED: 'Company Need',
 }
+// Extra option in the Internal Event type picker — opens the booking wizard instead of saving an event.
+const COMPLIMENTARY_BOOKING = '__complimentary_booking__'
 const INTERNAL_EVENT_COLOR: Record<InternalEventType, string> = {
   DOCKING: '#7dd3fc',       // light blue
   CROSSING: '#1e3a8a',      // dark blue
@@ -876,6 +878,7 @@ export default function CalendarView() {
   const [wizardOpenTripId, setWizardOpenTripId] = useState<string | undefined>(undefined)
   const [wizardYachtId, setWizardYachtId]       = useState<string | undefined>(undefined)
   const [completeBookingId, setCompleteBookingId] = useState<string | undefined>(undefined)
+  const [wizardComplimentary, setWizardComplimentary] = useState(false)
   const [otDetailOpen, setOtDetailOpen]         = useState(false)
   const [otDetail, setOtDetail]                 = useState<any>(null)
   const [otDetailLoading, setOtDetailLoading]   = useState(false)
@@ -2973,12 +2976,13 @@ export default function CalendarView() {
       {/* ── New Booking Wizard ── */}
       <BookingWizard
         open={wizardOpen}
-        onOpenChange={v => { setWizardOpen(v); if (!v) { setWizardOpenTripId(undefined); setWizardYachtId(undefined); setCompleteBookingId(undefined) } }}
+        onOpenChange={v => { setWizardOpen(v); if (!v) { setWizardOpenTripId(undefined); setWizardYachtId(undefined); setCompleteBookingId(undefined); setWizardComplimentary(false) } }}
         onSuccess={() => { fetchBookings(); fetchOpenTrips() }}
         preselectedDate={selectedDate}
         preselectedOpenTripId={wizardOpenTripId}
         preselectedYachtId={wizardYachtId}
         completeBookingId={completeBookingId}
+        complimentary={wizardComplimentary}
       />
 
       {/* ── Waiting List Modal ── */}
@@ -3020,7 +3024,18 @@ export default function CalendarView() {
 
                 <div className="space-y-1.5">
                   <Label htmlFor="ie-type" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Type</Label>
-                  <Select disabled={!isAdmin} value={internalEventForm.type} onValueChange={v => setInternalEventForm(f => ({ ...f, type: v as InternalEventType }))}>
+                  <Select disabled={!isAdmin} value={internalEventForm.type} onValueChange={v => {
+                    // Not an internal event type — hands off to the booking wizard in complimentary
+                    // mode (guests + cabins like a normal booking, but no pricing/payment).
+                    if (v === COMPLIMENTARY_BOOKING) {
+                      setInternalEventModalOpen(false)
+                      setSelectedDate(internalEventForm.startDate)
+                      setWizardComplimentary(true)
+                      setWizardOpen(true)
+                      return
+                    }
+                    setInternalEventForm(f => ({ ...f, type: v as InternalEventType }))
+                  }}>
                     <SelectTrigger id="ie-type" className="h-9 w-full text-sm"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       {(Object.keys(INTERNAL_EVENT_LABEL) as InternalEventType[]).map(t => (
@@ -3031,6 +3046,17 @@ export default function CalendarView() {
                           </span>
                         </SelectItem>
                       ))}
+                      {!internalEventEditing && (
+                        <>
+                          <SelectSeparator />
+                          <SelectItem value={COMPLIMENTARY_BOOKING}>
+                            <span className="flex items-center gap-2">
+                              <Gift className="w-3 h-3 shrink-0 text-success" />
+                              Complimentary Booking
+                            </span>
+                          </SelectItem>
+                        </>
+                      )}
                     </SelectContent>
                   </Select>
                 </div>

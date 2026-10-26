@@ -72,7 +72,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         totalPrice: true, depositPaid: true, status: true, tripType: true,
         depositDueDate: true, finalDueDate: true,
         depositDueDateInvoiceOverride: true, finalDueDateInvoiceOverride: true,
-        yachtId: true, endDate: true,
+        yachtId: true, endDate: true, isComplimentary: true,
       },
     })
     if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
@@ -99,9 +99,10 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 
     // 'completed' and 'cancelled' are manual overrides
     const manualOverride = status === 'completed' || status === 'cancelled'
+    // Complimentary bookings have no payments, so they stay 'confirmed' unless manually overridden.
     const computedStatus = manualOverride
       ? (status as 'completed' | 'cancelled')
-      : paymentStatus(newDeposit, newTotal)
+      : existing.isComplimentary ? 'confirmed' : paymentStatus(newDeposit, newTotal)
 
     // Extending a due date can optionally leave the invoice showing the original date.
     // syncXToInvoice is only present when the change comes from the dedicated "Extend Due Date"
@@ -235,7 +236,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
     const existing = await db.booking.findUnique({
       where:  { id },
-      select: { totalPrice: true, depositPaid: true, status: true, bookingCode: true, tripType: true, yachtId: true, endDate: true },
+      select: { totalPrice: true, depositPaid: true, status: true, bookingCode: true, tripType: true, yachtId: true, endDate: true, isComplimentary: true },
     })
     if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
@@ -326,7 +327,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       || (status === 'pending' && existing.status === 'on_hold')
     const computedStatus = manualOverride
       ? (status as 'completed' | 'cancelled' | 'pending')
-      : paymentStatus(existing.depositPaid, existing.totalPrice)
+      : existing.isComplimentary ? 'confirmed' : paymentStatus(existing.depositPaid, existing.totalPrice)
 
     const userId   = session?.user?.id   ?? ''
     const userName = session?.user?.name ?? session?.user?.email ?? 'Unknown'

@@ -18,7 +18,7 @@ export async function recalcOpenTripPrice(db: Db, bookingId: string) {
   const booking = await db.booking.findUnique({
     where: { id: bookingId },
     select: {
-      tripType: true, status: true, depositPaid: true, discount: true, vatType: true, vatValue: true,
+      tripType: true, status: true, isComplimentary: true, depositPaid: true, discount: true, vatType: true, vatValue: true,
       openTrip: { select: { startDate: true, endDate: true, pricePerCabin: true, destinationId: true } },
       guests:   { select: { cabinId: true } },
       services: { select: { price: true, quantity: true } },
@@ -26,6 +26,8 @@ export async function recalcOpenTripPrice(db: Db, bookingId: string) {
   })
   if (!booking || booking.tripType !== 'OPEN_TRIP' || !booking.openTrip) return
   if (['cancelled', 'completed', 'on_hold'].includes(booking.status)) return
+  // Complimentary = free by definition — never re-price it from its cabins.
+  if (booking.isComplimentary) return
 
   const nights = Math.max(1, Math.round(
     (new Date(booking.openTrip.endDate).getTime() - new Date(booking.openTrip.startDate).getTime()) / 86400000
