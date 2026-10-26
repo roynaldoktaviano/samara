@@ -15,7 +15,11 @@ import { useFileDrop } from '@/hooks/useFileDrop'
 import { renderLocationOptions } from '@/components/purchasing/LocationOptions'
 import { TripPicker, tripLinkBody, type TripOption } from '@/components/purchasing/TripPicker'
 
-interface CatalogItem { id: string; sku: string; name: string; type: PurchaseItemType; category: string; baseUnit: string; purchaseUnit: string | null; conversionFactor: number; imageKey: string | null }
+// 'INVENTORY' entries are the selected vessel's on-board InventoryItems (rooms/categories),
+// folded into the same catalog grid: category = room, sku = item number.
+type CatalogType = PurchaseItemType | 'INVENTORY'
+interface CatalogItem { id: string; sku: string; name: string; type: CatalogType; category: string; baseUnit: string; purchaseUnit: string | null; conversionFactor: number; imageKey: string | null; inventoryItemId?: string; inventoryCategory?: string; onBoardQty?: number }
+interface InventoryApiItem { id: string; itemNumber: string; name: string; quantity: number; photoKey: string | null; room: { name: string }; category: { name: string } }
 interface EmployeeLite { id: string; fullName: string; employeeNumber: string; department: string | null }
 interface LocationLite { id: string; name: string; type: string; parentId: string | null; yachtId?: string | null }
 interface CartLine {
@@ -30,6 +34,7 @@ interface CartLine {
   quantity: number
   isCustom: boolean
   notes: string
+  sourceInventoryItemId?: string
 }
 
 // Category names come from free-text data entry (some "CHAMPAGNE", some "Dairy") —
@@ -77,7 +82,7 @@ function RequestOrderContent() {
   const [loading, setLoading] = useState(!!linkToken)
 
   const [search, setSearch] = useState('')
-  const [activeType, setActiveType] = useState<'All' | PurchaseItemType>('BEVERAGE')
+  const [activeType, setActiveType] = useState<'All' | CatalogType>('BEVERAGE')
   const [activeCat, setActiveCat] = useState('All')
 
   const [cart, setCart] = useState<CartLine[]>([])
@@ -90,8 +95,10 @@ function RequestOrderContent() {
   const [neededByDate, setNeededByDate] = useState('')
   const [isUrgent, setIsUrgent] = useState(false)
   const [urgentReason, setUrgentReason] = useState('')
-  const [purpose, setPurpose] = useState<'STOCK_INVENTORY' | 'TRIP'>('STOCK_INVENTORY')
-  const [division, setDivision] = useState<'BOAT_OPERATION' | 'BUILDING_MATERIAL' | ''>('')
+  // Requests from this link are always a Boat Operation trip request — Stock & Inventory and
+  // Building Material PRs are raised inside the ERP.
+  const purpose = 'TRIP' as const
+  const division = 'BOAT_OPERATION' as const
   const [trip, setTrip] = useState<TripOption | null>(null)
   const [trips, setTrips] = useState<TripOption[]>([])
 
@@ -127,16 +134,38 @@ function RequestOrderContent() {
     })
   }, [tenantQS, linkToken])
 
-  const categories = useMemo(() => {
-    const inType = activeType === 'All' ? catalog : catalog.filter(i => i.type === activeType)
-    return ['All', ...Array.from(new Set(inType.map(i => i.category)))]
-  }, [catalog, activeType])
+  // The Inventory tab browses whichever vessel is picked under Vessel / Location.
+  const [inventory, setInventory] = useState<CatalogItem[]>([])
+  const [inventoryLoading, setInventoryLoading] = useState(false)
+  useEffect(() => {
+    if (!linkToken || !locationId) { setInventory([]); return }
+    let cancelled = false
+    setInventoryLoading(true)
+    fetch(`/api/hr/request-orders/inventory${tenantQS}&locationId=${encodeURIComponent(locationId)}`)
+      .then(r => r.ok ? r.json() : [])
+      .then((rows: InventoryApiItem[]) => {
+        if (cancelled) return
+        setInventory((Array.isArray(rows) ? rows : []).map(r => ({
+          id: `inv-${r.id}`, sku: r.itemNumber, name: r.name, type: 'INVENTORY', category: r.room.name,
+          baseUnit: 'pcs', purchaseUnit: null, conversionFactor: 1, imageKey: r.photoKey,
+          inventoryItemId: r.id, inventoryCategory: r.category.name, onBoardQty: r.quantity,
+        })))
+      })
+      .finally(() => { if (!cancelled) setInventoryLoading(false) })
+    return () => { cancelled = true }
+  }, [linkToken, tenantQS, locationId])
+  const allItems = useMemo(() => [...catalog, ...inventory], [catalog, inventory])
 
-  const filtered = useMemo(() => catalog.filter(i =>
+  const categories = useMemo(() => {
+    const inType = activeType === 'All' ? allItems : allItems.filter(i => i.type === activeType)
+    return ['All', ...Array.from(new Set(inType.map(i => i.category)))]
+  }, [allItems, activeType])
+
+  const filtered = useMemo(() => allItems.filter(i =>
     (activeType === 'All' || i.type === activeType) &&
     (activeCat === 'All' || i.category === activeCat) &&
     (!search || i.name.toLowerCase().includes(search.toLowerCase()) || i.sku.toLowerCase().includes(search.toLowerCase()))
-  ), [catalog, activeType, activeCat, search])
+  ), [allItems, activeType, activeCat, search])
 
   const PAGE_SIZE = 12
   const [page, setPage] = useState(1)
@@ -157,7 +186,11 @@ function RequestOrderContent() {
     setCart(prev => {
       const existing = prev.find(l => l.key === key)
       if (existing) return prev.map(l => l.key === key ? { ...l, quantity: l.quantity + 1 } : l)
-      return [...prev, { key, itemId: item.id, itemName: item.name, category: item.category, unit, imageKeys: item.imageKey ? [item.imageKey] : [], quantity: 1, isCustom: false, notes: '' }]
+      return [...prev, {
+        key, itemId: item.inventoryItemId ? null : item.id, itemName: item.name, category: item.category, unit,
+        imageKeys: item.imageKey ? [item.imageKey] : [], quantity: 1, isCustom: false, notes: '',
+        sourceInventoryItemId: item.inventoryItemId,
+      }]
     })
   }
 
@@ -212,19 +245,18 @@ function RequestOrderContent() {
     if (!locationId) { setSubmitError('Please select a delivery location'); return }
     if (cart.length === 0) { setSubmitError('Add at least one item to the request'); return }
     if (isUrgent && !urgentReason.trim()) { setSubmitError('Please explain why this request is urgent'); return }
-    if (purpose === 'TRIP' && !trip) { setSubmitError('Please select which trip this request is for'); return }
+    if (!trip) { setSubmitError('Please select which trip this request is for'); return }
     const missingDamage = cart.find(l => l.requestType === 'REPLACEMENT' && !l.damageDetail?.trim())
     if (missingDamage) { setSubmitError(`Please describe the damage on "${missingDamage.itemName}" (replacement)`); return }
-    if (!division) { setSubmitError('Please select what this request is for'); return }
     setSubmitting(true)
     const res = await fetch(`/api/hr/request-orders${tenantQS}`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         employeeId, locationId: locationId || null, notes,
         neededByDate: neededByDate || null, isUrgent, urgentReason: isUrgent ? urgentReason : null,
-        purpose, ...(purpose === 'TRIP' ? tripLinkBody(trip) : {}),
+        purpose, ...tripLinkBody(trip),
         division,
-        items: cart.map(l => ({ itemId: l.itemId, itemName: l.itemName, quantity: l.quantity, unit: l.unit, notes: l.notes, imageKeys: l.imageKeys, requestType: l.requestType ?? 'NEW', damageDetail: l.requestType === 'REPLACEMENT' ? l.damageDetail : undefined })),
+        items: cart.map(l => ({ itemId: l.itemId, itemName: l.itemName, quantity: l.quantity, unit: l.unit, notes: l.notes, imageKeys: l.imageKeys, requestType: l.requestType ?? 'NEW', damageDetail: l.requestType === 'REPLACEMENT' ? l.damageDetail : undefined, sourceInventoryItemId: l.sourceInventoryItemId })),
       }),
     })
     const data = await res.json()
@@ -236,7 +268,7 @@ function RequestOrderContent() {
   function resetForm() {
     setCart([]); setEmployeeId(''); setLocationId(''); setNotes('')
     setNeededByDate(''); setIsUrgent(false); setUrgentReason('')
-    setPurpose('STOCK_INVENTORY'); setDivision(''); setTrip(null)
+    setTrip(null)
     setSuccess(null); setCartOpen(false)
   }
 
@@ -324,6 +356,10 @@ function RequestOrderContent() {
                   {ITEM_TYPE_LABELS[t]}
                 </button>
               ))}
+              <button onClick={() => { setActiveType('INVENTORY'); setActiveCat('All') }}
+                className={cn('px-3 py-1.5 rounded-md text-xs font-semibold transition-colors', activeType === 'INVENTORY' ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground')}>
+                Inventory
+              </button>
             </div>
             <div className="flex gap-1.5 flex-wrap pt-2.5 border-t">
               {categories.map(c => (
@@ -336,21 +372,27 @@ function RequestOrderContent() {
             </div>
           </div>
 
-          {loading ? (
+          {loading || (activeType === 'INVENTORY' && inventoryLoading) ? (
             <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-2.5">
               {[...Array(12)].map((_, i) => <div key={i} className="rounded-xl border bg-white h-44 animate-pulse" />)}
             </div>
           ) : filtered.length === 0 ? (
             <div className="text-center py-20 text-muted-foreground">
               <Package className="h-10 w-10 mx-auto mb-3 opacity-20" />
-              <p className="text-sm">No items found. Try a different search or use Custom Request.</p>
+              <p className="text-sm">
+                {activeType === 'INVENTORY' && !locationId
+                  ? 'Select a vessel under Vessel / Location in Your Request to browse its inventory.'
+                  : 'No items found. Try a different search or use Custom Request.'}
+              </p>
             </div>
           ) : (
             <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-2.5">
               {pageItems.map(item => {
+                // Crew order in the purchase unit (bottle, pack…) — the base unit (ml, g) is only
+                // offered when an item has no separate purchase unit.
                 const hasPurchaseUnit = !!(item.purchaseUnit && item.purchaseUnit !== item.baseUnit && item.conversionFactor > 1)
-                const baseLine = cart.find(l => l.key === `${item.id}-${item.baseUnit}`)
-                const purchaseLine = hasPurchaseUnit ? cart.find(l => l.key === `${item.id}-${item.purchaseUnit}`) : undefined
+                const unit = hasPurchaseUnit ? item.purchaseUnit! : item.baseUnit
+                const line = cart.find(l => l.key === `${item.id}-${unit}`)
                 return (
                   <div key={item.id} className="bg-white rounded-xl border overflow-hidden flex flex-col shadow-sm hover:shadow-md hover:border-primary/40 transition-all">
                     <div className="aspect-square bg-muted/40 flex items-center justify-center overflow-hidden">
@@ -360,43 +402,26 @@ function RequestOrderContent() {
                       <span className="text-[9px] font-semibold uppercase tracking-wide text-primary-strong">{item.category}</span>
                       <p className="text-xs font-medium leading-snug mt-0.5 line-clamp-2">{item.name}</p>
                       <p className="text-[11px] text-muted-foreground mt-0.5">
-                        {hasPurchaseUnit ? `${item.baseUnit} · ${item.purchaseUnit} (${item.conversionFactor}×)` : item.baseUnit}
+                        {item.inventoryItemId
+                          ? `${item.inventoryCategory} · ${item.onBoardQty} on board`
+                          : hasPurchaseUnit ? `${item.purchaseUnit} (${item.conversionFactor} ${item.baseUnit})` : item.baseUnit}
                       </p>
-                      <div className="mt-auto pt-2 space-y-1">
-                        {baseLine ? (
+                      <div className="mt-auto pt-2">
+                        {line ? (
                           <div className="flex items-center justify-between gap-1 bg-muted/50 rounded-lg p-1">
-                            <button onClick={() => changeQty(baseLine.key, -1)} aria-label={`Decrease ${item.name} (${item.baseUnit})`} className="w-6 h-6 rounded-md bg-white shadow-sm flex items-center justify-center hover:bg-muted transition-colors">
+                            <button onClick={() => changeQty(line.key, -1)} aria-label={`Decrease ${item.name} (${unit})`} className="w-6 h-6 rounded-md bg-white shadow-sm flex items-center justify-center hover:bg-muted transition-colors">
                               <Minus className="h-3 w-3" />
                             </button>
-                            <span className="text-[11px] font-semibold tabular-nums">{baseLine.quantity} {item.baseUnit}</span>
-                            <button onClick={() => changeQty(baseLine.key, 1)} aria-label={`Increase ${item.name} (${item.baseUnit})`} className="w-6 h-6 rounded-md bg-white shadow-sm flex items-center justify-center hover:bg-muted transition-colors">
+                            <span className="text-[11px] font-semibold tabular-nums">{line.quantity} {unit}</span>
+                            <button onClick={() => changeQty(line.key, 1)} aria-label={`Increase ${item.name} (${unit})`} className="w-6 h-6 rounded-md bg-white shadow-sm flex items-center justify-center hover:bg-muted transition-colors">
                               <Plus className="h-3 w-3" />
                             </button>
                           </div>
                         ) : (
-                          <button onClick={() => addToCart(item, item.baseUnit)}
+                          <button onClick={() => addToCart(item, unit)}
                             className="w-full flex items-center justify-center gap-1 py-1.5 rounded-lg bg-primary hover:bg-primary-hover text-primary-foreground text-[11px] font-semibold transition-colors">
-                            <Plus className="h-3 w-3" /> Add {item.baseUnit}
+                            <Plus className="h-3 w-3" /> Add {unit}
                           </button>
-                        )}
-
-                        {hasPurchaseUnit && (
-                          purchaseLine ? (
-                            <div className="flex items-center justify-between gap-1 bg-muted/50 rounded-lg p-1">
-                              <button onClick={() => changeQty(purchaseLine.key, -1)} aria-label={`Decrease ${item.name} (${item.purchaseUnit})`} className="w-6 h-6 rounded-md bg-white shadow-sm flex items-center justify-center hover:bg-muted transition-colors">
-                                <Minus className="h-3 w-3" />
-                              </button>
-                              <span className="text-[11px] font-semibold tabular-nums">{purchaseLine.quantity} {item.purchaseUnit}</span>
-                              <button onClick={() => changeQty(purchaseLine.key, 1)} aria-label={`Increase ${item.name} (${item.purchaseUnit})`} className="w-6 h-6 rounded-md bg-white shadow-sm flex items-center justify-center hover:bg-muted transition-colors">
-                                <Plus className="h-3 w-3" />
-                              </button>
-                            </div>
-                          ) : (
-                            <button onClick={() => addToCart(item, item.purchaseUnit!)}
-                              className="w-full flex items-center justify-center gap-1 py-1.5 rounded-lg text-[11px] font-semibold border-2 border-primary text-primary-strong transition-colors hover:bg-primary/10">
-                              <Plus className="h-3 w-3" /> Add {item.purchaseUnit}
-                            </button>
-                          )
                         )}
                       </div>
                     </div>
@@ -454,7 +479,7 @@ function RequestOrderContent() {
               neededByDate={neededByDate} setNeededByDate={setNeededByDate}
               isUrgent={isUrgent} setIsUrgent={setIsUrgent}
               urgentReason={urgentReason} setUrgentReason={setUrgentReason}
-              purpose={purpose} setPurpose={setPurpose} division={division} setDivision={setDivision} trip={trip} setTrip={setTrip} trips={trips}
+              trip={trip} setTrip={setTrip} trips={trips}
               submit={submit} submitting={submitting} submitError={submitError}
             />
           </div>
@@ -480,7 +505,7 @@ function RequestOrderContent() {
                 neededByDate={neededByDate} setNeededByDate={setNeededByDate}
                 isUrgent={isUrgent} setIsUrgent={setIsUrgent}
                 urgentReason={urgentReason} setUrgentReason={setUrgentReason}
-                purpose={purpose} setPurpose={setPurpose} division={division} setDivision={setDivision} trip={trip} setTrip={setTrip} trips={trips}
+                trip={trip} setTrip={setTrip} trips={trips}
                 submit={submit} submitting={submitting} submitError={submitError}
                 embedded
               />
@@ -576,7 +601,7 @@ function RequestSidebar({
   locations, locationId, setLocationId,
   notes, setNotes,
   neededByDate, setNeededByDate, isUrgent, setIsUrgent, urgentReason, setUrgentReason,
-  purpose, setPurpose, division, setDivision, trip, setTrip, trips,
+  trip, setTrip, trips,
   submit, submitting, submitError,
   embedded = false,
 }: {
@@ -589,8 +614,6 @@ function RequestSidebar({
   neededByDate: string; setNeededByDate: (v: string) => void
   isUrgent: boolean; setIsUrgent: (v: boolean) => void
   urgentReason: string; setUrgentReason: (v: string) => void
-  purpose: 'STOCK_INVENTORY' | 'TRIP'; setPurpose: (v: 'STOCK_INVENTORY' | 'TRIP') => void
-  division: 'BOAT_OPERATION' | 'BUILDING_MATERIAL' | ''; setDivision: (v: 'BOAT_OPERATION' | 'BUILDING_MATERIAL') => void
   trip: TripOption | null; setTrip: (t: TripOption | null) => void
   trips: TripOption[]
   submit: () => void; submitting: boolean; submitError: string
@@ -664,37 +687,10 @@ function RequestSidebar({
           </select>
         </div>
 
-        {/* Purpose */}
+        {/* Trip — requests from this link are always for a trip */}
         <div className="space-y-1.5">
-          <label id={`${uid}-purpose-label`} className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Purpose <span className="text-destructive">*</span></label>
-          <div role="group" aria-labelledby={`${uid}-purpose-label`} className="inline-flex gap-1 bg-muted rounded-lg p-1 w-full">
-            <button type="button" onClick={() => setPurpose('STOCK_INVENTORY')}
-              className={cn('flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors', purpose === 'STOCK_INVENTORY' ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground')}>
-              Stock & Inventory
-            </button>
-            <button type="button" onClick={() => setPurpose('TRIP')}
-              className={cn('flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors', purpose === 'TRIP' ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground')}>
-              Trip
-            </button>
-          </div>
-          {purpose === 'TRIP' && (
-            <TripPicker trips={trips} value={trip} onChange={setTrip} suggestedYachtId={locations.find(l => l.id === locationId)?.yachtId} />
-          )}
-        </div>
-
-        {/* Division — routes this request to the right Purchasing person */}
-        <div className="space-y-1.5">
-          <label id={`${uid}-division-label`} className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">What is this for? <span className="text-destructive">*</span></label>
-          <div role="group" aria-labelledby={`${uid}-division-label`} className={cn('inline-flex gap-1 bg-muted rounded-lg p-1 w-full', !division && submitError && 'ring-1 ring-destructive')}>
-            <button type="button" onClick={() => setDivision('BOAT_OPERATION')}
-              className={cn('flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors', division === 'BOAT_OPERATION' ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground')}>
-              Boat Operation
-            </button>
-            <button type="button" onClick={() => setDivision('BUILDING_MATERIAL')}
-              className={cn('flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors', division === 'BUILDING_MATERIAL' ? 'bg-white shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground')}>
-              Building Material
-            </button>
-          </div>
+          <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Trip <span className="text-destructive">*</span></label>
+          <TripPicker trips={trips} value={trip} onChange={setTrip} suggestedYachtId={locations.find(l => l.id === locationId)?.yachtId} />
         </div>
 
         {/* Items */}

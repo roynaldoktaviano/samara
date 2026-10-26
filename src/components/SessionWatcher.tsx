@@ -6,7 +6,15 @@ import { usePathname } from 'next/navigation'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 
-const PUBLIC_PATHS = ['/agent/calendar', '/login']
+// Only pages behind the staff login watch for an expired session. Allowlist (not a public-path
+// blocklist) so every token/PIN link — /kalender, /request-order, /po-receive, /crew-receive,
+// /guest-form, /cashier, /agent/calendar, etc., including ones added later — is never interrupted
+// when the same browser logs out of the ERP in another tab.
+const PROTECTED_PATHS = ['/admin', '/super-admin', '/calendar', '/print', '/proto-documents']
+
+function isProtected(pathname: string) {
+  return pathname === '/' || PROTECTED_PATHS.some(p => pathname === p || pathname.startsWith(p + '/'))
+}
 
 export function SessionWatcher() {
   const { status } = useSession()
@@ -15,7 +23,7 @@ export function SessionWatcher() {
   const [expired, setExpired] = useState(false)
 
   useEffect(() => {
-    if (PUBLIC_PATHS.some(p => pathname === p || pathname.startsWith(p + '/'))) return
+    if (!isProtected(pathname)) return
     if (status === 'authenticated') {
       wasAuthenticated.current = true
     }

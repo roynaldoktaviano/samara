@@ -50,6 +50,8 @@ interface RequestItemInput {
   imageKeys?: string[]
   requestType?: 'NEW' | 'REPLACEMENT'
   damageDetail?: string
+  // Requesting more of an existing on-board InventoryItem (the page's Inventory tab)
+  sourceInventoryItemId?: string
 }
 
 export async function POST(req: NextRequest) {
@@ -101,6 +103,13 @@ export async function POST(req: NextRequest) {
   }
   const tripLink = purpose === 'TRIP' ? await resolveTripLink(db, { tripBookingId, openTripId }) : { tripBookingId: null, openTripId: null }
   if ('error' in tripLink) return NextResponse.json({ error: 'Selected trip was not found' }, { status: 400 })
+  const inventoryItemIds = [...new Set(items.map(it => it.sourceInventoryItemId).filter((x): x is string => !!x))]
+  if (inventoryItemIds.length > 0) {
+    const found = await db.inventoryItem.count({ where: { id: { in: inventoryItemIds }, isActive: true } })
+    if (found !== inventoryItemIds.length) {
+      return NextResponse.json({ error: 'One or more selected inventory items were not found' }, { status: 400 })
+    }
+  }
 
   // Route to the requester's manager for approval when the org chart supports it
   // (Employee.managerId set, and that manager has an ERP login to actually see/act on
@@ -149,6 +158,8 @@ export async function POST(req: NextRequest) {
           imageKeys: Array.isArray(it.imageKeys) ? it.imageKeys.filter(Boolean) : [],
           requestType: it.requestType === 'REPLACEMENT' ? 'REPLACEMENT' : 'NEW',
           damageDetail: it.requestType === 'REPLACEMENT' ? (it.damageDetail?.trim() || null) : null,
+          // Inventory lines carry no catalog itemId — never mix the two links on one line.
+          sourceInventoryItemId: !it.itemId && it.sourceInventoryItemId ? it.sourceInventoryItemId : null,
         })),
       },
     },
