@@ -647,14 +647,6 @@ export default function InvoicePage() {
           </div>
         )}
 
-        {/* Notes */}
-        {payment.notes && (
-          <div style={{ margin: '0 22px 12px', padding: '8px 12px', backgroundColor: '#fffbeb', border: '1px solid #fde68a', borderRadius: 5, flexShrink: 0 }}>
-            <div style={{ fontSize: 8, fontWeight: 700, letterSpacing: 1, color: '#92400e', textTransform: 'uppercase', marginBottom: 3 }}>Notes</div>
-            <div style={{ fontSize: 10, color: '#78350f' }}>{payment.notes}</div>
-          </div>
-        )}
-
         {/* ── Payment Link ── */}
         {payment.paymentLink && (
           <div style={{ margin: '0 22px 12px', padding: '10px 14px', backgroundColor: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 5, flexShrink: 0 }}>
@@ -665,7 +657,7 @@ export default function InvoicePage() {
         )}
 
         {/* ── Bank Details ── */}
-        {!payment.paymentLink && payment.bank && (
+        {payment.bank && (
           <div style={{ margin: '0 22px 12px', border: '1px solid #e5e7eb', borderRadius: 5, overflow: 'hidden', flexShrink: 0 }}>
             <div style={{ backgroundColor: '#f9fafb', padding: '5px 12px', borderBottom: '1px solid #e5e7eb' }}>
               <span style={{ fontSize: 8, fontWeight: 700, letterSpacing: 2, color: '#6b7280', textTransform: 'uppercase' }}>Bank Details</span>
