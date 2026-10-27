@@ -92,25 +92,28 @@ export async function GET(request: NextRequest) {
         orderBy: { createdAt: sort },
         skip: (page - 1) * limit,
         take: limit,
-        // Meta tab shows the latest instant-form answer (yacht, campaign, trip date) per row.
-        ...(channel === 'meta' && { include: { inquiries: {
-          where: { source: 'META_LEAD_AD' },
-          orderBy: { createdAt: 'desc' as const },
-          take: 1,
-          select: { createdAt: true, utmSource: true, utmCampaign: true, tripType: true, checkInDate: true, checkOutDate: true, guestCount: true },
-        } } }),
-        // Chat tabs show the latest thread's brand + last message per row.
-        ...(channel === 'whatsapp' && { include: { whatsappConversations: {
-          where: { category: 'SALES' },
-          orderBy: { lastMessageAt: 'desc' as const },
-          take: 1,
-          select: { brand: true, lastMessageAt: true, lastMessagePreview: true },
-        } } }),
-        ...(channel === 'instagram' && { include: { instagramConversations: {
-          orderBy: { lastMessageAt: 'desc' as const },
-          take: 1,
-          select: { platform: true, brand: true, lastMessageAt: true, lastMessagePreview: true },
-        } } }),
+        include: {
+          owner: { select: { id: true, name: true } },
+          // Meta tab shows the latest instant-form answer (yacht, campaign, trip date) per row.
+          ...(channel === 'meta' && { inquiries: {
+            where: { source: 'META_LEAD_AD' },
+            orderBy: { createdAt: 'desc' as const },
+            take: 1,
+            select: { createdAt: true, utmSource: true, utmCampaign: true, tripType: true, checkInDate: true, checkOutDate: true, guestCount: true },
+          } }),
+          // Chat tabs show the latest thread's brand + last message per row.
+          ...(channel === 'whatsapp' && { whatsappConversations: {
+            where: { category: 'SALES' },
+            orderBy: { lastMessageAt: 'desc' as const },
+            take: 1,
+            select: { brand: true, lastMessageAt: true, lastMessagePreview: true },
+          } }),
+          ...(channel === 'instagram' && { instagramConversations: {
+            orderBy: { lastMessageAt: 'desc' as const },
+            take: 1,
+            select: { platform: true, brand: true, lastMessageAt: true, lastMessagePreview: true },
+          } }),
+        },
       }),
       db.lead.count({ where }),
     ])

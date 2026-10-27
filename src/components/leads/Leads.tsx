@@ -41,6 +41,7 @@ interface Lead {
   createdAt: string
   isSubscribed: boolean | null
   stage: LeadStage
+  owner?: { id: string; name: string } | null
   productInterest?: string | null
   destinationId?: string | null
   travelStartDate?: string | null
@@ -604,6 +605,7 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail }: {
                   )}
                   <TableHead>Name</TableHead>
                   <TableHead>Stage</TableHead>
+                  <TableHead>Sales</TableHead>
                   {channel === 'meta' && <>
                     <TableHead>Yacht</TableHead>
                     <TableHead>Campaign</TableHead>
@@ -640,6 +642,7 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail }: {
                         </div>
                       </TableCell>
                       <TableCell><Skeleton className="h-4 w-20 rounded-full" /></TableCell>
+                      <TableCell><Skeleton className="h-3 w-16" /></TableCell>
                       {channel === 'meta' && <>
                         <TableCell><Skeleton className="h-3 w-16" /></TableCell>
                         <TableCell><Skeleton className="h-3 w-32" /></TableCell>
@@ -658,7 +661,7 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail }: {
                   ))
                 ) : leads.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={(isAdmin ? 8 : 7) + (channel === 'meta' ? 3 : isChatChannel(channel) ? 2 : 0)} className="py-12 text-center text-muted-foreground">No leads found</TableCell>
+                    <TableCell colSpan={(isAdmin ? 9 : 8) + (channel === 'meta' ? 3 : isChatChannel(channel) ? 2 : 0)} className="py-12 text-center text-muted-foreground">No leads found</TableCell>
                   </TableRow>
                 ) : leads.map(l => (
                   <TableRow
@@ -685,6 +688,9 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail }: {
                     </TableCell>
                     <TableCell>
                       <Badge className={`${LEAD_STAGE_COLOR[l.stage]} border-transparent`}>{LEAD_STAGE_LABEL[l.stage]}</Badge>
+                    </TableCell>
+                    <TableCell>
+                      {l.owner ? <span className="text-xs whitespace-nowrap">{l.owner.name}</span> : <span className="text-muted-foreground text-xs">—</span>}
                     </TableCell>
                     {channel === 'meta' && (() => {
                       const mi = l.inquiries?.[0]

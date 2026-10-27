@@ -5,6 +5,7 @@ import { getDb } from '@/lib/get-db'
 
 import { roleMatches } from '@/lib/role-utils'
 import { effectiveConsumptionMode } from '@/lib/purchasing/consumptionMode'
+import { qtyLabel } from '@/lib/purchasing/units'
 
 const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE']
 
@@ -22,7 +23,7 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
       countedBy: { select: { id: true, name: true } },
       approvedBy: { select: { id: true, name: true } },
       items: {
-        include: { item: { select: { id: true, sku: true, name: true, baseUnit: true, standardCost: true } } },
+        include: { item: { select: { id: true, sku: true, name: true, baseUnit: true, purchaseUnit: true, conversionFactor: true, standardCost: true } } },
         orderBy: { itemName: 'asc' },
       },
     },
@@ -72,7 +73,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       countedBy: { select: { id: true, name: true } },
       approvedBy: { select: { id: true, name: true } },
       items: {
-        include: { item: { select: { id: true, sku: true, name: true, baseUnit: true, standardCost: true } } },
+        include: { item: { select: { id: true, sku: true, name: true, baseUnit: true, purchaseUnit: true, conversionFactor: true, standardCost: true } } },
         orderBy: { itemName: 'asc' },
       },
     },
@@ -128,7 +129,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
             locationName: updated.location.name,
             qty: Math.abs(variance),
             value: varianceValue,
-            reason: ci.reason ?? `Variance ${variance > 0 ? '+' : ''}${variance} ${ci.item?.baseUnit ?? ''} during opname ${updated.countNumber}`,
+            reason: ci.reason ?? `Variance ${variance > 0 ? '+' : ''}${ci.item ? qtyLabel(ci.item, variance) : variance} during opname ${updated.countNumber}`,
             referenceId: updated.id,
             referenceType: 'StockCount',
             status: 'OPEN',

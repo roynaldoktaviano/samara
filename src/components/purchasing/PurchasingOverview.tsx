@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts'
 import { AlertTriangle, ArrowRightLeft, Package, Clock } from 'lucide-react'
 import { formatMoneyCompact, formatCompact, formatNumber, formatDate } from '@/lib/format'
+import { StockQty } from '@/components/purchasing/StockQty'
 
 interface KPIs {
   totalValue: number
@@ -28,7 +29,7 @@ interface Movement {
   type: string; quantity: number; from: string | null; to: string | null; by: string | null
 }
 interface ExpiryRow {
-  id: string; itemName: string; baseUnit: string; locationName: string
+  id: string; itemName: string; baseUnit: string; purchaseUnit: string | null; conversionFactor: number; locationName: string
   quantity: number; expiresAt: string | null; daysLeft: number | null
 }
 interface OverviewData {
@@ -250,7 +251,7 @@ export default function PurchasingOverview() {
                       {m.purchaseUnit && m.purchaseQty !== null ? (
                         <>
                           <p className="text-sm font-semibold tabular-nums">
-                            {formatNumber(m.purchaseQty)} <span className="text-xs font-normal text-muted-foreground">{m.purchaseUnit}</span>
+                            {formatNumber(m.purchaseQty, { decimals: 3 })} <span className="text-xs font-normal text-muted-foreground">{m.purchaseUnit}</span>
                           </p>
                           <p className="text-xs text-muted-foreground tabular-nums">= {formatNumber(m.quantity)} {m.baseUnit}</p>
                         </>
@@ -289,7 +290,7 @@ export default function PurchasingOverview() {
                       <p className="text-xs text-muted-foreground">{row.locationName}</p>
                     </div>
                     <div className="text-right shrink-0">
-                      <p className="text-sm tabular-nums">{formatNumber(row.quantity)} <span className="text-xs text-muted-foreground">{row.baseUnit}</span></p>
+                      <StockQty item={row} qty={row.quantity} className="block text-sm tabular-nums" />
                       {row.daysLeft !== null && (
                         <p className={`text-xs font-semibold ${isExpired ? 'text-destructive' : isUrgent ? 'text-warning' : 'text-muted-foreground'}`}>
                           {isExpired ? `${Math.abs(row.daysLeft)}d ago` : `${row.daysLeft}d left`}

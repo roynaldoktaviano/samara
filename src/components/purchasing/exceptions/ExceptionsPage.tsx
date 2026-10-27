@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react'
 import { AlertTriangle, Clock, Package, RefreshCw, X, CheckCircle2 } from 'lucide-react'
 import { formatDate, formatMoney, formatNumber } from '@/lib/format'
 import { StatusBadge, type StatusTone } from '@/components/ui/status-badge'
+import { qtyLabel } from '@/lib/purchasing/units'
+import { StockQty } from '@/components/purchasing/StockQty'
 
 interface InventoryException {
   id: string; type: string; itemName: string; locationName: string
@@ -13,7 +15,7 @@ interface InventoryException {
   createdAt: string
 }
 interface LowStockItem {
-  item: { id: string; sku: string; name: string; category: string; baseUnit: string; minStock: number; reorderQty: number }
+  item: { id: string; sku: string; name: string; category: string; baseUnit: string; purchaseUnit: string; conversionFactor: number; minStock: number; reorderQty: number }
   totalQty: number; minStock: number; deficit: number; severity: 'critical' | 'high' | 'medium'
 }
 interface OverduePO {
@@ -21,7 +23,7 @@ interface OverduePO {
   expectedAt: string; daysOverdue: number; itemCount: number
 }
 interface StaleStock {
-  item: { name: string; sku: string; baseUnit: string }
+  item: { name: string; sku: string; baseUnit: string; purchaseUnit: string; conversionFactor: number }
   location: { name: string; type: string }
   qty: number
 }
@@ -299,10 +301,10 @@ export default function ExceptionsPage() {
                     </td>
                     <td className="px-4 py-3"><span className="px-2 py-0.5 rounded-full text-xs bg-muted text-muted-foreground">{item.category}</span></td>
                     <td className={`px-4 py-3 text-right font-semibold tabular-nums ${severity === 'critical' ? 'text-destructive' : 'text-warning'}`}>
-                      {totalQty} <span className="font-normal text-muted-foreground text-xs">{item.baseUnit}</span>
+                      <StockQty item={item} qty={totalQty} />
                     </td>
-                    <td className="px-4 py-3 text-right text-muted-foreground tabular-nums">{minStock} {item.baseUnit}</td>
-                    <td className="px-4 py-3 text-right font-medium text-destructive tabular-nums">-{deficit} {item.baseUnit}</td>
+                    <td className="px-4 py-3 text-right text-muted-foreground tabular-nums">{qtyLabel(item, minStock)}</td>
+                    <td className="px-4 py-3 text-right font-medium text-destructive tabular-nums">-{qtyLabel(item, deficit)}</td>
                     <td className="px-4 py-3 text-center">
                       <StatusBadge tone={SEVERITY[severity]?.tone ?? 'neutral'}>{SEVERITY[severity]?.label}</StatusBadge>
                     </td>
@@ -366,7 +368,7 @@ export default function ExceptionsPage() {
                       <p className="text-xs text-muted-foreground font-mono mt-0.5">{s.item.sku}</p>
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">{s.location.name}</td>
-                    <td className="px-4 py-3 text-right font-medium tabular-nums">{s.qty} <span className="text-xs text-muted-foreground font-normal">{s.item.baseUnit}</span></td>
+                    <td className="px-4 py-3 text-right font-medium tabular-nums"><StockQty item={s.item} qty={s.qty} /></td>
                   </tr>
                 ))}
               </tbody>

@@ -24,7 +24,7 @@ export async function GET() {
     db.purchaseItem.findMany({
       where: { isStockTracked: true },
       orderBy: { name: 'asc' },
-      select: { id: true, sku: true, name: true, category: true, baseUnit: true, purchaseUnit: true },
+      select: { id: true, sku: true, name: true, category: true, baseUnit: true, purchaseUnit: true, conversionFactor: true },
     }),
   ])
   return NextResponse.json({ types, items })

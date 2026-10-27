@@ -11,12 +11,14 @@ import { Plus, X, ChevronRight, CheckCircle2, PackagePlus, AlertTriangle, Trash2
 import { renderLocationOptions } from '@/components/purchasing/LocationOptions'
 import InventoryQuickAdd from './InventoryQuickAdd'
 import { formatDate } from '@/lib/format'
+import { displayQty, hasPurchaseUnit, type UnitInfo } from '@/lib/purchasing/units'
+import { StockQty } from '@/components/purchasing/StockQty'
 import { StatusBadge, type StatusTone } from '@/components/ui/status-badge'
 import { ItemFormFields, EMPTY_ITEM_FORM, newItemForm, type ItemForm, type ItemTypeConfig } from '@/components/purchasing/items/ItemFormFields'
 
 interface Location { id: string; name: string; type: string; parentId: string | null }
 interface InventoryRoomOption { id: string; name: string; locationId: string }
-interface CatalogItem { id: string; sku: string; name: string; baseUnit: string; purchaseUnit: string; category: string }
+interface CatalogItem { id: string; sku: string; name: string; baseUnit: string; purchaseUnit: string; conversionFactor: number; category: string }
 interface OpnameItem {
   id: string; itemName: string; systemQty: number; countedQty: number
   item: (CatalogItem & Partial<ItemForm>) | null
@@ -93,12 +95,13 @@ function AddItemModal({ opnameId, existingItemIds, onClose, onAdded }: {
     if (!form.type) setForm(newItemForm(typeConfigs, catalog))
   }
 
+  const units: UnitInfo = mode === 'existing' ? catalog.find(i => i.id === selectedId) ?? {} : form
   const filtered = catalog.filter(i => !existingItemIds.has(i.id) && (i.name.toLowerCase().includes(search.toLowerCase()) || i.sku.toLowerCase().includes(search.toLowerCase())))
 
   async function submit() {
     setError('')
     setSaving(true)
-    const qtyNum = Number(qty) || 0
+    const qtyNum = (Number(qty) || 0) * countFactor(units)
     const body = mode === 'existing' ? { itemId: selectedId, qty: qtyNum } : { ...form, qty: qtyNum }
     const res = await fetch(`/api/purchasing/initial-stock-opname/${opnameId}/items`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
@@ -163,10 +166,25 @@ function AddItemModal({ opnameId, existingItemIds, onClose, onAdded }: {
       )}
 
       <div className="border-t pt-4 space-y-1.5">
-        <label className="text-sm font-medium">Current Stock * {mode === 'new' && <span className="text-muted-foreground font-normal">/ {form.baseUnit}</span>}</label>
-        <input type="number" min={0} step="any" value={qty} onChange={e => setQty(e.target.value)} className={numInputCls} />
+        <CountedQtyInput units={units} qty={qty} setQty={setQty} />
       </div>
     </ProductModalShell>
+  )
+}
+
+// Stock is counted in the purchase unit (bottles — 2.5 for a half-used one) but stored in base units (ml).
+function countFactor(u: UnitInfo) {
+  return hasPurchaseUnit(u) ? (u.conversionFactor as number) : 1
+}
+
+function CountedQtyInput({ units, qty, setQty }: { units: UnitInfo; qty: string; setQty: (v: string) => void }) {
+  const d = displayQty(units, (Number(qty) || 0) * countFactor(units))
+  return (
+    <>
+      <label className="text-sm font-medium">Current Stock * {d.unit && <span className="text-muted-foreground font-normal">/ {d.unit}</span>}</label>
+      <input type="number" min={0} step="any" value={qty} onChange={e => setQty(e.target.value)} className={numInputCls} />
+      {d.baseQty !== null && qty !== '' && <p className="text-xs text-muted-foreground">= {d.baseQty} {d.baseUnit}</p>}
+    </>
   )
 }
 
@@ -263,7 +281,7 @@ function ConvertToStockModal({ opnameId, row, onClose, onConverted }: {
     setError('')
     setSaving(true)
     const res = await fetch(`/api/purchasing/initial-stock-opname/${opnameId}/items/${row.id}/convert`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...current, qty }),
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...current, qty: (Number(qty) || 0) * countFactor(current) }),
     })
     if (res.ok) {
       onConverted()
@@ -301,8 +319,7 @@ function ConvertToStockModal({ opnameId, row, onClose, onConverted }: {
         />
       )}
       <div className="border-t pt-4 space-y-1.5">
-        <label className="text-sm font-medium">Current Stock * <span className="text-muted-foreground font-normal">/ {current.baseUnit}</span></label>
-        <input type="number" min={0} step="any" value={qty} onChange={e => setQty(e.target.value)} className={numInputCls} />
+        <CountedQtyInput units={current} qty={qty} setQty={setQty} />
       </div>
     </ProductModalShell>
   )
@@ -586,7 +603,9 @@ export default function InitialStockOpnamePage() {
                     {detailLoading ? skeleton : !stockRows.length ? (
                       <tr><td colSpan={4} className="text-center py-10 text-muted-foreground text-sm">No stock products yet. Click "Add Product" to get started.</td></tr>
                     ) : stockRows.map(ci => {
-                      const unit = ci.item?.baseUnit ?? ''
+                      const units = ci.item ?? {}
+                      const conv = countFactor(units)
+                      const unit = displayQty(units, 0).unit
                       return (
                         <tr key={ci.id} className="hover:bg-muted/10">
                           <td className="px-4 py-3">
@@ -596,11 +615,11 @@ export default function InitialStockOpnamePage() {
                           <td className="px-4 py-3 text-muted-foreground text-sm">{ci.item?.category ?? '—'}</td>
                           <td className="px-4 py-3 text-right">
                             {readOnly ? (
-                              <span className="font-medium tabular-nums text-sm">{ci.countedQty} <span className="text-xs text-muted-foreground">{unit}</span></span>
+                              <StockQty item={units} qty={ci.countedQty} className="font-medium tabular-nums text-sm" />
                             ) : (
                               <div className="flex items-center justify-end gap-1.5">
-                                <input type="number" min={0} step="any" value={ci.countedQty} onChange={e => updateQty(ci.id, Number(e.target.value))} className={inputCls} />
-                                <span className="text-xs text-muted-foreground shrink-0 w-8">{unit}</span>
+                                <input type="number" min={0} step="any" value={Math.round((ci.countedQty / conv) * 1000) / 1000} onChange={e => updateQty(ci.id, Number(e.target.value) * conv)} className={inputCls} />
+                                <span className="text-xs text-muted-foreground shrink-0 min-w-8">{unit}</span>
                               </div>
                             )}
                           </td>

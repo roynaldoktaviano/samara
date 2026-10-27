@@ -9,6 +9,8 @@ import { renderLocationOptions } from '@/components/purchasing/LocationOptions'
 import { TripPicker, tripShortLabel, tripDates, tripLinkBody, type TripOption } from '@/components/purchasing/TripPicker'
 import { formatDate, formatMoney, formatNumber } from '@/lib/format'
 import { StatusBadge, type StatusTone } from '@/components/ui/status-badge'
+import { displayQty, hasPurchaseUnit, qtyLabel } from '@/lib/purchasing/units'
+import { StockQty } from '@/components/purchasing/StockQty'
 
 interface StockLocation { id: string; name: string; type: string; parentId: string | null; yachtId?: string | null }
 
@@ -311,7 +313,8 @@ export default function TransfersPage({ deepLinkId, onDeepLinkHandled }: { deepL
 
   async function confirmAddItem() {
     if (!detail || !addItemPicked) return
-    const qty = Number(addItemQty)
+    // Typed in the purchase unit (bottles); the API takes base units (ml).
+    const qty = Number(addItemQty) * (hasPurchaseUnit(addItemPicked) ? addItemPicked.conversionFactor : 1)
     if (!Number.isFinite(qty) || qty <= 0) { setAddItemError('Qty must be greater than 0'); return }
     setAddItemSaving(true); setAddItemError('')
     const res = await fetch(`/api/purchasing/transfers/${detail.id}`, {
@@ -696,8 +699,7 @@ export default function TransfersPage({ deepLinkId, onDeepLinkHandled }: { deepL
                         <p className="text-xs text-muted-foreground">{line.baseUnit}</p>
                       </td>
                       <td className="px-5 py-3 text-right tabular-nums text-sm">
-                        <span className="font-medium">{line.availableQty}</span>
-                        <span className="text-xs text-muted-foreground ml-1">{line.baseUnit}</span>
+                        <StockQty item={line} qty={line.availableQty} className="font-medium" />
                       </td>
                       <td className="px-4 py-2.5">
                         <div className="flex flex-col gap-1">
@@ -801,7 +803,7 @@ export default function TransfersPage({ deepLinkId, onDeepLinkHandled }: { deepL
                           {s.kind === 'stock' ? s.sku : (s.poNumber ? `Non-stock · PO ${s.poNumber}` : 'Non-stock')}
                         </p>
                       </div>
-                      <span className="text-sm font-semibold tabular-nums shrink-0">{s.qty} <span className="text-xs font-normal text-muted-foreground">{s.baseUnit}</span></span>
+                      <StockQty item={s} qty={s.qty} className="text-sm font-semibold tabular-nums shrink-0 text-right" />
                     </button>
                   )
                 })}
@@ -1062,7 +1064,7 @@ export default function TransfersPage({ deepLinkId, onDeepLinkHandled }: { deepL
                             <p className="text-xs text-muted-foreground">{line.baseUnit}</p>
                           </td>
                           <td className="py-2.5 text-right text-muted-foreground tabular-nums pr-3">
-                            {line.max} <span className="text-xs">{line.baseUnit}</span>
+                            <StockQty item={line} qty={line.max} />
                           </td>
                           <td className="py-2.5 text-right">
                             {line.editing ? (() => {
@@ -1200,7 +1202,7 @@ export default function TransfersPage({ deepLinkId, onDeepLinkHandled }: { deepL
                             <p className="text-xs text-muted-foreground">{line.baseUnit}</p>
                           </td>
                           <td className="py-2.5 text-right text-muted-foreground tabular-nums pr-3">
-                            {line.max} <span className="text-xs">{line.baseUnit}</span>
+                            <StockQty item={line} qty={line.max} />
                           </td>
                           <td className="py-2.5 text-right">
                             {line.editing ? (() => {
@@ -1344,7 +1346,7 @@ export default function TransfersPage({ deepLinkId, onDeepLinkHandled }: { deepL
                         <button key={s.kind === 'stock' ? s.id : `name:${s.name}:${s.sourcePoId ?? ''}`} onClick={() => setAddItemPicked(s)}
                           className="w-full text-left px-3 py-2 text-sm hover:bg-warning/10 transition-colors flex items-center justify-between gap-2">
                           <span>{s.name}{s.sku && <span className="text-muted-foreground"> ({s.sku})</span>}</span>
-                          <span className="text-xs text-muted-foreground shrink-0">{s.qty} {s.baseUnit}</span>
+                          <span className="text-xs text-muted-foreground shrink-0">{qtyLabel(s, s.qty)}</span>
                         </button>
                       ))}
                     {warehouseStock.length === 0 && <p className="text-sm text-muted-foreground px-3 py-4 text-center">No stock at this location.</p>}
@@ -1355,12 +1357,12 @@ export default function TransfersPage({ deepLinkId, onDeepLinkHandled }: { deepL
                   <div className="flex items-center justify-between border rounded-md px-3 py-2.5">
                     <div>
                       <p className="text-sm font-medium">{addItemPicked.name}</p>
-                      <p className="text-xs text-muted-foreground">Available: {addItemPicked.qty} {addItemPicked.baseUnit}</p>
+                      <p className="text-xs text-muted-foreground">Available: {qtyLabel(addItemPicked, addItemPicked.qty)}</p>
                     </div>
                     <button onClick={() => setAddItemPicked(null)} className="text-xs text-muted-foreground hover:underline">Change</button>
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Qty ({addItemPicked.baseUnit})</label>
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Qty ({displayQty(addItemPicked, 0).unit})</label>
                     <input type="number" min={0} step="any" value={addItemQty} onChange={e => setAddItemQty(e.target.value)}
                       className="w-full h-10 border rounded-lg px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring" />
                   </div>

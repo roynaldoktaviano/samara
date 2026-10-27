@@ -17,7 +17,7 @@ export async function GET() {
 
   const [lots, items, locations, orders, movements, register] = await Promise.all([
     db.stockLot.findMany(),
-    db.purchaseItem.findMany({ where: { isActive: true }, select: { id: true, sku: true, name: true, category: true, baseUnit: true, minStock: true, reorderQty: true } }),
+    db.purchaseItem.findMany({ where: { isActive: true }, select: { id: true, sku: true, name: true, category: true, baseUnit: true, purchaseUnit: true, conversionFactor: true, minStock: true, reorderQty: true } }),
     db.stockLocation.findMany({ select: { id: true, name: true, type: true } }),
     db.purchaseOrder.findMany({
       where: { status: { in: ['ORDERED', 'IN_TRANSIT', 'PARTIALLY_RECEIVED'] } },

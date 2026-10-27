@@ -18,6 +18,7 @@ import { TripPicker, tripDates, tripShortLabel, tripLinkBody, type TripOption } 
 import { RupiahInput } from '@/components/ui/rupiah-input'
 import { TREATMENTS, TREATMENT_LABEL, type Treatment } from '@/lib/purchasing/treatment'
 import { formatDate, formatMoney } from '@/lib/format'
+import { isMeasureUnit } from '@/lib/purchasing/units'
 import { StatusBadge, type StatusTone } from '@/components/ui/status-badge'
 
 type FileDropProps = ReturnType<typeof useFileDrop>['dropProps']
@@ -3179,16 +3180,18 @@ function CreateRequestView({
                   const requesterKey = requestedByEmployeeId || 'none'
                   const baseLine = cart.find(l => l.key === `${item.id}-${item.baseUnit}-${requesterKey}`)
                   const purchaseLine = hasPurchaseUnit ? cart.find(l => l.key === `${item.id}-${item.purchaseUnit}-${requesterKey}`) : undefined
+                  // ml / gr is only for POS recipes — drinks are requested by the bottle.
+                  const offerBase = !(hasPurchaseUnit && isMeasureUnit(item.baseUnit))
                   return (
                     <ItemCard key={item.id} active={!!(baseLine || purchaseLine)}
                       image={item.imageKey} name={item.name} caption={item.category}
                       sub={hasPurchaseUnit ? `${item.baseUnit} · ${item.purchaseUnit} = ${item.conversionFactor} ${item.baseUnit}` : item.baseUnit}>
                       {baseLine
                         ? <QtyStepper qty={baseLine.quantity} unit={item.baseUnit} onChange={d => changeCartQty(baseLine.key!, d)} />
-                        : <AddButton label={item.baseUnit} onClick={() => addToCart(item, item.baseUnit)} />}
+                        : offerBase && <AddButton label={item.baseUnit} onClick={() => addToCart(item, item.baseUnit)} />}
                       {hasPurchaseUnit && (purchaseLine
                         ? <QtyStepper qty={purchaseLine.quantity} unit={item.purchaseUnit!} onChange={d => changeCartQty(purchaseLine.key!, d)} />
-                        : <AddButton label={item.purchaseUnit!} outline onClick={() => addToCart(item, item.purchaseUnit!)} />)}
+                        : <AddButton label={item.purchaseUnit!} outline={offerBase} onClick={() => addToCart(item, item.purchaseUnit!)} />)}
                     </ItemCard>
                   )
                 })}

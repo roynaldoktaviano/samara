@@ -3,10 +3,12 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Warehouse, Ship, AlertTriangle, Search, X, Layers, FileText } from 'lucide-react'
 import { formatMoney, formatNumber, formatDate } from '@/lib/format'
+import { displayQty, displayUnitCost } from '@/lib/purchasing/units'
+import { StockQty } from '@/components/purchasing/StockQty'
 
 interface StockRow {
   kind: 'stock'
-  item: { id: string; sku: string; name: string; category: string; baseUnit: string; minStock: number; valuationMethod: string }
+  item: { id: string; sku: string; name: string; category: string; baseUnit: string; purchaseUnit: string; conversionFactor: number; minStock: number; valuationMethod: string }
   qty: number
   costPerUnit: number
   lotsCount: number
@@ -96,10 +98,10 @@ function StockTable({ rows, locationId, locationName, onOpenLots }: {
                     </span>
                   </td>
                   <td className={`px-5 py-3 text-right font-semibold tabular-nums ${isLow ? 'text-destructive' : ''}`}>
-                    {formatNumber(qty)} <span className="text-xs font-normal text-muted-foreground">{item.baseUnit}</span>
+                    <StockQty item={item} qty={qty} />
                   </td>
                   <td className="px-5 py-3 text-right text-muted-foreground text-xs tabular-nums">
-                    {item.minStock > 0 ? `${formatNumber(item.minStock)} ${item.baseUnit}` : '—'}
+                    {item.minStock > 0 ? (() => { const m = displayQty(item, item.minStock); return `${formatNumber(m.qty, { decimals: 3 })} ${m.unit}` })() : '—'}
                   </td>
                   <td className="px-5 py-3 text-sm">
                     {nearestExpiry ? expiryLabel(nearestExpiry) : <span className="text-muted-foreground/40">—</span>}
@@ -120,9 +122,7 @@ function StockTable({ rows, locationId, locationName, onOpenLots }: {
               className={`w-full text-left px-4 py-3 hover:bg-muted/30 active:bg-muted/50 transition-colors ${isLow ? 'bg-destructive/5' : ''}`}>
               <div className="flex items-center justify-between gap-2">
                 <span className="font-medium text-sm truncate min-w-0">{item.name}</span>
-                <span className={`text-sm font-semibold tabular-nums shrink-0 ${isLow ? 'text-destructive' : ''}`}>
-                  {formatNumber(qty)} <span className="text-xs font-normal text-muted-foreground">{item.baseUnit}</span>
-                </span>
+                <StockQty item={item} qty={qty} className={`text-sm font-semibold tabular-nums shrink-0 text-right ${isLow ? 'text-destructive' : ''}`} />
               </div>
               <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground mt-0.5">
                 <span className="truncate min-w-0 font-mono">{item.sku}{nearestExpiry && <> · {expiryLabel(nearestExpiry)}</>}</span>
@@ -484,8 +484,10 @@ export default function StockPage({ onOpenPo }: { onOpenPo?: (poId: string) => v
                   <div className="grid grid-cols-3 gap-px bg-border m-5 mb-0 rounded-lg overflow-hidden border">
                     <div className="bg-card px-3 py-3">
                       <p className="text-xs text-muted-foreground">Total Qty</p>
-                      <p className="font-bold text-sm sm:text-lg tabular-nums truncate">{formatNumber(lots.reduce((s, l) => s + l.quantity, 0))}</p>
-                      <p className="text-xs text-muted-foreground">{lotPanel.item.baseUnit}</p>
+                      {(() => { const t = displayQty(lotPanel.item, lots.reduce((s, l) => s + l.quantity, 0)); return <>
+                        <p className="font-bold text-sm sm:text-lg tabular-nums truncate">{formatNumber(t.qty, { decimals: 3 })}</p>
+                        <p className="text-xs text-muted-foreground">{t.unit}{t.baseQty !== null && ` · ${formatNumber(t.baseQty, { decimals: 3 })} ${t.baseUnit}`}</p>
+                      </> })()}
                     </div>
                     <div className="bg-card px-3 py-3">
                       <p className="text-xs text-muted-foreground">Total Value</p>
@@ -515,8 +517,8 @@ export default function StockPage({ onOpenPo }: { onOpenPo?: (poId: string) => v
                                 {isNearExpiry && <span className="text-xs font-semibold text-warning bg-warning/15 px-1.5 py-0.5 rounded">NEAR EXPIRY</span>}
                               </div>
                               <div className="flex items-center gap-4 text-sm">
-                                <span className="font-semibold tabular-nums">{formatNumber(lot.quantity)} <span className="text-xs font-normal text-muted-foreground">{lotPanel.item.baseUnit}</span></span>
-                                <span className="text-muted-foreground tabular-nums">@ {formatMoney(lot.costPerUnit)}</span>
+                                <StockQty item={lotPanel.item} qty={lot.quantity} className="font-semibold tabular-nums" />
+                                <span className="text-muted-foreground tabular-nums">@ {formatMoney(displayUnitCost(lotPanel.item, lot.costPerUnit))}</span>
                               </div>
                             </div>
                             <div className="text-right shrink-0">

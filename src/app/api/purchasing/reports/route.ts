@@ -22,17 +22,17 @@ export async function GET() {
       where: { createdAt: { gte: startOf6Months } },
       include: { items: { select: { orderedQty: true, unitCost: true, discountType: true, discountValue: true } } },
     }),
-    db.stockLot.findMany({ include: { item: { select: { name: true, baseUnit: true, standardCost: true } } } }),
+    db.stockLot.findMany({ include: { item: { select: { name: true, baseUnit: true, purchaseUnit: true, conversionFactor: true, standardCost: true } } } }),
     db.stockLocation.findMany({ select: { id: true, name: true, type: true } }),
     db.stockMovement.findMany({
       orderBy: { createdAt: 'desc' },
       take: 200,
       include: {
-        item: { select: { name: true, baseUnit: true } },
+        item: { select: { name: true, baseUnit: true, purchaseUnit: true, conversionFactor: true } },
         createdBy: { select: { name: true } },
       },
     }),
-    db.purchaseItem.findMany({ select: { id: true, name: true, minStock: true, standardCost: true, baseUnit: true } }),
+    db.purchaseItem.findMany({ select: { id: true, name: true, minStock: true, standardCost: true, baseUnit: true, purchaseUnit: true, conversionFactor: true } }),
     db.inventoryException.findMany({ orderBy: { createdAt: 'desc' }, take: 300 }),
   ])
 
@@ -80,6 +80,8 @@ export async function GET() {
       lotId: l.id,
       itemName: l.item?.name ?? l.itemName ?? '—',
       baseUnit: l.item?.baseUnit ?? l.unit ?? '',
+      purchaseUnit: l.item?.purchaseUnit ?? null,
+      conversionFactor: l.item?.conversionFactor ?? 1,
       locationName: locMap.get(l.locationId)?.name ?? '—',
       batch: l.batch,
       quantity: l.quantity,
@@ -94,6 +96,8 @@ export async function GET() {
     date: m.createdAt,
     itemName: m.item?.name ?? m.itemName ?? '—',
     baseUnit: m.item?.baseUnit ?? '',
+    purchaseUnit: m.item?.purchaseUnit ?? null,
+    conversionFactor: m.item?.conversionFactor ?? 1,
     type: m.type,
     quantity: m.quantity,
     supplierName: m.referenceId ? (grSupplierMap.get(m.referenceId) ?? null) : null,
@@ -117,6 +121,8 @@ export async function GET() {
       currentQty: stockTotals.get(i.id) ?? 0,
       minStock: i.minStock,
       baseUnit: i.baseUnit,
+      purchaseUnit: i.purchaseUnit,
+      conversionFactor: i.conversionFactor,
       value: (stockTotals.get(i.id) ?? 0) * i.standardCost,
     }))
 

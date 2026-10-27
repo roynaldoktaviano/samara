@@ -4,13 +4,15 @@ import { useState, useEffect, useCallback } from 'react'
 import { TrendingUp, Package, ShoppingCart, RefreshCw, Clock, AlertTriangle, FileCheck, ShieldCheck } from 'lucide-react'
 import { formatDate, formatMoney, formatNumber } from '@/lib/format'
 import { StatusBadge } from '@/components/ui/status-badge'
+import { qtyLabel } from '@/lib/purchasing/units'
+import { StockQty } from '@/components/purchasing/StockQty'
 
 interface Summary { thisMonthSpend: number; thisMonthPOCount: number; totalStockValue: number; totalStockLocations: number }
 interface MonthSpend { label: string; totalValue: number; poCount: number }
 interface StockValuation { locationId: string; locationName: string; locationType: string; value: number; itemCount: number; negativeCount: number }
-interface ExpiryLot { lotId: string; itemName: string; baseUnit: string; locationName: string; batch: string | null; quantity: number; costPerUnit: number; value: number; expiresAt: string }
-interface MovementRow { id: string; date: string; itemName: string; baseUnit: string; type: string; quantity: number; supplierName: string | null; fromLocation: string | null; toLocation: string | null; by: string; notes: string | null }
-interface LowStockException { type: string; itemName: string; locationName: string; currentQty: number; minStock: number; baseUnit: string; value: number }
+interface ExpiryLot { lotId: string; itemName: string; baseUnit: string; purchaseUnit: string | null; conversionFactor: number; locationName: string; batch: string | null; quantity: number; costPerUnit: number; value: number; expiresAt: string }
+interface MovementRow { id: string; date: string; itemName: string; baseUnit: string; purchaseUnit: string | null; conversionFactor: number; type: string; quantity: number; supplierName: string | null; fromLocation: string | null; toLocation: string | null; by: string; notes: string | null }
+interface LowStockException { type: string; itemName: string; locationName: string; currentQty: number; minStock: number; baseUnit: string; purchaseUnit: string | null; conversionFactor: number; value: number }
 interface ExceptionRow { id: string; createdAt: string; type: string; itemName: string; locationName: string; qty: number; value: number; reason: string | null; status: string }
 
 const TYPE_COLOR: Record<string, string> = {
@@ -188,7 +190,7 @@ export default function ReportsPage() {
                             <td className="px-5 py-3 font-medium">{r.itemName}</td>
                             <td className="px-5 py-3 text-muted-foreground">{r.locationName}</td>
                             <td className="px-5 py-3 font-mono text-xs">{r.batch ?? '—'}</td>
-                            <td className="px-5 py-3 text-right">{formatNumber(r.quantity, { decimals: 3 })} {r.baseUnit}</td>
+                            <td className="px-5 py-3 text-right">{qtyLabel(r, r.quantity)}</td>
                             <td className="px-5 py-3">
                               <StatusBadge tone={expired ? 'destructive' : nearExpiry ? 'warning' : 'success'}>
                                 {formatDate(r.expiresAt)}
@@ -236,7 +238,7 @@ export default function ReportsPage() {
                                 {r.type}
                               </span>
                             </td>
-                            <td className="px-5 py-3 text-right font-medium">{formatNumber(r.quantity, { decimals: 3 })} <span className="text-xs text-muted-foreground font-normal">{r.baseUnit}</span></td>
+                            <td className="px-5 py-3 text-right"><StockQty item={r} qty={r.quantity} className="font-medium" /></td>
                             <td className="px-5 py-3 text-xs text-muted-foreground whitespace-nowrap">{route}</td>
                             <td className="px-5 py-3 text-xs text-muted-foreground">{r.by}</td>
                           </tr>
@@ -353,10 +355,10 @@ export default function ReportsPage() {
                                   <td className="px-4 py-3 font-medium">{r.itemName}</td>
                                   <td className="px-4 py-3 text-right">
                                     <span className={r.currentQty === 0 ? 'font-bold text-destructive' : 'font-medium text-warning'}>
-                                      {formatNumber(r.currentQty, { decimals: 3 })} {r.baseUnit}
+                                      {qtyLabel(r, r.currentQty)}
                                     </span>
                                   </td>
-                                  <td className="px-4 py-3 text-right text-muted-foreground">{formatNumber(r.minStock, { decimals: 3 })} {r.baseUnit}</td>
+                                  <td className="px-4 py-3 text-right text-muted-foreground">{qtyLabel(r, r.minStock)}</td>
                                   <td className="px-4 py-3 text-right">{formatMoney(r.value)}</td>
                                 </tr>
                               ))}

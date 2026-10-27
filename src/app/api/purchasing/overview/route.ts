@@ -112,7 +112,7 @@ export async function GET() {
 
   // Expiry watch
   const lotItemIds = [...new Set(nearExpiryLots.map(l => l.itemId).filter((id): id is string => id !== null))]
-  const lotItems = await db.purchaseItem.findMany({ where: { id: { in: lotItemIds } }, select: { id: true, name: true, baseUnit: true } })
+  const lotItems = await db.purchaseItem.findMany({ where: { id: { in: lotItemIds } }, select: { id: true, name: true, baseUnit: true, purchaseUnit: true, conversionFactor: true } })
   const lotItemMap = new Map(lotItems.map(i => [i.id, i]))
 
   const expiryWatch = nearExpiryLots
@@ -122,6 +122,8 @@ export async function GET() {
       id: l.id,
       itemName: (l.itemId ? lotItemMap.get(l.itemId)?.name : l.itemName) ?? '—',
       baseUnit: (l.itemId ? lotItemMap.get(l.itemId)?.baseUnit : l.unit) ?? '',
+      purchaseUnit: l.itemId ? lotItemMap.get(l.itemId)?.purchaseUnit ?? null : null,
+      conversionFactor: l.itemId ? lotItemMap.get(l.itemId)?.conversionFactor ?? 1 : 1,
       locationName: locMap.get(l.locationId) ?? '—',
       quantity: l.quantity,
       expiresAt: l.expiresAt,

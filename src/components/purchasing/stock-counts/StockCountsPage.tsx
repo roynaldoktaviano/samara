@@ -7,11 +7,13 @@ import { PhotoSourceMenu } from '@/components/ui/file-preview'
 import { renderLocationOptions } from '@/components/purchasing/LocationOptions'
 import { formatMoney, formatDate } from '@/lib/format'
 import { StatusBadge, type StatusTone } from '@/components/ui/status-badge'
+import { displayQty, hasPurchaseUnit, qtyLabel } from '@/lib/purchasing/units'
+import { StockQty } from '@/components/purchasing/StockQty'
 
 interface Location { id: string; name: string; type: string; parentId: string | null }
 interface CountItem {
   id: string; itemName: string; systemQty: number; countedQty: number; reason: string | null
-  item: { id: string; sku: string; name: string; baseUnit: string; standardCost: number } | null
+  item: { id: string; sku: string; name: string; baseUnit: string; purchaseUnit: string; conversionFactor: number; standardCost: number } | null
 }
 interface StockCount {
   id: string; countNumber: string; status: string; notes: string | null; photoKey: string | null; createdAt: string
@@ -275,7 +277,10 @@ export default function StockCountsPage() {
                   <tr><td colSpan={4} className="text-center py-10 text-muted-foreground text-sm">No stock at this location.</td></tr>
                 ) : detail.items?.map(ci => {
                   const variance = ci.countedQty - ci.systemQty
-                  const unit = ci.item?.baseUnit ?? ''
+                  const units = ci.item ?? { baseUnit: '' }
+                  // Counted in the purchase unit (bottles, 2.5 for a half-used one); stored in base units (ml).
+                  const conv = ci.item && hasPurchaseUnit(ci.item) ? ci.item.conversionFactor : 1
+                  const unit = displayQty(units, 0).unit
                   const hasVariance = variance !== 0
                   return (
                     <Fragment key={ci.id}>
@@ -284,26 +289,26 @@ export default function StockCountsPage() {
                           <p className="font-medium text-sm">{ci.itemName}</p>
                           {ci.item && <p className="text-xs text-muted-foreground font-mono mt-0.5">{ci.item.sku}</p>}
                         </td>
-                        <td className="px-4 py-3 text-right text-muted-foreground tabular-nums text-sm">{ci.systemQty} <span className="text-xs">{unit}</span></td>
+                        <td className="px-4 py-3 text-right text-muted-foreground tabular-nums text-sm"><StockQty item={units} qty={ci.systemQty} /></td>
                         <td className="px-4 py-3 text-right">
                           {isApproved ? (
-                            <span className="font-medium tabular-nums text-sm">{ci.countedQty} <span className="text-xs text-muted-foreground">{unit}</span></span>
+                            <StockQty item={units} qty={ci.countedQty} className="font-medium tabular-nums text-sm" />
                           ) : (
                             <div className="flex items-center justify-end gap-1.5">
                               <input
                                 type="number" min={0} step="any"
-                                value={ci.countedQty}
-                                onChange={e => updateQty(ci.id, Number(e.target.value))}
+                                value={Math.round((ci.countedQty / conv) * 1000) / 1000}
+                                onChange={e => updateQty(ci.id, Number(e.target.value) * conv)}
                                 className="w-20 border rounded-md px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-1 focus:ring-ring/50 focus:border-ring tabular-nums [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                               />
-                              <span className="text-xs text-muted-foreground shrink-0 w-6">{unit}</span>
+                              <span className="text-xs text-muted-foreground shrink-0 min-w-6">{unit}</span>
                             </div>
                           )}
                         </td>
                         <td className="px-4 py-3 text-right tabular-nums">
                           {hasVariance ? (
                             <span className={`font-semibold text-sm ${variance > 0 ? 'text-success' : 'text-destructive'}`}>
-                              {variance > 0 ? '+' : ''}{variance} <span className="text-xs font-normal">{unit}</span>
+                              {variance > 0 ? '+' : ''}{qtyLabel(units, variance)}
                             </span>
                           ) : (
                             <span className="text-muted-foreground/40 text-sm">—</span>
