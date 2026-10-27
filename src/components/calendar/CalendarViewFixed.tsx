@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useMemo, useEffect, useCallback } from 'react'
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react'
+import { AnimatePresence, motion } from 'framer-motion'
 import { useSession } from 'next-auth/react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -804,6 +805,105 @@ function YearGrid({
   )
 }
 
+/* ── Wheel-to-flip month ──
+   One month on screen. Keep scrolling past the bottom edge of the page to flip to the
+   next month, past the top edge for the previous one — with a short slide animation. */
+const monthKey = (y: number, m: number) => y * 12 + m
+const FLIP_THRESHOLD = 120   // px of wheel travel past the edge before the month flips
+const GESTURE_GAP_MS = 250   // wheel silence that marks the start of a new gesture
+const FLIP_TOP_GAP   = 64    // app header (48px) + breathing room when bringing the new month into view
+
+function getScrollParent(el: HTMLElement | null): HTMLElement {
+  for (let p = el?.parentElement; p; p = p.parentElement) {
+    if (/(auto|scroll|overlay)/.test(getComputedStyle(p).overflowY) && p.scrollHeight > p.clientHeight) return p
+  }
+  return (document.scrollingElement as HTMLElement | null) ?? document.documentElement
+}
+
+const flipVariants = {
+  enter:  (dir: number) => ({ opacity: 0, y: dir >= 0 ? 48 : -48 }),
+  center: { opacity: 1, y: 0 },
+  exit:   (dir: number) => ({ opacity: 0, y: dir >= 0 ? -48 : 48 }),
+}
+
+function MonthFlip({ flipKey, direction, onFlip, children }: {
+  flipKey: number
+  direction: number
+  onFlip: (dir: 1 | -1) => void
+  children: React.ReactNode
+}) {
+  const ref       = useRef<HTMLDivElement>(null)
+  const onFlipRef = useRef(onFlip)
+  useEffect(() => { onFlipRef.current = onFlip })
+
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    let acc = 0
+    let last = 0
+    // 'ready'     — fresh gesture, may flip once it has pushed far enough past the edge
+    // 'scrolling' — this gesture scrolled the page to the edge; wait for a new one so a fast scroll doesn't skip a month
+    // 'flipped'   — already flipped; swallow the rest (trackpad momentum) so it can't fight the scroll-back
+    let phase: 'ready' | 'scrolling' | 'flipped' = 'ready'
+
+    const onWheel = (e: WheelEvent) => {
+      if (e.ctrlKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return  // pinch-zoom / sideways
+      const gap = e.timeStamp - last
+      last = e.timeStamp
+      if (gap > GESTURE_GAP_MS) phase = 'ready'
+      if (gap > 1000) acc = 0
+      if (phase === 'flipped') { e.preventDefault(); return }
+
+      const dy = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? window.innerHeight : 1)
+      const sc = getScrollParent(el)
+      const atEdge = dy > 0
+        ? sc.scrollTop + sc.clientHeight >= sc.scrollHeight - 2
+        : sc.scrollTop <= 0
+      if (!atEdge) { acc = 0; phase = 'scrolling'; return }
+
+      e.preventDefault()
+      if (phase === 'scrolling') return
+      if (Math.sign(dy) !== Math.sign(acc)) acc = 0
+      acc += dy
+      if (Math.abs(acc) < FLIP_THRESHOLD) return
+      acc = 0
+      phase = 'flipped'
+      onFlipRef.current(dy > 0 ? 1 : -1)
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  }, [])
+
+  // After a flip, bring the new month's header back into view if we were down at the bottom.
+  const firstRender = useRef(true)
+  useEffect(() => {
+    if (firstRender.current) { firstRender.current = false; return }
+    const el = ref.current
+    if (!el) return
+    const sc = getScrollParent(el)
+    const offset = el.getBoundingClientRect().top - sc.getBoundingClientRect().top
+    if (offset < FLIP_TOP_GAP) sc.scrollTo({ top: sc.scrollTop + offset - FLIP_TOP_GAP, behavior: 'smooth' })
+  }, [flipKey])
+
+  return (
+    <div ref={ref} className="relative">
+      <AnimatePresence mode="popLayout" initial={false} custom={direction}>
+        <motion.div
+          key={flipKey}
+          custom={direction}
+          variants={flipVariants}
+          initial="enter"
+          animate="center"
+          exit="exit"
+          transition={{ duration: 0.32, ease: [0.25, 0.1, 0.25, 1] }}
+        >
+          {children}
+        </motion.div>
+      </AnimatePresence>
+    </div>
+  )
+}
+
 /* ── date filter helpers ── */
 const todayStr = () => new Date().toISOString().split('T')[0]
 
@@ -1182,18 +1282,23 @@ export default function CalendarView() {
     return () => mq.removeEventListener('change', onChange)
   }, [])
 
+  // Which way the month grid slides: +1 = forward in time, -1 = back.
+  const [monthDir, setMonthDir] = useState(1)
+
+  const goToMonth = (year: number, month: number) => {
+    const d = new Date(year, month, 1)
+    setMonthDir(Math.sign(monthKey(d.getFullYear(), d.getMonth()) - monthKey(currentDate.getFullYear(), currentDate.getMonth())) || 1)
+    setCurrentDate(d)
+  }
+
   const navigate = (dir: 'prev' | 'next') =>
-    setCurrentDate(prev => {
-      const d = new Date(prev)
-      d.setMonth(prev.getMonth() + (dir === 'next' ? 1 : -1))
-      return d
-    })
+    goToMonth(currentDate.getFullYear(), currentDate.getMonth() + (dir === 'next' ? 1 : -1))
 
   const jumpToMonth = (m: number) =>
-    setCurrentDate(new Date(currentDate.getFullYear(), m, 1))
+    goToMonth(currentDate.getFullYear(), m)
 
   const jumpYear = (dir: 'prev' | 'next') =>
-    setCurrentDate(prev => new Date(prev.getFullYear() + (dir === 'next' ? 1 : -1), prev.getMonth(), 1))
+    goToMonth(currentDate.getFullYear() + (dir === 'next' ? 1 : -1), currentDate.getMonth())
 
   const handlePrint = () => {
     const [fy, fm] = printFromMonth.split('-').map(Number)
@@ -1299,6 +1404,27 @@ export default function CalendarView() {
   const filteredInternalEvents = useMemo(
     () => internalEvents.filter(e => !yachtFilter || !e.yachtId || e.yachtName === yachtFilter),
     [internalEvents, yachtFilter],
+  )
+
+  // Shared by every stacked month in the infinite scroll — computed once, not per month per render.
+  const monthBookings = useMemo(
+    () => (tripFilter === 'OPEN_TRIP' ? [] : tripFilter === 'PRIVATE_CHARTER'
+      ? bookings.filter(b => b.tripType === 'PRIVATE_CHARTER')
+      : bookings.filter(b => b.tripType !== 'OPEN_TRIP')
+    ).filter(b => !yachtFilter || b.yachtName === yachtFilter),
+    [bookings, tripFilter, yachtFilter],
+  )
+  const monthOpenTrips = useMemo(
+    () => (tripFilter === 'PRIVATE_CHARTER' ? [] : openTrips).filter(t => !yachtFilter || t.yacht.name === yachtFilter),
+    [openTrips, tripFilter, yachtFilter],
+  )
+  const monthAllBookings = useMemo(
+    () => bookings.filter(b => !yachtFilter || b.yachtName === yachtFilter),
+    [bookings, yachtFilter],
+  )
+  const monthAllOpenTrips = useMemo(
+    () => openTrips.filter(t => (!yachtFilter || t.yacht.name === yachtFilter) && !(t.status === 'closed' && t.closedReason?.includes('Private Charter'))),
+    [openTrips, yachtFilter],
   )
 
   const leftYear  = currentDate.getFullYear()
@@ -1947,40 +2073,42 @@ export default function CalendarView() {
         <CardContent className="p-0">
           {viewMode === 'calendar' ? (
             <div className="w-full px-1 sm:px-4 py-3 sm:py-5 overflow-x-auto">
-              {/* Single month — full width */}
-              <MonthGrid
-                year={leftYear} month={leftMonth}
-                yachtFilter={yachtFilter}
-                bookings={
-                  (tripFilter === 'OPEN_TRIP' ? [] : tripFilter === 'PRIVATE_CHARTER'
-                    ? bookings.filter(b => b.tripType === 'PRIVATE_CHARTER')
-                    : bookings.filter(b => b.tripType !== 'OPEN_TRIP')
-                  ).filter(b => !yachtFilter || b.yachtName === yachtFilter)
-                }
-                openTrips={
-                  (tripFilter === 'PRIVATE_CHARTER' ? [] : openTrips)
-                    .filter(t => !yachtFilter || t.yacht.name === yachtFilter)
-                }
-                internalEvents={filteredInternalEvents}
-                allBookings={bookings.filter(b => !yachtFilter || b.yachtName === yachtFilter)}
-                allOpenTrips={openTrips.filter(t => (!yachtFilter || t.yacht.name === yachtFilter) && !(t.status === 'closed' && t.closedReason?.includes('Private Charter')))}
-                yachtColorMap={yachtColorMap}
-                onDateClick={handleDateClick}
-                onBookingClick={b => {
-                  setSelectedBooking(b)
-                  setIsDetailOpen(true)
-                  setBookingDetailLoading(true)
-                  fetch(`/api/bookings/${b.id}`).then(r => r.json()).then(data => {
-                    setBookingFullDetail(data)
-                    setBookingDetailLoading(false)
-                  }).catch(() => setBookingDetailLoading(false))
-                }}
-                onOpenTripClick={handleOpenTripClick}
-                onInternalEventClick={openEditInternalEvent}
-                isInFilterRange={isInFilterRange}
-                onPrev={() => navigate('prev')}
-                onNext={() => navigate('next')}
-              />
+              {/* Single month — scroll past the bottom/top edge to flip to the next/previous month */}
+              <MonthFlip
+                flipKey={monthKey(leftYear, leftMonth)}
+                direction={monthDir}
+                onFlip={dir => navigate(dir > 0 ? 'next' : 'prev')}
+              >
+                <MonthGrid
+                  year={leftYear} month={leftMonth}
+                  yachtFilter={yachtFilter}
+                  bookings={monthBookings}
+                  openTrips={monthOpenTrips}
+                  internalEvents={filteredInternalEvents}
+                  allBookings={monthAllBookings}
+                  allOpenTrips={monthAllOpenTrips}
+                  yachtColorMap={yachtColorMap}
+                  onDateClick={handleDateClick}
+                  onBookingClick={b => {
+                    setSelectedBooking(b)
+                    setIsDetailOpen(true)
+                    setBookingDetailLoading(true)
+                    fetch(`/api/bookings/${b.id}`).then(r => r.json()).then(data => {
+                      setBookingFullDetail(data)
+                      setBookingDetailLoading(false)
+                    }).catch(() => setBookingDetailLoading(false))
+                  }}
+                  onOpenTripClick={handleOpenTripClick}
+                  onInternalEventClick={openEditInternalEvent}
+                  isInFilterRange={isInFilterRange}
+                  onPrev={() => navigate('prev')}
+                  onNext={() => navigate('next')}
+                />
+              </MonthFlip>
+              <p className="mt-3 flex items-center justify-center gap-1 text-[11px] text-muted-foreground/70 select-none">
+                <ChevronDown className="size-3" />
+                Keep scrolling for {MONTH_FULL[(leftMonth + 1) % 12]}
+              </p>
             </div>
           ) : viewMode === 'year' ? (
             <YearGrid
