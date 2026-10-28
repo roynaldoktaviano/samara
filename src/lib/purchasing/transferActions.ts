@@ -38,7 +38,7 @@ export function toBaseQty(
  * the same PR + source location, so a trickle of per-item decisions from the same PR
  * doesn't fragment into a pile of near-duplicate transfers. Shared by Purchasing's bulk
  * convert-to-PO/Transfer step (PATCH /api/purchasing/requests/[id]) and Warehouse's
- * one-item-at-a-time physical stock check (PATCH .../items/[itemId]/warehouse-check).
+ * Process Purchase Request (processWarehouseLine, PATCH .../warehouse-forward).
  * Returns the transfer number (new or appended-to).
  */
 export async function createOrAppendTransfer(db: Pick<Db, 'stockTransfer'>, params: {

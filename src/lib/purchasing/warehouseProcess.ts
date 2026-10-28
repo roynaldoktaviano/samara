@@ -2,14 +2,16 @@ import type { getDb } from '@/lib/get-db'
 import { notifyPurchasingForRequest, notifyRequester } from '@/lib/notify-purchasing'
 import { computeStockChecks, type StockCheckRequest } from '@/lib/purchasing/stockCheck'
 import { generatePrNumber } from '@/lib/purchasing/docNumber'
+import { createOrAppendTransfer, toBaseQty } from '@/lib/purchasing/transferActions'
 
 type Db = Awaited<ReturnType<typeof getDb>>
 
-// Warehouse's side of a PR, one line at a time: "Process" decides each Warehouse-routed line on
-// the spot (see PATCH .../items/[itemId]/warehouse-check) — out of stock → handed to Purchasing to
-// buy straight to the ship; some stock → TR for what's free + backorder for the rest — and sends
-// that line's To Be Order to Purchasing right away as a Restock PR line. Once the last line is
-// processed the check finishes by itself (finishWarehouseCheck).
+// Warehouse's side of a PR: each Warehouse-routed line is first Approved on its own (source
+// warehouse + Reserve saved, nothing moves — PATCH .../items/[itemId]/warehouse-check), then
+// "Process Purchase Request" (PATCH .../warehouse-forward) decides every approved line at once
+// (processWarehouseLine — Reserve 0 → handed to Purchasing to buy straight to the ship; Reserve > 0
+// → TR for it + backorder for the rest) and finishes the check, which puts each line's To Be
+// Order on a Restock PR (finishWarehouseCheck → addRestockLines).
 
 const REQUEST_SELECT = {
   id: true, status: true, prNumber: true, division: true, requestedById: true, deliveryLocationId: true, warehouseDoneAt: true,
@@ -18,6 +20,7 @@ const REQUEST_SELECT = {
     select: {
       id: true, itemId: true, itemName: true, quantity: true, unit: true, convertedAt: true, convertedPoId: true,
       warehouseDecision: true, verifyRejectedAt: true, backorderQty: true, backorderLocationId: true, viaWarehouse: true,
+      warehouseApprovedAt: true, warehouseReserveQty: true, warehouseFromLocationId: true, warehouseCheckNote: true,
     },
   },
 } as const
@@ -30,6 +33,71 @@ type WarehouseRequest = NonNullable<Awaited<ReturnType<typeof loadWarehouseReque
 /** Warehouse-routed lines still waiting for Process. Rejected lines are settled. */
 export function undecidedLines(request: Pick<WarehouseRequest, 'items'>) {
   return request.items.filter(i => i.viaWarehouse && !i.convertedAt && !i.verifyRejectedAt && !i.warehouseDecision)
+}
+
+/** Free stock (on hand − PENDING transfers out, base units) per `${itemId}:${locationId}`. */
+export async function freeStock(db: Pick<Db, 'stockLot' | 'stockTransferItem'>, keys: { itemId: string; locationId: string }[]) {
+  const free = new Map<string, number>()
+  for (const { itemId, locationId } of keys) {
+    const key = `${itemId}:${locationId}`
+    if (free.has(key)) continue
+    const [lots, reserved] = await Promise.all([
+      db.stockLot.findMany({ where: { itemId, locationId }, select: { quantity: true } }),
+      db.stockTransferItem.aggregate({ where: { itemId, transfer: { status: 'PENDING', fromLocationId: locationId } }, _sum: { requestedQty: true } }),
+    ])
+    free.set(key, Math.max(0, lots.reduce((s, l) => s + l.quantity, 0) - (reserved._sum.requestedQty ?? 0)))
+  }
+  return free
+}
+
+/**
+ * Turn one approved line into its decision, atomically (a double Process must not transfer or
+ * hand it over twice): Reserve 0 → PURCHASE; Reserve > 0 → TRANSFER of the Reserve on a TR (one
+ * per source warehouse, shared across the PR's lines) and the rest of Requested backordered there.
+ * Returns null when the line was already decided, { overFree } when stock no longer covers it.
+ */
+export async function processWarehouseLine(db: Db, request: Pick<WarehouseRequest, 'id' | 'prNumber' | 'deliveryLocationId'>, line: WarehouseRequest['items'][number], userId: string) {
+  const catalogItemId = line.itemId!
+  const fromLocationId = line.warehouseFromLocationId!
+  const reserveQty = line.warehouseReserveQty ?? 0
+  const master = await db.purchaseItem.findUnique({ where: { id: catalogItemId }, select: { baseUnit: true, purchaseUnit: true, conversionFactor: true } })
+  const baseQty = toBaseQty(line.quantity, line.unit, master)
+
+  return db.$transaction(async tx => {
+    const free = (await freeStock(tx, [{ itemId: catalogItemId, locationId: fromLocationId }])).get(`${catalogItemId}:${fromLocationId}`) ?? 0
+    if (reserveQty > free + 1e-6) return { overFree: free }
+    const now = new Date()
+    const base = { warehouseCheckedById: userId, warehouseCheckedAt: now }
+
+    if (reserveQty <= 0) {
+      const claimed = await tx.purchaseRequestItem.updateMany({
+        where: { id: line.id, convertedAt: null, warehouseDecision: null },
+        data: { ...base, warehouseDecision: 'PURCHASE' },
+      })
+      return claimed.count ? { outcome: 'PURCHASE' as const, transferNumber: null, sendQty: 0, backorderQty: 0 } : null
+    }
+
+    const backorderQty = Math.max(0, baseQty - reserveQty)
+    const claimed = await tx.purchaseRequestItem.updateMany({
+      where: { id: line.id, convertedAt: null, warehouseDecision: null },
+      data: {
+        ...base,
+        warehouseDecision: 'TRANSFER',
+        convertedAt: now,
+        backorderQty,
+        backorderLocationId: backorderQty > 0 ? fromLocationId : null,
+      },
+    })
+    if (!claimed.count) return null
+    const transferNumber = await createOrAppendTransfer(tx, {
+      requestId: request.id,
+      prNumber: request.prNumber,
+      deliveryLocationId: request.deliveryLocationId!,
+      fromLocationId,
+      items: [{ itemId: catalogItemId, itemName: line.itemName, baseQty: reserveQty }],
+    })
+    return { outcome: 'TRANSFER' as const, transferNumber, sendQty: reserveQty, backorderQty }
+  })
 }
 
 /**

@@ -10,11 +10,12 @@ export function allItemsCustom(items: { itemId: string | null }[]): boolean {
 }
 
 // ── Routing: Warehouse first, or straight to Purchasing ──
-// A line goes through Warehouse's stock check when it's a stock-tracked catalog item and the
-// PR isn't headed to a warehouse itself (restocking a warehouse never needs that warehouse to
-// check its own shelves). Custom lines and non-stock items (services, goods bought straight to
-// the ship) go straight to Purchasing. A PR holding both kinds runs in parallel — see
-// PurchaseRequest.warehouseDoneAt. This is the one place that decides the route.
+// A line goes through Warehouse's stock check only when the PR is headed to a ship (VESSEL —
+// the yacht itself or its Galley/Bar) and it's a stock-tracked catalog item. Anything for a
+// warehouse, an office/site (Office Bali, Bira) or with no destination goes straight to
+// Purchasing — Warehouse isn't involved at all. Custom lines and non-stock items (services,
+// goods bought straight to the ship) go straight to Purchasing too. A PR holding both kinds runs
+// in parallel — see PurchaseRequest.warehouseDoneAt. This is the one place that decides the route.
 export async function routePrLines(
   db: Pick<Awaited<ReturnType<typeof getDb>>, 'stockLocation' | 'purchaseItem'>,
   deliveryLocationId: string | null,
@@ -23,7 +24,7 @@ export async function routePrLines(
   const loc = deliveryLocationId
     ? await db.stockLocation.findUnique({ where: { id: deliveryLocationId }, select: { type: true } })
     : null
-  if (loc?.type === 'WAREHOUSE') return lines.map(() => false)
+  if (loc?.type !== 'VESSEL') return lines.map(() => false)
   const ids = [...new Set(lines.map(l => l.itemId).filter(Boolean) as string[])]
   const masters = ids.length
     ? await db.purchaseItem.findMany({ where: { id: { in: ids } }, select: { id: true, isStockTracked: true } })

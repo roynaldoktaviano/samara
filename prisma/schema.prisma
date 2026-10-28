@@ -431,8 +431,8 @@ model Lead {
   // Website-form leads leave this null — their source lives on Inquiry.utm*.
   source          String?
 
-  inquiries             Inquiry[]
-  pageViews             PageView[]
+  inquiries              Inquiry[]
+  pageViews              PageView[]
   whatsappConversations  WhatsappConversation[]
   instagramConversations InstagramConversation[]
   contacts               LeadContact[]
@@ -2715,22 +2715,29 @@ model PurchaseRequestItem {
   // convertedAt (item is done, no PO needed). PURCHASE leaves convertedAt null so the item
   // proceeds to Purchasing once the PR is forwarded. See PATCH
   // /api/purchasing/requests/[id]/items/[itemId]/warehouse-check.
-  warehouseDecision    PurchaseRequestItemWarehouseDecision?
-  warehouseCheckedById String?
-  warehouseCheckedAt   DateTime?
-  warehouseCheckNote   String?
+  warehouseDecision       PurchaseRequestItemWarehouseDecision?
+  warehouseCheckedById    String?
+  warehouseCheckedAt      DateTime?
+  warehouseCheckNote      String?
+  // Warehouse's per-line Approve: the source warehouse + Reserve (BASE units) it settled on.
+  // Nothing moves yet — "Process Purchase Request" (PATCH .../warehouse-forward) turns every
+  // approved line into its TRANSFER/PURCHASE decision at once, then the fields stay as record.
+  warehouseApprovedById   String?
+  warehouseApprovedAt     DateTime?
+  warehouseReserveQty     Float?
+  warehouseFromLocationId String?
   // TRANSFER is partial when the warehouse is short: what's free ships now on a TR, the rest
   // waits here (BASE units) at backorderLocationId until restock lands there — then
   // allocateBackorders() (src/lib/purchasing/backorders.ts) reserves it oldest-PR-first and
   // drafts the follow-up TR. 0 = nothing waiting.
-  backorderQty         Float                                 @default(0)
-  backorderLocationId  String?
+  backorderQty            Float                                 @default(0)
+  backorderLocationId     String?
   // Line goes through Warehouse's stock check (catalog + stock-tracked item, PR not headed to
   // a warehouse) vs straight to Purchasing (custom / non-stock items, warehouse restock PRs).
   // Snapshotted at create/edit by routePrLines() (src/lib/purchasing/requestItems.ts). A PR
   // holding both kinds runs in parallel: Purchasing works the direct lines (ON_PROCESS) while
   // Warehouse is still checking these — see PurchaseRequest.warehouseDoneAt.
-  viaWarehouse         Boolean                               @default(false)
+  viaWarehouse            Boolean                               @default(false)
 
   // Set only when this line was created by "Request for Replacement" during an
   // Inventory Stock Opname (the other half of the link is

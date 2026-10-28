@@ -49,11 +49,16 @@ export async function GET() {
         ...(isOwnOnly
           ? [{ OR: [{ requestedById: session.user.id }, ...(yachtScope ? [yachtScope] : [])] }]
           : []),
+        // Warehouse only deals with PRs headed to a ship (see routePrLines) — PRs for a warehouse
+        // or an office/site go straight to Purchasing and stay out of its list (own ones aside).
+        ...(roleMatches(role, ['WAREHOUSE'])
+          ? [{ OR: [{ requestedById: session.user.id }, { deliveryLocation: { type: 'VESSEL' as const } }, { items: { some: { viaWarehouse: true } } }] }]
+          : []),
       ],
     },
     orderBy: { createdAt: 'desc' },
     include: {
-      items: { select: { id: true, quantity: true, estimatedCost: true, itemName: true, warehouseDecision: true, convertedAt: true, viaWarehouse: true } },
+      items: { select: { id: true, quantity: true, estimatedCost: true, itemName: true, warehouseDecision: true, convertedAt: true, viaWarehouse: true, backorderQty: true } },
       deliveryLocation: { select: { id: true, name: true, type: true, managedBy: true, yachtId: true } },
       requestedByEmployee: { select: { id: true, fullName: true, employeeNumber: true } },
       verifiedBy: { select: { id: true, name: true } },
@@ -94,6 +99,9 @@ export async function GET() {
       // Warehouse still owns lines here — DRAFT, or a parallel ON_PROCESS PR not yet finished.
       warehousePending: r.status === 'DRAFT' || (r.status === 'ON_PROCESS' && !r.warehouseDoneAt && r.items.some(i => i.viaWarehouse)),
       totalBudget: r.items.reduce((s, i) => s + i.quantity * i.estimatedCost, 0),
+      // Part of a line couldn't ship from stock yet (backorder waiting for restock at the
+      // warehouse) — the PR stays outstanding until allocateBackorders() sends the rest.
+      outstanding: r.status !== 'CANCELLED' && r.status !== 'REJECTED' && r.items.some(i => i.backorderQty > 0),
       // createdBy is always the ERP login that submitted the PR (e.g. a warehouse account).
       // requestedByEmployee (already in the include) is who it's actually for — optional,
       // e.g. warehouse forwarding a specific ship crew member's request. Both are exposed

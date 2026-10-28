@@ -52,7 +52,7 @@ interface InventoryItemOption {
   id: string; itemNumber: string; name: string; quantity: number; unitPrice: number; photoKeys?: string[]
   category: { id: string; name: string }; room: { id: string; name: string }
 }
-interface RequestLine { id?: string; key?: string; itemId: string; itemName: string; baseUnit: string; purchaseUnit: string; itemUnit: string; unit?: string; quantity: number; estimatedCost: number; supplierId: string; supplierName: string; supplierSearch: string; supplierOpen: boolean; notes: string; search: string; open: boolean; currentStock?: number | null; onHandStock?: number | null; itemTreatment?: Treatment | null; reservedStock?: number; minStock?: number | null; stockCheck?: { locationId: string; locationName: string; requested: number; availability: number; reserve: number; onOrder: number; ending: number; shortage: number; minStock: number; toBeOrder: number; restockQty: number } | null; conversionFactor?: number | null; imageKeys?: string[]; isCustom?: boolean; isStockItem?: boolean; sourceInventoryItemId?: string | null; sourceInventoryItem?: { id: string; itemNumber: string; name: string; room: { name: string } | null; category: { name: string } | null } | null; warehouseStock?: { locationId: string; locationName: string; qty: number }[]; transferEligible?: boolean; quotations?: Quotation[]; exemptionReason?: string | null; selectionJustification?: string | null; requestedByEmployeeId?: string; quotationApproverId?: string | null; quotationApprover?: { id: string; name: string | null } | null; quotationSubmittedAt?: string | null; quotationApprovedById?: string | null; quotationApprovedBy?: { id: string; name: string | null } | null; quotationApprovedAt?: string | null; quotationRejectedBy?: { id: string; name: string | null } | null; quotationRejectedAt?: string | null; quotationRejectionReason?: string | null; convertedAt?: string | null; convertedPoId?: string | null; verifyRejectedById?: string | null; verifyRejectedBy?: { id: string; name: string | null } | null; verifyRejectedAt?: string | null; verifyRejectionReason?: string | null; warehouseDecision?: 'TRANSFER' | 'PURCHASE' | null; backorderQty?: number; backorderLocationId?: string | null; viaWarehouse?: boolean; warehouseCheckedAt?: string | null; warehouseCheckNote?: string | null; requestType?: 'NEW' | 'REPLACEMENT'; damageDetail?: string | null; transfer?: { id: string; transferNumber: string; status: string; fromLocationName: string } | null; sentFromStock?: number | null; toBeOrderSplit?: { po: number; pending: number } | null }
+interface RequestLine { id?: string; key?: string; itemId: string; itemName: string; baseUnit: string; purchaseUnit: string; itemUnit: string; unit?: string; quantity: number; estimatedCost: number; supplierId: string; supplierName: string; supplierSearch: string; supplierOpen: boolean; notes: string; search: string; open: boolean; currentStock?: number | null; onHandStock?: number | null; itemTreatment?: Treatment | null; reservedStock?: number; minStock?: number | null; stockCheck?: { locationId: string; locationName: string; requested: number; availability: number; reserve: number; onOrder: number; ending: number; shortage: number; minStock: number; toBeOrder: number; restockQty: number } | null; conversionFactor?: number | null; imageKeys?: string[]; isCustom?: boolean; isStockItem?: boolean; sourceInventoryItemId?: string | null; sourceInventoryItem?: { id: string; itemNumber: string; name: string; room: { name: string } | null; category: { name: string } | null } | null; warehouseStock?: { locationId: string; locationName: string; qty: number }[]; transferEligible?: boolean; quotations?: Quotation[]; exemptionReason?: string | null; selectionJustification?: string | null; requestedByEmployeeId?: string; quotationApproverId?: string | null; quotationApprover?: { id: string; name: string | null } | null; quotationSubmittedAt?: string | null; quotationApprovedById?: string | null; quotationApprovedBy?: { id: string; name: string | null } | null; quotationApprovedAt?: string | null; quotationRejectedBy?: { id: string; name: string | null } | null; quotationRejectedAt?: string | null; quotationRejectionReason?: string | null; convertedAt?: string | null; convertedPoId?: string | null; verifyRejectedById?: string | null; verifyRejectedBy?: { id: string; name: string | null } | null; verifyRejectedAt?: string | null; verifyRejectionReason?: string | null; warehouseDecision?: 'TRANSFER' | 'PURCHASE' | null; backorderQty?: number; backorderLocationId?: string | null; viaWarehouse?: boolean; warehouseCheckedAt?: string | null; warehouseCheckNote?: string | null; requestType?: 'NEW' | 'REPLACEMENT'; damageDetail?: string | null; transfer?: { id: string; transferNumber: string; status: string; fromLocationName: string } | null; sentFromStock?: number | null; toBeOrderSplit?: { po: number; pending: number } | null; warehouseApprovedAt?: string | null; warehouseReserveQty?: number | null; warehouseFromLocationId?: string | null }
 interface PurchaseRequest {
   id: string
   prNumber: string
@@ -67,6 +67,8 @@ interface PurchaseRequest {
   warehouseStarted?: boolean
   // Warehouse still has lines to stock-check (DRAFT, or a parallel ON_PROCESS PR).
   warehousePending?: boolean
+  // Some line is still backordered (waiting for restock at the warehouse) — see GET ../route.ts.
+  outstanding?: boolean
   warehouseDoneAt?: string | null
   totalBudget: number
   notes: string | null
@@ -142,6 +144,8 @@ const FILTER_TABS = [
   // Not a status: every PR Warehouse still has lines to check — DRAFT plus parallel ON_PROCESS ones.
   { key: 'WAREHOUSE', label: 'Warehouse Check' },
   { key: 'ON_PROCESS', label: 'On Process' },
+  // Not a status either: part of an item still waits for restock before it can be sent.
+  { key: 'OUTSTANDING', label: 'Outstanding' },
   { key: 'CONVERTED', label: 'Converted' },
   { key: 'REJECTED', label: 'Rejected' },
   { key: 'CANCELLED', label: 'Cancelled' },
@@ -213,10 +217,20 @@ function TransferBadge({ transfer, onOpen }: { transfer?: RequestLine['transfer'
 }
 
 // Next to an ON_PROCESS status: Purchasing is on it, but Warehouse is still checking some lines.
-function WarehouseCheckTag({ r }: { r: { status: string; warehousePending?: boolean } }) {
-  if (r.status !== 'ON_PROCESS' || !r.warehousePending) return null
-  return <StatusBadge tone="info" size="sm" className="ml-1">+ Warehouse check</StatusBadge>
+function WarehouseCheckTag({ r }: { r: { status: string; warehousePending?: boolean; outstanding?: boolean } }) {
+  return (
+    <>
+      {r.status === 'ON_PROCESS' && r.warehousePending && <StatusBadge tone="info" size="sm" className="ml-1">+ Warehouse check</StatusBadge>}
+      {r.status === 'ON_PROCESS' && r.outstanding && <StatusBadge tone="warning" size="sm" className="ml-1">+ Waiting restock</StatusBadge>}
+    </>
+  )
 }
+
+// A Converted PR with part of an item still backordered reads "Outstanding" until the rest is sent.
+const prStatusLabel = (r: { status: string; outstanding?: boolean }) =>
+  r.outstanding && r.status === 'CONVERTED' ? 'Outstanding' : STATUS_LABEL[r.status] ?? r.status
+const prStatusTone = (r: { status: string; outstanding?: boolean }): StatusTone =>
+  r.outstanding && r.status === 'CONVERTED' ? 'warning' : STATUS_TONE[r.status]
 
 // Warehouse still owns part of this PR: DRAFT, or ON_PROCESS while Purchasing works the direct
 // lines in parallel and Warehouse hasn't finished checking its own (warehouseDoneAt unset).
@@ -240,14 +254,24 @@ function lineQtyLabel(item: { unit?: string; itemUnit?: string; baseUnit?: strin
 }
 
 // Part of an accepted line the warehouse couldn't ship yet — shipped on a follow-up TR once
-// restock lands (see src/lib/purchasing/backorders.ts).
-function BackorderBadge({ item }: { item: Parameters<typeof lineQtyLabel>[0] & { backorderQty?: number } }) {
+// restock lands (see src/lib/purchasing/backorders.ts): how much went out so far, what's left,
+// and where that rest stands (Restock PR not ordered yet → on a PO → arriving at the warehouse).
+function BackorderBadge({ item }: { item: Parameters<typeof lineQtyLabel>[0] & { quantity?: number; backorderQty?: number; sentFromStock?: number | null; toBeOrderSplit?: { po: number; pending: number } | null } }) {
   if (!item.backorderQty || item.backorderQty <= 0) return null
+  const split = item.toBeOrderSplit
+  const stage = split && split.pending > 0 ? 'waiting for Purchasing to order'
+    : split && split.po > 0 ? 'ordered, waiting to arrive at the warehouse'
+    : 'waiting for restock at the warehouse'
   return (
-    <StatusBadge tone="destructive" size="sm"
-      title="Shipped on a follow-up transfer once restock arrives at the warehouse">
-      Backorder {lineQtyLabel(item, item.backorderQty)} · waiting restock
-    </StatusBadge>
+    <div className="text-[11px] leading-snug" title="Sent automatically on a new transfer once the restock arrives at the warehouse — Warehouse only has to dispatch it">
+      {item.sentFromStock != null && (
+        <p className="text-muted-foreground">
+          Sent <span className="font-semibold text-foreground">{lineQtyLabel(item, item.sentFromStock)}</span>
+          {item.quantity != null && <> of {item.quantity} {item.unit ?? item.purchaseUnit ?? item.itemUnit}</>}
+        </p>
+      )}
+      <p className="font-medium text-destructive">{lineQtyLabel(item, item.backorderQty)} remaining — {stage}</p>
+    </div>
   )
 }
 
@@ -1149,51 +1173,55 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
     if (ok) setRejectItemModal(null)
   }
 
-  // Warehouse's physical stock-check decision on a single item — TRANSFER creates the
-  // Transfer immediately server-side, PURCHASE just flags it to move on with everything
-  // else once the PR is forwarded. See PATCH .../items/[itemId]/warehouse-check.
-  // Warehouse's one-click "Process" — the server decides from free stock: nothing free → the
-  // line goes to Purchasing; otherwise a TR for what's free + backorder for the rest. Either way
-  // its To Be Order lands on a Restock PR at once, and the last line finishes the check.
-  // See PATCH .../items/[itemId]/warehouse-check.
-  async function warehouseCheckItem(item: RequestLine, reserveQty?: number) {
+  // Warehouse's per-line "Approve" — saves the source warehouse + Reserve (base units); nothing
+  // moves until "Process Purchase Request". See PATCH .../items/[itemId]/warehouse-check.
+  async function warehouseApproveItem(item: RequestLine, reserveQty: number) {
     if (!detail || !item.id) return
-    // Same fallback the dropdown displays — the preselected most-stock warehouse counts
-    // as a choice even if the user never touched the dropdown.
-    const fromLocationId = warehouseFrom[item.id] ?? item.stockCheck?.locationId ?? item.warehouseStock?.slice().sort((a, b) => b.qty - a.qty)[0]?.locationId ?? ''
+    // Same fallback the dropdown displays — the preselected warehouse counts as a choice
+    // even if the user never touched the dropdown.
+    const fromLocationId = warehouseFrom[item.id] ?? item.warehouseFromLocationId ?? item.stockCheck?.locationId ?? item.warehouseStock?.slice().sort((a, b) => b.qty - a.qty)[0]?.locationId ?? ''
     if (!fromLocationId) { toast.error('Select a warehouse location first'); return }
     setWarehouseBusyItemId(item.id)
     const res = await fetch(`/api/purchasing/requests/${detail.id}/items/${item.id}/warehouse-check`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fromLocationId, note: warehouseNote[item.id]?.trim() || undefined, reserveQty }),
+      body: JSON.stringify({ action: 'approve', fromLocationId, note: (warehouseNote[item.id] ?? item.warehouseCheckNote ?? '').trim() || undefined, reserveQty }),
     })
     const data = await res.json().catch(() => ({}))
     setWarehouseBusyItemId(null)
-    if (!res.ok) { toast.error(data.error ?? 'Failed to process item'); return }
+    if (!res.ok) { toast.error(data.error ?? 'Failed to approve item'); return }
     setStockItemId(null)
-    const restock = data.restockRequests?.length ? ` · To Be Order → ${data.restockRequests.join(', ')}` : ''
-    toast.success(data.outcome === 'PURCHASE'
-      ? `${item.itemName}: nothing reserved from stock — sent to Purchasing${restock}`
-      : data.backorderQty > 0
-        ? `${item.itemName}: sending ${lineQtyLabel(item, data.sendQty)} (${data.transferNumber}), backorder ${lineQtyLabel(item, data.backorderQty)}${restock}`
-        : `${item.itemName}: sending ${lineQtyLabel(item, data.sendQty)} (${data.transferNumber})${restock}`)
-    if (data.finished) toast.success('Warehouse check done')
+    toast.success(`${item.itemName} approved — reserve ${lineQtyLabel(item, reserveQty)}`)
     await fetchDetail(detail.id)
-    if (data.finished || data.outcome === 'PURCHASE') load()
   }
 
-  // Warehouse's "done checking" action — closes the PR straight to CONVERTED if every
-  // item was resolved from stock, or forwards the rest to Purchasing (ON_PROCESS)
-  // otherwise. See PATCH .../warehouse-forward.
+  async function warehouseUnapproveItem(item: RequestLine) {
+    if (!detail || !item.id) return
+    setWarehouseBusyItemId(item.id)
+    const res = await fetch(`/api/purchasing/requests/${detail.id}/items/${item.id}/warehouse-check`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'unapprove' }),
+    })
+    const data = await res.json().catch(() => ({}))
+    setWarehouseBusyItemId(null)
+    if (!res.ok) { toast.error(data.error ?? 'Failed to undo approval'); return }
+    toast.success(`${item.itemName}: approval removed`)
+    await fetchDetail(detail.id)
+  }
+
+  // Warehouse's "Process Purchase Request" — decides every approved line at once (TR + backorder
+  // or to Purchasing), puts To Be Order on Restock PRs, then closes the PR straight to CONVERTED
+  // if everything came from stock, else hands the rest to Purchasing (ON_PROCESS).
+  // See PATCH .../warehouse-forward.
   async function warehouseForward() {
     if (!detail) return
     setWarehouseForwarding(true)
     const res = await fetch(`/api/purchasing/requests/${detail.id}/warehouse-forward`, { method: 'PATCH' })
     const data = await res.json().catch(() => ({}))
     setWarehouseForwarding(false)
-    if (!res.ok) { toast.error(data.error ?? 'Failed to forward request'); return }
+    if (!res.ok) { toast.error(data.error ?? 'Failed to process request'); return }
     if (data.status) setSelected(s => s ? { ...s, status: data.status } : s)
-    toast.success(data.remainingItems?.length ? 'Sent to Purchasing' : 'Request completed — all from warehouse stock')
+    toast.success(data.remainingItems?.length ? 'Purchase request processed — sent to Purchasing' : 'Request completed — all from warehouse stock')
+    if (data.transferNumbers?.length) toast.success(`Transfer: ${data.transferNumbers.join(', ')}`)
     if (data.restockRequests?.length) toast.success(`Warehouse restock created: ${data.restockRequests.join(', ')}`)
     await fetchDetail(detail.id)
     load()
@@ -1234,17 +1262,19 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
     if (res.ok) setPrFollowUps(prev => prev.filter(f => f.id !== followUpId))
   }
 
-  // Warehouse's manual "done checking" button — only a fallback now: processing the last
-  // Warehouse-routed line finishes the check by itself, so this shows only when every such line
-  // is already settled but the check is still open (e.g. the last one was rejected, or the PR
-  // predates one-click Process).
+  // Warehouse's "Process Purchase Request" — enabled once every Warehouse-routed line still open
+  // is Approved (also closes a check whose lines are all settled already, e.g. the last one rejected).
   function renderWarehouseFinish() {
     const undecided = (detail?.items ?? []).filter(it => it.viaWarehouse && !it.convertedAt && !it.warehouseDecision && !it.verifyRejectedAt)
-    if (undecided.length > 0) return null
+    const unapproved = undecided.filter(it => !it.warehouseApprovedAt)
     return (
-      <button onClick={warehouseForward} disabled={warehouseForwarding}
-        className="px-4 py-2 text-sm bg-success text-success-foreground rounded-lg hover:bg-success/90 font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-        Finish Warehouse Check
+      <button onClick={warehouseForward} disabled={warehouseForwarding || unapproved.length > 0}
+        title={unapproved.length ? `Approve every item first — waiting on: ${unapproved.map(it => it.itemName).join(', ')}` : undefined}
+        className="flex items-center gap-2 px-4 py-2 text-sm bg-success text-success-foreground rounded-lg hover:bg-success/90 font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-success">
+        {warehouseForwarding ? 'Processing…' : 'Process Purchase Request'}
+        {undecided.length > 0 && (
+          <span className="text-xs font-normal opacity-90 tabular-nums">{undecided.length - unapproved.length}/{undecided.length} approved</span>
+        )}
       </button>
     )
   }
@@ -1259,7 +1289,10 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
       : requests
     const myDivisionCount = myDivision ? requests.filter(r => r.division === myDivision || r.division === null).length : 0
     const scopedRequests = scopeFilter === 'MINE' ? divisionScoped.filter(r => r.createdBy?.id === session?.user?.id) : divisionScoped
-    const matchesTab = (r: PurchaseRequest, key: string) => key === 'ALL' || (key === 'WAREHOUSE' ? !!r.warehousePending : r.status === key)
+    const matchesTab = (r: PurchaseRequest, key: string) => key === 'ALL'
+      || (key === 'WAREHOUSE' ? !!r.warehousePending
+        : key === 'OUTSTANDING' ? !!r.outstanding
+        : r.status === key && !(key === 'CONVERTED' && r.outstanding))
     const filtered = scopedRequests.filter(r => matchesTab(r, filterStatus))
     const counts = FILTER_TABS.reduce<Record<string, number>>((acc, t) => {
       acc[t.key] = scopedRequests.filter(r => matchesTab(r, t.key)).length
@@ -1416,8 +1449,8 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                 <td className="px-4 py-3 text-muted-foreground">{formatDate(r.createdAt)}</td>
                 <td className="px-4 py-3">
                   {(() => {
-                    const least = r.status === 'CONVERTED' ? leastAdvancedPo(r.orders) : null
-                    if (!least) return <><StatusBadge tone={STATUS_TONE[r.status]}>{STATUS_LABEL[r.status] ?? r.status}</StatusBadge><WarehouseCheckTag r={r} /></>
+                    const least = r.status === 'CONVERTED' && !r.outstanding ? leastAdvancedPo(r.orders) : null
+                    if (!least) return <><StatusBadge tone={prStatusTone(r)}>{prStatusLabel(r)}</StatusBadge><WarehouseCheckTag r={r} /></>
                     const { po, count } = least
                     return (
                       <div className="space-y-0.5">
@@ -1484,7 +1517,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                         </StatusBadge>
                       ) : (
                         <>
-                          <StatusBadge tone={STATUS_TONE[r.status]} size="sm">{STATUS_LABEL[r.status] ?? r.status}</StatusBadge>
+                          <StatusBadge tone={prStatusTone(r)} size="sm">{prStatusLabel(r)}</StatusBadge>
                           <WarehouseCheckTag r={r} />
                         </>
                       )}
@@ -1604,9 +1637,10 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
               {selected.requestedByEmployee && <> · requested by {selected.requestedByEmployee.fullName}</>}
               {selected.verifiedBy && <> · verified by {selected.verifiedBy.name}</>}
               {' · '}
-              <StatusBadge tone={STATUS_TONE[selected.status]}>
-                {STATUS_LABEL[selected.status] ?? selected.status}
-              </StatusBadge>
+              {(() => {
+                const st = { status: selected.status, outstanding: detail ? detail.items.some(it => (it.backorderQty ?? 0) > 0) : selected.outstanding }
+                return <StatusBadge tone={prStatusTone(st)}>{prStatusLabel(st)}</StatusBadge>
+              })()}
             </p>
             {selected.isUrgent && selected.urgentReason && (
               <p className="text-sm text-destructive mt-1.5 bg-destructive/10 border border-destructive/30 rounded-md px-3 py-1.5 inline-block">
@@ -1991,13 +2025,16 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
               const toDisplay = (n: number) => Math.floor((inPurchase ? n / conv : n) * 100 + 1e-6) / 100
               const toBase = (n: number) => inPurchase ? n * conv : n
               const warehouseLocations = locations.filter(l => l.type === 'WAREHOUSE' && l.id !== detail.deliveryLocationId)
-              const defaultFrom = sc?.locationId ?? item.warehouseStock?.slice().sort((x, y) => y.qty - x.qty)[0]?.locationId ?? ''
+              const approved = !!item.warehouseApprovedAt
+              const defaultFrom = item.warehouseFromLocationId ?? sc?.locationId ?? item.warehouseStock?.slice().sort((x, y) => y.qty - x.qty)[0]?.locationId ?? ''
               const fromValue = warehouseFrom[item.id!] ?? defaultFrom
               // Full breakdown is only known for the warehouse stockCheck ran against.
               const scHere = sc && sc.locationId === fromValue ? sc : null
               const maxBase = scHere ? scHere.availability : (item.warehouseStock?.find(w => w.locationId === fromValue)?.qty ?? null)
               const requestedBase = sc?.requested ?? toBase(item.quantity)
-              const suggested = scHere ? scHere.reserve : Math.min(requestedBase, maxBase ?? 0)
+              const suggested = approved && item.warehouseFromLocationId === fromValue && item.warehouseReserveQty != null
+                ? item.warehouseReserveQty
+                : scHere ? scHere.reserve : Math.min(requestedBase, maxBase ?? 0)
               const reserveStr = warehouseReserve[item.id!] ?? String(toDisplay(suggested))
               const typed = reserveStr.trim() === '' ? NaN : Number(reserveStr)
               let reserveBase = toBase(typed)
@@ -2049,6 +2086,15 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                   </div>
 
                   <div className="p-5 space-y-5">
+                    {pending && approved && (
+                      <div className="flex items-center gap-2 rounded-lg border border-success/30 bg-success/10 px-3 py-2 text-sm text-success">
+                        <CheckCircle2 className="h-4 w-4 shrink-0" />
+                        <span>
+                          Approved by Warehouse{item.warehouseApprovedAt && <> · {formatDate(item.warehouseApprovedAt, 'datetime')}</>} — reserve {lineQtyLabel(item, item.warehouseReserveQty ?? 0)}.
+                          <span className="text-success/80"> Change it below and save again, or undo.</span>
+                        </span>
+                      </div>
+                    )}
                     {pending ? (
                       <>
                         <div>
@@ -2116,8 +2162,8 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                           ) : (
                             <p className="text-xs text-muted-foreground">
                               {reserveBase > 0
-                                ? <>Send <span className="font-semibold text-foreground">{lineQtyLabel(item, reserveBase)}</span> now{reserveBase < requestedBase && <> · backorder <span className="font-semibold text-destructive">{lineQtyLabel(item, requestedBase - reserveBase)}</span></>}</>
-                                : <span className="font-medium text-warning">Nothing from stock → whole request to Purchasing</span>}
+                                ? <>On Process: send <span className="font-semibold text-foreground">{lineQtyLabel(item, reserveBase)}</span>{reserveBase < requestedBase && <> · backorder <span className="font-semibold text-destructive">{lineQtyLabel(item, requestedBase - reserveBase)}</span></>}</>
+                                : <span className="font-medium text-warning">On Process: nothing from stock → whole request to Purchasing</span>}
                             </p>
                           )}
                         </div>
@@ -2129,7 +2175,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                           <input
                             type="text" placeholder="Optional"
                             className="w-full text-sm border rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-ring"
-                            value={warehouseNote[item.id!] ?? ''}
+                            value={warehouseNote[item.id!] ?? item.warehouseCheckNote ?? ''}
                             onChange={e => setWarehouseNote(n => ({ ...n, [item.id!]: e.target.value }))}
                           />
                         </div>
@@ -2184,13 +2230,19 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                       <button onClick={() => setStockItemId(null)} className="px-4 py-2 text-sm border rounded-md hover:bg-muted">
                         {pending ? 'Cancel' : 'Close'}
                       </button>
+                      {pending && approved && (
+                        <button disabled={busy} onClick={() => warehouseUnapproveItem(item)}
+                          className="px-4 py-2 text-sm border rounded-md text-muted-foreground hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed">
+                          Undo approval
+                        </button>
+                      )}
                       {pending && (
                         <button
                           disabled={busy || !fromValue || invalid}
-                          onClick={() => warehouseCheckItem(item, reserveBase)}
-                          className="px-4 py-2 text-sm font-medium rounded-md bg-info text-info-foreground hover:bg-info/90 disabled:opacity-50 disabled:cursor-not-allowed"
+                          onClick={() => warehouseApproveItem(item, reserveBase)}
+                          className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-md bg-success text-success-foreground hover:bg-success/90 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                          {busy ? 'Processing…' : 'Process'}
+                          <Check className="h-4 w-4" /> {busy ? 'Saving…' : approved ? 'Save approval' : 'Approve'}
                         </button>
                       )}
                     </div>
@@ -2203,12 +2255,39 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
               item.verifyRejectedAt ? <StatusBadge tone="destructive" size="sm">Rejected</StatusBadge>
                 : !item.viaWarehouse ? <StatusBadge tone="neutral" size="sm">Direct to Purchasing</StatusBadge>
                 : item.warehouseDecision === 'PURCHASE' ? <StatusBadge tone="warning" size="sm">Sent to Purchasing</StatusBadge>
-                : item.convertedAt && item.warehouseDecision === 'TRANSFER' ? <StatusBadge tone="success" size="sm">Processed</StatusBadge>
+                : item.convertedAt && item.warehouseDecision === 'TRANSFER' ? (
+                  (item.backorderQty ?? 0) > 0
+                    ? <StatusBadge tone="warning" size="sm">Partly sent · {lineQtyLabel(item, item.backorderQty!)} remaining</StatusBadge>
+                    : <StatusBadge tone="success" size="sm">Processed</StatusBadge>
+                )
+                : item.warehouseApprovedAt ? <StatusBadge tone="success" size="sm"><Check className="h-3 w-3" /> Approved · reserve {lineQtyLabel(item, item.warehouseReserveQty ?? 0)}</StatusBadge>
                 : null
             const stockItem = showStockCheck && stockItemId ? sortedItems.find(it => it.id === stockItemId) ?? null : null
             return (
               <div className={`grid grid-cols-1 gap-6 items-start ${hideTimeline ? '' : 'lg:grid-cols-[1fr_300px]'}`}>
                 <div className="space-y-6 min-w-0">
+                {(() => {
+                  const waiting = sortedItems.filter(it => (it.backorderQty ?? 0) > 0)
+                  if (!waiting.length || ['CANCELLED', 'REJECTED'].includes(detail.status)) return null
+                  return (
+                    <div className="rounded-lg border border-warning/30 bg-warning/10 px-4 py-3 text-sm">
+                      <p className="font-medium text-warning flex items-center gap-1.5">
+                        <Clock className="h-4 w-4" /> Outstanding — {waiting.length} {waiting.length === 1 ? 'item is' : 'items are'} only partly sent
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        The rest ships automatically: once the restock arrives at the warehouse a transfer is created and Warehouse is notified to dispatch it.
+                      </p>
+                      <ul className="mt-2 space-y-1.5">
+                        {waiting.map((it, k) => (
+                          <li key={it.id ?? k} className="flex flex-wrap items-baseline gap-x-2">
+                            <span className="font-medium">{it.itemName}</span>
+                            <BackorderBadge item={it} />
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )
+                })()}
                 <div className="rounded-lg border overflow-hidden min-w-0">
                   <div className="px-5 py-3 bg-muted/50 border-b flex items-center justify-between gap-3">
                     <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Item List</p>
@@ -2227,7 +2306,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                     {showStockCheck && stockLocations.length > 0 && (
                       <p className="text-xs text-muted-foreground">
                         Stock at <span className="font-medium text-foreground">{stockLocations.join(', ')}</span>
-                        <span className="ml-1.5">· click an item to check it</span>
+                        <span className="ml-1.5">· approve each item, then Process Purchase Request</span>
                       </p>
                     )}
                   </div>
@@ -2354,7 +2433,10 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                         {awaiting ? (
                           <StatusBadge tone="info" size="sm">Waiting for Warehouse</StatusBadge>
                         ) : transferred ? (
-                          <TransferBadge transfer={item.transfer} onOpen={onOpenTransfer} />
+                          <div className="space-y-1">
+                            <TransferBadge transfer={item.transfer} onOpen={onOpenTransfer} />
+                            {(detail.status !== 'ON_PROCESS' || isWarehouse) && <BackorderBadge item={item} />}
+                          </div>
                         ) : detail.status !== 'ON_PROCESS' || isWarehouse ? (
                           <>
                             {item.supplierName ?? <span className="text-muted-foreground/50 italic">—</span>}

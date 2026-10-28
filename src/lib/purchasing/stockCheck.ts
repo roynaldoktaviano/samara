@@ -7,8 +7,8 @@ type Db = Awaited<ReturnType<typeof getDb>>
 // (where the line waits on backorder / was transferred from, else the warehouse — not the PR's
 // destination — holding the most of it). Mirrors the Warehouse's own order sheet:
 //   Availability = stock there − what OTHER requests already reserved (PENDING transfers out)
-//   Reserve      = this order's share of it: what it was given (its own PENDING transfer), or
-//                  while still undecided min(Requested, Availability)
+//   Reserve      = this order's share of it: what it was given (its own PENDING transfer), the
+//                  Reserve Warehouse approved, or while still undecided min(Requested, Availability)
 //   Ending       = Availability − Reserve (never negative)
 //   Shortage     = the part stock can't cover → backordered, shipped once restock lands
 //   To Be Order  = Shortage + whatever tops Ending back up to Min. Stock, net of On Order
@@ -40,6 +40,7 @@ export interface StockCheckRequest {
     id: string; itemId: string | null; quantity: number; unit: string
     convertedAt: Date | null; convertedPoId: string | null; warehouseDecision: string | null; verifyRejectedAt: Date | null
     backorderQty: number; backorderLocationId: string | null; viaWarehouse: boolean
+    warehouseReserveQty?: number | null; warehouseFromLocationId?: string | null
   }[]
   transfers: { id: string; status: string; fromLocationId: string; items: { itemId: string | null; requestedQty: number }[] }[]
 }
@@ -128,6 +129,7 @@ export async function computeStockChecks(db: Db, request: StockCheckRequest) {
     const ownTransfers = request.transfers.filter(t => t.status !== 'CANCELLED' && t.items.some(ti => ti.itemId === item.itemId))
     const sourceId = item.backorderLocationId
       ?? ownTransfers[0]?.fromLocationId
+      ?? item.warehouseFromLocationId
       ?? [...candidates].sort((a, b) => freeAt(item.itemId!, b) - freeAt(item.itemId!, a))[0]
     if (!sourceId) continue
 
@@ -142,6 +144,10 @@ export async function computeStockChecks(db: Db, request: StockCheckRequest) {
     let reserve: number, shortage: number
     if (accepted) { reserve = ownPending; shortage = item.backorderQty }
     else if (item.warehouseDecision === 'PURCHASE') { reserve = 0; shortage = requested }
+    // Approved, not processed yet: Warehouse's own Reserve (capped at what's free now).
+    else if (item.warehouseReserveQty != null && item.warehouseFromLocationId === sourceId) {
+      reserve = Math.min(item.warehouseReserveQty, availability); shortage = Math.max(0, requested - reserve)
+    }
     else { reserve = Math.min(requested, availability); shortage = requested - reserve }
     const ending = Math.max(0, availability - reserve)
     const onOrder = Math.max(0, onOrderMap.get(key) ?? 0)
