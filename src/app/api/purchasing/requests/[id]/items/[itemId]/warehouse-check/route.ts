@@ -6,6 +6,7 @@ import { getDb } from '@/lib/get-db'
 import { roleMatches } from '@/lib/role-utils'
 import { emitTenantEvent } from '@/lib/realtime-bus'
 import { freeStock } from '@/lib/purchasing/warehouseProcess'
+import { warehouseHomeLocationId } from '@/lib/purchasing/warehouseHome'
 
 // Warehouse's "Approve" on a single Warehouse-routed PR line — kept separate from the
 // Purchasing-only .../items/[itemId] route so Warehouse never gains access to that route's
@@ -24,7 +25,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
 
-  const { action, fromLocationId, note, reserveQty } = (await req.json()) as { action?: 'approve' | 'unapprove'; fromLocationId?: string; note?: string; reserveQty?: number }
+  const body = (await req.json()) as { action?: 'approve' | 'unapprove'; fromLocationId?: string; note?: string; reserveQty?: number }
+  const { action, note, reserveQty } = body
+  // The WAREHOUSE role always takes from its home warehouse (Gudang Labuan Bajo) — not its pick.
+  const home = roleMatches(role, ['WAREHOUSE']) ? await warehouseHomeLocationId(db) : null
+  const fromLocationId = home ?? body.fromLocationId
 
   const request = await db.purchaseRequest.findUnique({ where: { id }, select: { status: true, deliveryLocationId: true, warehouseDoneAt: true } })
   if (!request) return NextResponse.json({ error: 'Request not found' }, { status: 404 })

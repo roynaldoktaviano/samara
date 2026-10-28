@@ -9,6 +9,7 @@ import { emitTenantEvent } from '@/lib/realtime-bus'
 import { notifyByRole, notifyByRoleForRequest } from '@/lib/notify-purchasing'
 import { createOrAppendTransfer, toBaseQty } from '@/lib/purchasing/transferActions'
 import { computeStockChecks } from '@/lib/purchasing/stockCheck'
+import { warehouseHomeLocationId } from '@/lib/purchasing/warehouseHome'
 import { effectiveTreatment, type Treatment } from '@/lib/purchasing/treatment'
 import { routePrLines, initialPrStatus, notifyPrRouted } from '@/lib/purchasing/requestItems'
 import { resolveTripLink, tripBookingSelect, openTripSelect, tripOf } from '@/lib/purchasing/tripLink'
@@ -104,12 +105,14 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   const itemIds = request.items.map(i => i.itemId).filter(Boolean) as string[]
+  // The WAREHOUSE role always takes from its home warehouse — check stock there, not wherever has most.
+  const homeLocationId = roleMatches(role, ['WAREHOUSE']) ? await warehouseHomeLocationId(db) : null
   const [requesterUser, lots, purchaseItems, warehouses, { checks: stockChecks, reservedMap }, restockLinks, restockLines] = await Promise.all([
     db.user.findUnique({ where: { id: request.requestedById }, select: { id: true, name: true } }),
     itemIds.length ? db.stockLot.findMany({ where: { itemId: { in: itemIds }, quantity: { gt: 0 } }, select: { itemId: true, locationId: true, quantity: true } }) : ([] as { itemId: string | null; locationId: string; quantity: number }[]),
     itemIds.length ? db.purchaseItem.findMany({ where: { id: { in: itemIds } }, select: { id: true, minStock: true, baseUnit: true, purchaseUnit: true, conversionFactor: true, treatment: true } }) : ([] as { id: string; minStock: number; baseUnit: string; purchaseUnit: string; conversionFactor: number; treatment: Treatment }[]),
     db.stockLocation.findMany({ where: { type: 'WAREHOUSE', isActive: true }, select: { id: true, name: true } }),
-    computeStockChecks(db, request),
+    computeStockChecks(db, request, { preferredSourceId: homeLocationId }),
     // Restock PRs this one triggered, or the vessel PR this Restock PR was created for.
     db.purchaseRequest.findMany({
       where: { OR: [{ restockForRequestId: id }, ...(request.restockForRequestId ? [{ id: request.restockForRequestId }] : [])] },
@@ -233,7 +236,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const restockRequests = restockLinks.filter(r => r.restockForRequestId === id).map(({ restockForRequestId: _, ...r }) => r)
   const restockFor = restockLinks.find(r => r.id === request.restockForRequestId) ?? null
 
-  return NextResponse.json({ ...request, restockRequests, restockFor: restockFor ? { id: restockFor.id, prNumber: restockFor.prNumber } : null, transfers: undefined, stockTransfers, tripBooking: undefined, openTrip: undefined, trip: tripOf(request), items, requestedBy: requester, createdBy: requesterUser, canTransfer })
+  return NextResponse.json({ ...request, restockRequests, restockFor: restockFor ? { id: restockFor.id, prNumber: restockFor.prNumber } : null, transfers: undefined, stockTransfers, tripBooking: undefined, openTrip: undefined, trip: tripOf(request), items, requestedBy: requester, createdBy: requesterUser, canTransfer, warehouseHomeLocationId: homeLocationId })
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {

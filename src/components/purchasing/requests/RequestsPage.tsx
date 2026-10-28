@@ -321,6 +321,8 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
   const [detail, setDetail] = useState<(PurchaseRequest & {
     items: RequestLine[]
     canTransfer?: boolean
+    // WAREHOUSE role only: the warehouse it always takes from (Gudang Labuan Bajo) — no source picker.
+    warehouseHomeLocationId?: string | null
     // Gudang-stock transfers created for this PR — see stockTransfers in GET .../requests/[id].
     stockTransfers?: { id: string; transferNumber: string; status: string; createdAt: string; dispatchedAt: string | null; receivedAt: string | null; receivedByName: string | null; fromLocationName: string; toLocationName: string }[]
   }) | null>(null)
@@ -1179,7 +1181,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
     if (!detail || !item.id) return
     // Same fallback the dropdown displays — the preselected warehouse counts as a choice
     // even if the user never touched the dropdown.
-    const fromLocationId = warehouseFrom[item.id] ?? item.warehouseFromLocationId ?? item.stockCheck?.locationId ?? item.warehouseStock?.slice().sort((a, b) => b.qty - a.qty)[0]?.locationId ?? ''
+    const fromLocationId = detail.warehouseHomeLocationId ?? warehouseFrom[item.id] ?? item.warehouseFromLocationId ?? item.stockCheck?.locationId ?? item.warehouseStock?.slice().sort((a, b) => b.qty - a.qty)[0]?.locationId ?? ''
     if (!fromLocationId) { toast.error('Select a warehouse location first'); return }
     setWarehouseBusyItemId(item.id)
     const res = await fetch(`/api/purchasing/requests/${detail.id}/items/${item.id}/warehouse-check`, {
@@ -2027,7 +2029,8 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
               const warehouseLocations = locations.filter(l => l.type === 'WAREHOUSE' && l.id !== detail.deliveryLocationId)
               const approved = !!item.warehouseApprovedAt
               const defaultFrom = item.warehouseFromLocationId ?? sc?.locationId ?? item.warehouseStock?.slice().sort((x, y) => y.qty - x.qty)[0]?.locationId ?? ''
-              const fromValue = warehouseFrom[item.id!] ?? defaultFrom
+              const homeId = detail.warehouseHomeLocationId ?? null
+              const fromValue = homeId ?? warehouseFrom[item.id!] ?? defaultFrom
               // Full breakdown is only known for the warehouse stockCheck ran against.
               const scHere = sc && sc.locationId === fromValue ? sc : null
               const maxBase = scHere ? scHere.availability : (item.warehouseStock?.find(w => w.locationId === fromValue)?.qty ?? null)
@@ -2099,6 +2102,12 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                       <>
                         <div>
                           <p className={sectionLabel}>Take from</p>
+                          {homeId ? (
+                            <p className="flex items-center gap-2 rounded-md border bg-muted/30 px-3 py-2 text-sm font-medium">
+                              <Building2 className="h-4 w-4 text-muted-foreground" />
+                              {locations.find(l => l.id === homeId)?.name ?? sc?.locationName ?? 'Warehouse'}
+                            </p>
+                          ) : (
                           <div className="relative">
                             <select
                               className="w-full appearance-none text-sm pl-3 pr-8 py-2 rounded-md border bg-card cursor-pointer focus:outline-none focus:ring-1 focus:ring-ring"
@@ -2116,6 +2125,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                             </select>
                             <ChevronDown className="h-4 w-4 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-muted-foreground" />
                           </div>
+                          )}
                         </div>
 
                         <div className="grid grid-cols-3 gap-2">

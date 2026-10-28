@@ -45,7 +45,9 @@ export interface StockCheckRequest {
   transfers: { id: string; status: string; fromLocationId: string; items: { itemId: string | null; requestedQty: number }[] }[]
 }
 
-export async function computeStockChecks(db: Db, request: StockCheckRequest) {
+// preferredSourceId: the warehouse to check against when the line has no source of its own yet
+// (no backorder / transfer / approval) — the WAREHOUSE role's home warehouse (warehouseHome.ts).
+export async function computeStockChecks(db: Db, request: StockCheckRequest, opts: { preferredSourceId?: string | null } = {}) {
   const itemIds = [...new Set(request.items.map(i => i.itemId).filter(Boolean) as string[])]
   const checks = new Map<string, StockCheck>() // key: PR item id
   const reservedMap = new Map<string, number>() // ALL pending reservations, key `${itemId}:${locationId}`
@@ -130,6 +132,7 @@ export async function computeStockChecks(db: Db, request: StockCheckRequest) {
     const sourceId = item.backorderLocationId
       ?? ownTransfers[0]?.fromLocationId
       ?? item.warehouseFromLocationId
+      ?? (opts.preferredSourceId && candidates.includes(opts.preferredSourceId) ? opts.preferredSourceId : null)
       ?? [...candidates].sort((a, b) => freeAt(item.itemId!, b) - freeAt(item.itemId!, a))[0]
     if (!sourceId) continue
 
