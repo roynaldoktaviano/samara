@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, type ReactNode } from 'react'
 import { useSession } from 'next-auth/react'
-import { Plus, ChevronRight, X, ArrowRight, Package, Trash2, Search, Camera, AlertTriangle, CheckCircle2, ArrowLeftRight, ChevronDown, User, FileDown, Ship } from 'lucide-react'
+import { Plus, ChevronRight, X, ArrowRight, Package, Trash2, Search, Camera, AlertTriangle, CheckCircle2, ArrowLeftRight, ChevronDown, ChevronLeft, User, FileDown, Ship, Warehouse, MapPin, FileText, ClipboardList, CalendarDays, StickyNote, type LucideIcon } from 'lucide-react'
 import { useFileDrop } from '@/hooks/useFileDrop'
 import { PhotoSourceMenu } from '@/components/ui/file-preview'
 import { renderLocationOptions } from '@/components/purchasing/LocationOptions'
@@ -61,6 +61,36 @@ const STATUS: Record<string, { label: string; tone: StatusTone }> = {
   DISPATCHED: { label: 'In Transit', tone: 'info' },
   RECEIVED:   { label: 'Received',   tone: 'success' },
   CANCELLED:  { label: 'Cancelled',  tone: 'neutral' },
+}
+
+const LOCATION_TYPE_LABEL: Record<string, string> = { WAREHOUSE: 'Warehouse', VESSEL: 'Vessel', TRANSIT: 'Transit', SITE: 'Site', ADJUSTMENT: 'Adjustment' }
+
+function RouteEnd({ label, loc, align }: { label: string; loc: StockLocation | null; align?: 'right' }) {
+  const Icon = loc?.type === 'VESSEL' ? Ship : loc?.type === 'WAREHOUSE' ? Warehouse : MapPin
+  return (
+    <div className={`flex items-center gap-3 min-w-0 ${align === 'right' ? 'flex-row-reverse text-right' : ''}`}>
+      <div className="h-10 w-10 shrink-0 rounded-lg border bg-card flex items-center justify-center">
+        <Icon className="h-4 w-4 text-muted-foreground" />
+      </div>
+      <div className="min-w-0">
+        <p className="text-[11px] uppercase tracking-wide text-muted-foreground font-medium">{label}</p>
+        <p className="font-semibold truncate">{loc?.name ?? '—'}</p>
+        {loc?.type && <p className="text-xs text-muted-foreground">{LOCATION_TYPE_LABEL[loc.type] ?? loc.type}</p>}
+      </div>
+    </div>
+  )
+}
+
+function DetailRow({ icon: Icon, label, children }: { icon: LucideIcon; label: string; children: ReactNode }) {
+  return (
+    <div className="flex gap-3 py-3 first:pt-0 last:pb-0">
+      <Icon className="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground" />
+      <div className="min-w-0 text-sm">
+        <p className="text-xs text-muted-foreground">{label}</p>
+        <div className="mt-0.5">{children}</div>
+      </div>
+    </div>
+  )
 }
 
 function compressPhoto(file: File): Promise<string> {
@@ -828,228 +858,248 @@ export default function TransfersPage({ deepLinkId, onDeepLinkHandled, onOpenReq
   }
 
   // ── Detail ──
+  const linkBtn = 'font-medium text-info hover:underline underline-offset-2'
+  const expectedReceiver = detail?.expectedReceiverName ?? detail?.expectedReceivedBy?.name ?? null
   return (
     <div className="space-y-5">
-      <div className="flex items-center gap-3">
-        <button onClick={() => setView('list')} className="text-muted-foreground hover:text-foreground text-sm">← Back</button>
-        {detail && (
-          <div className="flex-1 flex items-center justify-between">
-            <div><h2 className="text-xl font-bold">{detail.transferNumber}</h2>
-              <div className="flex items-center gap-1.5 text-sm text-muted-foreground mt-0.5">
-                <span>{detail.fromLocation?.name}</span><ArrowRight className="h-3.5 w-3.5" /><span>{detail.toLocation?.name}</span>
-              </div>
-              {detail.purchaseOrder && (
-                <p className="text-xs text-muted-foreground mt-1">
-                  Auto-created from PO {onOpenPo
-                    ? <button onClick={() => onOpenPo(detail.purchaseOrder!.id)} className="font-medium text-info hover:underline underline-offset-2">{detail.purchaseOrder.poNumber}</button>
-                    : <span className="font-medium text-foreground">{detail.purchaseOrder.poNumber}</span>}
-                  {detail.legSequence ? ` — leg ${detail.legSequence}` : ''}
-                </p>
-              )}
-              {detail.purchaseRequest && (
-                <p className="text-xs text-muted-foreground mt-1">
-                  Requested by <span className="font-medium text-foreground">{detail.purchaseRequest.requestedByName ?? '—'}</span>
-                  {' '}({onOpenRequest
-                    ? <button onClick={() => onOpenRequest(detail.purchaseRequest!.id)} className="font-medium text-info hover:underline underline-offset-2">{detail.purchaseRequest.prNumber}</button>
-                    : detail.purchaseRequest.prNumber})
-                </p>
-              )}
-              {!!detail.restockPos?.length && (
-                <p className="text-xs text-muted-foreground mt-1">
-                  Remaining items — stock arrived with restock {detail.restockPos.map((po, k) => (
-                    <span key={po.id}>
-                      {k > 0 && ', '}
-                      {onOpenPo ? <button onClick={() => onOpenPo(po.id)} className="font-medium text-info hover:underline underline-offset-2">{po.poNumber}</button> : <span className="font-medium text-foreground">{po.poNumber}</span>}
-                    </span>
-                  ))}
-                </p>
-              )}
-              {detail.trip && (
-                <p className="text-xs text-muted-foreground mt-1">
-                  For trip: <span className="font-medium text-foreground">{tripShortLabel(detail.trip)}</span>
-                  {` (${tripDates(detail.trip)}) — ${detail.trip.label}`}
-                </p>
-              )}
-              {!!detail.totalValue && (
-                <p className="text-xs text-muted-foreground mt-1">
-                  {detail.status === 'DISPATCHED' ? 'Transfer value: ' : detail.status === 'RECEIVED' ? 'Received value: ' : 'Goods value: '}
-                  <span className="font-semibold text-foreground">{formatMoney(detail.totalValue)}</span>
-                </p>
-              )}
-            </div>
-            <div className="flex items-center gap-2">
-              <StatusBadge tone={STATUS[detail.status]?.tone ?? 'neutral'} className="px-3 py-1 text-sm">{STATUS[detail.status]?.label ?? detail.status}</StatusBadge>
-              {detail.status !== 'CANCELLED' && (
-                <button onClick={() => window.open(`/print/stock-transfer/${detail.id}`, '_blank')} title="Print the packing list for this transfer"
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm border rounded-md hover:bg-muted font-medium">
-                  <FileDown className="h-3.5 w-3.5" /> Packing List
-                </button>
-              )}
-              {detail.status === 'PENDING' && (detail.canDispatch
-                ? <button onClick={openDispatch} className="px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary-hover font-medium">Dispatch</button>
-                : <span className="px-3 py-1.5 text-xs text-muted-foreground border border-dashed rounded-md">Waiting for {detail.dispatchOwnerLabel ?? 'the source location'} to dispatch</span>)}
-              {detail.status === 'DISPATCHED' && !(receiveOnly && detail.canDispatch) && <button onClick={openReceive} className="px-3 py-1.5 text-sm bg-success text-success-foreground rounded-md hover:bg-success/90 font-medium">Receive</button>}
-              {detail.status === 'DISPATCHED' && !receiveOnly && (
-                <button onClick={openCrewLink} className="px-3 py-1.5 text-sm border rounded-md hover:bg-muted font-medium">Get Crew Link</button>
-              )}
-              {detail.status === 'PENDING' && !receiveOnly && (
-                <button onClick={async () => { await fetch(`/api/purchasing/transfers/${detail.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'cancel' }) }); setView('list'); load() }} className="px-3 py-1.5 text-sm border text-muted-foreground rounded-md hover:bg-muted">Cancel</button>
-              )}
-            </div>
-          </div>
-        )}
-      </div>
+      <button onClick={() => setView('list')} className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+        <ChevronLeft className="h-4 w-4" /> Back to transfers
+      </button>
 
       {detailLoading || !detail ? (
         <div className="space-y-4 animate-pulse">
-          <div className="rounded-lg border p-5 h-20 bg-muted/30" />
-          <div className="rounded-lg border overflow-hidden h-40 bg-muted/30" />
+          <div className="rounded-xl border h-44 bg-muted/30" />
+          <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
+            <div className="rounded-xl border h-64 bg-muted/30" />
+            <div className="rounded-xl border h-40 bg-muted/30" />
+          </div>
         </div>
       ) : (
         <>
-          {/* Progress Tracker */}
-          {(() => {
-            const cancelled = detail.status === 'CANCELLED'
-            const steps = [
-              { label: 'Created', sublabel: 'Transfer requested', done: true, active: detail.status === 'PENDING', date: formatDate(detail.createdAt), time: formatDate(detail.createdAt, 'time'), by: null },
-              { label: 'Dispatched', sublabel: 'In transit', done: !!detail.dispatchedAt, active: detail.status === 'DISPATCHED', date: detail.dispatchedAt ? formatDate(detail.dispatchedAt) : null, time: detail.dispatchedAt ? formatDate(detail.dispatchedAt, 'time') : null, by: detail.dispatchedBy?.name ?? null },
-              { label: 'Received', sublabel: 'Completed', done: !!detail.receivedAt, active: false, date: detail.receivedAt ? formatDate(detail.receivedAt) : null, time: detail.receivedAt ? formatDate(detail.receivedAt, 'time') : null, by: detail.receivedByName ?? detail.receivedBy?.name ?? null },
-            ]
-            return (
-              <div className="rounded-xl border overflow-hidden">
-                {cancelled && (
-                  <div className="px-5 py-2.5 bg-destructive/10 border-b">
-                    <p className="text-xs font-semibold text-destructive uppercase tracking-widest">Transfer Cancelled</p>
-                  </div>
+          {/* Header: number, status, actions, route */}
+          <div className="rounded-xl border bg-card overflow-hidden">
+            {detail.status === 'CANCELLED' && (
+              <div className="px-5 py-2 bg-destructive/10 border-b">
+                <p className="text-xs font-semibold text-destructive uppercase tracking-widest">Transfer Cancelled</p>
+              </div>
+            )}
+            <div className="p-5 flex flex-wrap items-start justify-between gap-4">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2.5 flex-wrap">
+                  <h2 className="text-xl font-bold tracking-tight">{detail.transferNumber}</h2>
+                  <StatusBadge tone={STATUS[detail.status]?.tone ?? 'neutral'} className="px-2.5 py-0.5 text-xs">{STATUS[detail.status]?.label ?? detail.status}</StatusBadge>
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Created {formatDate(detail.createdAt)} · {detail.items.length} item{detail.items.length === 1 ? '' : 's'}
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                {detail.status !== 'CANCELLED' && (
+                  <button onClick={() => window.open(`/print/stock-transfer/${detail.id}`, '_blank')} title="Print the packing list for this transfer"
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-sm border rounded-md hover:bg-muted font-medium">
+                    <FileDown className="h-3.5 w-3.5" /> Packing List
+                  </button>
                 )}
-                <div className={`px-6 py-5 ${cancelled ? 'opacity-40' : ''}`}>
-                  <div className="flex items-start">
-                    {steps.map((step, i) => (
-                      <div key={i} className="flex-1 flex flex-col items-center relative">
-                        {i < steps.length - 1 && (
-                          <div className="absolute top-[15px] left-1/2 w-full h-[2px]" style={{ zIndex: 0 }}>
-                            <div className={`h-full ${step.done && steps[i + 1].done ? 'bg-success' : step.done ? 'bg-success/40' : 'bg-muted'}`} />
+                {detail.status === 'DISPATCHED' && !receiveOnly && (
+                  <button onClick={openCrewLink} className="px-3 py-1.5 text-sm border rounded-md hover:bg-muted font-medium">Get Crew Link</button>
+                )}
+                {detail.status === 'PENDING' && !receiveOnly && (
+                  <button onClick={async () => { await fetch(`/api/purchasing/transfers/${detail.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'cancel' }) }); setView('list'); load() }} className="px-3 py-1.5 text-sm border text-muted-foreground rounded-md hover:bg-muted">Cancel</button>
+                )}
+                {detail.status === 'PENDING' && (detail.canDispatch
+                  ? <button onClick={openDispatch} className="px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary-hover font-medium">Dispatch</button>
+                  : <span className="px-3 py-1.5 text-xs text-muted-foreground border border-dashed rounded-md">Waiting for {detail.dispatchOwnerLabel ?? 'the source location'} to dispatch</span>)}
+                {detail.status === 'DISPATCHED' && !(receiveOnly && detail.canDispatch) && <button onClick={openReceive} className="px-3 py-1.5 text-sm bg-success text-success-foreground rounded-md hover:bg-success/90 font-medium">Receive</button>}
+              </div>
+            </div>
+            <div className="px-5 pb-5">
+              <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 rounded-lg bg-muted/40 p-4">
+                <RouteEnd label="From" loc={detail.fromLocation} />
+                <div className={`h-8 w-8 rounded-full flex items-center justify-center ${
+                  detail.status === 'RECEIVED' ? 'bg-success/15 text-success' : detail.status === 'DISPATCHED' ? 'bg-info/15 text-info' : 'bg-card border text-muted-foreground'
+                }`}>
+                  <ArrowRight className="h-4 w-4" />
+                </div>
+                <RouteEnd label="To" loc={detail.toLocation} align="right" />
+              </div>
+            </div>
+          </div>
+
+          <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px] items-start">
+            <div className="space-y-5 min-w-0">
+              {/* Progress Tracker */}
+              {(() => {
+                const cancelled = detail.status === 'CANCELLED'
+                const steps = [
+                  { label: 'Created', sublabel: 'Transfer requested', done: true, active: detail.status === 'PENDING', date: formatDate(detail.createdAt), time: formatDate(detail.createdAt, 'time'), by: null },
+                  { label: 'Dispatched', sublabel: 'In transit', done: !!detail.dispatchedAt, active: detail.status === 'DISPATCHED', date: detail.dispatchedAt ? formatDate(detail.dispatchedAt) : null, time: detail.dispatchedAt ? formatDate(detail.dispatchedAt, 'time') : null, by: detail.dispatchedBy?.name ?? null },
+                  { label: 'Received', sublabel: 'Completed', done: !!detail.receivedAt, active: false, date: detail.receivedAt ? formatDate(detail.receivedAt) : null, time: detail.receivedAt ? formatDate(detail.receivedAt, 'time') : null, by: detail.receivedByName ?? detail.receivedBy?.name ?? null },
+                ]
+                return (
+                  <div className={`rounded-xl border bg-card px-6 py-5 ${cancelled ? 'opacity-50' : ''}`}>
+                    <div className="flex items-start">
+                      {steps.map((step, i) => (
+                        <div key={i} className="flex-1 flex flex-col items-center relative">
+                          {i < steps.length - 1 && (
+                            <div className="absolute top-[15px] left-1/2 w-full h-[2px]" style={{ zIndex: 0 }}>
+                              <div className={`h-full ${step.done && steps[i + 1].done ? 'bg-success' : step.done ? 'bg-success/40' : 'bg-muted'}`} />
+                            </div>
+                          )}
+                          <div className={`relative z-10 w-[30px] h-[30px] rounded-full flex items-center justify-center transition-all ${
+                            step.done ? 'bg-success shadow-sm shadow-success/30' : step.active ? 'bg-card ring-2 ring-ring' : 'bg-muted'
+                          }`}>
+                            {step.done ? (
+                              <svg className="w-3.5 h-3.5 text-success-foreground" fill="none" viewBox="0 0 16 16"><path d="M3 8l3.5 3.5L13 5" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                            ) : (
+                              <span className={`text-[10px] font-bold ${step.active ? 'text-primary' : 'text-muted-foreground'}`}>{i + 1}</span>
+                            )}
                           </div>
-                        )}
-                        <div className={`relative z-10 w-[30px] h-[30px] rounded-full flex items-center justify-center transition-all ${
-                          step.done ? 'bg-success shadow-sm shadow-success/30' : step.active ? 'bg-card ring-2 ring-ring' : 'bg-muted'
-                        }`}>
-                          {step.done ? (
-                            <svg className="w-3.5 h-3.5 text-success-foreground" fill="none" viewBox="0 0 16 16"><path d="M3 8l3.5 3.5L13 5" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                          ) : (
-                            <span className={`text-[10px] font-bold ${step.active ? 'text-primary' : 'text-muted-foreground'}`}>{i + 1}</span>
-                          )}
+                          <div className="mt-3 text-center px-2 w-full">
+                            <p className={`text-xs font-semibold tracking-wide ${step.done ? 'text-success' : step.active ? 'text-primary' : 'text-muted-foreground/60'}`}>{step.label}</p>
+                            {step.date ? (
+                              <>
+                                <p className="text-[11px] text-muted-foreground mt-1 leading-tight">{step.date}</p>
+                                <p className="text-[11px] text-muted-foreground/70 leading-tight">{step.time}</p>
+                                {step.by && <p className="text-[11px] font-medium text-foreground mt-1">{step.by}</p>}
+                              </>
+                            ) : (
+                              <p className="text-[11px] text-muted-foreground/40 mt-1">{step.sublabel}</p>
+                            )}
+                          </div>
                         </div>
-                        <div className="mt-3 text-center px-2 w-full">
-                          <p className={`text-xs font-semibold tracking-wide ${step.done ? 'text-success' : step.active ? 'text-primary' : 'text-muted-foreground/60'}`}>{step.label}</p>
-                          {step.date ? (
-                            <>
-                              <p className="text-[11px] text-muted-foreground mt-1 leading-tight">{step.date}</p>
-                              <p className="text-[11px] text-muted-foreground/70 leading-tight">{step.time}</p>
-                              {step.by && <p className="text-[11px] font-medium text-foreground mt-1">{step.by}</p>}
-                            </>
-                          ) : (
-                            <p className="text-[11px] text-muted-foreground/40 mt-1">{step.sublabel}</p>
-                          )}
-                        </div>
-                      </div>
+                      ))}
+                    </div>
+                  </div>
+                )
+              })()}
+
+              {/* Items table */}
+              <div className="rounded-xl border bg-card overflow-hidden">
+                <div className="px-5 py-3 border-b flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-semibold">Items</h3>
+                    <span className="text-[11px] font-medium px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground tabular-nums">{detail.items.length}</span>
+                  </div>
+                  {detail.status === 'PENDING' && !receiveOnly && (
+                    <button onClick={openAddItem} className="text-xs font-medium px-2.5 py-1 rounded-md border hover:bg-muted transition-colors flex items-center gap-1">
+                      <Plus className="h-3 w-3" /> Add Item
+                    </button>
+                  )}
+                </div>
+                <div className="overflow-x-auto"><table className="w-full text-sm">
+                  <thead className="bg-muted/40 text-[11px] uppercase tracking-wide text-muted-foreground">
+                    <tr>
+                      <th className="text-left px-5 py-2.5 font-medium">Item</th>
+                      <th className="text-right px-5 py-2.5 font-medium w-32">Requested</th>
+                      <th className="text-right px-5 py-2.5 font-medium w-32">Dispatched</th>
+                      <th className="text-right px-5 py-2.5 font-medium w-32">Received</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {detail.items.map((it, i) => {
+                      const hasDiscrepancy = it.receivedQty > 0 && it.receivedQty !== it.dispatchedQty
+                      return (
+                        <tr key={i} className="hover:bg-muted/20">
+                          <td className="px-5 py-3">
+                            <div className="flex items-center gap-3">
+                              <div className="h-10 w-10 shrink-0 rounded-lg border bg-muted/40 overflow-hidden flex items-center justify-center">
+                                {it.imageKey ? <img src={it.imageKey} alt={it.itemName} className="h-full w-full object-cover" /> : <Package className="h-4 w-4 text-muted-foreground/40" />}
+                              </div>
+                              <div className="min-w-0">
+                                <p className="font-medium leading-tight">{it.itemName}</p>
+                                {it.sku && <p className="text-xs text-muted-foreground mt-0.5">{it.sku}</p>}
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-5 py-3 text-right tabular-nums font-medium">
+                            <StockQty item={it} qty={it.requestedQty} natural />
+                          </td>
+                          <td className="px-5 py-3 text-right tabular-nums">
+                            {it.dispatchedQty > 0 ? <StockQty item={it} qty={it.dispatchedQty} natural /> : <span className="text-muted-foreground/50">—</span>}
+                          </td>
+                          <td className={`px-5 py-3 text-right tabular-nums font-medium ${hasDiscrepancy ? 'text-destructive' : it.receivedQty >= it.requestedQty && it.receivedQty > 0 ? 'text-success' : ''}`}>
+                            {it.receivedQty > 0 ? (
+                              <span className="inline-flex items-center gap-1">
+                                {hasDiscrepancy && <AlertTriangle className="h-3.5 w-3.5" />}
+                                <StockQty item={it} qty={it.receivedQty} natural />
+                              </span>
+                            ) : <span className="font-normal text-muted-foreground/50">—</span>}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table></div>
+              </div>
+            </div>
+
+            {/* Sidebar: linked documents + photos */}
+            <div className="space-y-5">
+              <div className="rounded-xl border bg-card p-5">
+                <h3 className="text-sm font-semibold mb-3">Details</h3>
+                <div className="divide-y">
+                  {detail.purchaseOrder && (
+                    <DetailRow icon={FileText} label={detail.legSequence ? `Source PO · leg ${detail.legSequence}` : 'Source PO'}>
+                      {onOpenPo
+                        ? <button onClick={() => onOpenPo(detail.purchaseOrder!.id)} className={linkBtn}>{detail.purchaseOrder.poNumber}</button>
+                        : <span className="font-medium">{detail.purchaseOrder.poNumber}</span>}
+                    </DetailRow>
+                  )}
+                  {detail.purchaseRequest && (
+                    <DetailRow icon={ClipboardList} label="Purchase Request">
+                      {onOpenRequest
+                        ? <button onClick={() => onOpenRequest(detail.purchaseRequest!.id)} className={linkBtn}>{detail.purchaseRequest.prNumber}</button>
+                        : <span className="font-medium">{detail.purchaseRequest.prNumber}</span>}
+                      <p className="text-xs text-muted-foreground">by {detail.purchaseRequest.requestedByName ?? '—'}</p>
+                    </DetailRow>
+                  )}
+                  {!!detail.restockPos?.length && (
+                    <DetailRow icon={Package} label="Stock arrived with restock">
+                      {detail.restockPos.map((po, k) => (
+                        <span key={po.id}>
+                          {k > 0 && ', '}
+                          {onOpenPo ? <button onClick={() => onOpenPo(po.id)} className={linkBtn}>{po.poNumber}</button> : <span className="font-medium">{po.poNumber}</span>}
+                        </span>
+                      ))}
+                    </DetailRow>
+                  )}
+                  {detail.trip && (
+                    <DetailRow icon={CalendarDays} label="For trip">
+                      <span className="font-medium">{tripShortLabel(detail.trip)}</span>
+                      <p className="text-xs text-muted-foreground">{tripDates(detail.trip)} — {detail.trip.label}</p>
+                    </DetailRow>
+                  )}
+                  {expectedReceiver && (
+                    <DetailRow icon={User} label="Expected receiver">
+                      <span className="font-medium">{expectedReceiver}</span>
+                    </DetailRow>
+                  )}
+                  {detail.notes && (
+                    <DetailRow icon={StickyNote} label="Notes">
+                      <p className="whitespace-pre-wrap">{detail.notes}</p>
+                    </DetailRow>
+                  )}
+                  {!detail.purchaseOrder && !detail.purchaseRequest && !detail.restockPos?.length && !detail.trip && !expectedReceiver && !detail.notes && (
+                    <p className="text-sm text-muted-foreground">Manual transfer — no linked documents.</p>
+                  )}
+                </div>
+              </div>
+
+              {(detail.dispatchPhotoKey || detail.receivePhotoKey) && (
+                <div className="rounded-xl border bg-card p-5">
+                  <h3 className="text-sm font-semibold mb-3">Photos</h3>
+                  <div className="grid grid-cols-2 gap-3">
+                    {[{ label: 'Dispatch', src: detail.dispatchPhotoKey }, { label: 'Receive', src: detail.receivePhotoKey }].filter(p => p.src).map(p => (
+                      <a key={p.label} href={p.src!} target="_blank" rel="noreferrer" className="group space-y-1.5">
+                        <img src={p.src!} alt={`${p.label} photo`} className="w-full aspect-[4/3] object-cover rounded-lg border group-hover:opacity-90 transition-opacity" />
+                        <p className="text-xs text-muted-foreground font-medium">{p.label}</p>
+                      </a>
                     ))}
                   </div>
                 </div>
-              </div>
-            )
-          })()}
-
-          {/* Photo thumbnails */}
-          {(detail.dispatchPhotoKey || detail.receivePhotoKey) && (
-            <div className="flex gap-3">
-              {detail.dispatchPhotoKey && (
-                <div className="space-y-1">
-                  <p className="text-xs text-muted-foreground font-medium">Dispatch Photo</p>
-                  <img src={detail.dispatchPhotoKey} className="w-32 h-24 object-cover rounded-lg border" />
-                </div>
-              )}
-              {detail.receivePhotoKey && (
-                <div className="space-y-1">
-                  <p className="text-xs text-muted-foreground font-medium">Receive Photo</p>
-                  <img src={detail.receivePhotoKey} className="w-32 h-24 object-cover rounded-lg border" />
-                </div>
               )}
             </div>
-          )}
-
-          {/* Items table */}
-          <div className="rounded-lg border overflow-hidden">
-            <div className="px-5 py-3 bg-muted/50 text-xs font-medium text-muted-foreground uppercase flex items-center justify-between">
-              Item List
-              {detail.status === 'PENDING' && !receiveOnly && (
-                <button onClick={openAddItem} className="normal-case text-xs font-medium px-2.5 py-1 rounded-md border bg-card hover:bg-muted transition-colors flex items-center gap-1">
-                  <Plus className="h-3 w-3" /> Add Item
-                </button>
-              )}
-            </div>
-            <div className="overflow-x-auto"><table className="w-full text-sm">
-              <thead className="border-b text-xs text-muted-foreground">
-                <tr>
-                  <th className="text-left px-5 py-2.5 font-medium">Item</th>
-                  <th className="text-right px-5 py-2.5 font-medium w-32">Requested</th>
-                  <th className="text-right px-5 py-2.5 font-medium w-32">Dispatched</th>
-                  <th className="text-right px-5 py-2.5 font-medium w-32">Received</th>
-                  <th className="text-right px-5 py-2.5 font-medium w-40">Value</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y">
-                {detail.items.map((it, i) => {
-                  const hasDiscrepancy = it.receivedQty > 0 && it.receivedQty !== it.dispatchedQty
-                  const lineValue = detail.status === 'PENDING' ? it.requestedValue : detail.status === 'DISPATCHED' ? it.dispatchedValue : it.receivedValue
-                  // Cost per the unit the qty is shown in (bottle, not ml).
-                  const shown = naturalQty(it, it.requestedQty)
-                  const unitCost = (it.unitCost ?? 0) * (shown.baseQty !== null ? it.conversionFactor : 1)
-                  return (
-                    <tr key={i} className="hover:bg-muted/20 align-top">
-                      <td className="px-5 py-3">
-                        <div className="flex items-center gap-3">
-                          <div className="h-10 w-10 shrink-0 rounded-md border bg-muted/40 overflow-hidden flex items-center justify-center">
-                            {it.imageKey ? <img src={it.imageKey} alt={it.itemName} className="h-full w-full object-cover" /> : <Package className="h-4 w-4 text-muted-foreground/40" />}
-                          </div>
-                          <div className="min-w-0">
-                            <p className="font-medium leading-tight">{it.itemName}</p>
-                            {it.sku && <p className="text-xs text-muted-foreground mt-0.5">{it.sku}</p>}
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-5 py-3 text-right tabular-nums font-medium">
-                        <StockQty item={it} qty={it.requestedQty} natural />
-                      </td>
-                      <td className="px-5 py-3 text-right tabular-nums">
-                        {it.dispatchedQty > 0 ? <StockQty item={it} qty={it.dispatchedQty} natural /> : <span className="text-muted-foreground/50">—</span>}
-                      </td>
-                      <td className={`px-5 py-3 text-right tabular-nums font-medium ${hasDiscrepancy ? 'text-destructive' : it.receivedQty >= it.requestedQty && it.receivedQty > 0 ? 'text-success' : ''}`}>
-                        {it.receivedQty > 0 ? <StockQty item={it} qty={it.receivedQty} natural /> : <span className="font-normal text-muted-foreground/50">—</span>}
-                      </td>
-                      <td className="px-5 py-3 text-right tabular-nums">
-                        {lineValue ? (
-                          <>
-                            <span className="font-medium">{formatMoney(lineValue)}</span>
-                            <span className="block text-[10px] text-muted-foreground">@ {formatMoney(unitCost)} / {shown.unit}</span>
-                          </>
-                        ) : <span className="text-xs text-muted-foreground/60">No cost yet</span>}
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-              {!!detail.totalValue && (
-                <tfoot>
-                  <tr className="border-t bg-muted/20">
-                    <td className="px-5 py-2.5 font-medium text-xs text-muted-foreground uppercase" colSpan={4}>Total Value · {detail.items.length} item{detail.items.length === 1 ? '' : 's'}</td>
-                    <td className="px-5 py-2.5 text-right font-semibold tabular-nums">{formatMoney(detail.totalValue)}</td>
-                  </tr>
-                </tfoot>
-              )}
-            </table></div>
           </div>
-          {detail.notes && <p className="text-sm text-muted-foreground">Notes: {detail.notes}</p>}
         </>
       )}
 
