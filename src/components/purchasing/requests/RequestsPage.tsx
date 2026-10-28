@@ -52,7 +52,7 @@ interface InventoryItemOption {
   id: string; itemNumber: string; name: string; quantity: number; unitPrice: number; photoKeys?: string[]
   category: { id: string; name: string }; room: { id: string; name: string }
 }
-interface RequestLine { id?: string; key?: string; itemId: string; itemName: string; baseUnit: string; purchaseUnit: string; itemUnit: string; unit?: string; quantity: number; estimatedCost: number; supplierId: string; supplierName: string; supplierSearch: string; supplierOpen: boolean; notes: string; search: string; open: boolean; currentStock?: number | null; onHandStock?: number | null; itemTreatment?: Treatment | null; reservedStock?: number; minStock?: number | null; stockCheck?: { locationId: string; locationName: string; requested: number; availability: number; reserve: number; onOrder: number; ending: number; shortage: number; minStock: number; toBeOrder: number; restockQty: number } | null; conversionFactor?: number | null; imageKeys?: string[]; isCustom?: boolean; isStockItem?: boolean; sourceInventoryItemId?: string | null; sourceInventoryItem?: { id: string; itemNumber: string; name: string; room: { name: string } | null; category: { name: string } | null } | null; warehouseStock?: { locationId: string; locationName: string; qty: number }[]; transferEligible?: boolean; quotations?: Quotation[]; exemptionReason?: string | null; selectionJustification?: string | null; requestedByEmployeeId?: string; quotationApproverId?: string | null; quotationApprover?: { id: string; name: string | null } | null; quotationSubmittedAt?: string | null; quotationApprovedById?: string | null; quotationApprovedBy?: { id: string; name: string | null } | null; quotationApprovedAt?: string | null; quotationRejectedBy?: { id: string; name: string | null } | null; quotationRejectedAt?: string | null; quotationRejectionReason?: string | null; convertedAt?: string | null; convertedPoId?: string | null; verifyRejectedById?: string | null; verifyRejectedBy?: { id: string; name: string | null } | null; verifyRejectedAt?: string | null; verifyRejectionReason?: string | null; warehouseDecision?: 'TRANSFER' | 'PURCHASE' | null; backorderQty?: number; backorderLocationId?: string | null; viaWarehouse?: boolean; warehouseCheckedAt?: string | null; warehouseCheckNote?: string | null; requestType?: 'NEW' | 'REPLACEMENT'; damageDetail?: string | null; transfer?: { id: string; transferNumber: string; status: string; fromLocationName: string } | null; sentFromStock?: number | null; toBeOrderSplit?: { po: number; pending: number } | null; reservations?: { id: string; stockQty: number; reservedQty: number; source: string; transferId: string | null; transferNumber: string | null; purchaseOrderId: string | null; poNumber: string | null; createdAt: string }[]; requestedBase?: number; restockLocationId?: string | null; restockLocation?: { id: string; name: string } | null; restockOrders?: { prId: string; prNumber: string; poId: string | null; poNumber: string | null; poStatus: string | null; qty: number }[]; warehouseApprovedAt?: string | null; warehouseReserveQty?: number | null; warehouseFromLocationId?: string | null }
+interface RequestLine { id?: string; key?: string; itemId: string; itemName: string; baseUnit: string; purchaseUnit: string; itemUnit: string; unit?: string; quantity: number; estimatedCost: number; supplierId: string; supplierName: string; supplierSearch: string; supplierOpen: boolean; notes: string; search: string; open: boolean; currentStock?: number | null; onHandStock?: number | null; itemTreatment?: Treatment | null; reservedStock?: number; minStock?: number | null; stockCheck?: { locationId: string; locationName: string; requested: number; availability: number; reserve: number; onOrder: number; ending: number; shortage: number; minStock: number; toBeOrder: number; restockQty: number } | null; conversionFactor?: number | null; imageKeys?: string[]; isCustom?: boolean; isStockItem?: boolean; sourceInventoryItemId?: string | null; sourceInventoryItem?: { id: string; itemNumber: string; name: string; room: { name: string } | null; category: { name: string } | null } | null; warehouseStock?: { locationId: string; locationName: string; qty: number }[]; transferEligible?: boolean; quotations?: Quotation[]; exemptionReason?: string | null; selectionJustification?: string | null; requestedByEmployeeId?: string; quotationApproverId?: string | null; quotationApprover?: { id: string; name: string | null } | null; quotationSubmittedAt?: string | null; quotationApprovedById?: string | null; quotationApprovedBy?: { id: string; name: string | null } | null; quotationApprovedAt?: string | null; quotationRejectedBy?: { id: string; name: string | null } | null; quotationRejectedAt?: string | null; quotationRejectionReason?: string | null; convertedAt?: string | null; convertedPoId?: string | null; verifyRejectedById?: string | null; verifyRejectedBy?: { id: string; name: string | null } | null; verifyRejectedAt?: string | null; verifyRejectionReason?: string | null; warehouseDecision?: 'TRANSFER' | 'PURCHASE' | null; backorderQty?: number; backorderLocationId?: string | null; viaWarehouse?: boolean; warehouseCheckedAt?: string | null; warehouseCheckNote?: string | null; requestType?: 'NEW' | 'REPLACEMENT'; damageDetail?: string | null; transfer?: { id: string; transferNumber: string; status: string; fromLocationName: string } | null; sentFromStock?: number | null; toBeOrderSplit?: { po: number; pending: number; received?: number } | null; reservations?: { id: string; stockQty: number; reservedQty: number; source: string; transferId: string | null; transferNumber: string | null; purchaseOrderId: string | null; poNumber: string | null; createdAt: string }[]; requestedBase?: number; restockLocationId?: string | null; restockLocation?: { id: string; name: string } | null; restockOrders?: { prId: string; prNumber: string; poId: string | null; poNumber: string | null; poStatus: string | null; poExpectedAt?: string | null; qty: number }[]; warehouseApprovedAt?: string | null; warehouseReserveQty?: number | null; warehouseFromLocationId?: string | null }
 interface PurchaseRequest {
   id: string
   prNumber: string
@@ -243,20 +243,29 @@ function isAwaitingWarehouse(item: { viaWarehouse?: boolean; warehouseDecision?:
   return !!item.viaWarehouse && !d.warehouseDoneAt && item.warehouseDecision !== 'PURCHASE' && !item.convertedAt && !item.verifyRejectedAt
 }
 
-// A base-unit stock qty as text in the unit the PR line was requested in — "2 bottle (1500 ml)"
-// for a purchase-unit line, "1500 ml" otherwise. Same rule as the stock-check cells.
-function lineQtyLabel(item: { unit?: string; itemUnit?: string; baseUnit?: string | null; purchaseUnit?: string | null; conversionFactor?: number | null }, n: number) {
+type LineUnits = { unit?: string; itemUnit?: string; baseUnit?: string | null; purchaseUnit?: string | null; conversionFactor?: number | null }
+
+// Stock figures of a PR line go in the purchase unit only when the base unit is a measure (ml, g)
+// and the line was requested in that purchase unit — "2 bottle (1500 ml)". A countable base unit
+// (pcs, can) always stays as is: "16 pcs", never "2.67 box".
+function showsInPurchaseUnit(item: LineUnits) {
+  const conv = item.conversionFactor || 1
+  return !!item.purchaseUnit && !!item.baseUnit && item.purchaseUnit !== item.baseUnit && conv !== 1
+    && isMeasureUnit(item.baseUnit) && (item.unit ?? item.itemUnit) === item.purchaseUnit
+}
+
+// A base-unit stock qty as text — see showsInPurchaseUnit. Same rule as the stock-check cells.
+function lineQtyLabel(item: LineUnits, n: number) {
   const r = (x: number) => Math.round(x * 100) / 100
   const conv = item.conversionFactor || 1
-  const inPurchase = !!item.purchaseUnit && !!item.baseUnit && item.purchaseUnit !== item.baseUnit && conv !== 1
-    && (item.unit ?? item.itemUnit) === item.purchaseUnit
+  const inPurchase = showsInPurchaseUnit(item)
   return inPurchase ? `${r(n / conv)} ${item.purchaseUnit} (${r(n)} ${item.baseUnit})` : `${r(n)} ${item.baseUnit ?? ''}`.trim()
 }
 
 // Part of an accepted line the warehouse couldn't ship yet — shipped on a follow-up TR once
 // restock lands (see src/lib/purchasing/backorders.ts): how much went out so far, what's left,
 // and where that rest stands (Restock PR not ordered yet → on a PO → arriving at the warehouse).
-function BackorderBadge({ item }: { item: Parameters<typeof lineQtyLabel>[0] & { quantity?: number; backorderQty?: number; sentFromStock?: number | null; toBeOrderSplit?: { po: number; pending: number } | null } }) {
+function BackorderBadge({ item }: { item: Parameters<typeof lineQtyLabel>[0] & { quantity?: number; backorderQty?: number; sentFromStock?: number | null; toBeOrderSplit?: { po: number; pending: number; received?: number } | null } }) {
   if (!item.backorderQty || item.backorderQty <= 0) return null
   const split = item.toBeOrderSplit
   const stage = split && split.pending > 0 ? 'waiting for Purchasing to order'
@@ -1938,8 +1947,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
             // Units stay muted & normal-weight so the numbers still read first.
             const lineQty = (item: typeof sortedItems[number], n: number) => {
               const conv = item.conversionFactor || 1
-              const inPurchase = !!item.purchaseUnit && !!item.baseUnit && item.purchaseUnit !== item.baseUnit && conv !== 1
-                && (item.unit ?? item.itemUnit) === item.purchaseUnit
+              const inPurchase = showsInPurchaseUnit(item)
               return inPurchase ? (
                 <>
                   {fmtQty(n / conv)}<span className="ml-1 text-xs font-normal text-muted-foreground">{item.purchaseUnit}</span>
@@ -1962,7 +1970,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                 { label: 'Requested', value: sc.requested, cls: '' },
                 { label: 'Reserve', value: sc.reserve, cls: sc.reserve > 0 ? 'text-warning' : muted(0) },
                 { label: 'To Be Order', value: sc.toBeOrder, cls: sc.toBeOrder > 0 ? 'text-info' : muted(0), highlight: true, title: '(Requested − Current Stock) + Min. Stock' },
-                { label: 'PO', value: split?.po ?? null, cls: split?.po ? 'text-success' : muted(0), title: 'To Be Order already on a Purchase Order' },
+                { label: 'PO', value: split?.po ?? null, cls: split?.po ? 'text-success' : muted(0), title: 'To Be Order on a Purchase Order, not arrived yet', sub: split?.received ? `${lineQtyLabel(item, split.received)} arrived` : undefined },
                 { label: 'Pending', value: split?.pending ?? null, cls: split?.pending ? 'text-warning' : muted(0), title: 'To Be Order not ordered yet' },
               ]
               return (
@@ -1977,8 +1985,15 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                 </div>
               )
             }
-            // Each hand-out of warehouse stock to this line (Warehouse check, then every restock that
-            // arrives): Stock at that moment / PR / Reserved. The line is OK once Σ Reserved = PR.
+            // Shipment history of one line: every batch of warehouse stock handed to it (Warehouse
+            // check, then each restock that arrives) with its TR's Reserved → Dispatched → Received
+            // dates, then what's still to come. The line is complete once Σ batches = PR.
+            const TR_STAGE: Record<string, { label: string; tone: StatusTone }> = {
+              PENDING: { label: 'Ready to dispatch', tone: 'warning' },
+              DISPATCHED: { label: 'In transit', tone: 'info' },
+              RECEIVED: { label: 'Received', tone: 'success' },
+              CANCELLED: { label: 'Cancelled', tone: 'neutral' },
+            }
             const reservationLog = (item: typeof sortedItems[number]) => {
               if (!item.viaWarehouse || !item.itemId || item.verifyRejectedAt) return null
               const rows = item.reservations ?? []
@@ -1995,57 +2010,103 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
               const docLink = (label: string, open?: () => void) => open
                 ? <button type="button" onClick={open} className="font-medium text-info hover:underline underline-offset-2">{label}</button>
                 : <span className="font-medium text-foreground">{label}</span>
+              const trOf = (tr: { id: string | null; number: string } | null) => tr
+                ? (detail.stockTransfers ?? []).find(t => (tr.id && t.id === tr.id) || t.transferNumber === tr.number) ?? null
+                : null
               const requested = item.requestedBase ?? item.stockCheck?.requested ?? 0
               const total = shown.reduce((s, r) => s + r.reserved, 0)
               const remaining = Math.max(0, requested - total)
               const complete = remaining <= 1e-6
-              const cell = 'px-3 py-2 text-right tabular-nums'
+              // Where the next batch comes from: the restock PO (Purchasing sees which), else just the stage.
+              const split = item.toBeOrderSplit
+              const nextOrder = (item.restockOrders ?? []).find(o => o.poStatus !== 'RECEIVED')
+              const step = (label: string, date: string | null, by?: string | null) => (
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className={`h-2 w-2 shrink-0 rounded-full ${date ? 'bg-success' : 'bg-muted-foreground/25'}`} />
+                    <span className={`text-[10px] font-medium uppercase tracking-wide ${date ? 'text-foreground' : 'text-muted-foreground/60'}`}>{label}</span>
+                  </div>
+                  <p className={`mt-0.5 pl-3.5 text-[11px] leading-tight ${date ? 'text-muted-foreground' : 'text-muted-foreground/40'}`}>
+                    {date ? <>{formatDate(date)} · {formatDate(date, 'time')}</> : '—'}
+                  </p>
+                  {by && <p className="pl-3.5 text-[11px] font-medium leading-tight truncate">{by}</p>}
+                </div>
+              )
               return (
                 <div>
-                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Reservation</p>
-                  <div className="rounded-lg border overflow-hidden">
-                    <table className="w-full text-sm">
-                      <thead className="bg-muted/40 text-[10px] uppercase tracking-wide text-muted-foreground">
-                        <tr>
-                          <th className="text-left px-3 py-2 font-medium">Date</th>
-                          <th className="text-right px-3 py-2 font-medium" title="Free stock at the warehouse at that moment">Stock</th>
-                          <th className="text-right px-3 py-2 font-medium">PR</th>
-                          <th className="text-right px-3 py-2 font-medium">Reserved</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y">
-                        {shown.map((r, k) => (
-                          <tr key={r.key}>
-                            <td className="px-3 py-2 text-xs text-muted-foreground">
-                              {r.date ? formatDate(r.date) : '—'}
-                              <span className="block text-[10px]">
-                                {r.restock ? 'Restock arrived' : 'Warehouse check'}
-                                {r.po && <> · {docLink(r.po.number, onOpenPo ? () => onOpenPo(r.po!.id) : undefined)}</>}
-                                {r.tr && <> · {docLink(r.tr.number, onOpenTransfer && r.tr.id ? () => onOpenTransfer(r.tr!.id!) : undefined)}</>}
-                              </span>
-                            </td>
-                            <td className={`${cell} text-muted-foreground`}>{r.stock === null ? '—' : lineQty(item, r.stock)}</td>
-                            <td className={cell}>{k === 0 ? lineQty(item, requested) : ''}</td>
-                            <td className={`${cell} font-semibold ${r.reserved > 0 ? 'text-warning' : 'text-muted-foreground/60'}`}>{lineQty(item, r.reserved)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                      <tfoot className="border-t bg-muted/20">
-                        <tr>
-                          <td className="px-3 py-2 text-xs font-medium" colSpan={2}>
-                            {complete ? (
-                              <span className="flex items-center gap-1 text-success"><CheckCircle2 className="h-3.5 w-3.5" /> Complete — reserved = PR</span>
-                            ) : item.warehouseDecision === 'PURCHASE' ? (
-                              <span className="text-muted-foreground">Bought directly by Purchasing</span>
-                            ) : (
-                              <span className="text-warning">{lineQtyLabel(item, remaining)} remaining — reserved when restock arrives</span>
-                            )}
-                          </td>
-                          <td className={`${cell} text-xs text-muted-foreground`}>Total</td>
-                          <td className={`${cell} font-semibold ${complete ? 'text-success' : ''}`}>{lineQty(item, total)}</td>
-                        </tr>
-                      </tfoot>
-                    </table>
+                  <div className="flex items-baseline justify-between gap-2 mb-2">
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Shipment History</p>
+                    <p className="text-xs text-muted-foreground">
+                      Sent <span className={`font-semibold tabular-nums ${complete ? 'text-success' : 'text-foreground'}`}>{lineQtyLabel(item, total)}</span> of {lineQtyLabel(item, requested)}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border divide-y">
+                    {shown.map((r, i) => {
+                      // A check that reserved nothing (all bought by Purchasing) isn't a batch — just note it.
+                      if (r.reserved <= 0) return (
+                        <p key={r.key} className="px-3 py-2.5 text-[11px] text-muted-foreground">
+                          {r.date ? formatDate(r.date) : '—'} · {r.restock ? 'Restock arrived' : 'Warehouse check'}
+                          {r.stock !== null && <> · stock then {lineQtyLabel(item, r.stock)}</>} — nothing reserved
+                        </p>
+                      )
+                      const k = shown.slice(0, i).filter(x => x.reserved > 0).length
+                      const t = trOf(r.tr)
+                      const stage = t ? TR_STAGE[t.status] : null
+                      return (
+                        <div key={r.key} className="px-3 py-3 space-y-2">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex items-start gap-2.5 min-w-0">
+                              <span className="mt-0.5 h-5 w-5 shrink-0 rounded-full bg-muted text-[10px] font-bold flex items-center justify-center">{k + 1}</span>
+                              <div className="min-w-0">
+                                <p className="text-sm">
+                                  Batch {k + 1} · <span className="font-semibold tabular-nums">{lineQtyLabel(item, r.reserved)}</span>
+                                </p>
+                                <p className="text-[11px] text-muted-foreground">
+                                  {r.restock ? 'Restock arrived' : 'Warehouse check'}
+                                  {r.stock !== null && <> · stock then {lineQtyLabel(item, r.stock)}</>}
+                                  {r.po && <> · {docLink(r.po.number, onOpenPo ? () => onOpenPo(r.po!.id) : undefined)}</>}
+                                  {r.tr && <> · {docLink(r.tr.number, onOpenTransfer && r.tr.id ? () => onOpenTransfer(r.tr!.id!) : undefined)}</>}
+                                </p>
+                              </div>
+                            </div>
+                            {stage && <StatusBadge tone={stage.tone} size="sm" className="shrink-0">{stage.label}</StatusBadge>}
+                          </div>
+                          <div className="flex gap-2 pl-7">
+                            {step('Reserved', r.date)}
+                            {step('Dispatched', t?.dispatchedAt ?? null)}
+                            {step('Received', t?.receivedAt ?? null, t?.receivedByName)}
+                          </div>
+                        </div>
+                      )
+                    })}
+                    <div className={`px-3 py-2.5 text-xs ${complete ? 'bg-success/5' : 'bg-warning/5'}`}>
+                      {complete ? (
+                        <span className="flex items-center gap-1.5 font-medium text-success"><CheckCircle2 className="h-3.5 w-3.5" /> Complete — everything requested has been sent</span>
+                      ) : item.warehouseDecision === 'PURCHASE' ? (
+                        <span className="text-muted-foreground">Bought directly by Purchasing</span>
+                      ) : (
+                        <div className="flex items-start gap-1.5">
+                          <Clock className="h-3.5 w-3.5 mt-px shrink-0 text-warning" />
+                          <div>
+                            <p className="font-medium text-warning">Next batch · {lineQtyLabel(item, remaining)} remaining</p>
+                            <p className="text-muted-foreground mt-0.5">
+                              {nextOrder?.poId && nextOrder.poNumber ? (
+                                <>Restock on {docLink(nextOrder.poNumber, onOpenPo ? () => onOpenPo(nextOrder.poId!) : undefined)}
+                                  {nextOrder.poStatus && <> ({PO_STATUS_LABEL[nextOrder.poStatus] ?? nextOrder.poStatus})</>}
+                                  {nextOrder.poExpectedAt && <> · ETA {formatDate(nextOrder.poExpectedAt)}</>}
+                                  {' '}— reserved and put on a new transfer as soon as it arrives at the warehouse.</>
+                              ) : split && split.pending > 0 ? (
+                                <>Waiting for Purchasing to order the restock — reserved automatically once it arrives.</>
+                              ) : split && split.po > 0 ? (
+                                <>Restock ordered, waiting to arrive at the warehouse — reserved automatically once it arrives.</>
+                              ) : (
+                                <>Waiting for restock at the warehouse — reserved automatically once it arrives.</>
+                              )}
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </div>
                   {!!item.restockOrders?.length && (
                     <div className="mt-2 rounded-lg border border-violet-200 bg-violet-50/60 px-3 py-2 text-xs dark:border-violet-500/30 dark:bg-violet-500/10">
@@ -2057,7 +2118,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                             {o.prId !== detail.id && <> · {docLink(o.prNumber, () => openLinkedRequest(o.prId))}</>}
                             {' → '}
                             {o.poId && o.poNumber
-                              ? <>{docLink(o.poNumber, onOpenPo ? () => onOpenPo(o.poId!) : undefined)}{o.poStatus && <span className="ml-1">({PO_STATUS_LABEL[o.poStatus] ?? o.poStatus})</span>}</>
+                              ? <>{docLink(o.poNumber, onOpenPo ? () => onOpenPo(o.poId!) : undefined)}{o.poStatus && <span className="ml-1">({PO_STATUS_LABEL[o.poStatus] ?? o.poStatus})</span>}{o.poExpectedAt && o.poStatus !== 'RECEIVED' && <> · ETA {formatDate(o.poExpectedAt)}</>}</>
                               : <span className="text-warning">not ordered yet</span>}
                           </li>
                         ))}
@@ -2079,8 +2140,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
               const busy = warehouseBusyItemId === item.id
               // Reserve is typed in the line's unit (bottle when requested in bottles), sent in base units.
               const conv = item.conversionFactor || 1
-              const inPurchase = !!item.purchaseUnit && !!item.baseUnit && item.purchaseUnit !== item.baseUnit && conv !== 1
-                && (item.unit ?? item.itemUnit) === item.purchaseUnit
+              const inPurchase = showsInPurchaseUnit(item)
               const unitLabel = (inPurchase ? item.purchaseUnit : item.baseUnit) ?? ''
               const toDisplay = (n: number) => Math.floor((inPurchase ? n / conv : n) * 100 + 1e-6) / 100
               const toBase = (n: number) => inPurchase ? n * conv : n
@@ -2214,12 +2274,6 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                               <button type="button" onClick={() => setWarehouseReserve(r => ({ ...r, [item.id!]: String(toDisplay(Math.min(maxBase, requestedBase))) }))}
                                 className="text-xs font-medium px-3 py-2.5 rounded-md border hover:bg-muted whitespace-nowrap">
                                 Requested
-                              </button>
-                            )}
-                            {maxBase !== null && (
-                              <button type="button" onClick={() => setWarehouseReserve(r => ({ ...r, [item.id!]: String(toDisplay(maxBase)) }))}
-                                className="text-xs font-medium px-3 py-2.5 rounded-md border hover:bg-muted whitespace-nowrap">
-                                Max
                               </button>
                             )}
                           </div>
@@ -2599,8 +2653,8 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                           })}
                           {withStock && stat('Min. Stock', item.minStock ?? 0, 'text-muted-foreground')}
                           {withStock && stat('Reserve', item.sentFromStock ?? null, 'text-warning', { title: 'Sent from warehouse stock' })}
-                          {withStock && stat('To Be Order', split ? split.po + split.pending : null, 'text-info', { highlight: true })}
-                          {withStock && stat('PO', split?.po ?? null, 'text-success', { title: 'To Be Order already on a Purchase Order' })}
+                          {withStock && stat('To Be Order', split ? split.po + split.pending + (split.received ?? 0) : null, 'text-info', { highlight: true })}
+                          {withStock && stat('PO', split?.po ?? null, 'text-success', { title: 'To Be Order on a Purchase Order, not arrived yet', sub: split?.received ? `${lineQtyLabel(item, split.received)} arrived → Current Stock` : undefined })}
                           {withStock && stat('Pending', split?.pending ?? null, 'text-warning', { title: 'To Be Order not ordered yet' })}
                         </div>
                       </div>
@@ -2762,7 +2816,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                     const card = (item: typeof sortedItems[number], i: number) => {
                       const photo = Array.isArray(item.imageKeys) ? item.imageKeys[0] : undefined
                       const split = showStockCols && item.viaWarehouse && item.itemId ? item.toBeOrderSplit : null
-                      const toBeOrder = split ? split.po + split.pending : 0
+                      const toBeOrder = split ? split.po + split.pending + (split.received ?? 0) : 0
                       const status = lineStatus(item)
                       return (
                         <button

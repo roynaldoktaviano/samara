@@ -44,6 +44,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       items: {
         include: {
           quotations: { orderBy: { price: 'asc' } },
+          // Own PURCHASE line's PO: how much of it has arrived (To Be Order split below).
+          convertedPo: { select: { status: true, items: { select: { itemId: true, receivedQty: true } } } },
           restockLocation: { select: { id: true, name: true } },
           reservations: { select: { id: true, stockQty: true, reservedQty: true, source: true, transferId: true, transferNumber: true, purchaseOrderId: true, poNumber: true, createdAt: true }, orderBy: { createdAt: 'asc' } },
           quotationApprover: { select: { id: true, name: true } },
@@ -136,9 +138,9 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       select: {
         itemId: true, quantity: true, unit: true, convertedAt: true,
         request: { select: { id: true, prNumber: true } },
-        convertedPo: { select: { id: true, poNumber: true, status: true } },
+        convertedPo: { select: { id: true, poNumber: true, status: true, expectedAt: true, items: { select: { itemId: true, receivedQty: true } } } },
       },
-    }) : ([] as { itemId: string | null; quantity: number; unit: string; convertedAt: Date | null; request: { id: string; prNumber: string }; convertedPo: { id: string; poNumber: string; status: string } | null }[]),
+    }) : ([] as { itemId: string | null; quantity: number; unit: string; convertedAt: Date | null; request: { id: string; prNumber: string }; convertedPo: { id: string; poNumber: string; status: string; expectedAt: Date | null; items: { itemId: string | null; receivedQty: number }[] } | null }[]),
   ])
   // Requests submitted via the internal Request Order page carry a real requestedByEmployee;
   // prefer that for display, falling back to the ERP user for requests created inside Purchasing.
@@ -176,22 +178,35 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     if (t.status === 'CANCELLED') continue
     for (const ti of t.items) if (ti.itemId) sentFromStock.set(ti.itemId, (sentFromStock.get(ti.itemId) ?? 0) + ti.requestedQty)
   }
-  const restockSplit = new Map<string, { po: number; pending: number }>()
+  // A PO line's arrived part leaves "PO" for "received" (it's in Current Stock now). PO lines are
+  // in purchase units — receiveGoods() multiplies by conversionFactor too.
+  const arrivedOf = (itemId: string, po: { status: string; items: { itemId: string | null; receivedQty: number }[] } | null, qty: number) => {
+    if (!po) return 0
+    if (po.status === 'RECEIVED') return qty
+    const got = po.items.filter(i => i.itemId === itemId).reduce((s, i) => s + i.receivedQty, 0) * (itemMasterMap.get(itemId)?.conversionFactor || 1)
+    return Math.min(qty, got)
+  }
+  const restockSplit = new Map<string, { po: number; pending: number; received: number }>()
   for (const l of restockLines) {
     if (!l.itemId) continue
-    const split = restockSplit.get(l.itemId) ?? { po: 0, pending: 0 }
+    const split = restockSplit.get(l.itemId) ?? { po: 0, pending: 0, received: 0 }
     const qty = toBaseQty(l.quantity, l.unit, itemMasterMap.get(l.itemId))
-    if (l.convertedAt) split.po += qty
+    if (l.convertedAt) {
+      const arrived = arrivedOf(l.itemId, l.convertedPo, qty)
+      split.received += arrived
+      split.po += qty - arrived
+    }
     else split.pending += qty
     restockSplit.set(l.itemId, split)
   }
   // Where each item's To Be Order went: Restock PR → its PO (once Purchasing converted it).
-  const restockOrders = new Map<string, { prId: string; prNumber: string; poId: string | null; poNumber: string | null; poStatus: string | null; qty: number }[]>()
+  const restockOrders = new Map<string, { prId: string; prNumber: string; poId: string | null; poNumber: string | null; poStatus: string | null; poExpectedAt: Date | null; qty: number }[]>()
   for (const l of restockLines) {
     if (!l.itemId) continue
     restockOrders.set(l.itemId, [...(restockOrders.get(l.itemId) ?? []), {
       prId: l.request.id, prNumber: l.request.prNumber,
       poId: l.convertedPo?.id ?? null, poNumber: l.convertedPo?.poNumber ?? null, poStatus: l.convertedPo?.status ?? null,
+      poExpectedAt: l.convertedPo?.expectedAt ?? null,
       qty: toBaseQty(l.quantity, l.unit, itemMasterMap.get(l.itemId)),
     }])
   }
@@ -202,12 +217,16 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     const master = item.itemId ? itemMasterMap.get(item.itemId) : null
     const isFirst = !!item.itemId && firstLineOfItem.get(item.itemId) === item.id
     const processed = item.viaWarehouse && !!item.itemId && !item.verifyRejectedAt && (!!item.warehouseDecision || !!item.convertedAt)
-    let toBeOrderSplit: { po: number; pending: number } | null = null
+    let toBeOrderSplit: { po: number; pending: number; received: number } | null = null
     if (processed) {
-      const split = { ...(isFirst ? restockSplit.get(item.itemId!) ?? { po: 0, pending: 0 } : { po: 0, pending: 0 }) }
+      const split = { ...(isFirst ? restockSplit.get(item.itemId!) ?? { po: 0, pending: 0, received: 0 } : { po: 0, pending: 0, received: 0 }) }
       if (item.warehouseDecision === 'PURCHASE') {
         const own = toBaseQty(item.quantity, item.unit, master)
-        if (item.convertedAt) split.po += own
+        if (item.convertedAt) {
+          const arrived = arrivedOf(item.itemId!, item.convertedPo, own)
+          split.received += arrived
+          split.po += own - arrived
+        }
         else split.pending += own
       }
       toBeOrderSplit = split
@@ -231,6 +250,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 
     return {
       ...item,
+      convertedPo: undefined,
       stockCheck: stockChecks.get(item.id) ?? null,
       transfer: tr ? { id: tr.id, transferNumber: tr.transferNumber, status: tr.status, fromLocationName: tr.fromLocation.name } : null,
       // Free stock, not raw on-hand: what PENDING transfers already reserved (StockLot only drops

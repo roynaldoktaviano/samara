@@ -12,6 +12,7 @@ import { PhotoSourceMenu } from '@/components/ui/file-preview'
 import { cn } from '@/lib/utils'
 import { ITEM_TYPES, ITEM_TYPE_LABELS, TYPE_CATEGORIES, type PurchaseItemType } from '@/lib/purchase-item-types'
 import { useFileDrop } from '@/hooks/useFileDrop'
+import { isMeasureUnit } from '@/lib/purchasing/units'
 import { renderLocationOptions } from '@/components/purchasing/LocationOptions'
 import { TripPicker, tripLinkBody, type TripOption } from '@/components/purchasing/TripPicker'
 
@@ -388,11 +389,13 @@ function RequestOrderContent() {
           ) : (
             <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-2.5">
               {pageItems.map(item => {
-                // Crew order in the purchase unit (bottle, pack…) — the base unit (ml, g) is only
-                // offered when an item has no separate purchase unit.
+                // Crew order in the purchase unit (box, bottle…). The base unit is offered too when it's
+                // something you count (pcs, can) — never a measure (ml, g), that's only for POS recipes.
                 const hasPurchaseUnit = !!(item.purchaseUnit && item.purchaseUnit !== item.baseUnit && item.conversionFactor > 1)
-                const unit = hasPurchaseUnit ? item.purchaseUnit! : item.baseUnit
-                const line = cart.find(l => l.key === `${item.id}-${unit}`)
+                const units = hasPurchaseUnit
+                  ? (isMeasureUnit(item.baseUnit) ? [item.purchaseUnit!] : [item.purchaseUnit!, item.baseUnit])
+                  : [item.baseUnit]
+                const lines = units.map(unit => ({ unit, line: cart.find(l => l.key === `${item.id}-${unit}`) }))
                 return (
                   <div key={item.id} className="bg-white rounded-xl border overflow-hidden flex flex-col shadow-sm hover:shadow-md hover:border-primary/40 transition-all">
                     <div className="aspect-square bg-muted/40 flex items-center justify-center overflow-hidden">
@@ -406,22 +409,27 @@ function RequestOrderContent() {
                           ? `${item.inventoryCategory} · ${item.onBoardQty} on board`
                           : hasPurchaseUnit ? `${item.purchaseUnit} (${item.conversionFactor} ${item.baseUnit})` : item.baseUnit}
                       </p>
-                      <div className="mt-auto pt-2">
-                        {line ? (
-                          <div className="flex items-center justify-between gap-1 bg-muted/50 rounded-lg p-1">
-                            <button onClick={() => changeQty(line.key, -1)} aria-label={`Decrease ${item.name} (${unit})`} className="w-6 h-6 rounded-md bg-white shadow-sm flex items-center justify-center hover:bg-muted transition-colors">
+                      <div className="mt-auto pt-2 space-y-1">
+                        {lines.filter(x => x.line).map(({ unit, line }) => (
+                          <div key={unit} className="flex items-center justify-between gap-1 bg-muted/50 rounded-lg p-1">
+                            <button onClick={() => changeQty(line!.key, -1)} aria-label={`Decrease ${item.name} (${unit})`} className="w-6 h-6 rounded-md bg-white shadow-sm flex items-center justify-center hover:bg-muted transition-colors">
                               <Minus className="h-3 w-3" />
                             </button>
-                            <span className="text-[11px] font-semibold tabular-nums">{line.quantity} {unit}</span>
-                            <button onClick={() => changeQty(line.key, 1)} aria-label={`Increase ${item.name} (${unit})`} className="w-6 h-6 rounded-md bg-white shadow-sm flex items-center justify-center hover:bg-muted transition-colors">
+                            <span className="text-[11px] font-semibold tabular-nums">{line!.quantity} {unit}</span>
+                            <button onClick={() => changeQty(line!.key, 1)} aria-label={`Increase ${item.name} (${unit})`} className="w-6 h-6 rounded-md bg-white shadow-sm flex items-center justify-center hover:bg-muted transition-colors">
                               <Plus className="h-3 w-3" />
                             </button>
                           </div>
-                        ) : (
-                          <button onClick={() => addToCart(item, unit)}
-                            className="w-full flex items-center justify-center gap-1 py-1.5 rounded-lg bg-primary hover:bg-primary-hover text-primary-foreground text-[11px] font-semibold transition-colors">
-                            <Plus className="h-3 w-3" /> Add {unit}
-                          </button>
+                        ))}
+                        {lines.some(x => !x.line) && (
+                          <div className="flex gap-1">
+                            {lines.filter(x => !x.line).map(({ unit }) => (
+                              <button key={unit} onClick={() => addToCart(item, unit)}
+                                className="flex-1 min-w-0 flex items-center justify-center gap-1 py-1.5 rounded-lg bg-primary hover:bg-primary-hover text-primary-foreground text-[11px] font-semibold transition-colors">
+                                <Plus className="h-3 w-3 shrink-0" /> <span className="truncate">Add {unit}</span>
+                              </button>
+                            ))}
+                          </div>
                         )}
                       </div>
                     </div>
