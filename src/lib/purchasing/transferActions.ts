@@ -304,7 +304,7 @@ export async function receiveTransferLeg(db: Db, transferId: string, params: {
 
   // Stock arriving at a warehouse (e.g. a restock PO's transit leg) → ship PR lines
   // backordered there (draft follow-up TRs). No-op for any other destination.
-  await allocateBackorders(db, transfer.toLocationId, params.items.map(i => i.itemId))
+  await allocateBackorders(db, transfer.toLocationId, params.items.map(i => i.itemId), transfer.purchaseOrderId)
 
   return { ok: true }
 }

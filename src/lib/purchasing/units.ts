@@ -29,6 +29,16 @@ export function displayQty(u: UnitInfo, baseQty: number): { qty: number; unit: s
   return { qty: round3(baseQty / (u.conversionFactor as number)), unit: u.purchaseUnit as string, baseQty: round3(baseQty), baseUnit }
 }
 
+/** Like displayQty, but a countable base unit (pcs) stays as is unless it makes whole purchase
+ *  units — 2 cans of a 6-can box read "2 pcs", not "0.33 box". Volume/weight (ml) always goes to
+ *  the purchase unit (bottles). */
+export function naturalQty(u: UnitInfo, baseQty: number) {
+  if (hasPurchaseUnit(u) && !isMeasureUnit(u.baseUnit) && round3(baseQty / (u.conversionFactor as number)) % 1 !== 0) {
+    return displayQty({ baseUnit: u.baseUnit }, baseQty)
+  }
+  return displayQty(u, baseQty)
+}
+
 /** Cost per base unit → cost per displayed unit. */
 export function displayUnitCost(u: UnitInfo, costPerBase: number) {
   return hasPurchaseUnit(u) ? costPerBase * (u.conversionFactor as number) : costPerBase

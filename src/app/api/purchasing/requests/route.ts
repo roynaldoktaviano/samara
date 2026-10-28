@@ -52,15 +52,25 @@ export async function GET() {
         // Warehouse only deals with PRs headed to a ship (see routePrLines) — PRs for a warehouse
         // or an office/site go straight to Purchasing and stay out of its list (own ones aside).
         ...(roleMatches(role, ['WAREHOUSE'])
-          ? [{ OR: [{ requestedById: session.user.id }, { deliveryLocation: { type: 'VESSEL' as const } }, { items: { some: { viaWarehouse: true } } }] }]
+          ? [
+              { OR: [{ requestedById: session.user.id }, { deliveryLocation: { type: 'VESSEL' as const } }, { items: { some: { viaWarehouse: true } } }] },
+              // Auto Restock PRs (To Be Order from a Warehouse check) are Purchasing's alone — even
+              // though they're filed under the Warehouse account that processed the source PR.
+              { restockForRequestId: null },
+            ]
           : []),
       ],
     },
     orderBy: { createdAt: 'desc' },
     include: {
-      items: { select: { id: true, quantity: true, estimatedCost: true, itemName: true, warehouseDecision: true, convertedAt: true, viaWarehouse: true, backorderQty: true } },
+      items: {
+        // Warehouse never sees restock lines (To Be Order bought for the warehouse).
+        ...(roleMatches(role, ['WAREHOUSE']) && { where: { restockLocationId: null } }),
+        select: { id: true, quantity: true, estimatedCost: true, itemName: true, warehouseDecision: true, convertedAt: true, viaWarehouse: true, backorderQty: true },
+      },
       deliveryLocation: { select: { id: true, name: true, type: true, managedBy: true, yachtId: true } },
       requestedByEmployee: { select: { id: true, fullName: true, employeeNumber: true } },
+      restockFor: { select: { id: true, prNumber: true } },
       verifiedBy: { select: { id: true, name: true } },
       tripBooking: { select: tripBookingSelect },
       openTrip: { select: openTripSelect },

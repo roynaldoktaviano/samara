@@ -44,6 +44,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       items: {
         include: {
           quotations: { orderBy: { price: 'asc' } },
+          restockLocation: { select: { id: true, name: true } },
+          reservations: { select: { id: true, stockQty: true, reservedQty: true, source: true, transferId: true, transferNumber: true, purchaseOrderId: true, poNumber: true, createdAt: true }, orderBy: { createdAt: 'asc' } },
           quotationApprover: { select: { id: true, name: true } },
           quotationApprovedBy: { select: { id: true, name: true } },
           quotationRejectedBy: { select: { id: true, name: true } },
@@ -81,6 +83,9 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     },
   })
   if (!request) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  // Auto Restock PRs go straight to Purchasing — Warehouse doesn't see them (list filter too).
+  const warehouseOnly = roleMatches(role, ['WAREHOUSE'])
+  if (warehouseOnly && request.restockForRequestId) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
   if (!roleMatches(role, VIEW_ALLOWED)) {
     // Warehouse can only open their own requests — not Purchasing's whole queue by id-guessing.
@@ -106,7 +111,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 
   const itemIds = request.items.map(i => i.itemId).filter(Boolean) as string[]
   // The WAREHOUSE role always takes from its home warehouse — check stock there, not wherever has most.
-  const homeLocationId = roleMatches(role, ['WAREHOUSE']) ? await warehouseHomeLocationId(db) : null
+  const homeLocationId = warehouseOnly ? await warehouseHomeLocationId(db) : null
   const [requesterUser, lots, purchaseItems, warehouses, { checks: stockChecks, reservedMap }, restockLinks, restockLines] = await Promise.all([
     db.user.findUnique({ where: { id: request.requestedById }, select: { id: true, name: true } }),
     itemIds.length ? db.stockLot.findMany({ where: { itemId: { in: itemIds }, quantity: { gt: 0 } }, select: { itemId: true, locationId: true, quantity: true } }) : ([] as { itemId: string | null; locationId: string; quantity: number }[]),
@@ -118,11 +123,22 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       where: { OR: [{ restockForRequestId: id }, ...(request.restockForRequestId ? [{ id: request.restockForRequestId }] : [])] },
       select: { id: true, prNumber: true, status: true, restockForRequestId: true },
     }),
-    // Lines on this PR's Restock PRs — the To Be Order Warehouse handed to Purchasing.
+    // Restock lines — the To Be Order Warehouse handed to Purchasing: on this PR itself, or on a
+    // legacy Restock PR raised for it before restock lines lived on the same PR.
     itemIds.length ? db.purchaseRequestItem.findMany({
-      where: { itemId: { in: itemIds }, verifyRejectedAt: null, request: { restockForRequestId: id, status: { notIn: ['CANCELLED', 'REJECTED'] } } },
-      select: { itemId: true, quantity: true, unit: true, convertedAt: true },
-    }) : ([] as { itemId: string | null; quantity: number; unit: string; convertedAt: Date | null }[]),
+      where: {
+        itemId: { in: itemIds }, verifyRejectedAt: null,
+        OR: [
+          { requestId: id, restockLocationId: { not: null } },
+          { request: { restockForRequestId: id, status: { notIn: ['CANCELLED', 'REJECTED'] } } },
+        ],
+      },
+      select: {
+        itemId: true, quantity: true, unit: true, convertedAt: true,
+        request: { select: { id: true, prNumber: true } },
+        convertedPo: { select: { id: true, poNumber: true, status: true } },
+      },
+    }) : ([] as { itemId: string | null; quantity: number; unit: string; convertedAt: Date | null; request: { id: string; prNumber: string }; convertedPo: { id: string; poNumber: string; status: string } | null }[]),
   ])
   // Requests submitted via the internal Request Order page carry a real requestedByEmployee;
   // prefer that for display, falling back to the ERP user for requests created inside Purchasing.
@@ -169,6 +185,16 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     else split.pending += qty
     restockSplit.set(l.itemId, split)
   }
+  // Where each item's To Be Order went: Restock PR → its PO (once Purchasing converted it).
+  const restockOrders = new Map<string, { prId: string; prNumber: string; poId: string | null; poNumber: string | null; poStatus: string | null; qty: number }[]>()
+  for (const l of restockLines) {
+    if (!l.itemId) continue
+    restockOrders.set(l.itemId, [...(restockOrders.get(l.itemId) ?? []), {
+      prId: l.request.id, prNumber: l.request.prNumber,
+      poId: l.convertedPo?.id ?? null, poNumber: l.convertedPo?.poNumber ?? null, poStatus: l.convertedPo?.status ?? null,
+      qty: toBaseQty(l.quantity, l.unit, itemMasterMap.get(l.itemId)),
+    }])
+  }
   const firstLineOfItem = new Map<string, string>()
   for (const item of request.items) if (item.itemId && !firstLineOfItem.has(item.itemId)) firstLineOfItem.set(item.itemId, item.id)
 
@@ -189,7 +215,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 
     const requiredBaseQty = toBaseQty(item.quantity, item.unit, master)
 
-    const warehouseStock = (canTransfer && item.itemId)
+    const warehouseStock = (canTransfer && item.itemId && !item.restockLocationId)
       ? [...warehouseIds]
           .filter(locationId => locationId !== request.deliveryLocationId)
           // Free stock only — qty already reserved by other PENDING transfers isn't offerable.
@@ -222,6 +248,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       transferEligible: warehouseStock.length > 0,
       sentFromStock: processed ? (isFirst ? sentFromStock.get(item.itemId!) ?? 0 : 0) : null,
       toBeOrderSplit,
+      restockOrders: processed && isFirst && !warehouseOnly ? restockOrders.get(item.itemId!) ?? [] : [],
+      requestedBase: requiredBaseQty,
     }
   })
 
@@ -233,10 +261,12 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     fromLocationName: t.fromLocation.name, toLocationName: t.toLocation.name,
   }))
 
-  const restockRequests = restockLinks.filter(r => r.restockForRequestId === id).map(({ restockForRequestId: _, ...r }) => r)
+  // Warehouse never sees restock lines — buying for the warehouse is Purchasing's business.
+  const visibleItems = warehouseOnly ? items.filter(i => !i.restockLocationId) : items
+  const restockRequests = warehouseOnly ? [] : restockLinks.filter(r => r.restockForRequestId === id).map(({ restockForRequestId: _, ...r }) => r)
   const restockFor = restockLinks.find(r => r.id === request.restockForRequestId) ?? null
 
-  return NextResponse.json({ ...request, restockRequests, restockFor: restockFor ? { id: restockFor.id, prNumber: restockFor.prNumber } : null, transfers: undefined, stockTransfers, tripBooking: undefined, openTrip: undefined, trip: tripOf(request), items, requestedBy: requester, createdBy: requesterUser, canTransfer, warehouseHomeLocationId: homeLocationId })
+  return NextResponse.json({ ...request, restockRequests, restockFor: restockFor ? { id: restockFor.id, prNumber: restockFor.prNumber } : null, transfers: undefined, stockTransfers, tripBooking: undefined, openTrip: undefined, trip: tripOf(request), items: visibleItems, requestedBy: requester, createdBy: requesterUser, canTransfer, warehouseHomeLocationId: homeLocationId })
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -581,7 +611,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (poItems.length > 0 && current.deliveryLocationId) {
     const deliveryLocation = await db.stockLocation.findUnique({ where: { id: current.deliveryLocationId }, select: { type: true } })
     if (deliveryLocation?.type === 'VESSEL') {
-      const roomAssignable = poItems.filter(it => !it.sourceInventoryItemId && lineTreatment(it) === 'ASSET')
+      // Restock lines go to the warehouse, not the ship — no Room/Category there.
+      const roomAssignable = poItems.filter(it => !it.sourceInventoryItemId && !it.restockLocationId && lineTreatment(it) === 'ASSET')
       const missing = roomAssignable.filter(it => !roomAssignmentByItemId.get(it.id)?.roomId || !roomAssignmentByItemId.get(it.id)?.categoryId)
       if (missing.length > 0) {
         return NextResponse.json({ error: `Asset items must specify a Room and Item Category: ${missing.map(it => it.itemName).join(', ')}` }, { status: 400 })
@@ -637,9 +668,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       })
 
       const prefix = `PO-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}-`
+      // One PO per supplier per destination: restock lines ship to their warehouse, the rest
+      // to the PR's delivery location.
       const groups = new Map<string, typeof poItems>()
       for (const item of poItems) {
-        const key = item.supplierId || '__none__'
+        const key = `${item.supplierId || '__none__'}|${item.restockLocationId ?? current.deliveryLocationId ?? ''}`
         if (!groups.has(key)) groups.set(key, [])
         groups.get(key)!.push(item)
       }
@@ -647,9 +680,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       // Appending to an existing DRAFT PO for the same supplier (rather than always
       // creating a new one) keeps a trickle of approvals from the same PR from
       // fragmenting into a pile of near-duplicate POs.
-      for (const [supplierKey, groupItems] of groups) {
+      for (const [groupKey, groupItems] of groups) {
+        const supplierKey = groupKey.split('|')[0]
         const supplierId = supplierKey === '__none__' ? null : supplierKey
-        const existingDraft = await tx.purchaseOrder.findFirst({ where: { requestId: id, status: 'DRAFT', supplierId } })
+        const poDeliveryLocationId = groupItems[0].restockLocationId ?? current.deliveryLocationId
+        const existingDraft = await tx.purchaseOrder.findFirst({ where: { requestId: id, status: 'DRAFT', supplierId, deliveryLocationId: poDeliveryLocationId } })
         const itemsCreate = groupItems.map((it) => {
           const sourceInv = it.sourceInventoryItemId ? sourceInventoryItemsById.get(it.sourceInventoryItemId) : null
           return {
@@ -658,8 +693,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
             itemName: it.itemName,
             unit: it.itemId ? null : it.unit,
             ...poQtyAndCost(it),
-            inventoryRoomId: sourceInv ? sourceInv.roomId : (roomAssignmentByItemId.get(it.id)?.roomId || null),
-            inventoryCategoryId: sourceInv ? sourceInv.categoryId : (roomAssignmentByItemId.get(it.id)?.categoryId || null),
+            inventoryRoomId: it.restockLocationId ? null : sourceInv ? sourceInv.roomId : (roomAssignmentByItemId.get(it.id)?.roomId || null),
+            inventoryCategoryId: it.restockLocationId ? null : sourceInv ? sourceInv.categoryId : (roomAssignmentByItemId.get(it.id)?.categoryId || null),
             treatment: lineTreatment(it),
             sourceInventoryItemId: it.sourceInventoryItemId ?? null,
           }
@@ -682,7 +717,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
               requestId: id,
               supplierId,
               supplierName: groupItems[0]?.supplierName ?? null,
-              deliveryLocationId: current.deliveryLocationId,
+              deliveryLocationId: poDeliveryLocationId,
               status: 'DRAFT',
               createdById: session.user.id,
               updatedAt: now,

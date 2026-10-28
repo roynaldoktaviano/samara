@@ -80,7 +80,7 @@ export async function PATCH(_req: NextRequest, { params }: { params: Promise<{ i
   return NextResponse.json({
     ...result.updated,
     remainingItems: result.remaining,
-    restockRequests: result.restocks,
+    restockItems: result.restocks,
     transferNumbers: [...transfers],
     purchasedItems: purchased,
   })

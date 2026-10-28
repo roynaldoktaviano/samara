@@ -9,7 +9,7 @@ import { renderLocationOptions } from '@/components/purchasing/LocationOptions'
 import { TripPicker, tripShortLabel, tripDates, tripLinkBody, type TripOption } from '@/components/purchasing/TripPicker'
 import { formatDate, formatMoney, formatNumber } from '@/lib/format'
 import { StatusBadge, type StatusTone } from '@/components/ui/status-badge'
-import { displayQty, hasPurchaseUnit, qtyLabel } from '@/lib/purchasing/units'
+import { displayQty, hasPurchaseUnit, naturalQty, qtyLabel } from '@/lib/purchasing/units'
 import { StockQty } from '@/components/purchasing/StockQty'
 
 interface StockLocation { id: string; name: string; type: string; parentId: string | null; yachtId?: string | null }
@@ -28,7 +28,7 @@ interface StockPickerRow {
 }
 interface TeamUser { id: string; name: string; role: string }
 interface EmployeeOption { id: string; fullName: string }
-interface TransferItem { id: string; itemId: string | null; itemName: string; baseUnit: string | null; purchaseUnit: string | null; conversionFactor: number; requestedQty: number; dispatchedQty: number; receivedQty: number; availableQty?: number | null; unitCost?: number; requestedValue?: number; dispatchedValue?: number; receivedValue?: number }
+interface TransferItem { id: string; itemId: string | null; itemName: string; sku?: string | null; imageKey?: string | null; baseUnit: string | null; purchaseUnit: string | null; conversionFactor: number; requestedQty: number; dispatchedQty: number; receivedQty: number; availableQty?: number | null; unitCost?: number; requestedValue?: number; dispatchedValue?: number; receivedValue?: number }
 interface StockTransfer {
   id: string; transferNumber: string; status: string; notes: string | null
   fromLocationId: string; toLocationId: string
@@ -50,6 +50,7 @@ interface StockTransfer {
   // fulfillment) — lets warehouse see who to follow up with about receipt confirmation.
   purchaseRequestId?: string | null
   purchaseRequest?: { id: string; prNumber: string; requestedByName: string | null } | null
+  restockPos?: { id: string; poNumber: string }[]
   // Optional link to the charter/departure this transfer's cargo is for.
   trip?: TripOption | null
 }
@@ -158,7 +159,7 @@ function EmployeeCombobox({ employees, value, onChange }: {
 }
 
 
-export default function TransfersPage({ deepLinkId, onDeepLinkHandled }: { deepLinkId?: string | null; onDeepLinkHandled?: () => void } = {}) {
+export default function TransfersPage({ deepLinkId, onDeepLinkHandled, onOpenRequest, onOpenPo }: { deepLinkId?: string | null; onDeepLinkHandled?: () => void; onOpenRequest?: (id: string) => void; onOpenPo?: (id: string) => void } = {}) {
   const { data: session } = useSession()
   // Cruise Director / Boat Captain only see transfers to/from their own yacht (scoped by the
   // API): they receive what arrives (Cruise Director also dispatches what leaves) — no
@@ -361,8 +362,9 @@ export default function TransfersPage({ deepLinkId, onDeepLinkHandled }: { deepL
       // Capped by whichever is lower — what was requested, or what's actually on the
       // shelf right now (stock may have moved since the transfer was requested).
       const cap = Math.min(i.requestedQty, i.availableQty ?? i.requestedQty)
-      const initQty = hasPU ? cap / cf : cap
-      return { itemId: i.itemId ?? '', itemName: i.itemName, baseUnit: i.baseUnit ?? '', purchaseUnit: i.purchaseUnit ?? null, conversionFactor: cf, max: cap, qty: initQty, originalQty: initQty, editing: false, usePurchaseUnit: hasPU }
+      const usePU = hasPU && naturalQty(i, cap).baseQty !== null
+      const initQty = usePU ? cap / cf : cap
+      return { itemId: i.itemId ?? '', itemName: i.itemName, baseUnit: i.baseUnit ?? '', purchaseUnit: i.purchaseUnit ?? null, conversionFactor: cf, max: cap, qty: initQty, originalQty: initQty, editing: false, usePurchaseUnit: usePU }
     }))
     setDispatchPhoto('')
     setExpectedReceiverName(detail.purchaseRequest?.requestedByName ?? '')
@@ -374,8 +376,9 @@ export default function TransfersPage({ deepLinkId, onDeepLinkHandled }: { deepL
     setReceiveLines(detail.items.map(i => {
       const hasPU = !!(i.purchaseUnit && i.purchaseUnit !== i.baseUnit && i.conversionFactor > 1)
       const cf = i.conversionFactor ?? 1
-      const initQty = hasPU ? i.dispatchedQty / cf : i.dispatchedQty
-      return { itemId: i.itemId ?? '', itemName: i.itemName, baseUnit: i.baseUnit ?? '', purchaseUnit: i.purchaseUnit ?? null, conversionFactor: cf, max: i.dispatchedQty, qty: initQty, originalQty: initQty, editing: false, usePurchaseUnit: hasPU }
+      const usePU = hasPU && naturalQty(i, i.dispatchedQty).baseQty !== null
+      const initQty = usePU ? i.dispatchedQty / cf : i.dispatchedQty
+      return { itemId: i.itemId ?? '', itemName: i.itemName, baseUnit: i.baseUnit ?? '', purchaseUnit: i.purchaseUnit ?? null, conversionFactor: cf, max: i.dispatchedQty, qty: initQty, originalQty: initQty, editing: false, usePurchaseUnit: usePU }
     }))
     const prefill = detail.expectedReceiverName ?? detail.expectedReceivedBy?.name ?? ''
     setReceivePhoto(''); setReceiverName(prefill); setReceiverNameOriginal(prefill); setReceiverNameEditing(false); setReceiveError(''); setReceiveModal(true)
@@ -837,14 +840,28 @@ export default function TransfersPage({ deepLinkId, onDeepLinkHandled }: { deepL
               </div>
               {detail.purchaseOrder && (
                 <p className="text-xs text-muted-foreground mt-1">
-                  Auto-created from PO <span className="font-medium text-foreground">{detail.purchaseOrder.poNumber}</span>
+                  Auto-created from PO {onOpenPo
+                    ? <button onClick={() => onOpenPo(detail.purchaseOrder!.id)} className="font-medium text-info hover:underline underline-offset-2">{detail.purchaseOrder.poNumber}</button>
+                    : <span className="font-medium text-foreground">{detail.purchaseOrder.poNumber}</span>}
                   {detail.legSequence ? ` — leg ${detail.legSequence}` : ''}
                 </p>
               )}
               {detail.purchaseRequest && (
                 <p className="text-xs text-muted-foreground mt-1">
                   Requested by <span className="font-medium text-foreground">{detail.purchaseRequest.requestedByName ?? '—'}</span>
-                  {' '}({detail.purchaseRequest.prNumber})
+                  {' '}({onOpenRequest
+                    ? <button onClick={() => onOpenRequest(detail.purchaseRequest!.id)} className="font-medium text-info hover:underline underline-offset-2">{detail.purchaseRequest.prNumber}</button>
+                    : detail.purchaseRequest.prNumber})
+                </p>
+              )}
+              {!!detail.restockPos?.length && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  Remaining items — stock arrived with restock {detail.restockPos.map((po, k) => (
+                    <span key={po.id}>
+                      {k > 0 && ', '}
+                      {onOpenPo ? <button onClick={() => onOpenPo(po.id)} className="font-medium text-info hover:underline underline-offset-2">{po.poNumber}</button> : <span className="font-medium text-foreground">{po.poNumber}</span>}
+                    </span>
+                  ))}
                 </p>
               )}
               {detail.trip && (
@@ -975,39 +992,49 @@ export default function TransfersPage({ deepLinkId, onDeepLinkHandled }: { deepL
               <thead className="border-b text-xs text-muted-foreground">
                 <tr>
                   <th className="text-left px-5 py-2.5 font-medium">Item</th>
-                  <th className="text-right px-5 py-2.5 font-medium">Requested</th>
-                  <th className="text-right px-5 py-2.5 font-medium">Dispatched</th>
-                  <th className="text-right px-5 py-2.5 font-medium">Received</th>
-                  <th className="text-right px-5 py-2.5 font-medium">Value</th>
+                  <th className="text-right px-5 py-2.5 font-medium w-32">Requested</th>
+                  <th className="text-right px-5 py-2.5 font-medium w-32">Dispatched</th>
+                  <th className="text-right px-5 py-2.5 font-medium w-32">Received</th>
+                  <th className="text-right px-5 py-2.5 font-medium w-40">Value</th>
                 </tr>
               </thead>
               <tbody className="divide-y">
                 {detail.items.map((it, i) => {
                   const hasDiscrepancy = it.receivedQty > 0 && it.receivedQty !== it.dispatchedQty
-                  const hasPU = !!(it.purchaseUnit && it.purchaseUnit !== it.baseUnit && it.conversionFactor > 1)
-                  const fmtQty = (baseQty: number) => {
-                    if (!hasPU || baseQty <= 0) return <span className="tabular-nums">{baseQty} <span className="text-xs font-normal text-muted-foreground">{it.baseUnit}</span></span>
-                    const puQty = baseQty / it.conversionFactor
-                    return (
-                      <span className="tabular-nums">
-                        {Number.isInteger(puQty) ? puQty : puQty.toFixed(2)} <span className="text-xs font-normal text-muted-foreground">{it.purchaseUnit}</span>
-                        <span className="block text-xs font-normal text-muted-foreground/70">= {baseQty} {it.baseUnit}</span>
-                      </span>
-                    )
-                  }
                   const lineValue = detail.status === 'PENDING' ? it.requestedValue : detail.status === 'DISPATCHED' ? it.dispatchedValue : it.receivedValue
+                  // Cost per the unit the qty is shown in (bottle, not ml).
+                  const shown = naturalQty(it, it.requestedQty)
+                  const unitCost = (it.unitCost ?? 0) * (shown.baseQty !== null ? it.conversionFactor : 1)
                   return (
-                    <tr key={i} className="hover:bg-muted/20">
+                    <tr key={i} className="hover:bg-muted/20 align-top">
                       <td className="px-5 py-3">
-                        <p className="font-medium">{it.itemName}</p>
-                        {it.baseUnit && <p className="text-xs text-muted-foreground">{it.baseUnit}</p>}
+                        <div className="flex items-center gap-3">
+                          <div className="h-10 w-10 shrink-0 rounded-md border bg-muted/40 overflow-hidden flex items-center justify-center">
+                            {it.imageKey ? <img src={it.imageKey} alt={it.itemName} className="h-full w-full object-cover" /> : <Package className="h-4 w-4 text-muted-foreground/40" />}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="font-medium leading-tight">{it.itemName}</p>
+                            {it.sku && <p className="text-xs text-muted-foreground mt-0.5">{it.sku}</p>}
+                          </div>
+                        </div>
                       </td>
-                      <td className="px-5 py-3 text-right text-muted-foreground">{fmtQty(it.requestedQty)}</td>
-                      <td className="px-5 py-3 text-right">{it.dispatchedQty > 0 ? fmtQty(it.dispatchedQty) : '—'}</td>
-                      <td className={`px-5 py-3 text-right font-medium ${hasDiscrepancy ? 'text-destructive' : it.receivedQty >= it.requestedQty && it.receivedQty > 0 ? 'text-success' : ''}`}>
-                        {it.receivedQty > 0 ? fmtQty(it.receivedQty) : '—'}
+                      <td className="px-5 py-3 text-right tabular-nums font-medium">
+                        <StockQty item={it} qty={it.requestedQty} natural />
                       </td>
-                      <td className="px-5 py-3 text-right tabular-nums text-muted-foreground">{lineValue ? formatMoney(lineValue) : '—'}</td>
+                      <td className="px-5 py-3 text-right tabular-nums">
+                        {it.dispatchedQty > 0 ? <StockQty item={it} qty={it.dispatchedQty} natural /> : <span className="text-muted-foreground/50">—</span>}
+                      </td>
+                      <td className={`px-5 py-3 text-right tabular-nums font-medium ${hasDiscrepancy ? 'text-destructive' : it.receivedQty >= it.requestedQty && it.receivedQty > 0 ? 'text-success' : ''}`}>
+                        {it.receivedQty > 0 ? <StockQty item={it} qty={it.receivedQty} natural /> : <span className="font-normal text-muted-foreground/50">—</span>}
+                      </td>
+                      <td className="px-5 py-3 text-right tabular-nums">
+                        {lineValue ? (
+                          <>
+                            <span className="font-medium">{formatMoney(lineValue)}</span>
+                            <span className="block text-[10px] text-muted-foreground">@ {formatMoney(unitCost)} / {shown.unit}</span>
+                          </>
+                        ) : <span className="text-xs text-muted-foreground/60">No cost yet</span>}
+                      </td>
                     </tr>
                   )
                 })}
@@ -1015,7 +1042,7 @@ export default function TransfersPage({ deepLinkId, onDeepLinkHandled }: { deepL
               {!!detail.totalValue && (
                 <tfoot>
                   <tr className="border-t bg-muted/20">
-                    <td className="px-5 py-2.5 font-medium text-xs text-muted-foreground uppercase" colSpan={4}>Total Value</td>
+                    <td className="px-5 py-2.5 font-medium text-xs text-muted-foreground uppercase" colSpan={4}>Total Value · {detail.items.length} item{detail.items.length === 1 ? '' : 's'}</td>
                     <td className="px-5 py-2.5 text-right font-semibold tabular-nums">{formatMoney(detail.totalValue)}</td>
                   </tr>
                 </tfoot>
@@ -1101,7 +1128,7 @@ export default function TransfersPage({ deepLinkId, onDeepLinkHandled }: { deepL
                                 ) : hasPU ? (
                                   <>
                                     {line.qty} <span className="text-xs font-normal text-muted-foreground">{line.baseUnit}</span>
-                                    <span className="block text-xs font-normal text-muted-foreground/70">= {Number.isInteger(line.qty / line.conversionFactor) ? line.qty / line.conversionFactor : (line.qty / line.conversionFactor).toFixed(2)} {line.purchaseUnit}</span>
+                                    {Number.isInteger(line.qty / line.conversionFactor) && <span className="block text-xs font-normal text-muted-foreground/70">= {line.qty / line.conversionFactor} {line.purchaseUnit}</span>}
                                   </>
                                 ) : (
                                   <>{line.qty} <span className="text-xs font-normal text-muted-foreground">{line.baseUnit}</span></>
@@ -1239,7 +1266,7 @@ export default function TransfersPage({ deepLinkId, onDeepLinkHandled }: { deepL
                                 ) : hasPU ? (
                                   <>
                                     {line.qty} <span className="text-xs font-normal text-muted-foreground">{line.baseUnit}</span>
-                                    <span className="block text-xs font-normal text-muted-foreground/70">= {Number.isInteger(line.qty / line.conversionFactor) ? line.qty / line.conversionFactor : (line.qty / line.conversionFactor).toFixed(2)} {line.purchaseUnit}</span>
+                                    {Number.isInteger(line.qty / line.conversionFactor) && <span className="block text-xs font-normal text-muted-foreground/70">= {line.qty / line.conversionFactor} {line.purchaseUnit}</span>}
                                   </>
                                 ) : (
                                   <>{line.qty} <span className="text-xs font-normal text-muted-foreground">{line.baseUnit}</span></>

@@ -52,7 +52,7 @@ interface InventoryItemOption {
   id: string; itemNumber: string; name: string; quantity: number; unitPrice: number; photoKeys?: string[]
   category: { id: string; name: string }; room: { id: string; name: string }
 }
-interface RequestLine { id?: string; key?: string; itemId: string; itemName: string; baseUnit: string; purchaseUnit: string; itemUnit: string; unit?: string; quantity: number; estimatedCost: number; supplierId: string; supplierName: string; supplierSearch: string; supplierOpen: boolean; notes: string; search: string; open: boolean; currentStock?: number | null; onHandStock?: number | null; itemTreatment?: Treatment | null; reservedStock?: number; minStock?: number | null; stockCheck?: { locationId: string; locationName: string; requested: number; availability: number; reserve: number; onOrder: number; ending: number; shortage: number; minStock: number; toBeOrder: number; restockQty: number } | null; conversionFactor?: number | null; imageKeys?: string[]; isCustom?: boolean; isStockItem?: boolean; sourceInventoryItemId?: string | null; sourceInventoryItem?: { id: string; itemNumber: string; name: string; room: { name: string } | null; category: { name: string } | null } | null; warehouseStock?: { locationId: string; locationName: string; qty: number }[]; transferEligible?: boolean; quotations?: Quotation[]; exemptionReason?: string | null; selectionJustification?: string | null; requestedByEmployeeId?: string; quotationApproverId?: string | null; quotationApprover?: { id: string; name: string | null } | null; quotationSubmittedAt?: string | null; quotationApprovedById?: string | null; quotationApprovedBy?: { id: string; name: string | null } | null; quotationApprovedAt?: string | null; quotationRejectedBy?: { id: string; name: string | null } | null; quotationRejectedAt?: string | null; quotationRejectionReason?: string | null; convertedAt?: string | null; convertedPoId?: string | null; verifyRejectedById?: string | null; verifyRejectedBy?: { id: string; name: string | null } | null; verifyRejectedAt?: string | null; verifyRejectionReason?: string | null; warehouseDecision?: 'TRANSFER' | 'PURCHASE' | null; backorderQty?: number; backorderLocationId?: string | null; viaWarehouse?: boolean; warehouseCheckedAt?: string | null; warehouseCheckNote?: string | null; requestType?: 'NEW' | 'REPLACEMENT'; damageDetail?: string | null; transfer?: { id: string; transferNumber: string; status: string; fromLocationName: string } | null; sentFromStock?: number | null; toBeOrderSplit?: { po: number; pending: number } | null; warehouseApprovedAt?: string | null; warehouseReserveQty?: number | null; warehouseFromLocationId?: string | null }
+interface RequestLine { id?: string; key?: string; itemId: string; itemName: string; baseUnit: string; purchaseUnit: string; itemUnit: string; unit?: string; quantity: number; estimatedCost: number; supplierId: string; supplierName: string; supplierSearch: string; supplierOpen: boolean; notes: string; search: string; open: boolean; currentStock?: number | null; onHandStock?: number | null; itemTreatment?: Treatment | null; reservedStock?: number; minStock?: number | null; stockCheck?: { locationId: string; locationName: string; requested: number; availability: number; reserve: number; onOrder: number; ending: number; shortage: number; minStock: number; toBeOrder: number; restockQty: number } | null; conversionFactor?: number | null; imageKeys?: string[]; isCustom?: boolean; isStockItem?: boolean; sourceInventoryItemId?: string | null; sourceInventoryItem?: { id: string; itemNumber: string; name: string; room: { name: string } | null; category: { name: string } | null } | null; warehouseStock?: { locationId: string; locationName: string; qty: number }[]; transferEligible?: boolean; quotations?: Quotation[]; exemptionReason?: string | null; selectionJustification?: string | null; requestedByEmployeeId?: string; quotationApproverId?: string | null; quotationApprover?: { id: string; name: string | null } | null; quotationSubmittedAt?: string | null; quotationApprovedById?: string | null; quotationApprovedBy?: { id: string; name: string | null } | null; quotationApprovedAt?: string | null; quotationRejectedBy?: { id: string; name: string | null } | null; quotationRejectedAt?: string | null; quotationRejectionReason?: string | null; convertedAt?: string | null; convertedPoId?: string | null; verifyRejectedById?: string | null; verifyRejectedBy?: { id: string; name: string | null } | null; verifyRejectedAt?: string | null; verifyRejectionReason?: string | null; warehouseDecision?: 'TRANSFER' | 'PURCHASE' | null; backorderQty?: number; backorderLocationId?: string | null; viaWarehouse?: boolean; warehouseCheckedAt?: string | null; warehouseCheckNote?: string | null; requestType?: 'NEW' | 'REPLACEMENT'; damageDetail?: string | null; transfer?: { id: string; transferNumber: string; status: string; fromLocationName: string } | null; sentFromStock?: number | null; toBeOrderSplit?: { po: number; pending: number } | null; reservations?: { id: string; stockQty: number; reservedQty: number; source: string; transferId: string | null; transferNumber: string | null; purchaseOrderId: string | null; poNumber: string | null; createdAt: string }[]; requestedBase?: number; restockLocationId?: string | null; restockLocation?: { id: string; name: string } | null; restockOrders?: { prId: string; prNumber: string; poId: string | null; poNumber: string | null; poStatus: string | null; qty: number }[]; warehouseApprovedAt?: string | null; warehouseReserveQty?: number | null; warehouseFromLocationId?: string | null }
 interface PurchaseRequest {
   id: string
   prNumber: string
@@ -1224,7 +1224,6 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
     if (data.status) setSelected(s => s ? { ...s, status: data.status } : s)
     toast.success(data.remainingItems?.length ? 'Purchase request processed — sent to Purchasing' : 'Request completed — all from warehouse stock')
     if (data.transferNumbers?.length) toast.success(`Transfer: ${data.transferNumbers.join(', ')}`)
-    if (data.restockRequests?.length) toast.success(`Warehouse restock created: ${data.restockRequests.join(', ')}`)
     await fetchDetail(detail.id)
     load()
   }
@@ -1390,7 +1389,6 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
               <th className="text-left px-4 py-3 font-medium">Destination</th>
               <th className="text-left px-4 py-3 font-medium">Requested by</th>
               <th className="text-center px-4 py-3 font-medium">Items</th>
-              <th className="text-right px-4 py-3 font-medium">Budget</th>
               <th className="text-left px-4 py-3 font-medium">Date</th>
               <th className="text-left px-4 py-3 font-medium">Status</th>
               <th className="px-4 py-3" />
@@ -1405,7 +1403,6 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                     <td className="px-4 py-3.5"><div className="h-3.5 w-20 rounded bg-muted animate-pulse" /></td>
                     <td className="px-4 py-3.5"><div className="h-3.5 w-24 rounded bg-muted animate-pulse" /></td>
                     <td className="px-4 py-3.5"><div className="h-3.5 w-6 rounded bg-muted animate-pulse mx-auto" /></td>
-                    <td className="px-4 py-3.5"><div className="h-3.5 w-24 rounded bg-muted animate-pulse ml-auto" /></td>
                     <td className="px-4 py-3.5"><div className="h-3.5 w-20 rounded bg-muted animate-pulse" /></td>
                     <td className="px-4 py-3.5"><div className="h-5 w-16 rounded-full bg-muted animate-pulse" /></td>
                     <td className="px-4 py-3.5" />
@@ -1413,7 +1410,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                 ))}
               </>
             ) : filtered.length === 0 ? (
-              <tr><td colSpan={8} className="text-center py-12 text-muted-foreground text-sm">
+              <tr><td colSpan={7} className="text-center py-12 text-muted-foreground text-sm">
                 <FileText className="h-8 w-8 mx-auto mb-2 opacity-30" />
                 {emptyMessage}
               </td></tr>
@@ -1423,6 +1420,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                   <span className="flex items-center gap-1.5">
                     {r.prNumber}
                     {r.isUrgent && <UrgentBadge />}
+                    {r.restockFor && <span className="font-sans text-[10px] font-medium text-violet-700 bg-violet-50 border border-violet-200 rounded-full px-1.5 py-0.5 dark:text-violet-300 dark:bg-violet-500/10 dark:border-violet-500/30">Restock</span>}
                     <DivisionBadge division={r.division} />
                   </span>
                   <ItemNamesPreview names={r.itemNames} className="font-sans font-normal text-[11px] text-muted-foreground mt-0.5" />
@@ -1435,7 +1433,12 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                   ) : '—'}
                 </td>
                 <td className="px-4 py-3 text-muted-foreground">
-                  {r.requestedByEmployee ? (
+                  {r.restockFor ? (
+                    <>
+                      <p className="text-foreground">Auto · Min. Stock</p>
+                      <p className="text-[11px]">To Be Order from {r.restockFor.prNumber}</p>
+                    </>
+                  ) : r.requestedByEmployee ? (
                     <>
                       <p className="text-foreground">{r.requestedByEmployee.fullName}</p>
                       <p className="text-[11px]">Created by {r.createdBy?.name ?? '—'}</p>
@@ -1443,11 +1446,6 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                   ) : (r.createdBy?.name ?? '—')}
                 </td>
                 <td className="px-4 py-3 text-center text-muted-foreground">{r.itemCount}</td>
-                <td className="px-4 py-3 text-right tabular-nums text-sm">
-                  {r.totalBudget > 0
-                    ? <span className="font-medium">{formatMoney(r.totalBudget)}</span>
-                    : <span className="text-muted-foreground/40">—</span>}
-                </td>
                 <td className="px-4 py-3 text-muted-foreground">{formatDate(r.createdAt)}</td>
                 <td className="px-4 py-3">
                   {(() => {
@@ -1510,6 +1508,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                     <span className="font-mono text-xs font-semibold flex items-center gap-1.5">
                       {r.prNumber}
                       {r.isUrgent && <UrgentBadge />}
+                      {r.restockFor && <span className="font-sans text-[10px] font-medium text-violet-700 bg-violet-50 border border-violet-200 rounded-full px-1.5 py-0.5 dark:text-violet-300 dark:bg-violet-500/10 dark:border-violet-500/30">Restock</span>}
                       <DivisionBadge division={r.division} />
                     </span>
                     <div className="flex items-center gap-1.5 shrink-0">
@@ -1529,12 +1528,12 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                   <ItemNamesPreview names={r.itemNames} max={3} className="text-xs text-muted-foreground" />
                   <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
                     <span className="truncate min-w-0">
-                      <span className="font-medium text-foreground">{r.requestedByEmployee?.fullName ?? r.createdBy?.name ?? '—'}</span>
-                      {r.requestedByEmployee && r.createdBy?.name && r.createdBy.name !== r.requestedByEmployee.fullName && <> · by {r.createdBy.name}</>}
+                      <span className="font-medium text-foreground">{r.restockFor ? `Auto restock · from ${r.restockFor.prNumber}` : r.requestedByEmployee?.fullName ?? r.createdBy?.name ?? '—'}</span>
+                      {!r.restockFor && r.requestedByEmployee && r.createdBy?.name && r.createdBy.name !== r.requestedByEmployee.fullName && <> · by {r.createdBy.name}</>}
                       {r.deliveryLocation && <> · {r.deliveryLocation.name}</>}
                     </span>
                     <span className="shrink-0 tabular-nums">
-                      {r.totalBudget > 0 ? formatMoney(r.totalBudget) : `${r.itemCount} item${r.itemCount !== 1 ? 's' : ''}`}
+                      {`${r.itemCount} item${r.itemCount !== 1 ? 's' : ''}`}
                     </span>
                   </div>
                   {least && (
@@ -1975,38 +1974,94 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                 </div>
               )
             }
-            // Decision (reject / undo) and Warehouse Check controls for one line — table cells
-            // for Purchasing, the stock modal's body for Warehouse.
-            const decisionContent = (item: typeof sortedItems[number]) => {
-              const isRejected = !!item.verifyRejectedAt
-              const canDecide = !isWarehouse && ['DRAFT', 'ON_PROCESS'].includes(detail.status) && !item.convertedAt
+            // Each hand-out of warehouse stock to this line (Warehouse check, then every restock that
+            // arrives): Stock at that moment / PR / Reserved. The line is OK once Σ Reserved = PR.
+            const reservationLog = (item: typeof sortedItems[number]) => {
+              if (!item.viaWarehouse || !item.itemId || item.verifyRejectedAt) return null
+              const rows = item.reservations ?? []
+              // Lines processed before the log existed: one row from what was sent, stock unknown.
+              const legacy = !rows.length && (item.sentFromStock ?? 0) > 0
+              if (!rows.length && !legacy) return null
+              const shown: { key: string; date: string | null; stock: number | null; reserved: number; tr: { id: string | null; number: string } | null; po: { id: string; number: string } | null; restock: boolean }[] = legacy
+                ? [{ key: 'legacy', date: item.warehouseCheckedAt ?? null, stock: null, reserved: item.sentFromStock!, tr: item.transfer ? { id: item.transfer.id, number: item.transfer.transferNumber } : null, po: null, restock: false }]
+                : rows.map(r => ({
+                    key: r.id, date: r.createdAt, stock: r.stockQty, reserved: r.reservedQty, restock: r.source === 'BACKORDER',
+                    tr: r.transferNumber ? { id: r.transferId, number: r.transferNumber } : null,
+                    po: r.purchaseOrderId && r.poNumber ? { id: r.purchaseOrderId, number: r.poNumber } : null,
+                  }))
+              const docLink = (label: string, open?: () => void) => open
+                ? <button type="button" onClick={open} className="font-medium text-info hover:underline underline-offset-2">{label}</button>
+                : <span className="font-medium text-foreground">{label}</span>
+              const requested = item.requestedBase ?? item.stockCheck?.requested ?? 0
+              const total = shown.reduce((s, r) => s + r.reserved, 0)
+              const remaining = Math.max(0, requested - total)
+              const complete = remaining <= 1e-6
+              const cell = 'px-3 py-2 text-right tabular-nums'
               return (
-                <>
-                {isRejected ? (
-                  <div className="flex items-center gap-1.5">
-                    <StatusBadge
-                      tone="destructive" size="sm"
-                      title={item.verifyRejectionReason || undefined}
-                    >
-                      Rejected
-                    </StatusBadge>
-                    {canDecide && (
-                      <button onClick={() => setItemVerifyDecision(item, false)} className="text-[10px] text-muted-foreground hover:text-foreground underline underline-offset-2">
-                        Undo
-                      </button>
-                    )}
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Reservation</p>
+                  <div className="rounded-lg border overflow-hidden">
+                    <table className="w-full text-sm">
+                      <thead className="bg-muted/40 text-[10px] uppercase tracking-wide text-muted-foreground">
+                        <tr>
+                          <th className="text-left px-3 py-2 font-medium">Date</th>
+                          <th className="text-right px-3 py-2 font-medium" title="Free stock at the warehouse at that moment">Stock</th>
+                          <th className="text-right px-3 py-2 font-medium">PR</th>
+                          <th className="text-right px-3 py-2 font-medium">Reserved</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y">
+                        {shown.map((r, k) => (
+                          <tr key={r.key}>
+                            <td className="px-3 py-2 text-xs text-muted-foreground">
+                              {r.date ? formatDate(r.date) : '—'}
+                              <span className="block text-[10px]">
+                                {r.restock ? 'Restock arrived' : 'Warehouse check'}
+                                {r.po && <> · {docLink(r.po.number, onOpenPo ? () => onOpenPo(r.po!.id) : undefined)}</>}
+                                {r.tr && <> · {docLink(r.tr.number, onOpenTransfer && r.tr.id ? () => onOpenTransfer(r.tr!.id!) : undefined)}</>}
+                              </span>
+                            </td>
+                            <td className={`${cell} text-muted-foreground`}>{r.stock === null ? '—' : lineQty(item, r.stock)}</td>
+                            <td className={cell}>{k === 0 ? lineQty(item, requested) : ''}</td>
+                            <td className={`${cell} font-semibold ${r.reserved > 0 ? 'text-warning' : 'text-muted-foreground/60'}`}>{lineQty(item, r.reserved)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot className="border-t bg-muted/20">
+                        <tr>
+                          <td className="px-3 py-2 text-xs font-medium" colSpan={2}>
+                            {complete ? (
+                              <span className="flex items-center gap-1 text-success"><CheckCircle2 className="h-3.5 w-3.5" /> Complete — reserved = PR</span>
+                            ) : item.warehouseDecision === 'PURCHASE' ? (
+                              <span className="text-muted-foreground">Bought directly by Purchasing</span>
+                            ) : (
+                              <span className="text-warning">{lineQtyLabel(item, remaining)} remaining — reserved when restock arrives</span>
+                            )}
+                          </td>
+                          <td className={`${cell} text-xs text-muted-foreground`}>Total</td>
+                          <td className={`${cell} font-semibold ${complete ? 'text-success' : ''}`}>{lineQty(item, total)}</td>
+                        </tr>
+                      </tfoot>
+                    </table>
                   </div>
-                ) : canDecide ? (
-                  <button
-                    onClick={() => openRejectItemModal(item)}
-                    className="text-[10px] font-medium text-muted-foreground hover:text-destructive border border-dashed border-border hover:border-destructive/30 rounded-full px-2.5 py-0.5 transition-colors"
-                  >
-                    Reject
-                  </button>
-                ) : (
-                  <StatusBadge tone="success" size="sm">Accepted</StatusBadge>
-                )}
-                </>
+                  {!!item.restockOrders?.length && (
+                    <div className="mt-2 rounded-lg border border-violet-200 bg-violet-50/60 px-3 py-2 text-xs dark:border-violet-500/30 dark:bg-violet-500/10">
+                      <p className="font-medium text-violet-700 dark:text-violet-300">Restock (To Be Order) for the warehouse</p>
+                      <ul className="mt-1 space-y-0.5 text-muted-foreground">
+                        {item.restockOrders.map((o, k) => (
+                          <li key={k}>
+                            <span className="font-medium text-foreground tabular-nums">{lineQtyLabel(item, o.qty)}</span>
+                            {o.prId !== detail.id && <> · {docLink(o.prNumber, () => openLinkedRequest(o.prId))}</>}
+                            {' → '}
+                            {o.poId && o.poNumber
+                              ? <>{docLink(o.poNumber, onOpenPo ? () => onOpenPo(o.poId!) : undefined)}{o.poStatus && <span className="ml-1">({PO_STATUS_LABEL[o.poStatus] ?? o.poStatus})</span>}</>
+                              : <span className="text-warning">not ordered yet</span>}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
               )
             }
             // Warehouse's modal for one line: pick the source warehouse, type the Reserve (capped at
@@ -2210,6 +2265,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                           )}
                           {item.warehouseCheckNote && <p className="text-xs text-muted-foreground mt-1.5">Note: {item.warehouseCheckNote}</p>}
                         </div>
+                        {reservationLog(item)}
                         {sc && (
                           <div>
                             <p className={sectionLabel}>Stock at {sc.locationName}</p>
@@ -2268,11 +2324,341 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                 : item.convertedAt && item.warehouseDecision === 'TRANSFER' ? (
                   (item.backorderQty ?? 0) > 0
                     ? <StatusBadge tone="warning" size="sm">Partly sent · {lineQtyLabel(item, item.backorderQty!)} remaining</StatusBadge>
-                    : <StatusBadge tone="success" size="sm">Processed</StatusBadge>
+                    : <StatusBadge tone="success" size="sm"><Check className="h-3 w-3" /> Complete</StatusBadge>
                 )
                 : item.warehouseApprovedAt ? <StatusBadge tone="success" size="sm"><Check className="h-3 w-3" /> Approved · reserve {lineQtyLabel(item, item.warehouseReserveQty ?? 0)}</StatusBadge>
                 : null
-            const stockItem = showStockCheck && stockItemId ? sortedItems.find(it => it.id === stockItemId) ?? null : null
+            // Purchasing / requester view: same card list, everything else in the item modal.
+            const lineCtx = (item: typeof sortedItems[number]) => {
+              const isCustom = !item.itemId
+              // Already sent out of warehouse stock via a Transfer — nothing left for
+              // Purchasing to pick (supplier, fulfillment, room), so those show the transfer.
+              const transferred = !!item.convertedAt && !item.convertedPoId && (item.warehouseDecision === 'TRANSFER' || !!item.transfer)
+              return {
+                isCustom, transferred,
+                isRejected: !!item.verifyRejectedAt,
+                editable: detail.status === 'ON_PROCESS' && !isWarehouse,
+                canDecide: !isWarehouse && ['DRAFT', 'ON_PROCESS'].includes(detail.status) && !item.convertedAt,
+                chosenFromLocationId: fulfillment[item.id!] ?? null,
+                poNumber: item.convertedPoId ? poNumberMap.get(item.convertedPoId) ?? null : null,
+                // Parallel PR: Purchasing sees this line but Warehouse hasn't released it yet.
+                awaiting: detail.status === 'ON_PROCESS' && !isWarehouse && isAwaitingWarehouse(item, detail),
+              }
+            }
+            const requestedLabel = (item: typeof sortedItems[number]) => (
+              <>
+                <span className="font-semibold text-foreground tabular-nums">{item.quantity} {item.unit ?? item.purchaseUnit ?? item.itemUnit}</span>
+                {item.baseUnit && item.purchaseUnit && item.baseUnit !== item.purchaseUnit && item.conversionFactor
+                  ? ` (${item.quantity * item.conversionFactor} ${item.baseUnit})` : ''}
+              </>
+            )
+            const supplierContent = (item: typeof sortedItems[number]) => {
+              const c = lineCtx(item)
+              return c.awaiting ? (
+                <StatusBadge tone="info" size="sm">Waiting for Warehouse</StatusBadge>
+              ) : c.transferred ? (
+                <div className="space-y-1">
+                  <TransferBadge transfer={item.transfer} onOpen={onOpenTransfer} />
+                  {(detail.status !== 'ON_PROCESS' || isWarehouse) && <BackorderBadge item={item} />}
+                </div>
+              ) : detail.status !== 'ON_PROCESS' || isWarehouse ? (
+                <>
+                  {item.supplierName ?? <span className="text-muted-foreground/50 italic">—</span>}
+                  {item.transferEligible && !item.convertedAt && !!item.warehouseStock?.length && detail.deliveryLocation?.type !== 'WAREHOUSE' && (
+                    <p className="text-[10px] text-info mt-0.5">
+                      Possible transfer from {item.warehouseStock[0].locationName}
+                      {item.warehouseStock.length > 1 ? ` +${item.warehouseStock.length - 1} more` : ''}
+                    </p>
+                  )}
+                </>
+              ) : c.chosenFromLocationId ? (
+                <span className="text-xs text-muted-foreground/60 italic">— (transfer, no supplier needed)</span>
+              ) : (
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <button
+                    onClick={() => openEditItem(item)}
+                    className={`text-xs font-medium px-2.5 py-1 rounded-md border transition-colors ${
+                      item.supplierName ? 'bg-card text-foreground border-border hover:bg-muted' : 'bg-warning/10 text-warning border-warning/30 hover:bg-warning/20'
+                    }`}
+                  >
+                    {item.supplierName ?? 'Select supplier…'}
+                  </button>
+                  {item.convertedAt ? (
+                    <StatusBadge tone="neutral" size="sm">Converted</StatusBadge>
+                  ) : getBand(item.estimatedCost) !== 'A' && (
+                    item.quotationApprovedAt ? (
+                      <StatusBadge tone="success" size="sm">Approved</StatusBadge>
+                    ) : item.quotationRejectedAt ? (
+                      <StatusBadge tone="destructive" size="sm">Rejected</StatusBadge>
+                    ) : item.quotationSubmittedAt ? (
+                      <StatusBadge tone="warning" size="sm">Pending approval</StatusBadge>
+                    ) : null
+                  )}
+                </div>
+              )
+            }
+            const poButton = (item: typeof sortedItems[number]) => {
+              const poNumber = lineCtx(item).poNumber
+              if (!poNumber) return null
+              return onOpenPo ? (
+                <button
+                  onClick={() => onOpenPo(item.convertedPoId!)}
+                  className="text-xs font-medium text-success bg-success/10 border border-success/30 rounded-md px-2 py-1 hover:bg-success/20 transition-colors whitespace-nowrap"
+                >
+                  {poNumber}
+                </button>
+              ) : (
+                <span className="text-xs font-medium text-muted-foreground whitespace-nowrap">{poNumber}</span>
+              )
+            }
+            const fulfillmentContent = (item: typeof sortedItems[number]) => {
+              const c = lineCtx(item)
+              return c.awaiting ? (
+                <span className="text-xs text-muted-foreground italic">Warehouse is checking stock</span>
+              ) : c.transferred ? (
+                <div className="space-y-1">
+                  {item.transfer && <span className="block text-xs text-info">Transfer from {item.transfer.fromLocationName}</span>}
+                  <BackorderBadge item={item} />
+                </div>
+              ) : item.restockLocationId ? (
+                <span className="text-sm text-muted-foreground">Purchase Order → delivered to <span className="font-medium text-foreground">{item.restockLocation?.name ?? 'the warehouse'}</span></span>
+              ) : item.warehouseDecision === 'PURCHASE' || !item.transferEligible || !item.warehouseStock?.length ? (
+                <span className="text-sm text-muted-foreground" title={item.warehouseDecision === 'PURCHASE' ? 'Warehouse checked physically — no stock' : undefined}>Purchase Order</span>
+              ) : (
+                <div className="relative">
+                  <select
+                    className={`w-full appearance-none text-sm font-medium pl-3 pr-8 py-2 rounded-md border cursor-pointer transition-colors focus:outline-none focus:ring-1 focus:ring-ring ${
+                      c.chosenFromLocationId ? 'bg-info/10 text-info border-info/30 hover:bg-info/20' : 'bg-card text-muted-foreground border-border hover:bg-muted'
+                    }`}
+                    value={c.chosenFromLocationId ?? ''}
+                    onChange={e => setFulfillment(f => ({ ...f, [item.id!]: e.target.value || null }))}
+                  >
+                    <option value="">Purchase Order</option>
+                    {item.warehouseStock.map(w => (
+                      <option key={w.locationId} value={w.locationId}>Transfer from {w.locationName} ({lineQtyLabel(item, w.qty)})</option>
+                    ))}
+                  </select>
+                  <ChevronDown className={`h-4 w-4 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none ${c.chosenFromLocationId ? 'text-info' : 'text-muted-foreground'}`} />
+                </div>
+              )
+            }
+            const onShipContent = (item: typeof sortedItems[number]) => {
+              const c = lineCtx(item)
+              if (c.chosenFromLocationId || c.transferred) return <span className="text-xs text-muted-foreground/60 italic">— (transfer, not needed)</span>
+              return (
+                <div className="space-y-2">
+                  {c.isCustom ? (
+                    <select
+                      className="w-full text-sm border rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-ring bg-card"
+                      value={roomAssignment[item.id!]?.treatment ?? 'CONSUMABLE'}
+                      onChange={e => setRoomAssignment(a => ({ ...a, [item.id!]: { roomId: a[item.id!]?.roomId ?? '', categoryId: a[item.id!]?.categoryId ?? '', treatment: e.target.value as Treatment } }))}
+                    >
+                      {TREATMENTS.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                    </select>
+                  ) : (
+                    <p className="text-sm" title="Set on the item in Items & Pricing">{TREATMENT_LABEL[lineTreatmentOf(item)]}</p>
+                  )}
+                  {lineTreatmentOf(item) === 'ASSET' && (
+                    <div className="grid grid-cols-2 gap-2">
+                      <select
+                        className="text-sm border rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-ring bg-card"
+                        value={roomAssignment[item.id!]?.roomId ?? ''}
+                        onChange={e => setRoomAssignment(a => ({ ...a, [item.id!]: { ...a[item.id!], roomId: e.target.value, categoryId: '' } }))}
+                      >
+                        <option value="">Room…</option>
+                        {invRooms.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                      </select>
+                      <select
+                        className="text-sm border rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-ring bg-card disabled:opacity-50"
+                        value={roomAssignment[item.id!]?.categoryId ?? ''}
+                        disabled={!roomAssignment[item.id!]?.roomId}
+                        onChange={e => setRoomAssignment(a => ({ ...a, [item.id!]: { ...a[item.id!], roomId: a[item.id!]?.roomId ?? '', categoryId: e.target.value } }))}
+                      >
+                        <option value="">Category…</option>
+                        {(invCategoriesByRoom[roomAssignment[item.id!]?.roomId ?? ''] ?? []).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                      </select>
+                    </div>
+                  )}
+                </div>
+              )
+            }
+            // One-line status for a Purchasing card (details live in the modal).
+            const lineStatus = (item: typeof sortedItems[number]) => {
+              const c = lineCtx(item)
+              if (c.isRejected) return <StatusBadge tone="destructive" size="sm">Rejected</StatusBadge>
+              if (c.awaiting) return <StatusBadge tone="info" size="sm">Waiting for Warehouse</StatusBadge>
+              if (c.transferred) return (
+                <>
+                  <StatusBadge tone="info" size="sm"><ArrowRightLeft className="h-3 w-3" /> {item.transfer?.transferNumber ?? 'Transfer'}</StatusBadge>
+                  {(item.backorderQty ?? 0) > 0
+                    ? <StatusBadge tone="warning" size="sm">{lineQtyLabel(item, item.backorderQty!)} remaining</StatusBadge>
+                    : <StatusBadge tone="success" size="sm"><Check className="h-3 w-3" /> Complete</StatusBadge>}
+                </>
+              )
+              if (c.poNumber) return <StatusBadge tone="success" size="sm">{c.poNumber}</StatusBadge>
+              if (c.chosenFromLocationId) return <StatusBadge tone="info" size="sm">Transfer from {item.warehouseStock?.find(w => w.locationId === c.chosenFromLocationId)?.locationName ?? 'warehouse'}</StatusBadge>
+              if (c.editable && !item.supplierName) return <StatusBadge tone="warning" size="sm">Select supplier</StatusBadge>
+              if (item.supplierName) return <span className="text-[11px] text-muted-foreground truncate max-w-full">{item.supplierName}</span>
+              return null
+            }
+            const itemModal = (item: typeof sortedItems[number]) => {
+              const c = lineCtx(item)
+              const photos = Array.isArray(item.imageKeys) ? item.imageKeys : []
+              const stock = item.currentStock ?? null
+              const min = item.minStock ?? 0
+              const stockColor = stock === null ? '' : stock === 0 ? 'text-destructive' : stock < min ? 'text-warning' : 'text-success'
+              const split = item.toBeOrderSplit
+              const withStock = showStockCols && !!item.viaWarehouse && !!item.itemId
+              const sectionLabel = 'text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2'
+              const stat = (label: string, value: number | null, cls = '', opts: { sub?: string; title?: string; highlight?: boolean } = {}) => (
+                <div title={opts.title} className={`rounded-lg border px-3 py-2.5 ${opts.highlight ? 'bg-info/5 border-info/30' : 'bg-muted/20'}`}>
+                  <p className={`text-[10px] font-medium uppercase tracking-wide ${opts.highlight ? 'text-info' : 'text-muted-foreground'}`}>{label}</p>
+                  <p className={`mt-0.5 text-base font-semibold tabular-nums ${value === null ? 'text-muted-foreground/50' : value === 0 ? 'text-muted-foreground/60' : cls}`}>{value === null ? '—' : lineQty(item, value)}</p>
+                  {opts.sub && <p className="text-[10px] text-muted-foreground mt-0.5">{opts.sub}</p>}
+                </div>
+              )
+              return (
+                <>
+                  <div className="flex items-start gap-3 px-5 py-4 border-b">
+                    {photos[0] ? (
+                      <img src={photos[0]} alt={item.itemName} onClick={() => openLightbox(photos, 0, item.itemName)}
+                        className="w-14 h-14 shrink-0 rounded-lg object-cover border cursor-zoom-in" />
+                    ) : (
+                      <div className="w-14 h-14 shrink-0 rounded-lg border bg-muted/50 flex items-center justify-center">
+                        <Package className="h-6 w-6 text-muted-foreground/60" />
+                      </div>
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <h3 className={`font-semibold leading-snug ${c.isRejected ? 'line-through text-muted-foreground' : ''}`}>{item.itemName}</h3>
+                      <p className="text-sm text-muted-foreground mt-0.5">{item.restockLocationId ? 'To order' : 'Requested'} {requestedLabel(item)}</p>
+                      {item.restockLocationId && (
+                        <p className="text-xs text-muted-foreground mt-0.5">To Be Order from the warehouse check — bought for {item.restockLocation?.name ?? 'the warehouse'}; any shortage for the ship is sent from it on arrival.</p>
+                      )}
+                      <div className="flex flex-wrap gap-1 mt-1.5">
+                        {item.restockLocationId && <span className="text-[10px] font-medium text-violet-700 bg-violet-50 border border-violet-200 px-1.5 py-0.5 rounded-full dark:text-violet-300 dark:bg-violet-500/10 dark:border-violet-500/30">Restock → {item.restockLocation?.name ?? 'Warehouse'}</span>}
+                        {c.isCustom && <span className="text-[10px] font-medium text-warning bg-warning/10 px-1.5 py-0.5 rounded-full">Custom request</span>}
+                        {mixedRoute && (item.viaWarehouse
+                          ? <span className="text-[10px] font-medium text-info bg-info/10 px-1.5 py-0.5 rounded-full">Via Warehouse</span>
+                          : <span className="text-[10px] font-medium text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full">Direct</span>)}
+                        {item.requestType === 'REPLACEMENT' && <span className="text-[10px] font-medium text-destructive bg-destructive/10 px-1.5 py-0.5 rounded-full">Replacement</span>}
+                        {c.isRejected ? <StatusBadge tone="destructive" size="sm" title={item.verifyRejectionReason || undefined}>Rejected</StatusBadge>
+                          : ['DRAFT', 'ON_PROCESS'].includes(detail.status) && !c.canDecide && <StatusBadge tone="success" size="sm">Accepted</StatusBadge>}
+                      </div>
+                      {c.isRejected && item.verifyRejectionReason && <p className="text-xs text-muted-foreground mt-1">Reason: {item.verifyRejectionReason}</p>}
+                      {item.requestType === 'REPLACEMENT' && item.damageDetail && (
+                        <p className="text-xs text-destructive/80 mt-1 whitespace-pre-line"><span className="font-semibold">Damage:</span> {item.damageDetail}</p>
+                      )}
+                      {item.notes && <p className="text-xs text-muted-foreground mt-1">{item.notes}</p>}
+                      {photos.length > 1 && (
+                        <div className="flex gap-1.5 mt-2">
+                          {photos.slice(1, 6).map((src, j) => (
+                            <img key={j} src={src} alt={`${item.itemName} reference ${j + 2}`} onClick={() => openLightbox(photos, j + 1, item.itemName)}
+                              className="w-9 h-9 rounded-md object-cover border cursor-zoom-in hover:opacity-80" />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <button onClick={() => setStockItemId(null)} className="text-muted-foreground hover:text-foreground text-xl leading-none">×</button>
+                  </div>
+
+                  <div className="p-5 space-y-5">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <p className={sectionLabel}>Supplier</p>
+                        <div className="text-sm">{supplierContent(item)}</div>
+                      </div>
+                      {c.poNumber && (
+                        <div>
+                          <p className={sectionLabel}>Purchase Order</p>
+                          {poButton(item)}
+                        </div>
+                      )}
+                    </div>
+
+                    {(stock !== null || withStock) && (
+                      <div>
+                        <p className={sectionLabel}>Stock{item.stockCheck?.locationName ? ` at ${item.stockCheck.locationName}` : ''}</p>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                          {stat('Current Stock', stock, stockColor, {
+                            sub: item.reservedStock ? `${lineQtyLabel(item, item.onHandStock ?? 0)} on hand · ${lineQtyLabel(item, item.reservedStock)} reserved` : undefined,
+                            title: 'Free stock = on hand − reserved by pending transfers',
+                          })}
+                          {withStock && stat('Min. Stock', item.minStock ?? 0, 'text-muted-foreground')}
+                          {withStock && stat('Reserve', item.sentFromStock ?? null, 'text-warning', { title: 'Sent from warehouse stock' })}
+                          {withStock && stat('To Be Order', split ? split.po + split.pending : null, 'text-info', { highlight: true })}
+                          {withStock && stat('PO', split?.po ?? null, 'text-success', { title: 'To Be Order already on a Purchase Order' })}
+                          {withStock && stat('Pending', split?.pending ?? null, 'text-warning', { title: 'To Be Order not ordered yet' })}
+                        </div>
+                      </div>
+                    )}
+
+                    {reservationLog(item)}
+
+                    {detail.status === 'ON_PROCESS' && !isWarehouse && (
+                      <div>
+                        <p className={sectionLabel}>Fulfillment</p>
+                        {fulfillmentContent(item)}
+                      </div>
+                    )}
+
+                    {detail.status === 'ON_PROCESS' && !isWarehouse && detail.deliveryLocation?.type === 'VESSEL' && !item.restockLocationId && (
+                      <div>
+                        <p className={sectionLabel} title="Consumable = trip usage · Asset = ship Inventory (needs Room/Category) · Spare part = maintenance">On the ship</p>
+                        {onShipContent(item)}
+                      </div>
+                    )}
+
+                    {item.warehouseCheckNote && <p className="text-xs text-muted-foreground">Warehouse note: {item.warehouseCheckNote}</p>}
+                  </div>
+
+                  <div className="flex items-center justify-between gap-2 px-5 py-4 border-t bg-muted/20">
+                    <div>
+                      {c.canDecide && (c.isRejected ? (
+                        <button onClick={() => setItemVerifyDecision(item, false)} className="text-sm text-muted-foreground hover:text-foreground underline underline-offset-2">
+                          Undo reject
+                        </button>
+                      ) : (
+                        <button onClick={() => openRejectItemModal(item)}
+                          className="text-sm font-medium px-3 py-2 rounded-md border border-destructive/30 text-destructive hover:bg-destructive/10 transition-colors">
+                          Reject item
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => setStockItemId(null)} className="px-4 py-2 text-sm border rounded-md hover:bg-muted">Close</button>
+                      {((c.editable && !c.transferred) || c.isCustom) && (
+                        <button onClick={() => openEditItem(item)}
+                          className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-md bg-primary text-primary-foreground hover:bg-primary/90">
+                          <Pencil className="h-3.5 w-3.5" /> {c.editable && !c.transferred ? 'Edit price / supplier' : 'View item details'}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </>
+              )
+            }
+            // Where each line stands, so an On Process PR reads as "what's left to do" at a glance.
+            type Stage = 'purchase' | 'warehouse' | 'waiting' | 'ordered' | 'sent' | 'rejected'
+            const lineStage = (item: typeof sortedItems[number]): Stage => {
+              const c = lineCtx(item)
+              if (c.isRejected) return 'rejected'
+              if (c.awaiting) return 'warehouse'
+              if (c.transferred) return (item.backorderQty ?? 0) > 0 ? 'waiting' : 'sent'
+              if (c.poNumber) return 'ordered'
+              return 'purchase'
+            }
+            const STAGES: { key: Stage; label: string; hint: string; dot: string }[] = [
+              { key: 'purchase', label: 'To purchase', hint: 'Pick a supplier, then Convert to PO', dot: 'bg-warning' },
+              { key: 'warehouse', label: 'Warehouse checking', hint: 'Warehouse is checking its stock', dot: 'bg-info' },
+              { key: 'waiting', label: 'Partly sent — rest waiting for restock', hint: 'Shipped automatically once the restock arrives at the warehouse', dot: 'bg-warning' },
+              { key: 'ordered', label: 'Ordered', hint: 'On a Purchase Order', dot: 'bg-info' },
+              { key: 'sent', label: 'Sent from warehouse', hint: 'Fully covered by warehouse stock (reserved = PR)', dot: 'bg-success' },
+              { key: 'rejected', label: 'Rejected', hint: '', dot: 'bg-destructive' },
+            ]
+            const grouped = ['ON_PROCESS', 'CONVERTED'].includes(detail.status)
+            const shipLines = sortedItems.filter(it => !it.restockLocationId)
+            const restockLines = sortedItems.filter(it => !!it.restockLocationId)
+            const stockItem = stockItemId ? sortedItems.find(it => it.id === stockItemId) ?? null : null
             return (
               <div className={`grid grid-cols-1 gap-6 items-start ${hideTimeline ? '' : 'lg:grid-cols-[1fr_300px]'}`}>
                 <div className="space-y-6 min-w-0">
@@ -2358,278 +2744,94 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                         )
                       })}
                     </div>
-                  ) : (
-                  <div className="overflow-x-auto"><table className="w-full text-sm">
-              <thead className="border-b text-xs text-muted-foreground bg-muted/20">
-                <tr>
-                  <th className="text-left px-5 py-2.5 font-medium">Item</th>
-                  <th className="text-left px-5 py-2.5 font-medium">Supplier</th>
-                  {detail.orders && detail.orders.length > 0 && <th className="text-left px-5 py-2.5 font-medium">PO</th>}
-                  <th className="text-right px-5 py-2.5 font-medium whitespace-nowrap">Requested</th>
-                  <th className="text-right px-5 py-2.5 font-medium">Current Stock</th>
-                  {showStockCols && (
-                    <>
-                      <th className="text-right px-3 py-2.5 font-medium whitespace-nowrap">Min. Stock</th>
-                      <th className="text-right px-3 py-2.5 font-medium whitespace-nowrap" title="Sent from warehouse stock">Reserve</th>
-                      <th className="text-right px-3 py-2.5 font-medium whitespace-nowrap bg-info/5 text-info">To Be Order</th>
-                      <th className="text-right px-3 py-2.5 font-medium whitespace-nowrap" title="To Be Order already on a Purchase Order">PO</th>
-                      <th className="text-right px-3 py-2.5 font-medium whitespace-nowrap" title="To Be Order not ordered yet">Pending</th>
-                    </>
-                  )}
-                  {['DRAFT', 'ON_PROCESS'].includes(detail.status) && <th className="text-left px-5 py-2.5 font-medium whitespace-nowrap">Decision</th>}
-                  {detail.status === 'ON_PROCESS' && !isWarehouse && <th className="text-left px-5 py-2.5 font-medium">Fulfillment</th>}
-                  {detail.status === 'ON_PROCESS' && !isWarehouse && detail.deliveryLocation?.type === 'VESSEL' && <th className="text-left px-5 py-2.5 font-medium whitespace-nowrap" title="Consumable = trip usage · Asset = ship Inventory (needs Room/Category) · Spare part = maintenance">On the ship</th>}
-                  <th className="w-10" />
-                </tr>
-              </thead>
-              <tbody className="divide-y">
-                {sortedItems.map((item, i) => {
-                  const stock = item.currentStock ?? null
-                  const min = item.minStock ?? 0
-                  const stockColor = stock === null ? '' : stock === 0 ? 'text-destructive font-semibold' : stock < min ? 'text-warning font-semibold' : 'text-success'
-                  const photos = Array.isArray(item.imageKeys) ? item.imageKeys : []
-                  const editable = detail.status === 'ON_PROCESS' && !isWarehouse
-                  const isCustom = !item.itemId
-                  const chosenFromLocationId = fulfillment[item.id!] ?? null
-                  const isRejected = !!item.verifyRejectedAt
-                  const canDecide = !isWarehouse && ['DRAFT', 'ON_PROCESS'].includes(detail.status) && !item.convertedAt
-                  const poNumber = item.convertedPoId ? poNumberMap.get(item.convertedPoId) : null
-                  // Already sent out of warehouse stock via a Transfer — nothing left for
-                  // Purchasing to pick (supplier, fulfillment, room), so those cells show the transfer.
-                  const transferred = !!item.convertedAt && !item.convertedPoId && (item.warehouseDecision === 'TRANSFER' || !!item.transfer)
-                  // Parallel PR: Purchasing sees this line but Warehouse hasn't released it yet.
-                  const awaiting = detail.status === 'ON_PROCESS' && !isWarehouse && isAwaitingWarehouse(item, detail)
-                  const isNewPoGroup = i > 0 && item.convertedPoId && sortedItems[i - 1].convertedPoId !== item.convertedPoId
-                  return (
-                    <tr
-                      key={item.id ?? i}
-                      className={`hover:bg-muted/20 ${isCustom ? 'cursor-pointer' : ''} ${isRejected ? 'opacity-50' : ''} ${isNewPoGroup ? 'border-t-2 border-t-border' : ''}`}
-                      onClick={() => isCustom && openEditItem(item)}
-                    >
-                      <td className="px-5 py-3 min-w-[180px]">
-                        <div className="flex items-start gap-2.5">
-                          {!!photos.length && (
-                            <div className="flex -space-x-2 shrink-0">
-                              {photos.slice(0, 3).map((src, j) => (
-                                <img
-                                  key={j} src={src} alt={`${item.itemName} reference ${j + 1}`}
-                                  className="w-9 h-9 rounded-md object-cover border-2 border-card shadow-sm cursor-zoom-in hover:opacity-80 transition-opacity"
-                                  style={{ zIndex: 3 - j }}
-                                  onClick={e => { e.stopPropagation(); openLightbox(photos, j, item.itemName) }}
-                                />
-                              ))}
-                              {photos.length > 3 && (
-                                <div className="w-9 h-9 rounded-md bg-muted border-2 border-card flex items-center justify-center text-[10px] font-semibold text-muted-foreground">
-                                  +{photos.length - 3}
-                                </div>
-                              )}
+                  ) : (() => {
+                    const card = (item: typeof sortedItems[number], i: number) => {
+                      const photo = Array.isArray(item.imageKeys) ? item.imageKeys[0] : undefined
+                      const split = showStockCols && item.viaWarehouse && item.itemId ? item.toBeOrderSplit : null
+                      const toBeOrder = split ? split.po + split.pending : 0
+                      const status = lineStatus(item)
+                      return (
+                        <button
+                          key={item.id ?? i} type="button"
+                          onClick={() => item.id && setStockItemId(item.id)}
+                          className={`group flex items-start gap-3 rounded-lg border bg-card p-3 text-left transition-colors hover:border-info/40 hover:bg-info/5 ${item.verifyRejectedAt ? 'opacity-60' : ''}`}
+                        >
+                          {photo ? (
+                            <img src={photo} alt={item.itemName} className="w-12 h-12 shrink-0 rounded-md object-cover border" />
+                          ) : (
+                            <div className="w-12 h-12 shrink-0 rounded-md border bg-muted/50 flex items-center justify-center">
+                              <Package className="h-5 w-5 text-muted-foreground/60" />
                             </div>
                           )}
-                          <div className="min-w-0">
-                            <p className={`font-medium ${isRejected ? 'line-through text-muted-foreground' : ''}`}>{item.itemName}</p>
-                            {isCustom && <span className="text-[10px] font-medium text-warning bg-warning/10 px-1.5 py-0.5 rounded-full">Custom request</span>}
-                            {mixedRoute && (item.viaWarehouse
-                              ? <span className="text-[10px] font-medium text-info bg-info/10 px-1.5 py-0.5 rounded-full ml-1">Via Warehouse</span>
-                              : <span className="text-[10px] font-medium text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full ml-1">Direct</span>)}
-                            {item.requestType === 'REPLACEMENT' && <span className="text-[10px] font-medium text-destructive bg-destructive/10 px-1.5 py-0.5 rounded-full ml-1">Replacement</span>}
-                            {item.requestType === 'REPLACEMENT' && item.damageDetail && (
-                              <p className="text-xs text-destructive/80 mt-0.5 whitespace-pre-line"><span className="font-semibold">Damage:</span> {item.damageDetail}</p>
-                            )}
-                            {item.notes && <p className="text-xs text-muted-foreground mt-0.5">{item.notes}</p>}
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-5 py-3 text-muted-foreground" onClick={e => detail.status === 'ON_PROCESS' && !isWarehouse && e.stopPropagation()}>
-                        {awaiting ? (
-                          <StatusBadge tone="info" size="sm">Waiting for Warehouse</StatusBadge>
-                        ) : transferred ? (
-                          <div className="space-y-1">
-                            <TransferBadge transfer={item.transfer} onOpen={onOpenTransfer} />
-                            {(detail.status !== 'ON_PROCESS' || isWarehouse) && <BackorderBadge item={item} />}
-                          </div>
-                        ) : detail.status !== 'ON_PROCESS' || isWarehouse ? (
-                          <>
-                            {item.supplierName ?? <span className="text-muted-foreground/50 italic">—</span>}
-                            {item.transferEligible && !item.convertedAt && !!item.warehouseStock?.length && detail.deliveryLocation?.type !== 'WAREHOUSE' && (
-                              <p className="text-[10px] text-info mt-0.5 whitespace-nowrap">
-                                Possible transfer from {item.warehouseStock[0].locationName}
-                                {item.warehouseStock.length > 1 ? ` +${item.warehouseStock.length - 1} more` : ''}
+                          <div className="min-w-0 flex-1">
+                            <p className={`font-medium text-sm leading-snug line-clamp-2 ${item.verifyRejectedAt ? 'line-through text-muted-foreground' : ''}`}>{item.itemName}</p>
+                            <p className="text-xs text-muted-foreground mt-1">{item.restockLocationId ? 'To order' : 'Requested'} {requestedLabel(item)}</p>
+                            {toBeOrder > 0 && (
+                              <p className="text-xs text-muted-foreground mt-0.5">
+                                To Be Order <span className="font-semibold text-info tabular-nums">{lineQtyLabel(item, toBeOrder)}</span>
+                                {split!.pending > 0 && <> · <span className="text-warning">{lineQtyLabel(item, split!.pending)} pending</span></>}
                               </p>
                             )}
-                          </>
-                        ) : chosenFromLocationId ? (
-                          <span className="text-xs text-muted-foreground/60 italic">— (transfer, no supplier needed)</span>
-                        ) : (
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <button
-                              onClick={() => openEditItem(item)}
-                              className={`text-xs font-medium px-2.5 py-1 rounded-md border transition-colors ${
-                                item.supplierName ? 'bg-card text-foreground border-border hover:bg-muted' : 'bg-warning/10 text-warning border-warning/30 hover:bg-warning/20'
-                              }`}
-                            >
-                              {item.supplierName ?? 'Select supplier…'}
-                            </button>
-                            {item.convertedAt ? (
-                              <StatusBadge tone="neutral" size="sm">Converted</StatusBadge>
-                            ) : getBand(item.estimatedCost) !== 'A' && (
-                              item.quotationApprovedAt ? (
-                                <StatusBadge tone="success" size="sm">Approved</StatusBadge>
-                              ) : item.quotationRejectedAt ? (
-                                <StatusBadge tone="destructive" size="sm">Rejected</StatusBadge>
-                              ) : item.quotationSubmittedAt ? (
-                                <StatusBadge tone="warning" size="sm">Pending approval</StatusBadge>
-                              ) : null
+                            {(status || !item.itemId || item.requestType === 'REPLACEMENT' || mixedRoute || item.restockLocationId) && (
+                              <div className="flex flex-wrap items-center gap-1 mt-1.5">
+                                {item.restockLocationId && <span className="text-[10px] font-medium text-violet-700 bg-violet-50 border border-violet-200 px-1.5 py-0.5 rounded-full dark:text-violet-300 dark:bg-violet-500/10 dark:border-violet-500/30">Restock → {item.restockLocation?.name ?? 'Warehouse'}</span>}
+                                {!item.itemId && <span className="text-[10px] font-medium text-warning bg-warning/10 px-1.5 py-0.5 rounded-full">Custom request</span>}
+                                {mixedRoute && (item.viaWarehouse
+                                  ? <span className="text-[10px] font-medium text-info bg-info/10 px-1.5 py-0.5 rounded-full">Via Warehouse</span>
+                                  : <span className="text-[10px] font-medium text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full">Direct</span>)}
+                                {item.requestType === 'REPLACEMENT' && <span className="text-[10px] font-medium text-destructive bg-destructive/10 px-1.5 py-0.5 rounded-full">Replacement</span>}
+                                {status}
+                              </div>
                             )}
                           </div>
+                          <ChevronRight className="h-4 w-4 shrink-0 mt-0.5 text-muted-foreground/50 group-hover:text-info" />
+                        </button>
+                      )
+                    }
+                    const grid = (items: typeof sortedItems) => (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">{items.map(card)}</div>
+                    )
+                    if (!grouped) return <div className="p-4">{grid(sortedItems)}</div>
+                    const counts = STAGES.map(st => ({ ...st, items: shipLines.filter(it => lineStage(it) === st.key) })).filter(st => st.items.length)
+                    const doneCount = shipLines.filter(it => ['sent', 'ordered', 'rejected'].includes(lineStage(it))).length
+                    return (
+                      <div className="p-4 space-y-5">
+                        <div className="rounded-lg border bg-muted/20 px-4 py-3">
+                          <div className="flex items-center justify-between gap-3 text-xs">
+                            <span className="font-medium">{doneCount} of {shipLines.length} items handled</span>
+                            <span className="text-muted-foreground">{shipLines.length - doneCount} still open</span>
+                          </div>
+                          <div className="mt-2 flex h-1.5 overflow-hidden rounded-full bg-muted">
+                            {counts.map(st => <div key={st.key} className={st.dot} style={{ width: `${(st.items.length / Math.max(1, shipLines.length)) * 100}%` }} />)}
+                          </div>
+                          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
+                            {counts.map(st => (
+                              <span key={st.key} className="flex items-center gap-1.5"><span className={`h-2 w-2 rounded-full ${st.dot}`} />{st.label} <span className="font-semibold text-foreground">{st.items.length}</span></span>
+                            ))}
+                          </div>
+                        </div>
+                        {counts.map(st => (
+                          <section key={st.key}>
+                            <div className="flex items-baseline gap-2 mb-2">
+                              <span className={`h-2 w-2 rounded-full self-center ${st.dot}`} />
+                              <h4 className="text-sm font-semibold">{st.label}</h4>
+                              <span className="text-xs text-muted-foreground">{st.items.length}{st.hint && ` · ${st.hint}`}</span>
+                            </div>
+                            {grid(st.items)}
+                          </section>
+                        ))}
+                        {restockLines.length > 0 && (
+                          <section className="rounded-lg border border-violet-200 bg-violet-50/40 p-3 dark:border-violet-500/30 dark:bg-violet-500/5">
+                            <div className="mb-2">
+                              <h4 className="text-sm font-semibold text-violet-700 dark:text-violet-300">Restock for the warehouse</h4>
+                              <p className="text-xs text-muted-foreground">To Be Order from the warehouse check — buy these to {[...new Set(restockLines.map(it => it.restockLocation?.name).filter(Boolean))].join(', ') || 'the warehouse'}. When they arrive, any shortage above ships to the vessel automatically.</p>
+                            </div>
+                            {grid(restockLines)}
+                          </section>
                         )}
-                      </td>
-                      {detail.orders && detail.orders.length > 0 && (
-                        <td className="px-5 py-3" onClick={e => e.stopPropagation()}>
-                          {poNumber ? (
-                            onOpenPo ? (
-                              <button
-                                onClick={() => onOpenPo(item.convertedPoId!)}
-                                className="text-xs font-medium text-success bg-success/10 border border-success/30 rounded-md px-2 py-1 hover:bg-success/20 transition-colors whitespace-nowrap"
-                              >
-                                {poNumber}
-                              </button>
-                            ) : (
-                              <span className="text-xs font-medium text-muted-foreground whitespace-nowrap">{poNumber}</span>
-                            )
-                          ) : (
-                            <span className="text-muted-foreground/50 italic text-xs">—</span>
-                          )}
-                        </td>
-                      )}
-                      <td className="px-5 py-3 text-right whitespace-nowrap tabular-nums">
-                        <span>{item.quantity} {item.unit ?? item.purchaseUnit ?? item.itemUnit}</span>
-                        {item.baseUnit && item.purchaseUnit && item.baseUnit !== item.purchaseUnit && item.conversionFactor && (
-                          <span className="text-xs text-muted-foreground ml-1">
-                            ({item.quantity * item.conversionFactor} {item.baseUnit})
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-5 py-3 text-right">
-                        {stock === null
-                          ? <span className="text-muted-foreground">—</span>
-                          : <>
-                              <span className={stockColor}>{stock} <span className="text-xs font-normal text-muted-foreground">{item.baseUnit ?? ''}</span></span>
-                              {!!item.reservedStock && (
-                                <span className="block text-[10px] text-muted-foreground whitespace-nowrap" title="Free stock = on hand − reserved by pending transfers">
-                                  {item.onHandStock} on hand · {Math.round(item.reservedStock * 100) / 100} reserved
-                                </span>
-                              )}
-                            </>
-                        }
-                      </td>
-                      {showStockCols && (() => {
-                        const cell = 'px-3 py-3 text-right tabular-nums whitespace-nowrap'
-                        const dash = <span className="text-muted-foreground/50">—</span>
-                        if (!item.viaWarehouse || !item.itemId) return Array.from({ length: 5 }, (_, k) => (
-                          <td key={k} className={`${cell} ${k === 2 ? 'bg-info/5' : ''}`}>{dash}</td>
-                        ))
-                        const split = item.toBeOrderSplit
-                        const tone = (n: number, cls: string) => n > 0 ? cls : 'text-muted-foreground/60'
-                        return (
-                          <>
-                            <td className={`${cell} text-muted-foreground`}>{lineQty(item, item.minStock ?? 0)}</td>
-                            <td className={`${cell} ${tone(item.sentFromStock ?? 0, 'text-warning font-medium')}`}>{item.sentFromStock == null ? dash : lineQty(item, item.sentFromStock)}</td>
-                            <td className={`${cell} bg-info/5 ${tone(split ? split.po + split.pending : 0, 'text-info font-semibold')}`}>{split ? lineQty(item, split.po + split.pending) : dash}</td>
-                            <td className={`${cell} ${tone(split?.po ?? 0, 'text-success font-medium')}`}>{split ? lineQty(item, split.po) : dash}</td>
-                            <td className={`${cell} ${tone(split?.pending ?? 0, 'text-warning font-semibold')}`}>{split ? lineQty(item, split.pending) : dash}</td>
-                          </>
-                        )
-                      })()}
-                      {['DRAFT', 'ON_PROCESS'].includes(detail.status) && (
-                        <td className="px-5 py-3" onClick={e => e.stopPropagation()}>
-                          {decisionContent(item)}
-                        </td>
-                      )}
-                      {detail.status === 'ON_PROCESS' && !isWarehouse && (
-                        <td className="px-5 py-3" onClick={e => e.stopPropagation()}>
-                          {awaiting ? (
-                            <span className="text-xs text-muted-foreground italic">Warehouse is checking stock</span>
-                          ) : transferred ? (
-                            <div className="space-y-1">
-                              {item.transfer && <span className="block text-xs text-info">Transfer from {item.transfer.fromLocationName}</span>}
-                              <BackorderBadge item={item} />
-                            </div>
-                          ) : item.warehouseDecision === 'PURCHASE' || !item.transferEligible || !item.warehouseStock?.length ? (
-                            <span className="text-xs text-muted-foreground" title={item.warehouseDecision === 'PURCHASE' ? 'Warehouse checked physically — no stock' : undefined}>Purchase Order</span>
-                          ) : (
-                            <div className="relative inline-block">
-                              <select
-                                className={`appearance-none text-xs font-medium pl-2.5 pr-6 py-1.5 rounded-md border cursor-pointer transition-colors focus:outline-none focus:ring-1 focus:ring-ring ${
-                                  chosenFromLocationId ? 'bg-info/10 text-info border-info/30 hover:bg-info/20' : 'bg-card text-muted-foreground border-border hover:bg-muted'
-                                }`}
-                                value={chosenFromLocationId ?? ''}
-                                onChange={e => setFulfillment(f => ({ ...f, [item.id!]: e.target.value || null }))}
-                              >
-                                <option value="">Purchase Order</option>
-                                {item.warehouseStock.map(w => (
-                                  <option key={w.locationId} value={w.locationId}>Transfer from {w.locationName} ({w.qty})</option>
-                                ))}
-                              </select>
-                              <ChevronDown className={`h-3 w-3 absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none ${chosenFromLocationId ? 'text-info' : 'text-muted-foreground'}`} />
-                            </div>
-                          )}
-                        </td>
-                      )}
-                      {detail.status === 'ON_PROCESS' && !isWarehouse && detail.deliveryLocation?.type === 'VESSEL' && (
-                        <td className="px-5 py-3" onClick={e => e.stopPropagation()}>
-                          {chosenFromLocationId || transferred ? (
-                            <span className="text-xs text-muted-foreground/60 italic">— (transfer, not needed)</span>
-                          ) : (
-                            <div className="space-y-1.5">
-                              {isCustom ? (
-                                <select
-                                  className="text-xs border rounded-md px-2 py-1 focus:outline-none focus:ring-1 focus:ring-ring bg-card"
-                                  value={roomAssignment[item.id!]?.treatment ?? 'CONSUMABLE'}
-                                  onChange={e => setRoomAssignment(a => ({ ...a, [item.id!]: { roomId: a[item.id!]?.roomId ?? '', categoryId: a[item.id!]?.categoryId ?? '', treatment: e.target.value as Treatment } }))}
-                                >
-                                  {TREATMENTS.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-                                </select>
-                              ) : (
-                                <span className="text-xs text-muted-foreground" title="Set on the item in Items & Pricing">{TREATMENT_LABEL[lineTreatmentOf(item)]}</span>
-                              )}
-                              {lineTreatmentOf(item) === 'ASSET' && (
-                            <div className="flex items-center gap-1.5">
-                              <select
-                                className="text-xs border rounded-md px-2 py-1 focus:outline-none focus:ring-1 focus:ring-ring bg-card max-w-28"
-                                value={roomAssignment[item.id!]?.roomId ?? ''}
-                                onChange={e => setRoomAssignment(a => ({ ...a, [item.id!]: { ...a[item.id!], roomId: e.target.value, categoryId: '' } }))}
-                              >
-                                <option value="">Room…</option>
-                                {invRooms.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-                              </select>
-                              <select
-                                className="text-xs border rounded-md px-2 py-1 focus:outline-none focus:ring-1 focus:ring-ring bg-card max-w-28 disabled:opacity-50"
-                                value={roomAssignment[item.id!]?.categoryId ?? ''}
-                                disabled={!roomAssignment[item.id!]?.roomId}
-                                onChange={e => setRoomAssignment(a => ({ ...a, [item.id!]: { ...a[item.id!], roomId: a[item.id!]?.roomId ?? '', categoryId: e.target.value } }))}
-                              >
-                                <option value="">Category…</option>
-                                {(invCategoriesByRoom[roomAssignment[item.id!]?.roomId ?? ''] ?? []).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                              </select>
-                            </div>
-                              )}
-                            </div>
-                          )}
-                        </td>
-                      )}
-                      <td className="px-5 py-3 text-right" onClick={e => e.stopPropagation()}>
-                        {editable && !transferred && (
-                          <button onClick={() => openEditItem(item)} className="text-muted-foreground hover:text-foreground transition-colors" title="Edit price / supplier">
-                            <Pencil className="h-3.5 w-3.5" />
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table></div>
-                  )}
+                      </div>
+                    )
+                  })()}
                 </div>
 
                 {(() => {
@@ -2681,7 +2883,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50" onClick={() => setStockItemId(null)} />
                     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
                       <div className="pointer-events-auto bg-card rounded-2xl shadow-2xl w-full max-w-xl max-h-[90vh] overflow-y-auto">
-                        {stockModal(stockItem)}
+                        {showStockCheck ? stockModal(stockItem) : itemModal(stockItem)}
                       </div>
                     </div>
                   </>

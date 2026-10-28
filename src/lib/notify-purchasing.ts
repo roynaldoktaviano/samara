@@ -115,9 +115,10 @@ export async function notifyRequester(
   try {
     const pr = await db.purchaseRequest.findUnique({
       where: { id: requestId },
-      select: { requestedById: true, requestedByEmployee: { select: { userId: true } } },
+      select: { requestedById: true, restockForRequestId: true, requestedByEmployee: { select: { userId: true } } },
     })
-    if (!pr) return
+    // Auto Restock PR — filed under the Warehouse account, but it's Purchasing's; nobody to tell.
+    if (!pr || pr.restockForRequestId) return
     const userIds = [...new Set([pr.requestedById, pr.requestedByEmployee?.userId].filter((x): x is string => !!x))]
       .filter(u => u !== opts.skipUserId)
     if (!userIds.length) return

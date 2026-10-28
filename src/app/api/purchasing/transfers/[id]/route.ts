@@ -53,7 +53,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     include: {
       items: {
         include: {
-          item: { select: { baseUnit: true, purchaseUnit: true, conversionFactor: true, standardCost: true } },
+          item: { select: { sku: true, imageKey: true, baseUnit: true, purchaseUnit: true, conversionFactor: true, standardCost: true } },
           orderedByEmployee: { select: { id: true, fullName: true } },
         },
       },
@@ -97,6 +97,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     const unitCost = i.unitCost || lotCostMap.get(i.itemId ?? `name:${i.itemName}`) || (i.item?.standardCost ?? 0)
     return {
       ...i,
+      sku: i.item?.sku ?? null,
+      imageKey: i.item?.imageKey ?? null,
       baseUnit: i.item?.baseUnit ?? null,
       purchaseUnit: i.item?.purchaseUnit ?? null,
       conversionFactor: i.item?.conversionFactor ?? 1,
@@ -108,8 +110,16 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     }
   })
   const totalValue = items.reduce((sum, i) => sum + (transfer.status === 'PENDING' ? i.requestedValue : transfer.status === 'DISPATCHED' ? i.dispatchedValue : i.receivedValue), 0)
+  // Backorder follow-up: the restock PO(s) whose arrival freed the stock this TR carries.
+  const restockPos = transfer.purchaseRequestId
+    ? [...new Map((await db.purchaseRequestReservation.findMany({
+        where: { transferId: id, purchaseOrderId: { not: null } },
+        select: { purchaseOrderId: true, poNumber: true },
+      })).map(r => [r.purchaseOrderId!, { id: r.purchaseOrderId!, poNumber: r.poNumber ?? '' }])).values()]
+    : []
   return NextResponse.json({
     ...transfer,
+    restockPos,
     fromLocation: fromLoc,
     toLocation: toLoc,
     totalValue,

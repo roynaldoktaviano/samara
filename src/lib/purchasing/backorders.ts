@@ -1,6 +1,7 @@
 import type { getDb } from '@/lib/get-db'
 import { createOrAppendTransfer } from '@/lib/purchasing/transferActions'
 import { notifyByRoleForRequest, notifyRequester } from '@/lib/notify-purchasing'
+import { recordReservation } from '@/lib/purchasing/reservations'
 
 type Db = Awaited<ReturnType<typeof getDb>>
 
@@ -12,11 +13,13 @@ type Db = Awaited<ReturnType<typeof getDb>>
  * from this warehouse if there is one. Only FREE stock is handed out (on hand minus every
  * PENDING transfer already reserving it), so restock bought for Min. Stock isn't double-promised.
  * Best-effort: never throws, so a receipt never fails because of it.
+ * `purchaseOrderId`: the restock PO that just landed, logged on each reservation it frees.
  */
-export async function allocateBackorders(db: Db, locationId: string, itemIds: (string | null)[]): Promise<string[]> {
+export async function allocateBackorders(db: Db, locationId: string, itemIds: (string | null)[], purchaseOrderId?: string | null): Promise<string[]> {
   try {
     const ids = [...new Set(itemIds.filter(Boolean) as string[])]
     if (!ids.length) return []
+    const po = purchaseOrderId ? await db.purchaseOrder.findUnique({ where: { id: purchaseOrderId }, select: { id: true, poNumber: true } }) : null
     const waiting = await db.purchaseRequestItem.findMany({
       where: {
         backorderLocationId: locationId, backorderQty: { gt: 0 }, itemId: { in: ids },
@@ -57,6 +60,7 @@ export async function allocateBackorders(db: Db, locationId: string, itemIds: (s
             fromLocationId: locationId,
             items: [{ itemId, itemName: line.itemName, baseQty: qty }],
           })
+          await recordReservation(tx, { requestItemId: line.id, locationId, stockQty: free, reservedQty: qty, source: 'BACKORDER', transferNumber, purchaseOrderId: po?.id ?? null, poNumber: po?.poNumber ?? null })
           return { qty, transferNumber }
         })
         if (!done) continue

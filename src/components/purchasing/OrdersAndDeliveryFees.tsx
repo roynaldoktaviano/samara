@@ -19,7 +19,7 @@ type Tab = typeof TABS[number]['key']
 // anywhere in this app, so this is plain prop-drilling: page.tsx holds the
 // pending id, forces this tab to 'orders', and OrdersPage opens it and reports
 // back via onOpenPoHandled so the same id doesn't re-trigger on next render.
-export default function OrdersAndDeliveryFees({ openPoId, onOpenPoHandled }: { openPoId?: string | null; onOpenPoHandled?: () => void } = {}) {
+export default function OrdersAndDeliveryFees({ openPoId, onOpenPoHandled, onOpenRequest, onOpenTransfer }: { openPoId?: string | null; onOpenPoHandled?: () => void; onOpenRequest?: (id: string) => void; onOpenTransfer?: (id: string) => void } = {}) {
   const { data: session } = useSession()
   const role = (session?.user as { role?: string })?.role ?? ''
   // Warehouse, plus the two yacht-scoped viewer roles, all get the same read-only,
@@ -51,7 +51,7 @@ export default function OrdersAndDeliveryFees({ openPoId, onOpenPoHandled }: { o
           ))}
         </div>
       )}
-      {tab === 'orders' ? <OrdersPage warehouseView={isWarehouse} openPoId={openPoId} onOpenPoHandled={onOpenPoHandled} /> : <DeliveryFeesPage />}
+      {tab === 'orders' ? <OrdersPage warehouseView={isWarehouse} openPoId={openPoId} onOpenPoHandled={onOpenPoHandled} onOpenRequest={onOpenRequest} onOpenTransfer={onOpenTransfer} /> : <DeliveryFeesPage />}
     </div>
   )
 }

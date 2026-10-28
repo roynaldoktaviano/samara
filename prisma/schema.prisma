@@ -2209,6 +2209,7 @@ model StockLocation {
   receipts          GoodsReceipt[]
   stockCounts       StockCount[]
   purchaseRequests  PurchaseRequest[]          @relation("PRDelivery")
+  prRestockLines    PurchaseRequestItem[]      @relation("PRItemRestockLocation")
   purchaseOrders    PurchaseOrder[]            @relation("PODelivery")
   transitStops      PurchaseOrderTransitStop[]
   cashierSales      CashierSale[]
@@ -2732,6 +2733,9 @@ model PurchaseRequestItem {
   // drafts the follow-up TR. 0 = nothing waiting.
   backorderQty            Float                                 @default(0)
   backorderLocationId     String?
+  // To Be Order line Warehouse added to this same PR (no separate Restock PR): bought by
+  // Purchasing and delivered to this warehouse, not to the PR's ship. Hidden from Warehouse.
+  restockLocationId       String?
   // Line goes through Warehouse's stock check (catalog + stock-tracked item, PR not headed to
   // a warehouse) vs straight to Purchasing (custom / non-stock items, warehouse restock PRs).
   // Snapshotted at create/edit by routePrLines() (src/lib/purchasing/requestItems.ts). A PR
@@ -2745,19 +2749,21 @@ model PurchaseRequestItem {
   // show every replacement PR ever raised against it, and this line's own status.
   sourceInventoryItemId String?
 
-  request              PurchaseRequest       @relation(fields: [requestId], references: [id], onDelete: Cascade)
-  sourceInventoryItem  InventoryItem?        @relation(fields: [sourceInventoryItemId], references: [id], onDelete: SetNull)
+  request              PurchaseRequest              @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  sourceInventoryItem  InventoryItem?               @relation(fields: [sourceInventoryItemId], references: [id], onDelete: SetNull)
   sourceOpnameEntry    InventoryOpnameEntry?
-  item                 PurchaseItem?         @relation(fields: [itemId], references: [id], onDelete: SetNull)
-  supplier             Supplier?             @relation(fields: [supplierId], references: [id], onDelete: SetNull)
-  convertedPo          PurchaseOrder?        @relation("PRItemConvertedPo", fields: [convertedPoId], references: [id], onDelete: SetNull)
+  item                 PurchaseItem?                @relation(fields: [itemId], references: [id], onDelete: SetNull)
+  supplier             Supplier?                    @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  convertedPo          PurchaseOrder?               @relation("PRItemConvertedPo", fields: [convertedPoId], references: [id], onDelete: SetNull)
   quotations           PurchaseQuotation[]
-  quotationSubmittedBy User?                 @relation("PRItemQuotationSubmittedBy", fields: [quotationSubmittedById], references: [id], onDelete: SetNull)
-  quotationApprover    User?                 @relation("PRItemQuotationApprover", fields: [quotationApproverId], references: [id], onDelete: SetNull)
-  quotationApprovedBy  User?                 @relation("PRItemQuotationApprovedBy", fields: [quotationApprovedById], references: [id], onDelete: SetNull)
-  quotationRejectedBy  User?                 @relation("PRItemQuotationRejectedBy", fields: [quotationRejectedById], references: [id], onDelete: SetNull)
-  verifyRejectedBy     User?                 @relation("PRItemVerifyRejectedBy", fields: [verifyRejectedById], references: [id], onDelete: SetNull)
-  warehouseCheckedBy   User?                 @relation("PRItemWarehouseCheckedBy", fields: [warehouseCheckedById], references: [id], onDelete: SetNull)
+  quotationSubmittedBy User?                        @relation("PRItemQuotationSubmittedBy", fields: [quotationSubmittedById], references: [id], onDelete: SetNull)
+  quotationApprover    User?                        @relation("PRItemQuotationApprover", fields: [quotationApproverId], references: [id], onDelete: SetNull)
+  quotationApprovedBy  User?                        @relation("PRItemQuotationApprovedBy", fields: [quotationApprovedById], references: [id], onDelete: SetNull)
+  quotationRejectedBy  User?                        @relation("PRItemQuotationRejectedBy", fields: [quotationRejectedById], references: [id], onDelete: SetNull)
+  verifyRejectedBy     User?                        @relation("PRItemVerifyRejectedBy", fields: [verifyRejectedById], references: [id], onDelete: SetNull)
+  warehouseCheckedBy   User?                        @relation("PRItemWarehouseCheckedBy", fields: [warehouseCheckedById], references: [id], onDelete: SetNull)
+  reservations         PurchaseRequestReservation[]
+  restockLocation      StockLocation?               @relation("PRItemRestockLocation", fields: [restockLocationId], references: [id], onDelete: SetNull)
 
   @@index([requestId])
   @@index([quotationApproverId])
@@ -2766,6 +2772,29 @@ model PurchaseRequestItem {
   @@index([convertedPoId])
   @@index([sourceInventoryItemId])
   @@index([backorderLocationId, itemId])
+}
+
+// One row per hand-out of warehouse stock to a PR line: the Warehouse check's Reserve, then each
+// automatic follow-up when backordered restock lands (allocateBackorders). The line is complete
+// once Σ reservedQty = what was requested. Quantities in base units.
+model PurchaseRequestReservation {
+  id              String   @id @default(cuid())
+  requestItemId   String
+  locationId      String
+  stockQty        Float // free stock at that warehouse at that moment
+  reservedQty     Float
+  source          String // WAREHOUSE_CHECK | BACKORDER
+  transferId      String? // the TR it rode on (new or appended-to)
+  transferNumber  String?
+  purchaseOrderId String? // BACKORDER: the restock PO whose arrival freed the stock
+  poNumber        String?
+  createdAt       DateTime @default(now())
+
+  requestItem PurchaseRequestItem @relation(fields: [requestItemId], references: [id], onDelete: Cascade)
+
+  @@index([requestItemId])
+  @@index([transferId])
+  @@index([purchaseOrderId])
 }
 
 // Sourcing evidence for KPI 5 — one row per quotation gathered for a PR item, before the

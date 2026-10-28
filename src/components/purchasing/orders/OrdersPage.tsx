@@ -80,6 +80,8 @@ export interface EmployeeOption { id: string; fullName: string; employeeNumber: 
 interface PurchaseItem { id: string; name: string; sku: string; baseUnit: string; purchaseUnit: string; conversionFactor: number; avgPrice: number; isActive: boolean; treatment?: Treatment }
 interface StockLocation { id: string; name: string; type: string; managedBy: string; isActive?: boolean; parentId: string | null; yachtId?: string | null }
 interface OrderDetail extends PurchaseOrder {
+  restockFor?: { id: string; prNumber: string } | null
+  restockTransfers?: { id: string; transferNumber: string }[]
   dispatchPhotoKey?: string | null
   dispatchedByName?: string | null
   confirmedByName?: string | null
@@ -545,7 +547,7 @@ function PoPreview({ order: o, onOpen, onClose, sheet = false }: { order: Purcha
   )
 }
 
-export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHandled }: { warehouseView?: boolean; openPoId?: string | null; onOpenPoHandled?: () => void }) {
+export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHandled, onOpenRequest, onOpenTransfer }: { warehouseView?: boolean; openPoId?: string | null; onOpenPoHandled?: () => void; onOpenRequest?: (id: string) => void; onOpenTransfer?: (id: string) => void }) {
   const { data: session } = useSession()
   const role = (session?.user as { role?: string })?.role ?? ''
   // canReceive is now computed per-order based on deliveryLocation.managedBy
@@ -1901,6 +1903,21 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                 Requested By <span className="font-medium text-foreground">{detail.requestedByName}</span>
                 {(detail.requestedByOffice || detail.requestedByDepartment) && (
                   <span> — {[detail.requestedByOffice, detail.requestedByDepartment, detail.requestedByRole].filter(Boolean).join(' · ')}</span>
+                )}
+              </p>
+            )}
+            {detail.restockFor && !warehouseView && (
+              <p className="text-muted-foreground text-xs mt-0.5">
+                Restock for {onOpenRequest
+                  ? <button onClick={() => onOpenRequest(detail.restockFor!.id)} className="font-medium text-info hover:underline underline-offset-2">{detail.restockFor.prNumber}</button>
+                  : <span className="font-medium text-foreground">{detail.restockFor.prNumber}</span>}
+                {!!detail.restockTransfers?.length && (
+                  <> · remaining items shipped via {detail.restockTransfers.map((t, k) => (
+                    <span key={t.id}>
+                      {k > 0 && ', '}
+                      {onOpenTransfer ? <button onClick={() => onOpenTransfer(t.id)} className="font-medium text-info hover:underline underline-offset-2">{t.transferNumber}</button> : <span className="font-medium text-foreground">{t.transferNumber}</span>}
+                    </span>
+                  ))}</>
                 )}
               </p>
             )}

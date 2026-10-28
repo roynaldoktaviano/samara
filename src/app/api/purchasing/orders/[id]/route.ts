@@ -43,8 +43,11 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       supplier: { select: { name: true, locations: true, contact: true, phone: true, email: true } },
       request: {
         select: {
+          id: true,
           requestedById: true,
           prNumber: true,
+          deliveryLocationId: true,
+          restockFor: { select: { id: true, prNumber: true } },
           createdAt: true,
           neededByDate: true,
           requestedBy: { select: { name: true } },
@@ -119,6 +122,19 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   // Derived label for routed POs — same rule as the list endpoint.
   const currentLegLabel = computeCurrentLegLabel(order)
 
+  // Restock PO: the PR whose To Be Order it buys — a restock line on that PR (PO goes to the
+  // warehouse, not the PR's ship) or a legacy Restock PR — and the follow-up TRs its arrival freed
+  // stock for (PurchaseRequestReservation rows logged by allocateBackorders).
+  const restockFor = order.request?.restockFor
+    ?? (order.request && order.request.deliveryLocationId !== order.deliveryLocationId ? { id: order.request.id, prNumber: order.request.prNumber } : null)
+  const restockTransfers = restockFor
+    ? [...new Map((await db.purchaseRequestReservation.findMany({
+        where: { purchaseOrderId: id, transferId: { not: null } },
+        select: { transferId: true, transferNumber: true },
+        orderBy: { createdAt: 'asc' },
+      })).map(r => [r.transferId!, { id: r.transferId!, transferNumber: r.transferNumber ?? '' }])).values()]
+    : []
+
   return NextResponse.json({
     ...order,
     receipts,
@@ -133,6 +149,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     requestedTotal,
     remaining,
     currentLegLabel,
+    restockFor,
+    restockTransfers,
     createdBy: undefined,
     items: order.items.map(it => ({ ...it, unit: it.item?.purchaseUnit ?? it.unit ?? null, item: undefined })),
     booking: undefined,

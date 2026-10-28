@@ -62,17 +62,19 @@ export async function computeStockChecks(db: Db, request: StockCheckRequest, opt
       where: { itemId: { in: itemIds }, transfer: { status: 'PENDING' } },
       select: { itemId: true, requestedQty: true, transfer: { select: { fromLocationId: true, purchaseRequestId: true } } },
     }),
-    // On Order, part 1: PR lines headed to a warehouse, not yet turned into a PO. This PR's
-    // own Restock PRs are left out so its To Be Order still shows what it triggered.
+    // On Order, part 1: PR lines headed to a warehouse (a PR to it, or another PR's restock line),
+    // not yet turned into a PO. This PR's own restock lines (and legacy Restock PRs) are left out
+    // so its To Be Order still shows what it triggered.
     db.purchaseRequestItem.findMany({
       where: {
         itemId: { in: itemIds }, convertedAt: null, verifyRejectedAt: null,
+        OR: [{ restockLocationId: { not: null } }, { request: { deliveryLocation: { type: 'WAREHOUSE' } } }],
         request: {
-          status: { in: [...OPEN_PR_STATUSES] }, id: { not: request.id }, deliveryLocation: { type: 'WAREHOUSE' },
+          status: { in: [...OPEN_PR_STATUSES] }, id: { not: request.id },
           OR: [{ restockForRequestId: null }, { restockForRequestId: { not: request.id } }],
         },
       },
-      select: { itemId: true, quantity: true, unit: true, request: { select: { deliveryLocationId: true } } },
+      select: { itemId: true, quantity: true, unit: true, restockLocationId: true, request: { select: { deliveryLocationId: true } } },
     }),
     // On Order, part 2: open PO lines to a warehouse, minus what's already been received.
     db.purchaseOrderItem.findMany({
@@ -80,7 +82,7 @@ export async function computeStockChecks(db: Db, request: StockCheckRequest, opt
         itemId: { in: itemIds },
         order: {
           status: { in: [...OPEN_PO_STATUSES] }, deliveryLocation: { type: 'WAREHOUSE' },
-          OR: [{ requestId: null }, { request: { OR: [{ restockForRequestId: null }, { restockForRequestId: { not: request.id } }] } }],
+          OR: [{ requestId: null }, { requestId: { not: request.id }, request: { OR: [{ restockForRequestId: null }, { restockForRequestId: { not: request.id } }] } }],
         },
       },
       select: { itemId: true, orderedQty: true, receivedQty: true, order: { select: { deliveryLocationId: true } } },
@@ -107,8 +109,9 @@ export async function computeStockChecks(db: Db, request: StockCheckRequest, opt
   }
   const onOrderMap = new Map<string, number>()
   for (const l of openPrLines) {
-    if (!l.itemId || !l.request.deliveryLocationId) continue
-    add(onOrderMap, `${l.itemId}:${l.request.deliveryLocationId}`, toBaseQty(l.quantity, l.unit, masterMap.get(l.itemId)))
+    const to = l.restockLocationId ?? l.request.deliveryLocationId
+    if (!l.itemId || !to) continue
+    add(onOrderMap, `${l.itemId}:${to}`, toBaseQty(l.quantity, l.unit, masterMap.get(l.itemId)))
   }
   for (const l of openPoLines) {
     if (!l.itemId || !l.order.deliveryLocationId) continue

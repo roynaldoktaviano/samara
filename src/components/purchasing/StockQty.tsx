@@ -1,9 +1,10 @@
 import { formatNumber } from '@/lib/format'
-import { displayQty, type UnitInfo } from '@/lib/purchasing/units'
+import { displayQty, naturalQty, type UnitInfo } from '@/lib/purchasing/units'
 
-/** A stored base-unit quantity, shown in the purchase unit with the base amount underneath. */
-export function StockQty({ item, qty, className = '', subClassName = '' }: { item: UnitInfo; qty: number; className?: string; subClassName?: string }) {
-  const d = displayQty(item, qty)
+/** A stored base-unit quantity, shown in the purchase unit with the base amount underneath.
+ *  `natural`: keep countable units (pcs) unless they make whole purchase units (see naturalQty). */
+export function StockQty({ item, qty, natural = false, className = '', subClassName = '' }: { item: UnitInfo; qty: number; natural?: boolean; className?: string; subClassName?: string }) {
+  const d = natural ? naturalQty(item, qty) : displayQty(item, qty)
   return (
     <span className={className}>
       {formatNumber(d.qty, { decimals: 3 })} <span className="text-xs font-normal text-muted-foreground">{d.unit}</span>

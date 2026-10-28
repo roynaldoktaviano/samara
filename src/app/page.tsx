@@ -886,13 +886,13 @@ export default function Home() {
       case 'won-attribution': return <WonAttribution />
       case 'purchasing-overview':   return <PurchasingOverview />
       case 'purchasing-requests':  return <PurchasingRequestsPage onOpenPo={(id: string) => { setPendingPoId(id); setCurrentView('purchasing-orders') }} onOpenTransfer={(id: string) => { setDeepLink({ view: 'purchasing-transfers', id }); setCurrentView('purchasing-transfers') }} deepLinkId={deepLink?.view === 'purchasing-requests' ? deepLink.id : null} onDeepLinkHandled={() => setDeepLink(null)} />
-      case 'purchasing-orders':    return <PurchasingOrdersPage openPoId={pendingPoId} onOpenPoHandled={() => setPendingPoId(null)} />
+      case 'purchasing-orders':    return <PurchasingOrdersPage openPoId={pendingPoId} onOpenPoHandled={() => setPendingPoId(null)} onOpenRequest={(id: string) => { setDeepLink({ view: 'purchasing-requests', id }); setCurrentView('purchasing-requests') }} onOpenTransfer={(id: string) => { setDeepLink({ view: 'purchasing-transfers', id }); setCurrentView('purchasing-transfers') }} />
       case 'purchasing-services':  return <PurchasingServicesPage />
       case 'purchasing-items':     return <PurchasingItemsPage />
       case 'purchasing-item-types': return <PurchasingItemTypesPage />
       case 'purchasing-locations': return <PurchasingLocationsPage />
       case 'purchasing-stock':     return <PurchasingStockPage onOpenPo={(id: string) => { setPendingPoId(id); setCurrentView('purchasing-orders') }} />
-      case 'purchasing-transfers':    return <PurchasingTransfersPage deepLinkId={deepLink?.view === 'purchasing-transfers' ? deepLink.id : null} onDeepLinkHandled={() => setDeepLink(null)} />
+      case 'purchasing-transfers':    return <PurchasingTransfersPage deepLinkId={deepLink?.view === 'purchasing-transfers' ? deepLink.id : null} onDeepLinkHandled={() => setDeepLink(null)} onOpenRequest={(id: string) => { setDeepLink({ view: 'purchasing-requests', id }); setCurrentView('purchasing-requests') }} onOpenPo={(id: string) => { setPendingPoId(id); setCurrentView('purchasing-orders') }} />
       case 'purchasing-stock-counts': return <PurchasingStockCountsPage />
       case 'purchasing-initial-stock-opname': return <PurchasingInitialStockOpnamePage />
       case 'purchasing-suppliers':    return <PurchasingSuppliersPage />

@@ -1,7 +1,7 @@
 import type { getDb } from '@/lib/get-db'
 import { notifyPurchasingForRequest, notifyRequester } from '@/lib/notify-purchasing'
 import { computeStockChecks, type StockCheckRequest } from '@/lib/purchasing/stockCheck'
-import { generatePrNumber } from '@/lib/purchasing/docNumber'
+import { recordReservation } from '@/lib/purchasing/reservations'
 import { createOrAppendTransfer, toBaseQty } from '@/lib/purchasing/transferActions'
 
 type Db = Awaited<ReturnType<typeof getDb>>
@@ -74,7 +74,9 @@ export async function processWarehouseLine(db: Db, request: Pick<WarehouseReques
         where: { id: line.id, convertedAt: null, warehouseDecision: null },
         data: { ...base, warehouseDecision: 'PURCHASE' },
       })
-      return claimed.count ? { outcome: 'PURCHASE' as const, transferNumber: null, sendQty: 0, backorderQty: 0 } : null
+      if (!claimed.count) return null
+      await recordReservation(tx, { requestItemId: line.id, locationId: fromLocationId, stockQty: free, reservedQty: 0, source: 'WAREHOUSE_CHECK' })
+      return { outcome: 'PURCHASE' as const, transferNumber: null, sendQty: 0, backorderQty: 0 }
     }
 
     const backorderQty = Math.max(0, baseQty - reserveQty)
@@ -96,23 +98,23 @@ export async function processWarehouseLine(db: Db, request: Pick<WarehouseReques
       fromLocationId,
       items: [{ itemId: catalogItemId, itemName: line.itemName, baseQty: reserveQty }],
     })
+    await recordReservation(tx, { requestItemId: line.id, locationId: fromLocationId, stockQty: free, reservedQty: reserveQty, source: 'WAREHOUSE_CHECK', transferNumber })
     return { outcome: 'TRANSFER' as const, transferNumber, sendQty: reserveQty, backorderQty }
   })
 }
 
 /**
  * Put each given line's To Be Order (its restockQty — Shortage + top-up to Min. Stock, net of
- * On Order) on a Restock PR to its source warehouse, straight to Purchasing (ON_PROCESS, no
- * stock check of its own). Reuses this PR's open Restock PR for that warehouse if Purchasing
- * hasn't converted it yet, else starts a new one. An item already on any of this PR's Restock
- * PRs is skipped, so calling it again (Process, then Finish) never double-orders. Qty rounds UP
- * to whole purchase units when the item buys in a bigger unit (1100 ml short → 2 bottles).
- * Returns the Restock PR numbers touched.
+ * On Order) on THIS PR as a restock line (restockLocationId = its source warehouse): Purchasing
+ * buys it from the PR it's already working on, delivered to the warehouse rather than the ship.
+ * No separate Restock PR. An item that already has a restock line here is skipped, so calling it
+ * again (Process, then Finish) never double-orders. Qty rounds UP to whole purchase units when
+ * the item buys in a bigger unit (1100 ml short → 2 bottles). Returns the item names added.
  */
 export async function addRestockLines(db: Db, request: WarehouseRequest, lineIds: string[] | 'all', userId: string): Promise<string[]> {
   const { checks } = await computeStockChecks(db, request as unknown as StockCheckRequest)
   const already = await db.purchaseRequestItem.findMany({
-    where: { request: { restockForRequestId: request.id }, itemId: { not: null } },
+    where: { requestId: request.id, restockLocationId: { not: null }, itemId: { not: null } },
     select: { itemId: true },
   })
   const restocked = new Set(already.map(a => a.itemId!))
@@ -128,66 +130,39 @@ export async function addRestockLines(db: Db, request: WarehouseRequest, lineIds
     select: { id: true, name: true, baseUnit: true, purchaseUnit: true, conversionFactor: true },
   })
   const masterMap = new Map(masters.map(m => [m.id, m]))
-  const byWarehouse = new Map<string, typeof lines>()
-  for (const l of lines) byWarehouse.set(l.check.locationId, [...(byWarehouse.get(l.check.locationId) ?? []), l])
-
-  const touched: string[] = []
-  for (const [locationId, whLines] of byWarehouse) {
-    const now = new Date()
-    const itemsCreate = whLines.map(({ item, check }) => {
+  const now = new Date()
+  await db.purchaseRequestItem.createMany({
+    data: lines.map(({ item, check }) => {
       const m = masterMap.get(item.itemId!)
       const conv = m?.conversionFactor || 1
       const inPurchaseUnit = !!m && m.purchaseUnit !== m.baseUnit && conv > 1
       return {
         id: crypto.randomUUID(),
+        requestId: request.id,
         itemId: item.itemId,
         itemName: m?.name ?? item.itemName,
         quantity: inPurchaseUnit ? Math.ceil(check.restockQty / conv - 1e-9) : Math.ceil(check.restockQty * 100 - 1e-9) / 100,
         unit: inPurchaseUnit ? m!.purchaseUnit : (m?.baseUnit ?? item.unit),
-        warehouseDecision: 'PURCHASE' as const,
+        restockLocationId: check.locationId,
+        viaWarehouse: false,
         warehouseCheckedById: userId,
         warehouseCheckedAt: now,
-        notes: `Shortage ${check.shortage} · Ending ${check.ending} · Min ${check.minStock} · On order ${check.onOrder} (${m?.baseUnit ?? ''})`,
+        notes: `Restock to ${check.locationName} — Shortage ${check.shortage} · Ending ${check.ending} · Min ${check.minStock} · On order ${check.onOrder} (${m?.baseUnit ?? ''})`,
       }
-    })
-    const open = await db.purchaseRequest.findFirst({
-      where: { restockForRequestId: request.id, deliveryLocationId: locationId, status: 'ON_PROCESS' },
-      select: { id: true, prNumber: true },
-    })
-    const restock = open
-      ? await db.purchaseRequest.update({ where: { id: open.id }, data: { updatedAt: now, items: { create: itemsCreate } }, select: { id: true, prNumber: true } })
-      : await db.purchaseRequest.create({
-          data: {
-            id: crypto.randomUUID(),
-            prNumber: await generatePrNumber(db),
-            requestedById: userId,
-            deliveryLocationId: locationId,
-            restockForRequestId: request.id,
-            division: request.division as never,
-            purpose: 'STOCK_INVENTORY',
-            notes: `Restock — To Be Order from ${request.prNumber}`,
-            status: 'ON_PROCESS',
-            verifiedById: userId,
-            verifiedAt: now,
-            warehouseDoneAt: now,
-            updatedAt: now,
-            items: { create: itemsCreate },
-          },
-          select: { id: true, prNumber: true },
-        })
-    await notifyPurchasingForRequest(
-      db, request.division, 'PR_RESTOCK_CREATED', 'Warehouse Restock',
-      `${restock.prNumber} — to purchase: ${whLines.map(l => l.item.itemName).join(', ')} (To Be Order from ${request.prNumber}).`,
-      restock.id,
-    )
-    touched.push(restock.prNumber)
-  }
-  return touched
+    }),
+  })
+  const names = lines.map(l => masterMap.get(l.item.itemId!)?.name ?? l.item.itemName)
+  await notifyPurchasingForRequest(
+    db, request.division, 'PR_RESTOCK_CREATED', 'Warehouse Restock',
+    `${request.prNumber} — restock to buy for the warehouse: ${names.join(', ')}.`,
+    request.id,
+  )
+  return names
 }
 
 /**
  * Close Warehouse's check on a PR: stamp warehouseDoneAt (once — a double call is a no-op),
- * sweep any To Be Order not yet on a Restock PR (lines processed before this flow existed),
+ * add any To Be Order not yet on a restock line (lines processed before this flow existed),
  * then CONVERTED if nothing is left for Purchasing, else ON_PROCESS. Returns null when it was
  * already finished.
  */
@@ -198,7 +173,8 @@ export async function finishWarehouseCheck(db: Db, id: string, userId: string) {
   const restocks = await addRestockLines(db, request, 'all', userId)
 
   const items = request.items
-  const remaining = items.filter(i => !i.convertedAt && !i.verifyRejectedAt)
+  // Restock lines just added are Purchasing's to buy — they keep the PR On Process too.
+  const remaining = [...items.filter(i => !i.convertedAt && !i.verifyRejectedAt).map(i => i.itemName), ...restocks]
   const backordered = items.filter(i => i.backorderQty > 0)
   const toPurchasing = items.filter(i => i.viaWarehouse && i.warehouseDecision === 'PURCHASE' && !i.convertedAt && !i.verifyRejectedAt)
   const backorderNote = backordered.length ? ` ${backordered.length} ${backordered.length === 1 ? 'item was' : 'items were'} partially shipped — the rest will follow once the restock arrives at the warehouse.` : ''
@@ -230,5 +206,5 @@ export async function finishWarehouseCheck(db: Db, id: string, userId: string) {
     body: `${request.prNumber} has been checked by Warehouse${toPurchasing.length ? ` — ${toPurchasing.length} ${toPurchasing.length === 1 ? 'item is' : 'items are'} not in the warehouse and will be purchased by Purchasing` : ''}.${backorderNote}`,
     skipUserId: userId,
   })
-  return { updated, restocks, remaining: remaining.map(i => i.itemName) }
+  return { updated, restocks, remaining }
 }

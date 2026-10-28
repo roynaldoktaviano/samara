@@ -417,7 +417,7 @@ export async function receiveGoods(db: Db, params: {
   }
 
   // Restock landing in a warehouse → ship PR lines backordered there (draft follow-up TRs).
-  await allocateBackorders(db, effectiveLocationId, items.map(i => i.itemId ?? null))
+  await allocateBackorders(db, effectiveLocationId, items.map(i => i.itemId ?? null), orderId)
 
   return { ok: true, gr, newStatus }
 }
