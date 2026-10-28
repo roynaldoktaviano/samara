@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useSession } from 'next-auth/react'
 import { toast } from 'sonner'
-import { Plus, Minus, ChevronRight, ChevronLeft, Trash2, Package, Search, FileText, ChevronDown, Check, Building2, MapPin, CheckCircle2, Pencil, X, AlertTriangle, Download, ImagePlus, Camera, ShoppingCart, Send, Users, Paperclip, Clock, Ship, ArrowRightLeft } from 'lucide-react'
+import { Plus, Minus, ChevronRight, ChevronLeft, Trash2, Package, Search, FileText, ChevronDown, Check, Building2, CheckCircle2, Pencil, X, AlertTriangle, Download, ImagePlus, Camera, ShoppingCart, Send, Users, Paperclip, Clock, ArrowRightLeft } from 'lucide-react'
 import { ITEM_TYPES, ITEM_TYPE_LABELS, type PurchaseItemType } from '@/lib/purchase-item-types'
 import { useFileDrop } from '@/hooks/useFileDrop'
 import { getBand, requiredQuotationCount, BAND_LABEL, RECURRING_SUPPLIER_ORDER_THRESHOLD } from '@/lib/purchasing/quotationBands'
@@ -160,7 +160,7 @@ function toTitleCase(s: string) {
 
 function UrgentBadge() {
   return (
-    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-destructive text-destructive-foreground animate-pulse">
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-sans text-[10px] font-bold whitespace-nowrap bg-destructive text-destructive-foreground animate-pulse">
       <AlertTriangle className="h-3 w-3" /> URGENT
     </span>
   )
@@ -168,10 +168,20 @@ function UrgentBadge() {
 
 const DIVISION_LABEL: Record<string, string> = { BOAT_OPERATION: 'Boat Operation', BUILDING_MATERIAL: 'Building Material' }
 
+// Status dot colour in the list — same meaning as the StatusBadge tones.
+const TONE_DOT: Partial<Record<StatusTone, string>> = {
+  success: 'bg-success', warning: 'bg-warning', info: 'bg-info', destructive: 'bg-destructive',
+  neutral: 'bg-muted-foreground/50', primary: 'bg-primary', brand: 'bg-brand', purple: 'bg-purple-500',
+}
+
+// Still needs someone to act on it — a closed PR no longer shows its Urgent flag in the list.
+const isOpenRequest = (r: { status: string; outstanding?: boolean }) =>
+  !['CONVERTED', 'REJECTED', 'CANCELLED'].includes(r.status) || !!r.outstanding
+
 function DivisionBadge({ division }: { division: 'BOAT_OPERATION' | 'BUILDING_MATERIAL' | null }) {
   if (!division) return null
   return (
-    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-muted text-muted-foreground">
+    <span className="inline-flex items-center px-2 py-0.5 rounded-full font-sans text-[10px] font-semibold whitespace-nowrap bg-muted text-muted-foreground">
       {DIVISION_LABEL[division]}
     </span>
   )
@@ -213,16 +223,6 @@ function TransferBadge({ transfer, onOpen }: { transfer?: RequestLine['transfer'
         From warehouse stock{transfer ? ` · ${TRANSFER_STATUS_LABEL[transfer.status] ?? transfer.status}` : ''}
       </p>
     </div>
-  )
-}
-
-// Next to an ON_PROCESS status: Purchasing is on it, but Warehouse is still checking some lines.
-function WarehouseCheckTag({ r }: { r: { status: string; warehousePending?: boolean; outstanding?: boolean } }) {
-  return (
-    <>
-      {r.status === 'ON_PROCESS' && r.warehousePending && <StatusBadge tone="info" size="sm" className="ml-1">+ Warehouse check</StatusBadge>}
-      {r.status === 'ON_PROCESS' && r.outstanding && <StatusBadge tone="warning" size="sm" className="ml-1">+ Waiting restock</StatusBadge>}
-    </>
   )
 }
 
@@ -322,10 +322,14 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
   // (myDivision null) never sees this toggle and always gets the full list.
   const [myDivision, setMyDivision] = useState<'BOAT_OPERATION' | 'BUILDING_MATERIAL' | null>(null)
   const [divisionScope, setDivisionScope] = useState<'MINE' | 'ALL'>('MINE')
-  // Tablet/mobile card layout (< lg) paginates independently of the desktop table,
-  // which just renders the full filtered list — see OrdersPage.tsx for the same pattern.
+  // List page (same inbox list on every screen size).
   const [cardPage, setCardPage] = useState(1)
-  const CARD_PAGE_SIZE = 10
+  const LIST_PAGE_SIZE = 20
+  // List search (PR no., items, requester, destination).
+  const [search, setSearch] = useState('')
+  // List filter chips: only open Urgent PRs / only auto Restock PRs.
+  const [urgentOnly, setUrgentOnly] = useState(false)
+  const [restockOnly, setRestockOnly] = useState(false)
   const [selected, setSelected] = useState<PurchaseRequest | null>(null)
   const [detail, setDetail] = useState<(PurchaseRequest & {
     items: RequestLine[]
@@ -1219,9 +1223,9 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
     await fetchDetail(detail.id)
   }
 
-  // Warehouse's "Process Purchase Request" — decides every approved line at once (TR + backorder
-  // or to Purchasing), puts To Be Order on Restock PRs, then closes the PR straight to CONVERTED
-  // if everything came from stock, else hands the rest to Purchasing (ON_PROCESS).
+  // Warehouse's "Process Purchase Request" — decides every approved line at once (TR for the
+  // Reserve + backorder for the rest), puts To Be Order on restock lines to the warehouse, then
+  // closes the PR straight to CONVERTED if everything came from stock, else ON_PROCESS.
   // See PATCH .../warehouse-forward.
   async function warehouseForward() {
     if (!detail) return
@@ -1303,277 +1307,203 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
       || (key === 'WAREHOUSE' ? !!r.warehousePending
         : key === 'OUTSTANDING' ? !!r.outstanding
         : r.status === key && !(key === 'CONVERTED' && r.outstanding))
-    const filtered = scopedRequests.filter(r => matchesTab(r, filterStatus))
+    const q = search.trim().toLowerCase()
+    const matchesSearch = (r: PurchaseRequest) => !q || [
+      r.prNumber, r.deliveryLocation?.name, r.requestedByEmployee?.fullName, r.createdBy?.name, r.restockFor?.prNumber, ...r.itemNames,
+    ].some(s => s?.toLowerCase().includes(q))
+    const isUrgentOpen = (r: PurchaseRequest) => r.isUrgent && isOpenRequest(r)
+    const matchesFlags = (r: PurchaseRequest) => (!urgentOnly || isUrgentOpen(r)) && (!restockOnly || !!r.restockFor)
+    // Search and the Urgent/Restock chips narrow the list; the status tabs count within that,
+    // and each chip counts within the current tab.
+    const searched = scopedRequests.filter(matchesSearch)
+    const flagged = searched.filter(matchesFlags)
+    const filtered = flagged.filter(r => matchesTab(r, filterStatus))
     const counts = FILTER_TABS.reduce<Record<string, number>>((acc, t) => {
-      acc[t.key] = scopedRequests.filter(r => matchesTab(r, t.key)).length
+      acc[t.key] = flagged.filter(r => matchesTab(r, t.key)).length
       return acc
     }, {})
+    const inTab = searched.filter(r => matchesTab(r, filterStatus))
+    const urgentCount = inTab.filter(r => isUrgentOpen(r) && (!restockOnly || !!r.restockFor)).length
+    const restockCount = inTab.filter(r => !!r.restockFor && (!urgentOnly || isUrgentOpen(r))).length
     const mineCount = divisionScoped.filter(r => r.createdBy?.id === session?.user?.id).length
     const emptyMessage = requests.length === 0
       ? 'No PRs yet. Click "New PR" to get started.'
-      : scopeFilter === 'MINE' && scopedRequests.length === 0
-        ? "You haven't requested any PRs yet."
-        : `No PRs with status "${STATUS_LABEL[filterStatus] ?? filterStatus}".`
-    const cardTotalPages = Math.max(1, Math.ceil(filtered.length / CARD_PAGE_SIZE))
-    const cardCurrentPage = Math.min(cardPage, cardTotalPages)
-    const cardPageItems = filtered.slice((cardCurrentPage - 1) * CARD_PAGE_SIZE, cardCurrentPage * CARD_PAGE_SIZE)
+      : q || urgentOnly || restockOnly
+        ? 'No PRs match these filters.'
+        : scopeFilter === 'MINE' && scopedRequests.length === 0
+          ? "You haven't requested any PRs yet."
+          : `No PRs with status "${STATUS_LABEL[filterStatus] ?? filterStatus}".`
+    const totalPages = Math.max(1, Math.ceil(filtered.length / LIST_PAGE_SIZE))
+    const currentPage = Math.min(cardPage, totalPages)
+    const pageItems = filtered.slice((currentPage - 1) * LIST_PAGE_SIZE, currentPage * LIST_PAGE_SIZE)
+
+    const scopeButton = (active: boolean) =>
+      `px-2.5 py-1 text-xs font-medium rounded transition-colors whitespace-nowrap ${active ? 'bg-card shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`
+    const flagChip = (active: boolean, activeClass: string) =>
+      `h-8 px-3 rounded-full border text-xs font-medium flex items-center gap-1.5 transition-colors ${active ? activeClass : 'text-muted-foreground hover:text-foreground'}`
+    const requesterName = (r: PurchaseRequest) =>
+      r.restockFor ? `Auto restock from ${r.restockFor.prNumber}` : r.requestedByEmployee?.fullName ?? r.createdBy?.name ?? '—'
+    // Status column: one status (a dot + label) and, under it, the one thing worth knowing
+    // about it — where a converted PR's slowest PO is, or what an On Process PR still waits on.
+    const status = (r: PurchaseRequest) => {
+      const least = r.status === 'CONVERTED' && !r.outstanding ? leastAdvancedPo(r.orders) : null
+      const tone = least ? PO_STATUS_TONE[least.po.status] : prStatusTone(r)
+      const label = least
+        ? `${least.po.currentLegLabel ?? PO_STATUS_LABEL[least.po.status] ?? least.po.status}${least.count > 1 ? ` (+${least.count - 1})` : ''}`
+        : prStatusLabel(r)
+      const note = least ? currentLocationLabel(least.po)
+        : r.status === 'ON_PROCESS' && r.warehousePending ? 'Warehouse still checking'
+        : r.status === 'ON_PROCESS' && r.outstanding ? 'Waiting restock'
+        : null
+      return { tone, label, note }
+    }
+    // Same columns for the header and every row. Below sm the row stacks: number + status on
+    // top, items under them (see the order-* classes on the cells).
+    const grid = 'grid grid-cols-[minmax(0,1fr)_auto] sm:grid-cols-[150px_minmax(0,1fr)_200px] gap-x-6 gap-y-1'
+
     return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight">Purchase Request</h2>
-          <p className="text-muted-foreground text-sm mt-1">Purchase requests to suppliers</p>
-        </div>
+    <div className="space-y-5">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="text-2xl font-bold tracking-tight">Purchase Requests</h2>
         <button onClick={() => setView('create')} className="flex items-center gap-2 bg-primary hover:bg-primary-hover text-primary-foreground text-sm font-medium px-4 py-2 rounded-md transition-colors">
           <Plus className="h-4 w-4" /> New PR
         </button>
       </div>
 
-      {/* Division toggle — only shown to a Purchasing user with an assigned division.
-          Defaults to their own division (+ uncategorized PRs); "All Requests" always
-          stays one click away, it's a default view not an access restriction. */}
-      {myDivision && (
-        <div className="inline-flex rounded-md border p-0.5 bg-muted/40 w-fit">
-          {([['MINE', DIVISION_LABEL[myDivision]], ['ALL', 'All Requests']] as const).map(([key, label]) => (
-            <button key={key} onClick={() => { setDivisionScope(key); setFilterStatus('ALL'); setCardPage(1) }}
-              className={`px-3 py-1.5 text-sm font-medium rounded-[5px] transition-colors flex items-center gap-1.5 ${
-                divisionScope === key ? 'bg-card shadow-sm text-warning' : 'text-muted-foreground hover:text-foreground'
+      <div className="space-y-3">
+        {/* Status tabs */}
+        <div className="flex gap-5 border-b overflow-x-auto">
+          {FILTER_TABS.filter(t => t.key === 'ALL' || counts[t.key] > 0 || filterStatus === t.key).map(t => (
+            <button key={t.key} onClick={() => { setFilterStatus(t.key); setCardPage(1) }}
+              className={`shrink-0 whitespace-nowrap py-2.5 text-sm border-b-2 -mb-px transition-colors ${
+                filterStatus === t.key ? 'border-primary text-foreground font-medium' : 'border-transparent text-muted-foreground hover:text-foreground'
               }`}>
-              {label}
-              {key === 'MINE' && (
-                <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${divisionScope === key ? 'bg-warning/15 text-warning' : 'bg-muted text-muted-foreground'}`}>
-                  {myDivisionCount}
-                </span>
-              )}
+              {t.label}
+              <span className="ml-1.5 text-xs font-normal text-muted-foreground tabular-nums">{counts[t.key] ?? 0}</span>
             </button>
           ))}
         </div>
-      )}
 
-      {/* Scope toggle — the company-wide queue vs. just what the logged-in user created
-          themselves. Admin-only: Purchasing/Warehouse's job here is processing everyone
-          else's requests, and Warehouse's queue is already server-scoped to their own. */}
-      {isAdmin && (
-        <div className="inline-flex rounded-md border p-0.5 bg-muted/40 w-fit">
-          {([['ALL', 'All Requests'], ['MINE', 'Requested by Me']] as const).map(([key, label]) => (
-            <button key={key} onClick={() => { setScopeFilter(key); setFilterStatus('ALL'); setCardPage(1) }}
-              className={`px-3 py-1.5 text-sm font-medium rounded-[5px] transition-colors flex items-center gap-1.5 ${
-                scopeFilter === key ? 'bg-card shadow-sm text-warning' : 'text-muted-foreground hover:text-foreground'
-              }`}>
-              {label}
-              {key === 'MINE' && mineCount > 0 && (
-                <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${scopeFilter === key ? 'bg-warning/15 text-warning' : 'bg-muted text-muted-foreground'}`}>
-                  {mineCount}
-                </span>
-              )}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* Filter tabs — horizontally scrollable so 6 tabs + count badges don't get
-          cramped on a narrower tablet width */}
-      <div className="flex gap-1 border-b overflow-x-auto">
-        {FILTER_TABS.filter(t => t.key === 'ALL' || counts[t.key] > 0).map(t => (
-          <button key={t.key} onClick={() => { setFilterStatus(t.key); setCardPage(1) }}
-            className={`shrink-0 whitespace-nowrap px-3 py-2 text-sm font-medium border-b-2 transition-colors -mb-px flex items-center gap-1.5 ${
-              filterStatus === t.key ? 'border-primary text-primary-strong' : 'border-transparent text-muted-foreground hover:text-foreground'
-            }`}>
-            {t.label}
-            {counts[t.key] > 0 && (
-              <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${filterStatus === t.key ? 'bg-warning/15 text-warning' : 'bg-muted text-muted-foreground'}`}>
-                {counts[t.key]}
-              </span>
-            )}
+        {/* Filters — Urgent / Restock chips, scope toggles, search */}
+        <div className="flex flex-wrap items-center gap-2">
+          <button onClick={() => { setUrgentOnly(u => !u); setCardPage(1) }}
+            className={flagChip(urgentOnly, 'border-destructive/40 bg-destructive/10 text-destructive')}>
+            Urgent <span className="tabular-nums opacity-70">{urgentCount}</span>
           </button>
-        ))}
-      </div>
-
-      {/* Desktop table — full column set, only makes sense at lg+ width */}
-      <div className="hidden desktop:block rounded-lg border overflow-hidden">
-        <div className="overflow-x-auto"><table className="w-full text-sm">
-          <thead className="bg-muted/50 text-xs text-muted-foreground">
-            <tr>
-              <th className="text-left px-4 py-3 font-medium">PR No.</th>
-              <th className="text-left px-4 py-3 font-medium">Destination</th>
-              <th className="text-left px-4 py-3 font-medium">Requested by</th>
-              <th className="text-center px-4 py-3 font-medium">Items</th>
-              <th className="text-left px-4 py-3 font-medium">Date</th>
-              <th className="text-left px-4 py-3 font-medium">Status</th>
-              <th className="px-4 py-3" />
-            </tr>
-          </thead>
-          <tbody className="divide-y">
-            {loading ? (
-              <>
-                {[...Array(5)].map((_, i) => (
-                  <tr key={i} className="border-t">
-                    <td className="px-4 py-3.5"><div className="h-3.5 w-28 rounded bg-muted animate-pulse" /></td>
-                    <td className="px-4 py-3.5"><div className="h-3.5 w-20 rounded bg-muted animate-pulse" /></td>
-                    <td className="px-4 py-3.5"><div className="h-3.5 w-24 rounded bg-muted animate-pulse" /></td>
-                    <td className="px-4 py-3.5"><div className="h-3.5 w-6 rounded bg-muted animate-pulse mx-auto" /></td>
-                    <td className="px-4 py-3.5"><div className="h-3.5 w-20 rounded bg-muted animate-pulse" /></td>
-                    <td className="px-4 py-3.5"><div className="h-5 w-16 rounded-full bg-muted animate-pulse" /></td>
-                    <td className="px-4 py-3.5" />
-                  </tr>
-                ))}
-              </>
-            ) : filtered.length === 0 ? (
-              <tr><td colSpan={7} className="text-center py-12 text-muted-foreground text-sm">
-                <FileText className="h-8 w-8 mx-auto mb-2 opacity-30" />
-                {emptyMessage}
-              </td></tr>
-            ) : filtered.map(r => (
-              <tr key={r.id} className="hover:bg-muted/30 cursor-pointer" onClick={() => openDetail(r)}>
-                <td className="px-4 py-3 font-mono text-sm font-medium max-w-55">
-                  <span className="flex items-center gap-1.5">
-                    {r.prNumber}
-                    {r.isUrgent && <UrgentBadge />}
-                    {r.restockFor && <span className="font-sans text-[10px] font-medium text-violet-700 bg-violet-50 border border-violet-200 rounded-full px-1.5 py-0.5 dark:text-violet-300 dark:bg-violet-500/10 dark:border-violet-500/30">Restock</span>}
-                    <DivisionBadge division={r.division} />
-                  </span>
-                  <ItemNamesPreview names={r.itemNames} className="font-sans font-normal text-[11px] text-muted-foreground mt-0.5" />
-                </td>
-                <td className="px-4 py-3 text-muted-foreground text-xs">
-                  {r.deliveryLocation ? (
-                    <span className="flex items-center gap-1">
-                      <MapPin className="h-3 w-3 shrink-0" />{r.deliveryLocation.name}
-                    </span>
-                  ) : '—'}
-                </td>
-                <td className="px-4 py-3 text-muted-foreground">
-                  {r.restockFor ? (
-                    <>
-                      <p className="text-foreground">Auto · Min. Stock</p>
-                      <p className="text-[11px]">To Be Order from {r.restockFor.prNumber}</p>
-                    </>
-                  ) : r.requestedByEmployee ? (
-                    <>
-                      <p className="text-foreground">{r.requestedByEmployee.fullName}</p>
-                      <p className="text-[11px]">Created by {r.createdBy?.name ?? '—'}</p>
-                    </>
-                  ) : (r.createdBy?.name ?? '—')}
-                </td>
-                <td className="px-4 py-3 text-center text-muted-foreground">{r.itemCount}</td>
-                <td className="px-4 py-3 text-muted-foreground">{formatDate(r.createdAt)}</td>
-                <td className="px-4 py-3">
-                  {(() => {
-                    const least = r.status === 'CONVERTED' && !r.outstanding ? leastAdvancedPo(r.orders) : null
-                    if (!least) return <><StatusBadge tone={prStatusTone(r)}>{prStatusLabel(r)}</StatusBadge><WarehouseCheckTag r={r} /></>
-                    const { po, count } = least
-                    return (
-                      <div className="space-y-0.5">
-                        <StatusBadge tone={PO_STATUS_TONE[po.status]}>
-                          {po.currentLegLabel ?? PO_STATUS_LABEL[po.status] ?? po.status}{count > 1 && ` (+${count - 1})`}
-                        </StatusBadge>
-                        <p className="flex items-center gap-1 text-[11px] text-muted-foreground"><MapPin className="h-3 w-3 shrink-0" />{currentLocationLabel(po)}</p>
-                      </div>
-                    )
-                  })()}
-                </td>
-                <td className="px-4 py-3 text-right" onClick={e => e.stopPropagation()}>
-                  {r.status === 'DRAFT' && isAdmin && !r.warehouseStarted ? (
-                    <button
-                      onClick={() => changeStatus(r.id, 'ON_PROCESS')}
-                      title="Skip Warehouse's stock check and send straight to Purchasing"
-                      className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium bg-primary hover:bg-primary-hover text-primary-foreground rounded-md transition-colors whitespace-nowrap">
-                      <CheckCircle2 className="h-3 w-3" /> Force Verify
-                    </button>
-                  ) : (
-                    <ChevronRight className="h-4 w-4 text-muted-foreground ml-auto" />
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table></div>
-      </div>
-
-      {/* Tablet/mobile card layout — one PR per card, two lines, own 10-per-page pagination */}
-      <div className="desktop:hidden space-y-2">
-        {loading ? (
-          [...Array(5)].map((_, i) => (
-            <div key={i} className="rounded-lg border p-3 space-y-2 animate-pulse">
-              <div className="h-3.5 w-32 rounded bg-muted" />
-              <div className="h-3.5 w-48 rounded bg-muted" />
+          <button onClick={() => { setRestockOnly(v => !v); setCardPage(1) }}
+            className={flagChip(restockOnly, 'border-violet-300 bg-violet-50 text-violet-700 dark:border-violet-500/40 dark:bg-violet-500/10 dark:text-violet-300')}>
+            Restock <span className="tabular-nums opacity-70">{restockCount}</span>
+          </button>
+          {/* Division toggle — a Purchasing user with an assigned division; a default view,
+              not an access restriction. */}
+          {myDivision && (
+            <div className="inline-flex rounded-md bg-muted/60 p-0.5">
+              {([['MINE', `${DIVISION_LABEL[myDivision]} · ${myDivisionCount}`], ['ALL', 'All Requests']] as const).map(([key, label]) => (
+                <button key={key} onClick={() => { setDivisionScope(key); setFilterStatus('ALL'); setCardPage(1) }} className={scopeButton(divisionScope === key)}>{label}</button>
+              ))}
             </div>
-          ))
-        ) : filtered.length === 0 ? (
-          <div className="text-center py-12 text-muted-foreground text-sm border rounded-lg">
-            <FileText className="h-8 w-8 mx-auto mb-2 opacity-30" />
-            {requests.length === 0 ? 'No PRs yet. Click "New PR" to get started.' : `No PRs with status "${STATUS_LABEL[filterStatus] ?? filterStatus}".`}
+          )}
+          {/* Admin-only: the company-wide queue vs. just what they created themselves. */}
+          {isAdmin && (
+            <div className="inline-flex rounded-md bg-muted/60 p-0.5">
+              {([['ALL', 'All Requests'], ['MINE', `Requested by Me${mineCount ? ` · ${mineCount}` : ''}`]] as const).map(([key, label]) => (
+                <button key={key} onClick={() => { setScopeFilter(key); setFilterStatus('ALL'); setCardPage(1) }} className={scopeButton(scopeFilter === key)}>{label}</button>
+              ))}
+            </div>
+          )}
+          <div className="relative w-full sm:w-64 sm:ml-auto">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+            <input
+              value={search}
+              onChange={e => { setSearch(e.target.value); setCardPage(1) }}
+              placeholder="Search PR, item, requester…"
+              className="w-full h-8 pl-8 pr-7 text-sm rounded-md border bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+            />
+            {search && (
+              <button onClick={() => { setSearch(''); setCardPage(1) }} aria-label="Clear search"
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded text-muted-foreground hover:text-foreground">
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
           </div>
-        ) : cardPageItems.map(r => (
-          <button
-            key={r.id}
-            onClick={() => openDetail(r)}
-            className="w-full text-left rounded-lg border p-3 space-y-1.5 hover:bg-muted/30 active:bg-muted/50 transition-colors"
-          >
-            {(() => {
-              const least = r.status === 'CONVERTED' ? leastAdvancedPo(r.orders) : null
-              return (
-                <>
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="font-mono text-xs font-semibold flex items-center gap-1.5">
-                      {r.prNumber}
-                      {r.isUrgent && <UrgentBadge />}
-                      {r.restockFor && <span className="font-sans text-[10px] font-medium text-violet-700 bg-violet-50 border border-violet-200 rounded-full px-1.5 py-0.5 dark:text-violet-300 dark:bg-violet-500/10 dark:border-violet-500/30">Restock</span>}
-                      <DivisionBadge division={r.division} />
-                    </span>
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      {least ? (
-                        <StatusBadge tone={PO_STATUS_TONE[least.po.status]} size="sm">
-                          {least.po.currentLegLabel ?? PO_STATUS_LABEL[least.po.status] ?? least.po.status}{least.count > 1 && ` (+${least.count - 1})`}
-                        </StatusBadge>
-                      ) : (
-                        <>
-                          <StatusBadge tone={prStatusTone(r)} size="sm">{prStatusLabel(r)}</StatusBadge>
-                          <WarehouseCheckTag r={r} />
-                        </>
-                      )}
-                      <span className="text-xs text-muted-foreground">{formatDate(r.createdAt)}</span>
-                    </div>
-                  </div>
-                  <ItemNamesPreview names={r.itemNames} max={3} className="text-xs text-muted-foreground" />
-                  <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
-                    <span className="truncate min-w-0">
-                      <span className="font-medium text-foreground">{r.restockFor ? `Auto restock · from ${r.restockFor.prNumber}` : r.requestedByEmployee?.fullName ?? r.createdBy?.name ?? '—'}</span>
-                      {!r.restockFor && r.requestedByEmployee && r.createdBy?.name && r.createdBy.name !== r.requestedByEmployee.fullName && <> · by {r.createdBy.name}</>}
-                      {r.deliveryLocation && <> · {r.deliveryLocation.name}</>}
-                    </span>
-                    <span className="shrink-0 tabular-nums">
-                      {`${r.itemCount} item${r.itemCount !== 1 ? 's' : ''}`}
-                    </span>
-                  </div>
-                  {least && (
-                    <p className="flex items-center gap-1 text-[11px] text-muted-foreground"><MapPin className="h-3 w-3 shrink-0" />{currentLocationLabel(least.po)}</p>
-                  )}
-                </>
-              )
-            })()}
-          </button>
-        ))}
+        </div>
       </div>
-      {!loading && filtered.length > 0 && cardTotalPages > 1 && (
-        <div className="desktop:hidden flex items-center justify-between">
-          <p className="text-xs text-muted-foreground">
-            Page {cardCurrentPage} of {cardTotalPages} · {filtered.length} PR{filtered.length !== 1 ? 's' : ''}
-          </p>
+
+      <div>
+        <div className={`${grid} hidden sm:grid px-3 pb-2 border-b text-[11px] font-medium uppercase tracking-wide text-muted-foreground`}>
+          <span>Request</span><span>Items</span><span>Status</span>
+        </div>
+        <div className="divide-y">
+          {loading ? (
+            [...Array(6)].map((_, i) => (
+              <div key={i} className={`${grid} px-3 py-4 animate-pulse`}>
+                <div className="space-y-1.5"><div className="h-3.5 w-28 rounded bg-muted" /><div className="h-3 w-20 rounded bg-muted" /></div>
+                <div className="hidden sm:block space-y-1.5"><div className="h-3.5 w-72 rounded bg-muted" /><div className="h-3 w-48 rounded bg-muted" /></div>
+                <div className="h-3.5 w-24 rounded bg-muted" />
+              </div>
+            ))
+          ) : filtered.length === 0 ? (
+            <div className="text-center py-16 text-muted-foreground text-sm">
+              <FileText className="h-8 w-8 mx-auto mb-2 opacity-30" />
+              {emptyMessage}
+              {(q || urgentOnly || restockOnly) && (
+                <button onClick={() => { setSearch(''); setUrgentOnly(false); setRestockOnly(false); setCardPage(1) }}
+                  className="block mx-auto mt-2 text-xs font-medium text-primary-strong hover:underline">Clear filters</button>
+              )}
+            </div>
+          ) : pageItems.map(r => {
+            const s = status(r)
+            return (
+              <div key={r.id} role="button" tabIndex={0}
+                onClick={() => openDetail(r)}
+                onKeyDown={e => { if (e.key === 'Enter') openDetail(r) }}
+                className={`${grid} px-3 py-3.5 cursor-pointer hover:bg-muted/40 transition-colors ${isUrgentOpen(r) ? 'shadow-[inset_2px_0_0_var(--destructive)]' : ''}`}>
+                <div className="order-1">
+                  <p className="font-mono text-sm font-medium whitespace-nowrap">{r.prNumber}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{formatDate(r.createdAt)}</p>
+                </div>
+                <div className="order-3 sm:order-2 col-span-2 sm:col-span-1 min-w-0">
+                  <div className="flex items-center gap-2 text-sm min-w-0">
+                    {isUrgentOpen(r) && <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-destructive">Urgent</span>}
+                    {r.restockFor && <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-violet-600 dark:text-violet-300">Restock</span>}
+                    <ItemNamesPreview names={r.itemNames} max={3} className="min-w-0" />
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                    {r.deliveryLocation?.name ?? '—'} <span className="text-muted-foreground/50">·</span> {requesterName(r)}
+                  </p>
+                </div>
+                <div className="order-2 sm:order-3 min-w-0 text-right sm:text-left">
+                  <p className="inline-flex items-center gap-2 text-sm whitespace-nowrap">
+                    <span className={`h-2 w-2 shrink-0 rounded-full ${TONE_DOT[s.tone] ?? 'bg-muted-foreground'}`} />
+                    {s.label}
+                  </p>
+                  {s.note && <p className="text-xs text-muted-foreground mt-0.5 sm:pl-4 truncate">{s.note}</p>}
+                  {r.status === 'DRAFT' && isAdmin && !r.warehouseStarted && (
+                    <button
+                      onClick={e => { e.stopPropagation(); changeStatus(r.id, 'ON_PROCESS') }}
+                      title="Skip Warehouse's stock check and send straight to Purchasing"
+                      className="block sm:ml-4 ml-auto mt-0.5 text-xs text-muted-foreground hover:text-foreground hover:underline underline-offset-2">
+                      Force Verify
+                    </button>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      {!loading && totalPages > 1 && (
+        <div className="flex items-center justify-between">
+          <p className="text-xs text-muted-foreground">{filtered.length} requests · page {currentPage} of {totalPages}</p>
           <div className="flex items-center gap-1">
-            <button
-              onClick={() => setCardPage(p => Math.max(1, p - 1))}
-              disabled={cardCurrentPage <= 1}
-              className="h-8 px-3 text-sm border rounded-md hover:bg-muted transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
-            >
-              Prev
+            <button onClick={() => setCardPage(p => Math.max(1, p - 1))} disabled={currentPage <= 1} aria-label="Previous page"
+              className="h-8 w-8 grid place-items-center rounded-md hover:bg-muted transition-colors disabled:opacity-30 disabled:hover:bg-transparent">
+              <ChevronLeft className="h-4 w-4" />
             </button>
-            <span className="text-sm text-muted-foreground px-2">{cardCurrentPage} / {cardTotalPages}</span>
-            <button
-              onClick={() => setCardPage(p => Math.min(cardTotalPages, p + 1))}
-              disabled={cardCurrentPage >= cardTotalPages}
-              className="h-8 px-3 text-sm border rounded-md hover:bg-muted transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
-            >
-              Next
+            <button onClick={() => setCardPage(p => Math.min(totalPages, p + 1))} disabled={currentPage >= totalPages} aria-label="Next page"
+              className="h-8 w-8 grid place-items-center rounded-md hover:bg-muted transition-colors disabled:opacity-30 disabled:hover:bg-transparent">
+              <ChevronRight className="h-4 w-4" />
             </button>
           </div>
         </div>
@@ -2285,7 +2215,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                             <p className="text-xs text-muted-foreground">
                               {reserveBase > 0
                                 ? <>On Process: send <span className="font-semibold text-foreground">{lineQtyLabel(item, reserveBase)}</span>{reserveBase < requestedBase && <> · backorder <span className="font-semibold text-destructive">{lineQtyLabel(item, requestedBase - reserveBase)}</span></>}</>
-                                : <span className="font-medium text-warning">On Process: nothing from stock → whole request to Purchasing</span>}
+                                : <span className="font-medium text-warning">On Process: nothing from stock → backorder <span className="font-semibold text-destructive">{lineQtyLabel(item, requestedBase)}</span>, shipped from the warehouse after restock</span>}
                             </p>
                           )}
                         </div>
@@ -2296,7 +2226,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                           const pendingQty = item.toBeOrderSplit?.pending ?? fig?.toBeOrder ?? null
                           return (
                             <div className="grid grid-cols-3 gap-2">
-                              {stat('To Be Order', fig?.toBeOrder ?? null, fig && fig.toBeOrder > 0 ? 'text-info' : muted(0), '(Requested − Current Stock) + Min. Stock — goes to Purchasing (Requested too when nothing is reserved)', true)}
+                              {stat('To Be Order', fig?.toBeOrder ?? null, fig && fig.toBeOrder > 0 ? 'text-info' : muted(0), '(Requested − Current Stock) + Min. Stock − already on its way to the warehouse — Purchasing buys it into the warehouse, then the backorder ships from there', true)}
                               {stat('PO', po, po ? 'text-success' : muted(0), 'To Be Order already on a Purchase Order')}
                               {stat('Pending', pendingQty, pendingQty ? 'text-warning' : muted(0), 'To Be Order not ordered yet')}
                             </div>
@@ -2322,7 +2252,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                               {item.verifyRejectionReason && <p className="text-xs text-muted-foreground">{item.verifyRejectionReason}</p>}
                             </div>
                           ) : !item.viaWarehouse || isCustom ? (
-                            <span className="text-muted-foreground">{isCustom ? 'Custom request' : 'Non-stock item'} — goes straight to Purchasing, no warehouse check needed.</span>
+                            <span className="text-muted-foreground">{isCustom ? 'Custom request — goes' : 'Goes'} straight to Purchasing, no warehouse check needed.</span>
                           ) : item.warehouseDecision === 'PURCHASE' ? (
                             <StatusBadge tone="warning" size="sm">Nothing from stock — sent to Purchasing</StatusBadge>
                           ) : (
@@ -2391,7 +2321,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                 : item.warehouseDecision === 'PURCHASE' ? <StatusBadge tone="warning" size="sm">Sent to Purchasing</StatusBadge>
                 : item.convertedAt && item.warehouseDecision === 'TRANSFER' ? (
                   (item.backorderQty ?? 0) > 0
-                    ? <StatusBadge tone="warning" size="sm">Partly sent · {lineQtyLabel(item, item.backorderQty!)} remaining</StatusBadge>
+                    ? <StatusBadge tone="warning" size="sm">{(item.sentFromStock ?? 0) > 0 ? 'Partly sent' : 'Backordered'} · {lineQtyLabel(item, item.backorderQty!)} remaining</StatusBadge>
                     : <StatusBadge tone="success" size="sm"><Check className="h-3 w-3" /> Complete</StatusBadge>
                 )
                 : item.warehouseApprovedAt ? <StatusBadge tone="success" size="sm"><Check className="h-3 w-3" /> Approved · reserve {lineQtyLabel(item, item.warehouseReserveQty ?? 0)}</StatusBadge>

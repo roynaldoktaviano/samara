@@ -10,14 +10,15 @@ export function allItemsCustom(items: { itemId: string | null }[]): boolean {
 }
 
 // ── Routing: Warehouse first, or straight to Purchasing ──
-// A line goes through Warehouse's stock check only when the PR is headed to a ship (VESSEL —
-// the yacht itself or its Galley/Bar) and it's a stock-tracked catalog item. Anything for a
-// warehouse, an office/site (Office Bali, Bira) or with no destination goes straight to
-// Purchasing — Warehouse isn't involved at all. Custom lines and non-stock items (services,
-// goods bought straight to the ship) go straight to Purchasing too. A PR holding both kinds runs
-// in parallel — see PurchaseRequest.warehouseDoneAt. This is the one place that decides the route.
+// A line goes through Warehouse's stock check when the PR is headed to a ship (VESSEL — the
+// yacht itself or its Galley/Bar) and it's a catalog item, non-stock ones included: nothing is
+// bought straight to a ship — it's restocked into the warehouse and shipped from there. Only
+// custom lines (no catalog item) go straight to Purchasing. Anything for a warehouse, an
+// office/site (Office Bali, Bira) or with no destination goes straight to Purchasing — Warehouse
+// isn't involved at all. A PR holding both kinds runs in parallel — see
+// PurchaseRequest.warehouseDoneAt. This is the one place that decides the route.
 export async function routePrLines(
-  db: Pick<Awaited<ReturnType<typeof getDb>>, 'stockLocation' | 'purchaseItem'>,
+  db: Pick<Awaited<ReturnType<typeof getDb>>, 'stockLocation'>,
   deliveryLocationId: string | null,
   lines: { itemId?: string | null }[],
 ): Promise<boolean[]> {
@@ -25,12 +26,7 @@ export async function routePrLines(
     ? await db.stockLocation.findUnique({ where: { id: deliveryLocationId }, select: { type: true } })
     : null
   if (loc?.type !== 'VESSEL') return lines.map(() => false)
-  const ids = [...new Set(lines.map(l => l.itemId).filter(Boolean) as string[])]
-  const masters = ids.length
-    ? await db.purchaseItem.findMany({ where: { id: { in: ids } }, select: { id: true, isStockTracked: true } })
-    : []
-  const tracked = new Set(masters.filter(m => m.isStockTracked).map(m => m.id))
-  return lines.map(l => !!l.itemId && tracked.has(l.itemId))
+  return lines.map(l => !!l.itemId)
 }
 
 /** Status a PR enters once submitted/approved: DRAFT (Warehouse) only when every line needs

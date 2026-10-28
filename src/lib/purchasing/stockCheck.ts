@@ -11,12 +11,15 @@ type Db = Awaited<ReturnType<typeof getDb>>
 //                  Reserve Warehouse approved, or while still undecided min(Requested, Availability)
 //   Ending       = Availability − Reserve (never negative)
 //   Shortage     = the part stock can't cover → backordered, shipped once restock lands
-//   To Be Order  = (Requested − Availability) + Min. Stock, never negative — written as
-//                  Shortage + Min. Stock − Ending so it keeps using the stock as it was when the
-//                  line was decided (Availability drops once its transfer is dispatched).
-//                  On Order (incoming to that warehouse) is shown but NOT netted off.
-// PURCHASE (warehouse chose to buy direct to the ship) takes nothing from stock: its Requested
-// is bought on its own line, so only the Min. Stock top-up goes on the Restock PR (restockQty).
+//   On Order     = incoming to that warehouse (open PR lines / POs to it) not already promised
+//                  to another PR's backorder
+//   To Be Order  = (Requested − Availability) + Min. Stock − On Order, written as Shortage +
+//                  Min. Stock − Ending − On Order so it keeps using the stock as it was when the
+//                  line was decided (Availability drops once its transfer is dispatched). Never
+//                  below Shortage − On Order: the backorder must be covered by what's coming in.
+// PURCHASE (legacy — lines from before every shortfall went through the warehouse) takes nothing
+// from stock: its Requested was bought on its own line, so only the Min. Stock top-up goes on the
+// Restock PR (restockQty). New lines are always TRANSFER: Reserve 0 is a full backorder.
 export interface StockCheck {
   locationId: string
   locationName: string
@@ -55,7 +58,7 @@ export async function computeStockChecks(db: Db, request: StockCheckRequest, opt
   if (!itemIds.length) return { checks, reservedMap }
 
   const [masters, warehouses, lots, pendingOut, openPrLines, openPoLines, otherBackorders] = await Promise.all([
-    db.purchaseItem.findMany({ where: { id: { in: itemIds } }, select: { id: true, minStock: true, baseUnit: true, purchaseUnit: true, conversionFactor: true, isStockTracked: true } }),
+    db.purchaseItem.findMany({ where: { id: { in: itemIds } }, select: { id: true, minStock: true, baseUnit: true, purchaseUnit: true, conversionFactor: true } }),
     db.stockLocation.findMany({ where: { type: 'WAREHOUSE', isActive: true }, select: { id: true, name: true } }),
     db.stockLot.findMany({ where: { itemId: { in: itemIds }, quantity: { gt: 0 } }, select: { itemId: true, locationId: true, quantity: true } }),
     // Reserved = accepted for a transfer but not yet dispatched (StockLot only drops on dispatch).
@@ -129,8 +132,9 @@ export async function computeStockChecks(db: Db, request: StockCheckRequest, opt
   for (const item of request.items) {
     // Direct-to-Purchasing lines never touch warehouse stock — nothing to break down.
     if (!item.itemId || item.verifyRejectedAt || !item.viaWarehouse) continue
+    // Non-stock items are checked too — they ship from the warehouse like any other.
     const master = masterMap.get(item.itemId)
-    if (!master || !master.isStockTracked) continue
+    if (!master) continue
 
     const ownTransfers = request.transfers.filter(t => t.status !== 'CANCELLED' && t.items.some(ti => ti.itemId === item.itemId))
     const sourceId = item.backorderLocationId
@@ -158,7 +162,11 @@ export async function computeStockChecks(db: Db, request: StockCheckRequest, opt
     else { reserve = Math.min(requested, availability); shortage = requested - reserve }
     const ending = Math.max(0, availability - reserve)
     const onOrder = Math.max(0, onOrderMap.get(key) ?? 0)
-    const toBeOrder = Math.max(0, shortage + master.minStock - ending)
+    // Restock already on its way counts — two ships short on the same item must not each buy the
+    // Min. Stock top-up again. Still never less than the Shortage it can't cover: a backorder
+    // only ships once restock lands, so Warehouse holding stock back (Reserve below what's free)
+    // must not leave it with nothing to buy.
+    const toBeOrder = Math.max(0, shortage - onOrder, shortage + master.minStock - ending - onOrder)
 
     checks.set(item.id, {
       locationId: sourceId,

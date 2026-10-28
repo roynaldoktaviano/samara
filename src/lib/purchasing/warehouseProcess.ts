@@ -9,9 +9,10 @@ type Db = Awaited<ReturnType<typeof getDb>>
 // Warehouse's side of a PR: each Warehouse-routed line is first Approved on its own (source
 // warehouse + Reserve saved, nothing moves — PATCH .../items/[itemId]/warehouse-check), then
 // "Process Purchase Request" (PATCH .../warehouse-forward) decides every approved line at once
-// (processWarehouseLine — Reserve 0 → handed to Purchasing to buy straight to the ship; Reserve > 0
-// → TR for it + backorder for the rest) and finishes the check, which puts each line's To Be
-// Order on a Restock PR (finishWarehouseCheck → addRestockLines).
+// (processWarehouseLine — a TR for the Reserve, if any, and the rest backordered at that
+// warehouse; never bought straight to the ship) and finishes the check, which puts each line's
+// To Be Order on a restock line to the warehouse (finishWarehouseCheck → addRestockLines). The
+// backorder ships on its own TR once that restock lands (allocateBackorders).
 
 const REQUEST_SELECT = {
   id: true, status: true, prNumber: true, division: true, requestedById: true, deliveryLocationId: true, warehouseDoneAt: true,
@@ -52,8 +53,9 @@ export async function freeStock(db: Pick<Db, 'stockLot' | 'stockTransferItem'>, 
 
 /**
  * Turn one approved line into its decision, atomically (a double Process must not transfer or
- * hand it over twice): Reserve 0 → PURCHASE; Reserve > 0 → TRANSFER of the Reserve on a TR (one
- * per source warehouse, shared across the PR's lines) and the rest of Requested backordered there.
+ * backorder it twice): TRANSFER of the Reserve on a TR (one per source warehouse, shared across
+ * the PR's lines) and the rest of Requested backordered there. Reserve 0 (out of stock) means no
+ * TR yet — the whole line is backordered and ships from the warehouse once restock arrives.
  * Returns null when the line was already decided, { overFree } when stock no longer covers it.
  */
 export async function processWarehouseLine(db: Db, request: Pick<WarehouseRequest, 'id' | 'prNumber' | 'deliveryLocationId'>, line: WarehouseRequest['items'][number], userId: string) {
@@ -67,23 +69,13 @@ export async function processWarehouseLine(db: Db, request: Pick<WarehouseReques
     const free = (await freeStock(tx, [{ itemId: catalogItemId, locationId: fromLocationId }])).get(`${catalogItemId}:${fromLocationId}`) ?? 0
     if (reserveQty > free + 1e-6) return { overFree: free }
     const now = new Date()
-    const base = { warehouseCheckedById: userId, warehouseCheckedAt: now }
-
-    if (reserveQty <= 0) {
-      const claimed = await tx.purchaseRequestItem.updateMany({
-        where: { id: line.id, convertedAt: null, warehouseDecision: null },
-        data: { ...base, warehouseDecision: 'PURCHASE' },
-      })
-      if (!claimed.count) return null
-      await recordReservation(tx, { requestItemId: line.id, locationId: fromLocationId, stockQty: free, reservedQty: 0, source: 'WAREHOUSE_CHECK' })
-      return { outcome: 'PURCHASE' as const, transferNumber: null, sendQty: 0, backorderQty: 0 }
-    }
-
-    const backorderQty = Math.max(0, baseQty - reserveQty)
+    const sendQty = Math.max(0, reserveQty)
+    const backorderQty = Math.max(0, baseQty - sendQty)
     const claimed = await tx.purchaseRequestItem.updateMany({
       where: { id: line.id, convertedAt: null, warehouseDecision: null },
       data: {
-        ...base,
+        warehouseCheckedById: userId,
+        warehouseCheckedAt: now,
         warehouseDecision: 'TRANSFER',
         convertedAt: now,
         backorderQty,
@@ -91,15 +83,17 @@ export async function processWarehouseLine(db: Db, request: Pick<WarehouseReques
       },
     })
     if (!claimed.count) return null
-    const transferNumber = await createOrAppendTransfer(tx, {
-      requestId: request.id,
-      prNumber: request.prNumber,
-      deliveryLocationId: request.deliveryLocationId!,
-      fromLocationId,
-      items: [{ itemId: catalogItemId, itemName: line.itemName, baseQty: reserveQty }],
-    })
-    await recordReservation(tx, { requestItemId: line.id, locationId: fromLocationId, stockQty: free, reservedQty: reserveQty, source: 'WAREHOUSE_CHECK', transferNumber })
-    return { outcome: 'TRANSFER' as const, transferNumber, sendQty: reserveQty, backorderQty }
+    const transferNumber = sendQty > 0
+      ? await createOrAppendTransfer(tx, {
+          requestId: request.id,
+          prNumber: request.prNumber,
+          deliveryLocationId: request.deliveryLocationId!,
+          fromLocationId,
+          items: [{ itemId: catalogItemId, itemName: line.itemName, baseQty: sendQty }],
+        })
+      : null
+    await recordReservation(tx, { requestItemId: line.id, locationId: fromLocationId, stockQty: free, reservedQty: sendQty, source: 'WAREHOUSE_CHECK', transferNumber })
+    return { outcome: 'TRANSFER' as const, transferNumber, sendQty, backorderQty }
   })
 }
 
@@ -176,8 +170,7 @@ export async function finishWarehouseCheck(db: Db, id: string, userId: string) {
   // Restock lines just added are Purchasing's to buy — they keep the PR On Process too.
   const remaining = [...items.filter(i => !i.convertedAt && !i.verifyRejectedAt).map(i => i.itemName), ...restocks]
   const backordered = items.filter(i => i.backorderQty > 0)
-  const toPurchasing = items.filter(i => i.viaWarehouse && i.warehouseDecision === 'PURCHASE' && !i.convertedAt && !i.verifyRejectedAt)
-  const backorderNote = backordered.length ? ` ${backordered.length} ${backordered.length === 1 ? 'item was' : 'items were'} partially shipped — the rest will follow once the restock arrives at the warehouse.` : ''
+  const backorderNote = backordered.length ? ` ${backordered.length} ${backordered.length === 1 ? 'item is' : 'items are'} short in the warehouse — Purchasing restocks the warehouse first, then the rest is shipped from there.` : ''
   const now = new Date()
 
   if (remaining.length === 0) {
@@ -203,7 +196,7 @@ export async function finishWarehouseCheck(db: Db, id: string, userId: string) {
   await notifyRequester(db, id, {
     type: 'PR_FORWARDED_FROM_WAREHOUSE',
     title: 'Warehouse check complete',
-    body: `${request.prNumber} has been checked by Warehouse${toPurchasing.length ? ` — ${toPurchasing.length} ${toPurchasing.length === 1 ? 'item is' : 'items are'} not in the warehouse and will be purchased by Purchasing` : ''}.${backorderNote}`,
+    body: `${request.prNumber} has been checked by Warehouse.${backorderNote}`,
     skipUserId: userId,
   })
   return { updated, restocks, remaining }

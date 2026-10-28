@@ -5,14 +5,14 @@ import { getDb } from '@/lib/get-db'
 
 import { roleMatches } from '@/lib/role-utils'
 import { emitTenantEvent } from '@/lib/realtime-bus'
-import { notifyPurchasingForRequest } from '@/lib/notify-purchasing'
 import { finishWarehouseCheck, freeStock, loadWarehouseRequest, processWarehouseLine, undecidedLines } from '@/lib/purchasing/warehouseProcess'
 
 // Warehouse's "Process Purchase Request": once every Warehouse-routed line is Approved (see
-// .../items/[itemId]/warehouse-check), decide them all at once — Reserve > 0 → TR + backorder,
-// Reserve 0 → to Purchasing — then finish the check (To Be Order → Restock PRs, PR to
-// ON_PROCESS, or CONVERTED when nothing is left for Purchasing). Stock is re-checked for every
-// line first, so a shortfall stops the whole run before anything moves.
+// .../items/[itemId]/warehouse-check), decide them all at once — a TR for the Reserve (if any)
+// and the rest backordered at the warehouse; nothing is bought straight to the ship — then finish
+// the check (To Be Order → restock lines to the warehouse, PR to ON_PROCESS, or CONVERTED when
+// nothing is left for Purchasing). Stock is re-checked for every line first, so a shortfall stops
+// the whole run before anything moves.
 const ALLOWED = ['WAREHOUSE', 'ADMIN', 'SUPER_ADMIN']
 
 export async function PATCH(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -57,23 +57,14 @@ export async function PATCH(_req: NextRequest, { params }: { params: Promise<{ i
   }
 
   const transfers = new Set<string>()
-  const purchased: string[] = []
   for (const line of undecided) {
     const result = await processWarehouseLine(db, request, line, session.user.id)
     if (!result || 'overFree' in result) continue
     if (result.transferNumber) transfers.add(result.transferNumber)
-    if (result.outcome === 'PURCHASE') purchased.push(line.itemName)
   }
 
   const result = await finishWarehouseCheck(db, id, session.user.id)
   if (!result) return NextResponse.json({ error: 'Warehouse check was already finished' }, { status: 409 })
-  if (purchased.length > 0) {
-    await notifyPurchasingForRequest(
-      db, request.division ?? null, 'PR_FORWARDED_FROM_WAREHOUSE', 'Items to purchase from Warehouse check',
-      `${request.prNumber} — not taken from warehouse stock, to be purchased directly for the vessel: ${purchased.join(', ')}.`,
-      id,
-    )
-  }
 
   emitTenantEvent(session.user.tenantId, 'purchasing-requests')
   if (transfers.size) emitTenantEvent(session.user.tenantId, 'purchasing-transfers')
@@ -82,6 +73,5 @@ export async function PATCH(_req: NextRequest, { params }: { params: Promise<{ i
     remainingItems: result.remaining,
     restockItems: result.restocks,
     transferNumbers: [...transfers],
-    purchasedItems: purchased,
   })
 }

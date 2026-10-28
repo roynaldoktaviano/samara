@@ -268,12 +268,11 @@ export async function receiveGoods(db: Db, params: {
           : purchaseUnitCost
 
         // Catalog items merge into one running-balance lot per item+location (stock
-        // is fungible). Non-catalog items, and catalog items explicitly marked
-        // isStockTracked: false (a promoted "non-stock" master item — see
-        // /api/purchasing/requests/[id]/items/[itemId]), don't merge — each receipt
-        // gets its own lot tagged with sourcePoId, so it stays traceable to exactly
-        // the PO/date/cost that brought it in, without ever pooling into a location's
-        // stock balance or feeding min-stock/reorder logic.
+        // is fungible) — non-stock ones (isStockTracked: false) too, since a ship's PR
+        // for them is restocked into the warehouse and shipped from there, and the
+        // warehouse check / backorders / dispatch all find stock by itemId. Non-catalog
+        // items don't merge — each receipt gets its own lot tagged with sourcePoId, so
+        // it stays traceable to exactly the PO/date/cost that brought it in.
         const isStockTracked = it.itemId ? (stockTrackedMap.get(it.itemId) ?? true) : false
         const dest = route?.(it.itemId ? itemDataMap.get(it.itemId)?.type : null) ?? receivingLoc
         const destId = dest?.id ?? effectiveLocationId
@@ -282,7 +281,7 @@ export async function receiveGoods(db: Db, params: {
         // in) → no usage at all — it's still equipment, just held as stock until registered.
         const usageType = usageTypeForTreatment(treatment)
         const incomingCost = baseCostPerUnit || (it.itemId ? itemDataMap.get(it.itemId)?.standardCost ?? 0 : 0)
-        if (it.itemId && isStockTracked) {
+        if (it.itemId) {
           // Moving average: the location's running cost is re-blended with this receipt's
           // invoice price, so later transfers/usage are valued at the true average cost.
           const lot = await tx.stockLot.findFirst({ where: { itemId: it.itemId, locationId: destId } })

@@ -13,8 +13,8 @@ import { warehouseHomeLocationId } from '@/lib/purchasing/warehouseHome'
 // other fields (price, supplier, verifyRejected). Approving only saves the source warehouse and
 // the Reserve (base units, at most the free stock there) — nothing moves yet. "Process Purchase
 // Request" (PATCH .../warehouse-forward) then decides every approved line at once:
-//   reserve 0     → PURCHASE: handed to Purchasing to buy straight to the ship
 //   reserve > 0   → TRANSFER: a TR for the reserve, the rest backordered at that warehouse
+//   reserve 0     → the whole line backordered there — shipped once restock arrives
 // action 'unapprove' clears the approval again while the line is still undecided.
 const ALLOWED = ['WAREHOUSE', 'ADMIN', 'SUPER_ADMIN']
 

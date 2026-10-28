@@ -38,10 +38,11 @@ export function toBaseQty(
  * the same PR + source location, so a trickle of per-item decisions from the same PR
  * doesn't fragment into a pile of near-duplicate transfers. Shared by Purchasing's bulk
  * convert-to-PO/Transfer step (PATCH /api/purchasing/requests/[id]) and Warehouse's
- * Process Purchase Request (processWarehouseLine, PATCH .../warehouse-forward).
- * Returns the transfer number (new or appended-to).
+ * Process Purchase Request (processWarehouseLine, PATCH .../warehouse-forward), and backorders
+ * shipped once restock lands (allocateBackorders). The TR carries the PR's trip, so the usage it
+ * books on the ship is charged to that trip. Returns the transfer number (new or appended-to).
  */
-export async function createOrAppendTransfer(db: Pick<Db, 'stockTransfer'>, params: {
+export async function createOrAppendTransfer(db: Pick<Db, 'stockTransfer' | 'purchaseRequest'>, params: {
   requestId: string
   prNumber: string
   deliveryLocationId: string
@@ -67,6 +68,9 @@ export async function createOrAppendTransfer(db: Pick<Db, 'stockTransfer'>, para
     requestedQty: it.baseQty,
   }))
 
+  const pr = await db.purchaseRequest.findUnique({ where: { id: requestId }, select: { openTripId: true, tripBookingId: true } })
+  const trip = { openTripId: pr?.openTripId ?? null, tripBookingId: pr?.openTripId ? null : (pr?.tripBookingId ?? null) }
+
   const candidate = await db.stockTransfer.findFirst({
     where: { purchaseRequestId: requestId, fromLocationId, status: 'PENDING' },
     select: { id: true },
@@ -89,6 +93,8 @@ export async function createOrAppendTransfer(db: Pick<Db, 'stockTransfer'>, para
     await db.stockTransfer.update({
       where: { id: existingTransfer.id },
       data: {
+        // A trip someone already set on the TR wins.
+        ...(!existingTransfer.openTripId && !existingTransfer.tripBookingId && trip),
         items: {
           create: itemsCreate.filter(it => !existingLine(it)),
           update: items.filter(it => existingLine(it)).map(it => ({
@@ -111,6 +117,7 @@ export async function createOrAppendTransfer(db: Pick<Db, 'stockTransfer'>, para
       fromLocationId,
       toLocationId: deliveryLocationId,
       purchaseRequestId: requestId,
+      ...trip,
       status: 'PENDING',
       notes: `Auto-created from ${prNumber}`,
       updatedAt: new Date(),
