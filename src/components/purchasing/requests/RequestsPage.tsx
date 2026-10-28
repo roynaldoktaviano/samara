@@ -1955,19 +1955,22 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
               if (!sc) return <p className="text-xs text-muted-foreground italic">No stock data for this item.</p>
               const muted = (n: number) => n === 0 ? 'text-muted-foreground/60' : ''
               const qty = (n: number) => lineQty(item, n)
-              const stats: { label: string; value: number; cls: string; sub?: string; title?: string; highlight?: boolean }[] = [
+              const split = item.toBeOrderSplit
+              const stats: { label: string; value: number | null; cls: string; sub?: string; title?: string; highlight?: boolean }[] = [
                 { label: 'Current Stock', value: sc.availability, cls: '', sub: stockLocations.length > 1 ? sc.locationName : undefined },
                 { label: 'Min. Stock', value: sc.minStock, cls: muted(sc.minStock) || 'text-muted-foreground' },
                 { label: 'Requested', value: sc.requested, cls: '' },
                 { label: 'Reserve', value: sc.reserve, cls: sc.reserve > 0 ? 'text-warning' : muted(0) },
-                { label: 'To Be Order', value: sc.toBeOrder, cls: sc.toBeOrder > 0 ? 'text-info' : muted(0), highlight: true },
+                { label: 'To Be Order', value: sc.toBeOrder, cls: sc.toBeOrder > 0 ? 'text-info' : muted(0), highlight: true, title: '(Requested − Current Stock) + Min. Stock' },
+                { label: 'PO', value: split?.po ?? null, cls: split?.po ? 'text-success' : muted(0), title: 'To Be Order already on a Purchase Order' },
+                { label: 'Pending', value: split?.pending ?? null, cls: split?.pending ? 'text-warning' : muted(0), title: 'To Be Order not ordered yet' },
               ]
               return (
-                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   {stats.map(st => (
                     <div key={st.label} title={st.title} className={`rounded-md border px-3 py-2 ${st.highlight ? 'bg-info/5 border-info/30' : 'bg-card'}`}>
                       <p className={`text-[10px] font-medium uppercase tracking-wide ${st.highlight ? 'text-info' : 'text-muted-foreground'}`}>{st.label}</p>
-                      <p className={`mt-0.5 text-sm font-semibold tabular-nums ${st.cls}`}>{qty(st.value)}</p>
+                      <p className={`mt-0.5 text-sm font-semibold tabular-nums ${st.value === null ? 'text-muted-foreground/50' : st.cls}`}>{st.value === null ? '—' : qty(st.value)}</p>
                       {st.sub && <p className="text-[10px] text-muted-foreground">{st.sub}</p>}
                     </div>
                   ))}
@@ -2103,7 +2106,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
               const live = pending && scHere && !invalid ? (() => {
                 const ending = Math.max(0, scHere.availability - reserveBase)
                 const shortage = Math.max(0, scHere.requested - reserveBase)
-                const toBeOrder = Math.max(0, shortage + Math.max(0, scHere.minStock - ending) - scHere.onOrder)
+                const toBeOrder = Math.max(0, shortage + scHere.minStock - ending)
                 return { ...scHere, reserve: reserveBase, ending, shortage, toBeOrder }
               })() : null
               const fig = live ?? (pending ? scHere : sc)
@@ -2233,7 +2236,18 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                           )}
                         </div>
 
-                        {stat('To Be Order', fig?.toBeOrder ?? null, fig && fig.toBeOrder > 0 ? 'text-info' : muted(0), 'Goes to Purchasing on a Restock PR (Requested too when nothing is reserved)', true)}
+                        {(() => {
+                          // Nothing is ordered before Process, so the whole To Be Order is still Pending.
+                          const po = item.toBeOrderSplit?.po ?? (fig ? 0 : null)
+                          const pendingQty = item.toBeOrderSplit?.pending ?? fig?.toBeOrder ?? null
+                          return (
+                            <div className="grid grid-cols-3 gap-2">
+                              {stat('To Be Order', fig?.toBeOrder ?? null, fig && fig.toBeOrder > 0 ? 'text-info' : muted(0), '(Requested − Current Stock) + Min. Stock — goes to Purchasing (Requested too when nothing is reserved)', true)}
+                              {stat('PO', po, po ? 'text-success' : muted(0), 'To Be Order already on a Purchase Order')}
+                              {stat('Pending', pendingQty, pendingQty ? 'text-warning' : muted(0), 'To Be Order not ordered yet')}
+                            </div>
+                          )
+                        })()}
 
                         <div>
                           <p className={sectionLabel}>Note</p>

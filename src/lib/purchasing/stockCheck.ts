@@ -11,9 +11,10 @@ type Db = Awaited<ReturnType<typeof getDb>>
 //                  Reserve Warehouse approved, or while still undecided min(Requested, Availability)
 //   Ending       = Availability − Reserve (never negative)
 //   Shortage     = the part stock can't cover → backordered, shipped once restock lands
-//   To Be Order  = Shortage + whatever tops Ending back up to Min. Stock, net of On Order
-//                  (incoming to that warehouse not already claimed by other backorders), so two
-//                  PRs in a row don't double-order.
+//   To Be Order  = (Requested − Availability) + Min. Stock, never negative — written as
+//                  Shortage + Min. Stock − Ending so it keeps using the stock as it was when the
+//                  line was decided (Availability drops once its transfer is dispatched).
+//                  On Order (incoming to that warehouse) is shown but NOT netted off.
 // PURCHASE (warehouse chose to buy direct to the ship) takes nothing from stock: its Requested
 // is bought on its own line, so only the Min. Stock top-up goes on the Restock PR (restockQty).
 export interface StockCheck {
@@ -157,7 +158,7 @@ export async function computeStockChecks(db: Db, request: StockCheckRequest, opt
     else { reserve = Math.min(requested, availability); shortage = requested - reserve }
     const ending = Math.max(0, availability - reserve)
     const onOrder = Math.max(0, onOrderMap.get(key) ?? 0)
-    const toBeOrder = Math.max(0, shortage + Math.max(0, master.minStock - ending) - onOrder)
+    const toBeOrder = Math.max(0, shortage + master.minStock - ending)
 
     checks.set(item.id, {
       locationId: sourceId,
