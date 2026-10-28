@@ -52,7 +52,7 @@ interface InventoryItemOption {
   id: string; itemNumber: string; name: string; quantity: number; unitPrice: number; photoKeys?: string[]
   category: { id: string; name: string }; room: { id: string; name: string }
 }
-interface RequestLine { id?: string; key?: string; itemId: string; itemName: string; baseUnit: string; purchaseUnit: string; itemUnit: string; unit?: string; quantity: number; estimatedCost: number; supplierId: string; supplierName: string; supplierSearch: string; supplierOpen: boolean; notes: string; search: string; open: boolean; currentStock?: number | null; onHandStock?: number | null; itemTreatment?: Treatment | null; reservedStock?: number; minStock?: number | null; stockCheck?: { locationId: string; locationName: string; requested: number; availability: number; reserve: number; onOrder: number; ending: number; shortage: number; minStock: number; toBeOrder: number; restockQty: number } | null; conversionFactor?: number | null; imageKeys?: string[]; isCustom?: boolean; isStockItem?: boolean; sourceInventoryItemId?: string | null; sourceInventoryItem?: { id: string; itemNumber: string; name: string; room: { name: string } | null; category: { name: string } | null } | null; warehouseStock?: { locationId: string; locationName: string; qty: number }[]; transferEligible?: boolean; quotations?: Quotation[]; exemptionReason?: string | null; selectionJustification?: string | null; requestedByEmployeeId?: string; quotationApproverId?: string | null; quotationApprover?: { id: string; name: string | null } | null; quotationSubmittedAt?: string | null; quotationApprovedById?: string | null; quotationApprovedBy?: { id: string; name: string | null } | null; quotationApprovedAt?: string | null; quotationRejectedBy?: { id: string; name: string | null } | null; quotationRejectedAt?: string | null; quotationRejectionReason?: string | null; convertedAt?: string | null; convertedPoId?: string | null; verifyRejectedById?: string | null; verifyRejectedBy?: { id: string; name: string | null } | null; verifyRejectedAt?: string | null; verifyRejectionReason?: string | null; warehouseDecision?: 'TRANSFER' | 'PURCHASE' | null; backorderQty?: number; backorderLocationId?: string | null; viaWarehouse?: boolean; warehouseCheckedAt?: string | null; warehouseCheckNote?: string | null; requestType?: 'NEW' | 'REPLACEMENT'; damageDetail?: string | null; transfer?: { id: string; transferNumber: string; status: string; fromLocationName: string } | null }
+interface RequestLine { id?: string; key?: string; itemId: string; itemName: string; baseUnit: string; purchaseUnit: string; itemUnit: string; unit?: string; quantity: number; estimatedCost: number; supplierId: string; supplierName: string; supplierSearch: string; supplierOpen: boolean; notes: string; search: string; open: boolean; currentStock?: number | null; onHandStock?: number | null; itemTreatment?: Treatment | null; reservedStock?: number; minStock?: number | null; stockCheck?: { locationId: string; locationName: string; requested: number; availability: number; reserve: number; onOrder: number; ending: number; shortage: number; minStock: number; toBeOrder: number; restockQty: number } | null; conversionFactor?: number | null; imageKeys?: string[]; isCustom?: boolean; isStockItem?: boolean; sourceInventoryItemId?: string | null; sourceInventoryItem?: { id: string; itemNumber: string; name: string; room: { name: string } | null; category: { name: string } | null } | null; warehouseStock?: { locationId: string; locationName: string; qty: number }[]; transferEligible?: boolean; quotations?: Quotation[]; exemptionReason?: string | null; selectionJustification?: string | null; requestedByEmployeeId?: string; quotationApproverId?: string | null; quotationApprover?: { id: string; name: string | null } | null; quotationSubmittedAt?: string | null; quotationApprovedById?: string | null; quotationApprovedBy?: { id: string; name: string | null } | null; quotationApprovedAt?: string | null; quotationRejectedBy?: { id: string; name: string | null } | null; quotationRejectedAt?: string | null; quotationRejectionReason?: string | null; convertedAt?: string | null; convertedPoId?: string | null; verifyRejectedById?: string | null; verifyRejectedBy?: { id: string; name: string | null } | null; verifyRejectedAt?: string | null; verifyRejectionReason?: string | null; warehouseDecision?: 'TRANSFER' | 'PURCHASE' | null; backorderQty?: number; backorderLocationId?: string | null; viaWarehouse?: boolean; warehouseCheckedAt?: string | null; warehouseCheckNote?: string | null; requestType?: 'NEW' | 'REPLACEMENT'; damageDetail?: string | null; transfer?: { id: string; transferNumber: string; status: string; fromLocationName: string } | null; sentFromStock?: number | null; toBeOrderSplit?: { po: number; pending: number } | null }
 interface PurchaseRequest {
   id: string
   prNumber: string
@@ -270,6 +270,8 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
   // plus Admin/Super Admin as a manual override — gates the physical stock-check step at
   // DRAFT (see PATCH .../items/[itemId]/warehouse-check and .../warehouse-forward).
   const canWarehouseCheck = ['WAREHOUSE', 'ADMIN', 'SUPER_ADMIN'].includes((session?.user as { role?: string })?.role ?? '')
+  // Warehouse works the item list only — the PR Timeline is hidden for that role.
+  const hideTimeline = (session?.user as { role?: string })?.role === 'WAREHOUSE'
   const [requests, setRequests] = useState<PurchaseRequest[]>([])
   const [items, setItems] = useState<PurchaseItem[]>([])
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
@@ -326,6 +328,10 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
   // the Timeline falls back to the PO's summary status instead of "Loading…" forever.
   const [poDetailUnavailable, setPoDetailUnavailable] = useState<Set<string>>(new Set())
   const [timelinePhoto, setTimelinePhoto] = useState<string | null>(null)
+  // Warehouse stock check: the item line whose stock / decision / check modal is open.
+  const [stockItemId, setStockItemId] = useState<string | null>(null)
+  // Reserve typed by Warehouse per line, in the line's unit (blank → the suggested reserve).
+  const [warehouseReserve, setWarehouseReserve] = useState<Record<string, string>>({})
   const [approveSummary, setApproveSummary] = useState<{ poNumbers: string[]; poIds: string[]; transferNumbers: string[]; remainingItems: string[] } | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
 
@@ -1150,7 +1156,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
   // line goes to Purchasing; otherwise a TR for what's free + backorder for the rest. Either way
   // its To Be Order lands on a Restock PR at once, and the last line finishes the check.
   // See PATCH .../items/[itemId]/warehouse-check.
-  async function warehouseCheckItem(item: RequestLine) {
+  async function warehouseCheckItem(item: RequestLine, reserveQty?: number) {
     if (!detail || !item.id) return
     // Same fallback the dropdown displays — the preselected most-stock warehouse counts
     // as a choice even if the user never touched the dropdown.
@@ -1159,14 +1165,15 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
     setWarehouseBusyItemId(item.id)
     const res = await fetch(`/api/purchasing/requests/${detail.id}/items/${item.id}/warehouse-check`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fromLocationId, note: warehouseNote[item.id]?.trim() || undefined }),
+      body: JSON.stringify({ fromLocationId, note: warehouseNote[item.id]?.trim() || undefined, reserveQty }),
     })
     const data = await res.json().catch(() => ({}))
     setWarehouseBusyItemId(null)
     if (!res.ok) { toast.error(data.error ?? 'Failed to process item'); return }
+    setStockItemId(null)
     const restock = data.restockRequests?.length ? ` · To Be Order → ${data.restockRequests.join(', ')}` : ''
     toast.success(data.outcome === 'PURCHASE'
-      ? `${item.itemName} out of stock in warehouse — sent to Purchasing${restock}`
+      ? `${item.itemName}: nothing reserved from stock — sent to Purchasing${restock}`
       : data.backorderQty > 0
         ? `${item.itemName}: sending ${lineQtyLabel(item, data.sendQty)} (${data.transferNumber}), backorder ${lineQtyLabel(item, data.backorderQty)}${restock}`
         : `${item.itemName}: sending ${lineQtyLabel(item, data.sendQty)} (${data.transferNumber})${restock}`)
@@ -1889,8 +1896,318 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
             const mixedRoute = isWarehousePending(detail) && detail.items.some(it => it.viaWarehouse) && detail.items.some(it => !it.viaWarehouse)
             const fmtQty = (n: number) => Math.round(n * 100) / 100
             const stockLocations = [...new Set(sortedItems.map(it => it.stockCheck?.locationName).filter(Boolean) as string[])]
+            // Purchasing's table: stock + To Be Order (on a PO vs still Pending) for Warehouse-routed lines.
+            const showStockCols = detail.items.some(it => it.viaWarehouse && !!it.itemId)
+            // Shown in the unit the line was requested in: purchase unit with the base
+            // equivalent underneath (e.g. 2 bottle / 1500 ml), else base unit only.
+            // Units stay muted & normal-weight so the numbers still read first.
+            const lineQty = (item: typeof sortedItems[number], n: number) => {
+              const conv = item.conversionFactor || 1
+              const inPurchase = !!item.purchaseUnit && !!item.baseUnit && item.purchaseUnit !== item.baseUnit && conv !== 1
+                && (item.unit ?? item.itemUnit) === item.purchaseUnit
+              return inPurchase ? (
+                <>
+                  {fmtQty(n / conv)}<span className="ml-1 text-xs font-normal text-muted-foreground">{item.purchaseUnit}</span>
+                  {n !== 0 && <span className="block text-[10px] font-normal text-muted-foreground">{fmtQty(n)} {item.baseUnit}</span>}
+                </>
+              ) : (
+                <>{fmtQty(n)}{item.baseUnit && <span className="ml-1 text-xs font-normal text-muted-foreground">{item.baseUnit}</span>}</>
+              )
+            }
+            // Expanded stock breakdown for one line (against the source warehouse, base units).
+            const stockBreakdown = (item: typeof sortedItems[number]) => {
+              const sc = item.stockCheck
+              if (!sc) return <p className="text-xs text-muted-foreground italic">No stock data for this item.</p>
+              const muted = (n: number) => n === 0 ? 'text-muted-foreground/60' : ''
+              const qty = (n: number) => lineQty(item, n)
+              const stats: { label: string; value: number; cls: string; sub?: string; title?: string; highlight?: boolean }[] = [
+                { label: 'Current Stock', value: sc.availability, cls: '', sub: stockLocations.length > 1 ? sc.locationName : undefined },
+                { label: 'Min. Stock', value: sc.minStock, cls: muted(sc.minStock) || 'text-muted-foreground' },
+                { label: 'Requested', value: sc.requested, cls: '' },
+                { label: 'Reserve', value: sc.reserve, cls: sc.reserve > 0 ? 'text-warning' : muted(0) },
+                { label: 'To Be Order', value: sc.toBeOrder, cls: sc.toBeOrder > 0 ? 'text-info' : muted(0), highlight: true },
+              ]
+              return (
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                  {stats.map(st => (
+                    <div key={st.label} title={st.title} className={`rounded-md border px-3 py-2 ${st.highlight ? 'bg-info/5 border-info/30' : 'bg-card'}`}>
+                      <p className={`text-[10px] font-medium uppercase tracking-wide ${st.highlight ? 'text-info' : 'text-muted-foreground'}`}>{st.label}</p>
+                      <p className={`mt-0.5 text-sm font-semibold tabular-nums ${st.cls}`}>{qty(st.value)}</p>
+                      {st.sub && <p className="text-[10px] text-muted-foreground">{st.sub}</p>}
+                    </div>
+                  ))}
+                </div>
+              )
+            }
+            // Decision (reject / undo) and Warehouse Check controls for one line — table cells
+            // for Purchasing, the stock modal's body for Warehouse.
+            const decisionContent = (item: typeof sortedItems[number]) => {
+              const isRejected = !!item.verifyRejectedAt
+              const canDecide = !isWarehouse && ['DRAFT', 'ON_PROCESS'].includes(detail.status) && !item.convertedAt
+              return (
+                <>
+                {isRejected ? (
+                  <div className="flex items-center gap-1.5">
+                    <StatusBadge
+                      tone="destructive" size="sm"
+                      title={item.verifyRejectionReason || undefined}
+                    >
+                      Rejected
+                    </StatusBadge>
+                    {canDecide && (
+                      <button onClick={() => setItemVerifyDecision(item, false)} className="text-[10px] text-muted-foreground hover:text-foreground underline underline-offset-2">
+                        Undo
+                      </button>
+                    )}
+                  </div>
+                ) : canDecide ? (
+                  <button
+                    onClick={() => openRejectItemModal(item)}
+                    className="text-[10px] font-medium text-muted-foreground hover:text-destructive border border-dashed border-border hover:border-destructive/30 rounded-full px-2.5 py-0.5 transition-colors"
+                  >
+                    Reject
+                  </button>
+                ) : (
+                  <StatusBadge tone="success" size="sm">Accepted</StatusBadge>
+                )}
+                </>
+              )
+            }
+            // Warehouse's modal for one line: pick the source warehouse, type the Reserve (capped at
+            // Current Stock there) and see Ending / Shortage / To Be Order update live, then Process.
+            const stockModal = (item: typeof sortedItems[number]) => {
+              const sc = item.stockCheck ?? null
+              const isRejected = !!item.verifyRejectedAt
+              const isCustom = !item.itemId
+              const canDecide = !isWarehouse && ['DRAFT', 'ON_PROCESS'].includes(detail.status) && !item.convertedAt
+              const pending = !isRejected && !isCustom && !!item.viaWarehouse && !item.warehouseDecision && !item.convertedAt
+              const photos = Array.isArray(item.imageKeys) ? item.imageKeys : []
+              const busy = warehouseBusyItemId === item.id
+              // Reserve is typed in the line's unit (bottle when requested in bottles), sent in base units.
+              const conv = item.conversionFactor || 1
+              const inPurchase = !!item.purchaseUnit && !!item.baseUnit && item.purchaseUnit !== item.baseUnit && conv !== 1
+                && (item.unit ?? item.itemUnit) === item.purchaseUnit
+              const unitLabel = (inPurchase ? item.purchaseUnit : item.baseUnit) ?? ''
+              const toDisplay = (n: number) => Math.floor((inPurchase ? n / conv : n) * 100 + 1e-6) / 100
+              const toBase = (n: number) => inPurchase ? n * conv : n
+              const warehouseLocations = locations.filter(l => l.type === 'WAREHOUSE' && l.id !== detail.deliveryLocationId)
+              const defaultFrom = sc?.locationId ?? item.warehouseStock?.slice().sort((x, y) => y.qty - x.qty)[0]?.locationId ?? ''
+              const fromValue = warehouseFrom[item.id!] ?? defaultFrom
+              // Full breakdown is only known for the warehouse stockCheck ran against.
+              const scHere = sc && sc.locationId === fromValue ? sc : null
+              const maxBase = scHere ? scHere.availability : (item.warehouseStock?.find(w => w.locationId === fromValue)?.qty ?? null)
+              const requestedBase = sc?.requested ?? toBase(item.quantity)
+              const suggested = scHere ? scHere.reserve : Math.min(requestedBase, maxBase ?? 0)
+              const reserveStr = warehouseReserve[item.id!] ?? String(toDisplay(suggested))
+              const typed = reserveStr.trim() === '' ? NaN : Number(reserveStr)
+              let reserveBase = toBase(typed)
+              // The display rounds down to 2 decimals — typing that shown max still means "all of it".
+              if (maxBase !== null && reserveBase > maxBase && typed <= toDisplay(maxBase) + 1e-9) reserveBase = maxBase
+              const overMax = maxBase !== null && reserveBase > maxBase + 1e-6
+              const invalid = !Number.isFinite(reserveBase) || reserveBase < 0 || overMax
+              const live = pending && scHere && !invalid ? (() => {
+                const ending = Math.max(0, scHere.availability - reserveBase)
+                const shortage = Math.max(0, scHere.requested - reserveBase)
+                const toBeOrder = Math.max(0, shortage + Math.max(0, scHere.minStock - ending) - scHere.onOrder)
+                return { ...scHere, reserve: reserveBase, ending, shortage, toBeOrder }
+              })() : null
+              const fig = live ?? (pending ? scHere : sc)
+              const qty = (n: number) => lineQty(item, n)
+              const stat = (label: string, value: number | null, cls = '', title?: string, highlight = false) => (
+                <div title={title} className={`rounded-lg border px-3 py-2.5 ${highlight ? 'bg-info/5 border-info/30' : 'bg-muted/20'}`}>
+                  <p className={`text-[10px] font-medium uppercase tracking-wide ${highlight ? 'text-info' : 'text-muted-foreground'}`}>{label}</p>
+                  <p className={`mt-0.5 text-base font-semibold tabular-nums ${value === null ? 'text-muted-foreground/50' : cls}`}>{value === null ? '—' : qty(value)}</p>
+                </div>
+              )
+              const muted = (n: number) => n === 0 ? 'text-muted-foreground/60' : ''
+              const sectionLabel = 'text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2'
+              return (
+                <>
+                  <div className="flex items-start gap-3 px-5 py-4 border-b">
+                    {photos[0] ? (
+                      <img src={photos[0]} alt={item.itemName} onClick={() => openLightbox(photos, 0, item.itemName)}
+                        className="w-14 h-14 shrink-0 rounded-lg object-cover border cursor-zoom-in" />
+                    ) : (
+                      <div className="w-14 h-14 shrink-0 rounded-lg border bg-muted/50 flex items-center justify-center">
+                        <Package className="h-6 w-6 text-muted-foreground/60" />
+                      </div>
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <h3 className="font-semibold leading-snug">{item.itemName}</h3>
+                      <p className="text-sm text-muted-foreground mt-0.5">
+                        Requested <span className="font-semibold text-foreground tabular-nums">{item.quantity} {item.unit ?? item.purchaseUnit ?? item.itemUnit}</span>
+                        {item.baseUnit && item.purchaseUnit && item.baseUnit !== item.purchaseUnit && item.conversionFactor
+                          ? ` (${item.quantity * item.conversionFactor} ${item.baseUnit})` : ''}
+                      </p>
+                      {item.supplierName && <p className="text-xs text-muted-foreground mt-0.5">Supplier: {item.supplierName}</p>}
+                      {item.requestType === 'REPLACEMENT' && item.damageDetail && (
+                        <p className="text-xs text-destructive/80 mt-1 whitespace-pre-line"><span className="font-semibold">Damage:</span> {item.damageDetail}</p>
+                      )}
+                      {item.notes && <p className="text-xs text-muted-foreground mt-1">{item.notes}</p>}
+                    </div>
+                    <button onClick={() => setStockItemId(null)} className="text-muted-foreground hover:text-foreground text-xl leading-none">×</button>
+                  </div>
+
+                  <div className="p-5 space-y-5">
+                    {pending ? (
+                      <>
+                        <div>
+                          <p className={sectionLabel}>Take from</p>
+                          <div className="relative">
+                            <select
+                              className="w-full appearance-none text-sm pl-3 pr-8 py-2 rounded-md border bg-card cursor-pointer focus:outline-none focus:ring-1 focus:ring-ring"
+                              value={fromValue}
+                              onChange={e => {
+                                setWarehouseFrom(f => ({ ...f, [item.id!]: e.target.value }))
+                                setWarehouseReserve(r => { const next = { ...r }; delete next[item.id!]; return next })
+                              }}
+                            >
+                              <option value="">Select warehouse…</option>
+                              {warehouseLocations.map(loc => {
+                                const hint = item.warehouseStock?.find(w => w.locationId === loc.id)
+                                return <option key={loc.id} value={loc.id}>{loc.name}{hint ? ` (stock: ${lineQtyLabel(item, hint.qty)})` : ''}</option>
+                              })}
+                            </select>
+                            <ChevronDown className="h-4 w-4 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-muted-foreground" />
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-3 gap-2">
+                          {stat('Current Stock', maxBase, maxBase === 0 ? 'text-destructive' : '', 'Free stock at this warehouse (on hand − reserved by other requests)')}
+                          {stat('Min. Stock', scHere?.minStock ?? null, 'text-muted-foreground')}
+                          {stat('Requested', requestedBase)}
+                        </div>
+
+                        <div className="rounded-lg border p-4 space-y-2">
+                          <div className="flex items-center justify-between gap-3">
+                            <label htmlFor={`reserve-${item.id}`} className="text-sm font-medium">Reserve for this request</label>
+                            {maxBase !== null && (
+                              <span className="text-xs text-muted-foreground">Max <span className="font-medium text-foreground">{lineQtyLabel(item, maxBase)}</span></span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <div className="relative flex-1">
+                              <input
+                                id={`reserve-${item.id}`} type="number" inputMode="decimal" min={0} step="any"
+                                max={maxBase !== null ? toDisplay(maxBase) : undefined}
+                                className={`w-full text-base font-semibold tabular-nums border rounded-md pl-3 pr-16 py-2 focus:outline-none focus:ring-1 ${overMax ? 'border-destructive focus:ring-destructive' : 'focus:ring-ring'}`}
+                                value={reserveStr}
+                                onChange={e => setWarehouseReserve(r => ({ ...r, [item.id!]: e.target.value }))}
+                              />
+                              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground pointer-events-none">{unitLabel}</span>
+                            </div>
+                            {maxBase !== null && (
+                              <button type="button" onClick={() => setWarehouseReserve(r => ({ ...r, [item.id!]: String(toDisplay(Math.min(maxBase, requestedBase))) }))}
+                                className="text-xs font-medium px-3 py-2.5 rounded-md border hover:bg-muted whitespace-nowrap">
+                                Requested
+                              </button>
+                            )}
+                            {maxBase !== null && (
+                              <button type="button" onClick={() => setWarehouseReserve(r => ({ ...r, [item.id!]: String(toDisplay(maxBase)) }))}
+                                className="text-xs font-medium px-3 py-2.5 rounded-md border hover:bg-muted whitespace-nowrap">
+                                Max
+                              </button>
+                            )}
+                          </div>
+                          {overMax ? (
+                            <p className="text-xs text-destructive">Reserve can&apos;t be more than the current stock ({lineQtyLabel(item, maxBase!)}).</p>
+                          ) : !Number.isFinite(reserveBase) || reserveBase < 0 ? (
+                            <p className="text-xs text-destructive">Enter a quantity (0 or more).</p>
+                          ) : (
+                            <p className="text-xs text-muted-foreground">
+                              {reserveBase > 0
+                                ? <>Send <span className="font-semibold text-foreground">{lineQtyLabel(item, reserveBase)}</span> now{reserveBase < requestedBase && <> · backorder <span className="font-semibold text-destructive">{lineQtyLabel(item, requestedBase - reserveBase)}</span></>}</>
+                                : <span className="font-medium text-warning">Nothing from stock → whole request to Purchasing</span>}
+                            </p>
+                          )}
+                        </div>
+
+                        {stat('To Be Order', fig?.toBeOrder ?? null, fig && fig.toBeOrder > 0 ? 'text-info' : muted(0), 'Goes to Purchasing on a Restock PR (Requested too when nothing is reserved)', true)}
+
+                        <div>
+                          <p className={sectionLabel}>Note</p>
+                          <input
+                            type="text" placeholder="Optional"
+                            className="w-full text-sm border rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-ring"
+                            value={warehouseNote[item.id!] ?? ''}
+                            onChange={e => setWarehouseNote(n => ({ ...n, [item.id!]: e.target.value }))}
+                          />
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="rounded-lg border px-4 py-3 text-sm">
+                          {isRejected ? (
+                            <div className="space-y-1">
+                              <StatusBadge tone="destructive" size="sm">Rejected</StatusBadge>
+                              {item.verifyRejectionReason && <p className="text-xs text-muted-foreground">{item.verifyRejectionReason}</p>}
+                            </div>
+                          ) : !item.viaWarehouse || isCustom ? (
+                            <span className="text-muted-foreground">{isCustom ? 'Custom request' : 'Non-stock item'} — goes straight to Purchasing, no warehouse check needed.</span>
+                          ) : item.warehouseDecision === 'PURCHASE' ? (
+                            <StatusBadge tone="warning" size="sm">Nothing from stock — sent to Purchasing</StatusBadge>
+                          ) : (
+                            <div className="space-y-1">
+                              {item.transfer && <TransferBadge transfer={item.transfer} onOpen={onOpenTransfer} />}
+                              <BackorderBadge item={item} />
+                            </div>
+                          )}
+                          {item.warehouseCheckNote && <p className="text-xs text-muted-foreground mt-1.5">Note: {item.warehouseCheckNote}</p>}
+                        </div>
+                        {sc && (
+                          <div>
+                            <p className={sectionLabel}>Stock at {sc.locationName}</p>
+                            {stockBreakdown(item)}
+                          </div>
+                        )}
+                        {isCustom && (
+                          <button onClick={() => openEditItem(item)} className="text-xs text-info hover:underline underline-offset-2">View item details</button>
+                        )}
+                      </>
+                    )}
+                  </div>
+
+                  <div className="flex items-center justify-between gap-2 px-5 py-4 border-t bg-muted/20">
+                    <div>
+                      {canDecide && (isRejected ? (
+                        <button onClick={() => setItemVerifyDecision(item, false)} className="text-sm text-muted-foreground hover:text-foreground underline underline-offset-2">
+                          Undo reject
+                        </button>
+                      ) : (
+                        <button onClick={() => openRejectItemModal(item)}
+                          className="text-sm font-medium px-3 py-2 rounded-md border border-destructive/30 text-destructive hover:bg-destructive/10 transition-colors">
+                          Reject item
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => setStockItemId(null)} className="px-4 py-2 text-sm border rounded-md hover:bg-muted">
+                        {pending ? 'Cancel' : 'Close'}
+                      </button>
+                      {pending && (
+                        <button
+                          disabled={busy || !fromValue || invalid}
+                          onClick={() => warehouseCheckItem(item, reserveBase)}
+                          className="px-4 py-2 text-sm font-medium rounded-md bg-info text-info-foreground hover:bg-info/90 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {busy ? 'Processing…' : 'Process'}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </>
+              )
+            }
+            // Short line status for the Warehouse list (the controls themselves live in the modal).
+            const checkStatus = (item: typeof sortedItems[number]) =>
+              item.verifyRejectedAt ? <StatusBadge tone="destructive" size="sm">Rejected</StatusBadge>
+                : !item.viaWarehouse ? <StatusBadge tone="neutral" size="sm">Direct to Purchasing</StatusBadge>
+                : item.warehouseDecision === 'PURCHASE' ? <StatusBadge tone="warning" size="sm">Sent to Purchasing</StatusBadge>
+                : item.convertedAt && item.warehouseDecision === 'TRANSFER' ? <StatusBadge tone="success" size="sm">Processed</StatusBadge>
+                : null
+            const stockItem = showStockCheck && stockItemId ? sortedItems.find(it => it.id === stockItemId) ?? null : null
             return (
-              <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-6 items-start">
+              <div className={`grid grid-cols-1 gap-6 items-start ${hideTimeline ? '' : 'lg:grid-cols-[1fr_300px]'}`}>
                 <div className="space-y-6 min-w-0">
                 <div className="rounded-lg border overflow-hidden min-w-0">
                   <div className="px-5 py-3 bg-muted/50 border-b flex items-center justify-between gap-3">
@@ -1910,9 +2227,49 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                     {showStockCheck && stockLocations.length > 0 && (
                       <p className="text-xs text-muted-foreground">
                         Stock at <span className="font-medium text-foreground">{stockLocations.join(', ')}</span>
+                        <span className="ml-1.5">· click an item to check it</span>
                       </p>
                     )}
                   </div>
+                  {showStockCheck ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 p-4">
+                      {sortedItems.map((item, i) => {
+                        const photo = Array.isArray(item.imageKeys) ? item.imageKeys[0] : undefined
+                        const status = checkStatus(item)
+                        return (
+                          <button
+                            key={item.id ?? i} type="button"
+                            onClick={() => item.id && setStockItemId(item.id)}
+                            className={`group flex items-start gap-3 rounded-lg border bg-card p-3 text-left transition-colors hover:border-info/40 hover:bg-info/5 ${item.verifyRejectedAt ? 'opacity-60' : ''}`}
+                          >
+                            {photo ? (
+                              <img src={photo} alt={item.itemName} className="w-12 h-12 shrink-0 rounded-md object-cover border" />
+                            ) : (
+                              <div className="w-12 h-12 shrink-0 rounded-md border bg-muted/50 flex items-center justify-center">
+                                <Package className="h-5 w-5 text-muted-foreground/60" />
+                              </div>
+                            )}
+                            <div className="min-w-0 flex-1">
+                              <p className={`font-medium text-sm leading-snug line-clamp-2 ${item.verifyRejectedAt ? 'line-through text-muted-foreground' : ''}`}>{item.itemName}</p>
+                              <p className="text-xs text-muted-foreground mt-1">
+                                Requested <span className="font-semibold text-foreground tabular-nums">{item.quantity} {item.unit ?? item.purchaseUnit ?? item.itemUnit}</span>
+                                {item.baseUnit && item.purchaseUnit && item.baseUnit !== item.purchaseUnit && item.conversionFactor
+                                  ? ` (${item.quantity * item.conversionFactor} ${item.baseUnit})` : ''}
+                              </p>
+                              {(status || !item.itemId || item.requestType === 'REPLACEMENT') && (
+                                <div className="flex flex-wrap gap-1 mt-1.5">
+                                  {!item.itemId && <span className="text-[10px] font-medium text-warning bg-warning/10 px-1.5 py-0.5 rounded-full">Custom request</span>}
+                                  {item.requestType === 'REPLACEMENT' && <span className="text-[10px] font-medium text-destructive bg-destructive/10 px-1.5 py-0.5 rounded-full">Replacement</span>}
+                                  {status}
+                                </div>
+                              )}
+                            </div>
+                            <ChevronRight className="h-4 w-4 shrink-0 mt-0.5 text-muted-foreground/50 group-hover:text-info" />
+                          </button>
+                        )
+                      })}
+                    </div>
+                  ) : (
                   <div className="overflow-x-auto"><table className="w-full text-sm">
               <thead className="border-b text-xs text-muted-foreground bg-muted/20">
                 <tr>
@@ -1920,21 +2277,17 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                   <th className="text-left px-5 py-2.5 font-medium">Supplier</th>
                   {detail.orders && detail.orders.length > 0 && <th className="text-left px-5 py-2.5 font-medium">PO</th>}
                   <th className="text-right px-5 py-2.5 font-medium whitespace-nowrap">Requested</th>
-                  {showStockCheck ? (
+                  <th className="text-right px-5 py-2.5 font-medium">Current Stock</th>
+                  {showStockCols && (
                     <>
-                      <th className="text-right pl-4 pr-3 py-2.5 font-medium whitespace-nowrap bg-muted/50 border-l">Availability</th>
-                      <th className="text-right px-3 py-2.5 font-medium whitespace-nowrap bg-muted/50">Reserve</th>
-                      <th className="text-right px-3 py-2.5 font-medium whitespace-nowrap bg-muted/50" title="Already ordered to this warehouse (open PR/PO), not yet received">On Order</th>
-                      <th className="text-right px-3 py-2.5 font-medium whitespace-nowrap bg-muted/50">Ending</th>
-                      <th className="text-right px-3 py-2.5 font-medium whitespace-nowrap bg-muted/50">Shortage</th>
-                      <th className="text-right px-3 py-2.5 font-medium whitespace-nowrap bg-muted/50">Min. Stock</th>
-                      <th className="text-right pl-3 pr-4 py-2.5 font-medium whitespace-nowrap bg-info/5 text-info border-r">To Be Order</th>
+                      <th className="text-right px-3 py-2.5 font-medium whitespace-nowrap">Min. Stock</th>
+                      <th className="text-right px-3 py-2.5 font-medium whitespace-nowrap" title="Sent from warehouse stock">Reserve</th>
+                      <th className="text-right px-3 py-2.5 font-medium whitespace-nowrap bg-info/5 text-info">To Be Order</th>
+                      <th className="text-right px-3 py-2.5 font-medium whitespace-nowrap" title="To Be Order already on a Purchase Order">PO</th>
+                      <th className="text-right px-3 py-2.5 font-medium whitespace-nowrap" title="To Be Order not ordered yet">Pending</th>
                     </>
-                  ) : (
-                    <th className="text-right px-5 py-2.5 font-medium">Current Stock</th>
                   )}
                   {['DRAFT', 'ON_PROCESS'].includes(detail.status) && <th className="text-left px-5 py-2.5 font-medium whitespace-nowrap">Decision</th>}
-                  {showStockCheck && <th className="text-left px-5 py-2.5 font-medium whitespace-nowrap">Warehouse Check</th>}
                   {detail.status === 'ON_PROCESS' && !isWarehouse && <th className="text-left px-5 py-2.5 font-medium">Fulfillment</th>}
                   {detail.status === 'ON_PROCESS' && !isWarehouse && detail.deliveryLocation?.type === 'VESSEL' && <th className="text-left px-5 py-2.5 font-medium whitespace-nowrap" title="Consumable = trip usage · Asset = ship Inventory (needs Room/Category) · Spare part = maintenance">On the ship</th>}
                   <th className="w-10" />
@@ -2000,7 +2353,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                       <td className="px-5 py-3 text-muted-foreground" onClick={e => detail.status === 'ON_PROCESS' && !isWarehouse && e.stopPropagation()}>
                         {awaiting ? (
                           <StatusBadge tone="info" size="sm">Waiting for Warehouse</StatusBadge>
-                        ) : transferred && !showStockCheck ? (
+                        ) : transferred ? (
                           <TransferBadge transfer={item.transfer} onOpen={onOpenTransfer} />
                         ) : detail.status !== 'ON_PROCESS' || isWarehouse ? (
                           <>
@@ -2064,149 +2417,40 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                           </span>
                         )}
                       </td>
-                      {showStockCheck ? (() => {
-                        const sc = item.stockCheck
+                      <td className="px-5 py-3 text-right">
+                        {stock === null
+                          ? <span className="text-muted-foreground">—</span>
+                          : <>
+                              <span className={stockColor}>{stock} <span className="text-xs font-normal text-muted-foreground">{item.baseUnit ?? ''}</span></span>
+                              {!!item.reservedStock && (
+                                <span className="block text-[10px] text-muted-foreground whitespace-nowrap" title="Free stock = on hand − reserved by pending transfers">
+                                  {item.onHandStock} on hand · {Math.round(item.reservedStock * 100) / 100} reserved
+                                </span>
+                              )}
+                            </>
+                        }
+                      </td>
+                      {showStockCols && (() => {
                         const cell = 'px-3 py-3 text-right tabular-nums whitespace-nowrap'
-                        const bg = 'bg-muted/30'
-                        if (!sc) return Array.from({ length: 7 }, (_, k) => (
-                          <td key={k} className={`${cell} text-muted-foreground/50 ${k === 6 ? 'border-r pr-4 bg-info/5' : bg} ${k === 0 ? 'border-l pl-4' : ''}`}>—</td>
+                        const dash = <span className="text-muted-foreground/50">—</span>
+                        if (!item.viaWarehouse || !item.itemId) return Array.from({ length: 5 }, (_, k) => (
+                          <td key={k} className={`${cell} ${k === 2 ? 'bg-info/5' : ''}`}>{dash}</td>
                         ))
-                        const muted = (n: number) => n === 0 ? 'text-muted-foreground/60' : ''
-                        // Shown in the unit the line was requested in: purchase unit with the base
-                        // equivalent underneath (e.g. 2 bottle / 1500 ml), else base unit only.
-                        // Units stay muted & normal-weight so the numbers still read first.
-                        const conv = item.conversionFactor || 1
-                        const inPurchase = !!item.purchaseUnit && !!item.baseUnit && item.purchaseUnit !== item.baseUnit && conv !== 1
-                          && (item.unit ?? item.itemUnit) === item.purchaseUnit
-                        const qty = (n: number) => inPurchase ? (
-                          <>
-                            {fmtQty(n / conv)}<span className="ml-1 text-xs font-normal text-muted-foreground">{item.purchaseUnit}</span>
-                            {n !== 0 && <span className="block text-[10px] font-normal text-muted-foreground">{fmtQty(n)} {item.baseUnit}</span>}
-                          </>
-                        ) : (
-                          <>{fmtQty(n)}{item.baseUnit && <span className="ml-1 text-xs font-normal text-muted-foreground">{item.baseUnit}</span>}</>
-                        )
+                        const split = item.toBeOrderSplit
+                        const tone = (n: number, cls: string) => n > 0 ? cls : 'text-muted-foreground/60'
                         return (
                           <>
-                            <td className={`${cell} ${bg} border-l pl-4`}>
-                              {qty(sc.availability)}
-                              {stockLocations.length > 1 && <p className="text-[10px] text-muted-foreground">{sc.locationName}</p>}
-                            </td>
-                            <td className={`${cell} ${bg} ${sc.reserve > 0 ? 'text-warning font-medium' : muted(0)}`}>{qty(sc.reserve)}</td>
-                            <td className={`${cell} ${bg} ${sc.onOrder > 0 ? 'text-violet-600 dark:text-violet-400 font-medium' : muted(0)}`}>{qty(sc.onOrder)}</td>
-                            <td className={`${cell} ${bg} font-semibold ${sc.ending < 0 ? 'text-destructive' : sc.ending < sc.minStock ? 'text-warning' : 'text-success'}`}>{qty(sc.ending)}</td>
-                            <td className={`${cell} ${bg} ${sc.shortage > 0 ? 'text-destructive font-semibold' : muted(0)}`}>{qty(sc.shortage)}</td>
-                            <td className={`${cell} ${bg} ${muted(sc.minStock) || 'text-muted-foreground'}`}>{qty(sc.minStock)}</td>
-                            <td className={`${cell} border-r pr-4 bg-info/5 ${sc.toBeOrder > 0 ? 'text-info font-semibold' : muted(0)}`}>{qty(sc.toBeOrder)}</td>
+                            <td className={`${cell} text-muted-foreground`}>{lineQty(item, item.minStock ?? 0)}</td>
+                            <td className={`${cell} ${tone(item.sentFromStock ?? 0, 'text-warning font-medium')}`}>{item.sentFromStock == null ? dash : lineQty(item, item.sentFromStock)}</td>
+                            <td className={`${cell} bg-info/5 ${tone(split ? split.po + split.pending : 0, 'text-info font-semibold')}`}>{split ? lineQty(item, split.po + split.pending) : dash}</td>
+                            <td className={`${cell} ${tone(split?.po ?? 0, 'text-success font-medium')}`}>{split ? lineQty(item, split.po) : dash}</td>
+                            <td className={`${cell} ${tone(split?.pending ?? 0, 'text-warning font-semibold')}`}>{split ? lineQty(item, split.pending) : dash}</td>
                           </>
                         )
-                      })() : (
-                        <td className="px-5 py-3 text-right">
-                          {stock === null
-                            ? <span className="text-muted-foreground">—</span>
-                            : <>
-                                <span className={stockColor}>{stock} <span className="text-xs font-normal text-muted-foreground">{item.baseUnit ?? ''}</span></span>
-                                {!!item.reservedStock && (
-                                  <span className="block text-[10px] text-muted-foreground whitespace-nowrap" title="Free stock = on hand − reserved by pending transfers">
-                                    {item.onHandStock} on hand · {Math.round(item.reservedStock * 100) / 100} reserved
-                                  </span>
-                                )}
-                              </>
-                          }
-                        </td>
-                      )}
+                      })()}
                       {['DRAFT', 'ON_PROCESS'].includes(detail.status) && (
                         <td className="px-5 py-3" onClick={e => e.stopPropagation()}>
-                          {isRejected ? (
-                            <div className="flex items-center gap-1.5">
-                              <StatusBadge
-                                tone="destructive" size="sm"
-                                title={item.verifyRejectionReason || undefined}
-                              >
-                                Rejected
-                              </StatusBadge>
-                              {canDecide && (
-                                <button onClick={() => setItemVerifyDecision(item, false)} className="text-[10px] text-muted-foreground hover:text-foreground underline underline-offset-2">
-                                  Undo
-                                </button>
-                              )}
-                            </div>
-                          ) : canDecide ? (
-                            <button
-                              onClick={() => openRejectItemModal(item)}
-                              className="text-[10px] font-medium text-muted-foreground hover:text-destructive border border-dashed border-border hover:border-destructive/30 rounded-full px-2.5 py-0.5 transition-colors"
-                            >
-                              Reject
-                            </button>
-                          ) : (
-                            <StatusBadge tone="success" size="sm">Accepted</StatusBadge>
-                          )}
-                        </td>
-                      )}
-                      {showStockCheck && (
-                        <td className="px-5 py-3 min-w-[220px]" onClick={e => e.stopPropagation()}>
-                          {isRejected ? (
-                            <span className="text-xs text-muted-foreground italic">Rejected — no check needed</span>
-                          ) : !item.viaWarehouse ? (
-                            <span className="text-xs text-muted-foreground italic">{isCustom ? 'Custom' : 'Non-stock item'} — direct to Purchasing</span>
-                          ) : item.warehouseDecision === 'PURCHASE' ? (
-                            <StatusBadge tone="warning" size="sm">Out of stock — sent to Purchasing</StatusBadge>
-                          ) : item.convertedAt && item.warehouseDecision === 'TRANSFER' ? (
-                            <div className="space-y-1">
-                              {item.transfer && <TransferBadge transfer={item.transfer} onOpen={onOpenTransfer} />}
-                              <BackorderBadge item={item} />
-                            </div>
-                          ) : (() => {
-                            const busy = warehouseBusyItemId === item.id
-                            const warehouseLocations = locations.filter(l => l.type === 'WAREHOUSE' && l.id !== detail.deliveryLocationId)
-                            const defaultFrom = item.stockCheck?.locationId ?? item.warehouseStock?.slice().sort((a, b) => b.qty - a.qty)[0]?.locationId ?? ''
-                            const fromValue = warehouseFrom[item.id!] ?? defaultFrom
-                            // Preview of the split Process will make — only known for the warehouse stockCheck ran against.
-                            const sc = item.stockCheck && item.stockCheck.locationId === fromValue && !item.warehouseDecision ? item.stockCheck : null
-                            return (
-                              <div className="space-y-1.5">
-                                <div className="flex items-center gap-1.5 flex-wrap">
-                                  <div className="relative inline-block">
-                                    <select
-                                      className="appearance-none text-xs pl-2 pr-5 py-1 rounded-md border bg-card cursor-pointer focus:outline-none focus:ring-1 focus:ring-ring"
-                                      value={fromValue}
-                                      onChange={e => setWarehouseFrom(f => ({ ...f, [item.id!]: e.target.value }))}
-                                    >
-                                      <option value="">Select location…</option>
-                                      {warehouseLocations.map(loc => {
-                                        const hint = item.warehouseStock?.find(w => w.locationId === loc.id)
-                                        return <option key={loc.id} value={loc.id}>{loc.name}{hint ? ` (system: ${hint.qty})` : ''}</option>
-                                      })}
-                                    </select>
-                                    <ChevronDown className="h-3 w-3 absolute right-1 top-1/2 -translate-y-1/2 pointer-events-none text-muted-foreground" />
-                                  </div>
-                                  <button disabled={busy || !fromValue} onClick={() => warehouseCheckItem(item)}
-                                    className="text-xs font-medium px-2 py-1 rounded-md bg-info text-info-foreground hover:bg-info/90 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap">
-                                    Process
-                                  </button>
-                                </div>
-                                {sc && (
-                                  <p className="text-[10px] text-muted-foreground whitespace-nowrap">
-                                    {sc.reserve > 0
-                                      ? <>Send <span className="font-semibold text-foreground">{lineQtyLabel(item, sc.reserve)}</span> now{sc.shortage > 0 && <> · backorder <span className="font-semibold text-destructive">{lineQtyLabel(item, sc.shortage)}</span></>}</>
-                                      : <span className="font-medium text-warning">Out of stock → to Purchasing</span>}
-                                    {(() => {
-                                      // Out of stock: Requested is bought straight to the ship, so only the
-                                      // Min. Stock top-up goes on the Restock PR.
-                                      const order = sc.reserve > 0 ? sc.restockQty : Math.max(0, sc.toBeOrder - sc.requested)
-                                      return order > 0 && <> · restock <span className="font-semibold text-info">{lineQtyLabel(item, order)}</span></>
-                                    })()}
-                                  </p>
-                                )}
-                                <input
-                                  type="text" placeholder="Note (optional)"
-                                  className="text-xs border rounded-md px-2 py-1 w-40 focus:outline-none focus:ring-1 focus:ring-ring"
-                                  value={warehouseNote[item.id!] ?? ''}
-                                  onChange={e => setWarehouseNote(n => ({ ...n, [item.id!]: e.target.value }))}
-                                />
-                              </div>
-                            )
-                          })()}
+                          {decisionContent(item)}
                         </td>
                       )}
                       {detail.status === 'ON_PROCESS' && !isWarehouse && (
@@ -2293,6 +2537,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                 })}
               </tbody>
             </table></div>
+                  )}
                 </div>
 
                 {(() => {
@@ -2338,7 +2583,17 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                   )
                 })()}
                 </div>
-                <Timeline steps={steps} title="Timeline" onViewPhoto={setTimelinePhoto} />
+                {!hideTimeline && <Timeline steps={steps} title="Timeline" onViewPhoto={setTimelinePhoto} />}
+                {stockItem && (
+                  <>
+                    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50" onClick={() => setStockItemId(null)} />
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+                      <div className="pointer-events-auto bg-card rounded-2xl shadow-2xl w-full max-w-xl max-h-[90vh] overflow-y-auto">
+                        {stockModal(stockItem)}
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
             )
           })()}

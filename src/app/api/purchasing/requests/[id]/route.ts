@@ -104,7 +104,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   const itemIds = request.items.map(i => i.itemId).filter(Boolean) as string[]
-  const [requesterUser, lots, purchaseItems, warehouses, { checks: stockChecks, reservedMap }, restockLinks] = await Promise.all([
+  const [requesterUser, lots, purchaseItems, warehouses, { checks: stockChecks, reservedMap }, restockLinks, restockLines] = await Promise.all([
     db.user.findUnique({ where: { id: request.requestedById }, select: { id: true, name: true } }),
     itemIds.length ? db.stockLot.findMany({ where: { itemId: { in: itemIds }, quantity: { gt: 0 } }, select: { itemId: true, locationId: true, quantity: true } }) : ([] as { itemId: string | null; locationId: string; quantity: number }[]),
     itemIds.length ? db.purchaseItem.findMany({ where: { id: { in: itemIds } }, select: { id: true, minStock: true, baseUnit: true, purchaseUnit: true, conversionFactor: true, treatment: true } }) : ([] as { id: string; minStock: number; baseUnit: string; purchaseUnit: string; conversionFactor: number; treatment: Treatment }[]),
@@ -115,6 +115,11 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       where: { OR: [{ restockForRequestId: id }, ...(request.restockForRequestId ? [{ id: request.restockForRequestId }] : [])] },
       select: { id: true, prNumber: true, status: true, restockForRequestId: true },
     }),
+    // Lines on this PR's Restock PRs — the To Be Order Warehouse handed to Purchasing.
+    itemIds.length ? db.purchaseRequestItem.findMany({
+      where: { itemId: { in: itemIds }, verifyRejectedAt: null, request: { restockForRequestId: id, status: { notIn: ['CANCELLED', 'REJECTED'] } } },
+      select: { itemId: true, quantity: true, unit: true, convertedAt: true },
+    }) : ([] as { itemId: string | null; quantity: number; unit: string; convertedAt: Date | null }[]),
   ])
   // Requests submitted via the internal Request Order page carry a real requestedByEmployee;
   // prefer that for display, falling back to the ERP user for requests created inside Purchasing.
@@ -144,8 +149,40 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   // can be transfer-eligible regardless of stock.
   const canTransfer = !!request.deliveryLocationId
 
+  // Per item (base units): what Warehouse sent from stock on this PR's transfers, and its To Be
+  // Order split into already on a PO vs still Pending (Restock PR lines + this PR's own line when
+  // Warehouse sent it to Purchasing). Shown once, on the first line carrying that item.
+  const sentFromStock = new Map<string, number>()
+  for (const t of request.transfers) {
+    if (t.status === 'CANCELLED') continue
+    for (const ti of t.items) if (ti.itemId) sentFromStock.set(ti.itemId, (sentFromStock.get(ti.itemId) ?? 0) + ti.requestedQty)
+  }
+  const restockSplit = new Map<string, { po: number; pending: number }>()
+  for (const l of restockLines) {
+    if (!l.itemId) continue
+    const split = restockSplit.get(l.itemId) ?? { po: 0, pending: 0 }
+    const qty = toBaseQty(l.quantity, l.unit, itemMasterMap.get(l.itemId))
+    if (l.convertedAt) split.po += qty
+    else split.pending += qty
+    restockSplit.set(l.itemId, split)
+  }
+  const firstLineOfItem = new Map<string, string>()
+  for (const item of request.items) if (item.itemId && !firstLineOfItem.has(item.itemId)) firstLineOfItem.set(item.itemId, item.id)
+
   const items = request.items.map(item => {
     const master = item.itemId ? itemMasterMap.get(item.itemId) : null
+    const isFirst = !!item.itemId && firstLineOfItem.get(item.itemId) === item.id
+    const processed = item.viaWarehouse && !!item.itemId && !item.verifyRejectedAt && (!!item.warehouseDecision || !!item.convertedAt)
+    let toBeOrderSplit: { po: number; pending: number } | null = null
+    if (processed) {
+      const split = { ...(isFirst ? restockSplit.get(item.itemId!) ?? { po: 0, pending: 0 } : { po: 0, pending: 0 }) }
+      if (item.warehouseDecision === 'PURCHASE') {
+        const own = toBaseQty(item.quantity, item.unit, master)
+        if (item.convertedAt) split.po += own
+        else split.pending += own
+      }
+      toBeOrderSplit = split
+    }
 
     const requiredBaseQty = toBaseQty(item.quantity, item.unit, master)
 
@@ -180,6 +217,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       itemTreatment: master?.treatment ?? null,
       warehouseStock,
       transferEligible: warehouseStock.length > 0,
+      sentFromStock: processed ? (isFirst ? sentFromStock.get(item.itemId!) ?? 0 : 0) : null,
+      toBeOrderSplit,
     }
   })
 

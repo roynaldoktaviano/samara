@@ -11,10 +11,10 @@ import { addRestockLines, finishWarehouseCheck, loadWarehouseRequest, undecidedL
 
 // Warehouse's "Process" on a single Warehouse-routed PR line — kept separate from the
 // Purchasing-only .../items/[itemId] route so Warehouse never gains access to that route's
-// other fields (price, supplier, verifyRejected). There is no choice to make: the system
-// decides from free stock at the chosen warehouse —
-//   nothing free  → PURCHASE: handed to Purchasing right away to buy straight to the ship
-//   some/all free → TRANSFER: a TR for what's free now, the rest backordered at that warehouse
+// other fields (price, supplier, verifyRejected). Warehouse sets the Reserve (base units, at
+// most the free stock at the chosen warehouse; omitted → min(Requested, free)) —
+//   reserve 0     → PURCHASE: handed to Purchasing right away to buy straight to the ship
+//   reserve > 0   → TRANSFER: a TR for the reserve now, the rest backordered at that warehouse
 // — then this line's To Be Order goes to Purchasing at once on a Restock PR, and processing the
 // last open line finishes Warehouse's check (see src/lib/purchasing/warehouseProcess.ts).
 const ALLOWED = ['WAREHOUSE', 'ADMIN', 'SUPER_ADMIN']
@@ -26,7 +26,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
 
-  const { fromLocationId, note } = (await req.json()) as { fromLocationId?: string; note?: string }
+  const { fromLocationId, note, reserveQty } = (await req.json()) as { fromLocationId?: string; note?: string; reserveQty?: number }
+  if (reserveQty !== undefined && (typeof reserveQty !== 'number' || !Number.isFinite(reserveQty) || reserveQty < 0)) {
+    return NextResponse.json({ error: 'Invalid reserve quantity' }, { status: 400 })
+  }
 
   const request = await db.purchaseRequest.findUnique({ where: { id }, select: { status: true, prNumber: true, division: true, deliveryLocationId: true, warehouseDoneAt: true } })
   if (!request) return NextResponse.json({ error: 'Request not found' }, { status: 404 })
@@ -73,10 +76,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       _sum: { requestedQty: true },
     })
     const free = Math.max(0, lots.reduce((s, l) => s + l.quantity, 0) - (reserved._sum.requestedQty ?? 0))
+    if (reserveQty !== undefined && reserveQty > free + 1e-6) return { overFree: free }
+    const sendQty = reserveQty !== undefined ? Math.min(reserveQty, free) : Math.min(baseQty, free)
     const now = new Date()
     const base = { warehouseCheckedById: session.user.id, warehouseCheckedAt: now, warehouseCheckNote: note?.trim() || null }
 
-    if (free <= 0) {
+    if (sendQty <= 0) {
       const claimed = await tx.purchaseRequestItem.updateMany({
         where: { id: itemId, convertedAt: null, warehouseDecision: null },
         data: { ...base, warehouseDecision: 'PURCHASE' },
@@ -84,8 +89,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       return claimed.count ? { outcome: 'PURCHASE' as const, transferNumber: null, sendQty: 0, backorderQty: 0 } : null
     }
 
-    const sendQty = Math.min(baseQty, free)
-    const backorderQty = baseQty - sendQty
+    const backorderQty = Math.max(0, baseQty - sendQty)
     const claimed = await tx.purchaseRequestItem.updateMany({
       where: { id: itemId, convertedAt: null, warehouseDecision: null },
       data: {
@@ -107,6 +111,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     return { outcome: 'TRANSFER' as const, transferNumber, sendQty, backorderQty }
   })
   if (!result) return NextResponse.json({ error: 'Item has already been processed' }, { status: 409 })
+  if ('overFree' in result && result.overFree !== undefined) {
+    return NextResponse.json({ error: `Reserve can't exceed the current stock (${Math.round(result.overFree * 100) / 100} ${master?.baseUnit ?? ''})`.trim() }, { status: 400 })
+  }
 
   // To Be Order for this line → Purchasing now (Restock PR to the warehouse).
   const fresh = (await loadWarehouseRequest(db, id))!
