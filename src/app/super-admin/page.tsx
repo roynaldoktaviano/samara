@@ -206,6 +206,7 @@ function TenantSecretsEditor({ tenant, onUpdate }: { tenant: Tenant; onUpdate: (
 interface IgLoginStatus {
   redirectUri: string
   facebookConfigured: boolean
+  facebookMissing: string[]
   brands: { brand: string; connected: boolean; expired: boolean; username: string | null; igAccountId: string | null; expiresAt: string | null; appConfigured: boolean; pageConnected: boolean; pageName: string | null }[]
 }
 
@@ -217,9 +218,11 @@ function InstagramLoginPanel({ tenant }: { tenant: Tenant }) {
   const [status, setStatus] = useState<IgLoginStatus | null>(null)
   const [copied, setCopied] = useState(false)
 
+  // Refetch whenever the tenant reloads (e.g. right after a secret is saved above).
   useEffect(() => {
     fetch(`/api/meta/instagram/status?tenantId=${tenant.id}`).then(r => r.ok ? r.json() : null).then(setStatus).catch(() => setStatus(null))
-  }, [tenant.id])
+  }, [tenant])
+  const igMissing = !!status && !status.brands.some(b => b.appConfigured)
 
   function copy() {
     if (!status) return
@@ -242,6 +245,16 @@ function InstagramLoginPanel({ tenant }: { tenant: Tenant }) {
           {copied ? 'Copied' : 'Copy'}
         </button>
       </div>
+      {status && (status.facebookMissing.length > 0 || igMissing) && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 space-y-1">
+          {status.facebookMissing.length > 0 && (
+            <p><b>Connect via Facebook</b> is off — fill in under Secrets → Facebook &amp; Instagram DM: {status.facebookMissing.join(', ')}.</p>
+          )}
+          {igMissing && (
+            <p><b>Connect Instagram</b> is off — fill in under Secrets → Instagram Login (DM): Instagram App ID, Instagram App Secret.</p>
+          )}
+        </div>
+      )}
       <div className="divide-y divide-gray-50 border border-gray-100 rounded-lg">
         {(status?.brands ?? []).map(b => (
           <div key={b.brand} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 px-3 py-2.5">
@@ -383,6 +396,8 @@ export default function SuperAdminPage() {
     if (res.ok) {
       const list: Tenant[] = await res.json()
       setTenants(list)
+      // Keep the open tenant in sync, so saved secrets show as Configured straight away.
+      setSelectedTenant(cur => cur ? list.find(x => x.id === cur.id) ?? cur : cur)
       // Back from Instagram Login — reopen the tenant it was connected for.
       const reopen = new URLSearchParams(window.location.search).get('igTenant')
       const t = reopen ? list.find(x => x.id === reopen) : null

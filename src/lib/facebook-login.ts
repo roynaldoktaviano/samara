@@ -32,6 +32,13 @@ export async function facebookLoginConfigured(tenantId: string) {
   return !!(await appConfig(tenantId))
 }
 
+/** Which of the three secrets Connect via Facebook needs are still empty (labels, for Super Admin). */
+export async function facebookLoginMissing(tenantId: string) {
+  const need: [TenantSecretKey, string][] = [['metaDmAppId', 'Meta App ID'], ['metaDmAppSecret', 'Meta DM App Secret'], ['metaDmLoginConfigId', 'Facebook Login for Business Configuration ID']]
+  const values = await Promise.all(need.map(([k]) => getTenantSecret(tenantId, k)))
+  return need.filter((_, i) => !values[i]).map(([, label]) => label)
+}
+
 /** Facebook's login dialog for this tenant's Login for Business config, or null when not set up. */
 export async function facebookLoginAuthorizeUrl(tenantId: string, state: string) {
   const app = await appConfig(tenantId)
