@@ -5,6 +5,7 @@ import { getTenantSecret } from '@/lib/tenant-secrets'
 import type { TenantSecretKey } from '@/lib/tenant-secrets-definitions'
 import { logWebhookFailure } from '@/lib/webhook-log'
 import { handleMetaMessagingEvents, hasMetaMessagingEvents, type MetaMessagingBody } from '@/lib/meta-dm'
+import { IG_LOGIN_APP_SECRET_KEYS } from '@/lib/instagram-login'
 
 // Facebook Messenger + Instagram Direct webhook (see src/lib/meta-dm.ts).
 //
@@ -24,7 +25,8 @@ import { handleMetaMessagingEvents, hasMetaMessagingEvents, type MetaMessagingBo
 
 const SOURCE = 'META_DM'
 const VERIFY_TOKEN_KEYS: TenantSecretKey[] = ['metaDmVerifyToken', 'metaDmMischiefVerifyToken', 'metaDmOtiumVerifyToken']
-const APP_SECRET_KEYS: TenantSecretKey[] = ['metaDmAppSecret', 'metaDmMischiefAppSecret', 'metaDmOtiumAppSecret']
+// Instagram Login deliveries are signed with the Instagram App Secret (src/lib/instagram-login.ts).
+const APP_SECRET_KEYS: TenantSecretKey[] = ['metaDmAppSecret', 'metaDmMischiefAppSecret', 'metaDmOtiumAppSecret', ...IG_LOGIN_APP_SECRET_KEYS]
 
 async function configured(tenantId: string, keys: TenantSecretKey[]): Promise<string[]> {
   const values = await Promise.all(keys.map(k => getTenantSecret(tenantId, k)))

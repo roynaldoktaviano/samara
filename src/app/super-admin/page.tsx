@@ -203,6 +203,93 @@ function TenantSecretsEditor({ tenant, onUpdate }: { tenant: Tenant; onUpdate: (
   )
 }
 
+interface IgLoginStatus {
+  redirectUri: string
+  facebookConfigured: boolean
+  brands: { brand: string; connected: boolean; expired: boolean; username: string | null; igAccountId: string | null; expiresAt: string | null; appConfigured: boolean; pageConnected: boolean; pageName: string | null }[]
+}
+
+const IG_BRAND_LABELS: Record<string, string> = { SAMARA: 'Samara', MISCHIEF: 'Mischief', OTIUM: 'Otium' }
+
+// Instagram API with Instagram Login — each brand's IG account logs in here; the token and IG
+// account id are stored for it (see src/lib/instagram-login.ts).
+function InstagramLoginPanel({ tenant }: { tenant: Tenant }) {
+  const [status, setStatus] = useState<IgLoginStatus | null>(null)
+  const [copied, setCopied] = useState(false)
+
+  useEffect(() => {
+    fetch(`/api/meta/instagram/status?tenantId=${tenant.id}`).then(r => r.ok ? r.json() : null).then(setStatus).catch(() => setStatus(null))
+  }, [tenant.id])
+
+  function copy() {
+    if (!status) return
+    navigator.clipboard.writeText(status.redirectUri)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1500)
+  }
+
+  return (
+    <div className="space-y-3">
+      <div>
+        <h3 className="text-sm font-semibold text-gray-700">Connect Instagram / Facebook (DM)</h3>
+        <p className="text-xs text-gray-400 mt-0.5">
+          Register this OAuth redirect URI in the Meta App — Instagram → API setup with Instagram login → Business login settings, and/or Facebook Login for Business → Settings → Valid OAuth Redirect URIs. Then connect each brand: <b>Connect Instagram</b> needs the Instagram App ID / Secret, <b>Connect via Facebook</b> needs the Meta App ID, Meta DM App Secret and Login Configuration ID (Secrets above).
+        </p>
+      </div>
+      <div className="flex items-center gap-2">
+        <code className="flex-1 min-w-0 truncate text-xs bg-gray-50 border border-gray-200 rounded px-2 py-1.5 text-gray-700">{status?.redirectUri ?? 'Loading…'}</code>
+        <button onClick={copy} disabled={!status} className="text-xs border border-gray-200 px-2 py-1.5 rounded hover:bg-gray-50 disabled:opacity-40 shrink-0">
+          {copied ? 'Copied' : 'Copy'}
+        </button>
+      </div>
+      <div className="divide-y divide-gray-50 border border-gray-100 rounded-lg">
+        {(status?.brands ?? []).map(b => (
+          <div key={b.brand} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 px-3 py-2.5">
+            <div className="min-w-0">
+              <div className="text-sm font-medium text-gray-700 flex flex-wrap items-center gap-2">
+                {IG_BRAND_LABELS[b.brand] ?? b.brand}
+                {b.connected || b.pageConnected ? (
+                  <StatusBadge tone="success" size="sm" className="py-0.5">Connected</StatusBadge>
+                ) : b.expired ? (
+                  <StatusBadge tone="destructive" size="sm" className="py-0.5">Expired — reconnect</StatusBadge>
+                ) : (
+                  <StatusBadge tone="neutral" size="sm" className="py-0.5">Not connected</StatusBadge>
+                )}
+              </div>
+              <div className="text-xs text-gray-400">
+                Instagram Login: {b.username ? `@${b.username}` : 'not connected'}
+                {b.igAccountId && ` · IG ID ${b.igAccountId}`}
+                {b.connected && b.expiresAt && ` · token renews automatically (valid until ${new Date(b.expiresAt).toLocaleDateString()})`}
+              </div>
+              <div className="text-xs text-gray-400">
+                Facebook Page: {b.pageConnected ? b.pageName : 'not connected'}
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-1.5 shrink-0">
+              <a
+                href={b.appConfigured ? `/api/meta/instagram/connect?tenantId=${tenant.id}&brand=${b.brand}` : undefined}
+                aria-disabled={!b.appConfigured}
+                title={b.appConfigured ? undefined : 'Set the Instagram App ID / Secret first'}
+                className={`text-xs px-3 py-1.5 rounded text-center ${b.appConfigured ? 'bg-[#1e3a5f] text-white hover:opacity-90' : 'bg-gray-100 text-gray-400 pointer-events-none'}`}
+              >
+                {b.connected ? 'Reconnect Instagram' : 'Connect Instagram'}
+              </a>
+              <a
+                href={status?.facebookConfigured ? `/api/meta/instagram/connect?tenantId=${tenant.id}&brand=${b.brand}&via=facebook` : undefined}
+                aria-disabled={!status?.facebookConfigured}
+                title={status?.facebookConfigured ? undefined : 'Set the Meta App ID, Meta DM App Secret and Login Configuration ID first'}
+                className={`text-xs px-3 py-1.5 rounded text-center border ${status?.facebookConfigured ? 'border-[#1e3a5f] text-[#1e3a5f] hover:bg-gray-50' : 'border-gray-100 text-gray-400 pointer-events-none'}`}
+              >
+                {b.pageConnected ? 'Reconnect via Facebook' : 'Connect via Facebook'}
+              </a>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function RequestOrderLinkPanel({ tenant, onUpdate }: { tenant: Tenant; onUpdate: () => void }) {
   const confirm = useConfirm()
   const [regenerating, setRegenerating] = useState(false)
@@ -271,6 +358,19 @@ export default function SuperAdminPage() {
 
   const isSuperAdmin = session?.user?.isSuperAdmin
 
+  // Outcome of Instagram Login (src/app/api/meta/instagram/callback), passed back in the URL.
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search)
+    const connected = q.get('igConnected'), warning = q.get('igWarning'), error = q.get('igError')
+    if (connected) toast.success(`Instagram connected: ${connected}`)
+    if (warning) toast.warning(warning, { duration: 15000 })
+    if (error) toast.error(error, { duration: 15000 })
+    if (connected || warning || error) {
+      const tenant = q.get('igTenant')
+      window.history.replaceState(null, '', tenant ? `/super-admin?igTenant=${encodeURIComponent(tenant)}` : '/super-admin')
+    }
+  }, [])
+
   useEffect(() => {
     if (status === 'unauthenticated') { router.push('/login'); return }
     if (status === 'authenticated' && !isSuperAdmin) { router.push('/'); return }
@@ -280,7 +380,14 @@ export default function SuperAdminPage() {
   async function fetchTenants() {
     setLoadingTenants(true)
     const res = await fetch('/api/super-admin/tenants')
-    if (res.ok) setTenants(await res.json())
+    if (res.ok) {
+      const list: Tenant[] = await res.json()
+      setTenants(list)
+      // Back from Instagram Login — reopen the tenant it was connected for.
+      const reopen = new URLSearchParams(window.location.search).get('igTenant')
+      const t = reopen ? list.find(x => x.id === reopen) : null
+      if (t) { selectTenant(t); window.history.replaceState(null, '', '/super-admin') }
+    }
     setLoadingTenants(false)
   }
 
@@ -453,6 +560,9 @@ export default function SuperAdminPage() {
               <div className="bg-white rounded-xl border border-gray-200 shadow-sm mb-5 p-5">
                 <h2 className="text-sm font-bold text-[#1e3a5f] mb-3">Integrations</h2>
                 <TenantSecretsEditor tenant={selectedTenant} onUpdate={fetchTenants} />
+                <div className="mt-4 pt-4 border-t border-gray-100">
+                  <InstagramLoginPanel key={selectedTenant.id} tenant={selectedTenant} />
+                </div>
                 <div className="mt-4 pt-4 border-t border-gray-100">
                   <RequestOrderLinkPanel tenant={selectedTenant} onUpdate={fetchTenants} />
                 </div>

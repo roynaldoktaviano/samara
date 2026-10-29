@@ -48,6 +48,26 @@ export type TenantSecretKey =
   | 'metaDmOtiumPageId'
   | 'metaDmOtiumIgAccountId'
   | 'metaDmOtiumPageToken'
+  | 'metaDmAppId'
+  | 'metaDmLoginConfigId'
+  | 'metaDmSamaraPageName'
+  | 'metaDmMischiefPageName'
+  | 'metaDmOtiumPageName'
+  | 'igLoginAppId'
+  | 'igLoginAppSecret'
+  | 'igLoginMischiefAppId'
+  | 'igLoginMischiefAppSecret'
+  | 'igLoginOtiumAppId'
+  | 'igLoginOtiumAppSecret'
+  | 'igLoginSamaraToken'
+  | 'igLoginSamaraTokenExpiresAt'
+  | 'igLoginSamaraUsername'
+  | 'igLoginMischiefToken'
+  | 'igLoginMischiefTokenExpiresAt'
+  | 'igLoginMischiefUsername'
+  | 'igLoginOtiumToken'
+  | 'igLoginOtiumTokenExpiresAt'
+  | 'igLoginOtiumUsername'
 
 export interface TenantSecrets {
   freshsalesApiKey?: string
@@ -95,6 +115,26 @@ export interface TenantSecrets {
   metaDmOtiumPageId?: string
   metaDmOtiumIgAccountId?: string
   metaDmOtiumPageToken?: string
+  metaDmAppId?: string
+  metaDmLoginConfigId?: string
+  metaDmSamaraPageName?: string
+  metaDmMischiefPageName?: string
+  metaDmOtiumPageName?: string
+  igLoginAppId?: string
+  igLoginAppSecret?: string
+  igLoginMischiefAppId?: string
+  igLoginMischiefAppSecret?: string
+  igLoginOtiumAppId?: string
+  igLoginOtiumAppSecret?: string
+  igLoginSamaraToken?: string
+  igLoginSamaraTokenExpiresAt?: string
+  igLoginSamaraUsername?: string
+  igLoginMischiefToken?: string
+  igLoginMischiefTokenExpiresAt?: string
+  igLoginMischiefUsername?: string
+  igLoginOtiumToken?: string
+  igLoginOtiumTokenExpiresAt?: string
+  igLoginOtiumUsername?: string
 }
 
 export const TENANT_SECRET_DEFINITIONS: {
@@ -102,6 +142,8 @@ export const TENANT_SECRET_DEFINITIONS: {
   label: string
   description: string
   envFallback: string
+  // Written by the app itself (e.g. Instagram Login's Connect flow) — not shown in the editor.
+  managed?: boolean
 }[] = [
   { key: 'freshsalesApiKey', label: 'Freshsales API Key', description: 'Used to import CRM contacts as Leads/Guests', envFallback: 'FRESHSALES_API_KEY' },
   { key: 'freshsalesDomain', label: 'Freshsales Domain', description: 'e.g. yourcompany.myfreshworks.com/crm/sales', envFallback: 'FRESHSALES_DOMAIN' },
@@ -135,19 +177,39 @@ export const TENANT_SECRET_DEFINITIONS: {
   { key: 'metaLeadsAppSecret', label: 'Meta Lead Ads App Secret', description: 'Verifies leadgen webhook signatures (X-Hub-Signature-256) — same as the WhatsApp App Secret if both live in one Meta App', envFallback: 'META_LEADS_APP_SECRET' },
   { key: 'metaDmVerifyToken', label: 'Meta DM Webhook Verify Token', description: 'Shared / Samara Meta App — value you choose and also enter as the Verify Token for /api/webhooks/meta-messaging (Messenger + Instagram) in the Meta App', envFallback: 'META_DM_VERIFY_TOKEN' },
   { key: 'metaDmAppSecret', label: 'Meta DM App Secret', description: 'Shared / Samara Meta App — App Secret of the Meta App delivering Messenger/Instagram DMs — verifies webhook signatures (X-Hub-Signature-256)', envFallback: 'META_DM_APP_SECRET' },
+  { key: 'metaDmAppId', label: 'Meta App ID', description: 'Shared / Samara Meta App — the App ID (App settings → Basic). Used by Connect via Facebook together with the Meta DM App Secret', envFallback: 'META_DM_APP_ID' },
+  { key: 'metaDmLoginConfigId', label: 'Facebook Login for Business Configuration ID', description: 'Facebook Login for Business → Configurations → the config with pages_messaging + instagram_manage_messages (the config_id in its login URL). Enables Connect via Facebook', envFallback: 'META_DM_LOGIN_CONFIG_ID' },
   { key: 'metaDmSamaraPageId', label: 'Facebook Page ID — Samara', description: "Samara's Facebook Page id — routes Messenger DMs to this brand, and is the Page replies (Messenger and Instagram) are sent from", envFallback: 'META_DM_SAMARA_PAGE_ID' },
   { key: 'metaDmSamaraIgAccountId', label: 'Instagram Account ID — Samara', description: "Samara's Instagram professional account id (the one linked to the Page above) — routes Instagram DMs to this brand", envFallback: 'META_DM_SAMARA_IG_ACCOUNT_ID' },
   { key: 'metaDmSamaraPageToken', label: 'Page Access Token — Samara', description: 'Long-lived Page token with pages_messaging + instagram_manage_messages — used to send replies and fetch sender names', envFallback: 'META_DM_SAMARA_PAGE_TOKEN' },
+  { key: 'metaDmSamaraPageName', label: 'Facebook Page Name — Samara', description: 'Set by Connect via Facebook', envFallback: 'META_DM_SAMARA_PAGE_NAME', managed: true },
   { key: 'metaDmMischiefPageId', label: 'Facebook Page ID — Mischief', description: "Mischief's Facebook Page id — routes Messenger DMs to this brand, and is the Page replies (Messenger and Instagram) are sent from", envFallback: 'META_DM_MISCHIEF_PAGE_ID' },
   { key: 'metaDmMischiefIgAccountId', label: 'Instagram Account ID — Mischief', description: "Mischief's Instagram professional account id (the one linked to the Page above) — routes Instagram DMs to this brand", envFallback: 'META_DM_MISCHIEF_IG_ACCOUNT_ID' },
   { key: 'metaDmMischiefPageToken', label: 'Page Access Token — Mischief', description: 'Long-lived Page token with pages_messaging + instagram_manage_messages — used to send replies and fetch sender names', envFallback: 'META_DM_MISCHIEF_PAGE_TOKEN' },
+  { key: 'metaDmMischiefPageName', label: 'Facebook Page Name — Mischief', description: 'Set by Connect via Facebook', envFallback: 'META_DM_MISCHIEF_PAGE_NAME', managed: true },
   { key: 'metaDmMischiefVerifyToken', label: 'Meta DM Webhook Verify Token — Mischief', description: 'Only if Mischief\'s Page/Instagram sits in its own Meta App — the Verify Token entered in that app (empty = uses the shared one)', envFallback: 'META_DM_MISCHIEF_VERIFY_TOKEN' },
   { key: 'metaDmMischiefAppSecret', label: 'Meta DM App Secret — Mischief', description: 'Only if Mischief\'s Page/Instagram sits in its own Meta App — that app\'s App Secret, to verify its webhook signatures (empty = uses the shared one)', envFallback: 'META_DM_MISCHIEF_APP_SECRET' },
   { key: 'metaDmOtiumPageId', label: 'Facebook Page ID — Otium', description: "Otium's Facebook Page id — routes Messenger DMs to this brand, and is the Page replies (Messenger and Instagram) are sent from", envFallback: 'META_DM_OTIUM_PAGE_ID' },
   { key: 'metaDmOtiumIgAccountId', label: 'Instagram Account ID — Otium', description: "Otium's Instagram professional account id (the one linked to the Page above) — routes Instagram DMs to this brand", envFallback: 'META_DM_OTIUM_IG_ACCOUNT_ID' },
   { key: 'metaDmOtiumPageToken', label: 'Page Access Token — Otium', description: 'Long-lived Page token with pages_messaging + instagram_manage_messages — used to send replies and fetch sender names', envFallback: 'META_DM_OTIUM_PAGE_TOKEN' },
+  { key: 'metaDmOtiumPageName', label: 'Facebook Page Name — Otium', description: 'Set by Connect via Facebook', envFallback: 'META_DM_OTIUM_PAGE_NAME', managed: true },
   { key: 'metaDmOtiumVerifyToken', label: 'Meta DM Webhook Verify Token — Otium', description: 'Only if Otium\'s Page/Instagram sits in its own Meta App — the Verify Token entered in that app (empty = uses the shared one)', envFallback: 'META_DM_OTIUM_VERIFY_TOKEN' },
   { key: 'metaDmOtiumAppSecret', label: 'Meta DM App Secret — Otium', description: 'Only if Otium\'s Page/Instagram sits in its own Meta App — that app\'s App Secret, to verify its webhook signatures (empty = uses the shared one)', envFallback: 'META_DM_OTIUM_APP_SECRET' },
+  { key: 'igLoginAppId', label: 'Instagram App ID', description: 'Shared / Samara Meta App — Instagram → API setup with Instagram login → "Instagram app ID" (not the Meta App ID). Used by Connect Instagram below', envFallback: 'IG_LOGIN_APP_ID' },
+  { key: 'igLoginAppSecret', label: 'Instagram App Secret', description: 'Shared / Samara Meta App — the matching "Instagram app secret". Exchanges the login code for a token, and verifies Instagram webhook signatures', envFallback: 'IG_LOGIN_APP_SECRET' },
+  { key: 'igLoginMischiefAppId', label: 'Instagram App ID — Mischief', description: "Only if Mischief's Instagram sits in its own Meta App — that app's Instagram app ID (empty = uses the shared one)", envFallback: 'IG_LOGIN_MISCHIEF_APP_ID' },
+  { key: 'igLoginMischiefAppSecret', label: 'Instagram App Secret — Mischief', description: "Only if Mischief's Instagram sits in its own Meta App — that app's Instagram app secret (empty = uses the shared one)", envFallback: 'IG_LOGIN_MISCHIEF_APP_SECRET' },
+  { key: 'igLoginOtiumAppId', label: 'Instagram App ID — Otium', description: "Only if Otium's Instagram sits in its own Meta App — that app's Instagram app ID (empty = uses the shared one)", envFallback: 'IG_LOGIN_OTIUM_APP_ID' },
+  { key: 'igLoginOtiumAppSecret', label: 'Instagram App Secret — Otium', description: "Only if Otium's Instagram sits in its own Meta App — that app's Instagram app secret (empty = uses the shared one)", envFallback: 'IG_LOGIN_OTIUM_APP_SECRET' },
+  { key: 'igLoginSamaraToken', label: 'Instagram Login Token — Samara', description: 'Set by Connect Instagram — long-lived Instagram user token, auto-refreshed', envFallback: 'IG_LOGIN_SAMARA_TOKEN', managed: true },
+  { key: 'igLoginSamaraTokenExpiresAt', label: 'Instagram Login Token Expiry — Samara', description: 'Set by Connect Instagram', envFallback: 'IG_LOGIN_SAMARA_TOKEN_EXPIRES_AT', managed: true },
+  { key: 'igLoginSamaraUsername', label: 'Instagram Login Username — Samara', description: 'Set by Connect Instagram', envFallback: 'IG_LOGIN_SAMARA_USERNAME', managed: true },
+  { key: 'igLoginMischiefToken', label: 'Instagram Login Token — Mischief', description: 'Set by Connect Instagram — long-lived Instagram user token, auto-refreshed', envFallback: 'IG_LOGIN_MISCHIEF_TOKEN', managed: true },
+  { key: 'igLoginMischiefTokenExpiresAt', label: 'Instagram Login Token Expiry — Mischief', description: 'Set by Connect Instagram', envFallback: 'IG_LOGIN_MISCHIEF_TOKEN_EXPIRES_AT', managed: true },
+  { key: 'igLoginMischiefUsername', label: 'Instagram Login Username — Mischief', description: 'Set by Connect Instagram', envFallback: 'IG_LOGIN_MISCHIEF_USERNAME', managed: true },
+  { key: 'igLoginOtiumToken', label: 'Instagram Login Token — Otium', description: 'Set by Connect Instagram — long-lived Instagram user token, auto-refreshed', envFallback: 'IG_LOGIN_OTIUM_TOKEN', managed: true },
+  { key: 'igLoginOtiumTokenExpiresAt', label: 'Instagram Login Token Expiry — Otium', description: 'Set by Connect Instagram', envFallback: 'IG_LOGIN_OTIUM_TOKEN_EXPIRES_AT', managed: true },
+  { key: 'igLoginOtiumUsername', label: 'Instagram Login Username — Otium', description: 'Set by Connect Instagram', envFallback: 'IG_LOGIN_OTIUM_USERNAME', managed: true },
 ]
 
 export const VALID_TENANT_SECRET_KEYS = new Set<string>(TENANT_SECRET_DEFINITIONS.map(s => s.key))
@@ -165,6 +227,7 @@ export const TENANT_SECRET_GROUPS: { id: string; label: string; match: (key: Ten
   { id: 'wa-otium', label: 'WhatsApp — Otium', match: k => k.startsWith('whatsappOtium') },
   { id: 'email', label: 'Email (Resend)', match: k => k.startsWith('resend') || k.startsWith('emailInbox') },
   { id: 'meta-dm', label: 'Facebook & Instagram DM', match: k => k.startsWith('metaDm') },
+  { id: 'ig-login', label: 'Instagram Login (DM)', match: k => k.startsWith('igLogin') },
   { id: 'meta-leads', label: 'Meta Lead Ads', match: k => k.startsWith('metaLeads') },
   { id: 'freshsales', label: 'Freshsales', match: k => k.startsWith('freshsales') },
   { id: 'other', label: 'Other', match: () => true },
@@ -180,6 +243,7 @@ const whatsappFieldRank = (key: string) => {
 export function groupedTenantSecretDefinitions() {
   const buckets = TENANT_SECRET_GROUPS.map(g => ({ id: g.id, label: g.label, items: [] as typeof TENANT_SECRET_DEFINITIONS }))
   for (const def of TENANT_SECRET_DEFINITIONS) {
+    if (def.managed) continue
     const idx = TENANT_SECRET_GROUPS.findIndex(g => g.match(def.key))
     buckets[idx].items.push(def)
   }

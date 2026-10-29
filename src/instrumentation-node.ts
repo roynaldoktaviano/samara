@@ -149,4 +149,19 @@ export async function startNodeInstrumentation() {
       console.error('[scheduler] google-ads-conversions sync tick failed:', err)
     }
   }, googleAdsSyncIntervalMs)
+
+  // Instagram Login tokens live 60 days — extend any within 15 days of expiry, per tenant
+  // (see refreshIgLoginTokens in src/lib/instagram-login.ts). Daily, plus once at boot so a
+  // server that's been down a while catches up.
+  const igLoginRefresh = async () => {
+    try {
+      const { refreshIgLoginTokens } = await import('@/lib/instagram-login')
+      const tenants = await centralDb.tenant.findMany({ where: { isActive: true }, select: { id: true } })
+      for (const t of tenants) await refreshIgLoginTokens(t.id)
+    } catch (err) {
+      console.error('[scheduler] instagram login token refresh failed:', err)
+    }
+  }
+  setTimeout(igLoginRefresh, 60_000)
+  setInterval(igLoginRefresh, 24 * 60 * 60 * 1000)
 }

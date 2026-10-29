@@ -8,6 +8,7 @@ import { pickNextSalesUserId } from '@/lib/whatsapp-distribution'
 import { sendPushToUser } from '@/lib/push'
 import { isViewing } from '@/lib/chat-presence'
 import { ensureLeadForMetaDm, isNewContactSession, recordLeadContact } from '@/lib/lead-contact'
+import { IG_GRAPH, getIgLoginToken } from '@/lib/instagram-login'
 
 // Facebook Messenger + Instagram Direct, both through the Messenger Platform (one Meta
 // App, each brand's Facebook Page with its linked Instagram account). Inbound events come
@@ -69,8 +70,13 @@ export async function sendMetaDm(
   if (!conversation.externalUserId) return { ok: false, error: 'This conversation did not come in through Meta, so it cannot be replied to' }
   const brand = conversation.brand ?? await resolveMetaDmBrand(tenantId, conversation.platform, conversation.ourAccountId)
   if (!brand) return { ok: false, error: 'This Page / Instagram account is not configured for any brand (Super Admin → Secrets → Facebook & Instagram DM)' }
+  // Instagram with an Instagram Login token goes out from the IG account itself; everything
+  // else through the brand's Page (see src/lib/instagram-login.ts).
+  const igToken = conversation.platform === 'INSTAGRAM' ? await getIgLoginToken(tenantId, brand) : null
   const { pageId, pageToken } = await brandConfig(tenantId, brand)
-  if (!pageId || !pageToken) return { ok: false, error: `Facebook Page ID / Page Access Token for ${WHATSAPP_BRAND_LABELS[brand]} is not set` }
+  if (!igToken && (!pageId || !pageToken)) return { ok: false, error: `Facebook Page ID / Page Access Token for ${WHATSAPP_BRAND_LABELS[brand]} is not set${conversation.platform === 'INSTAGRAM' ? ' (or connect Instagram Login in Super Admin)' : ''}` }
+  const sendUrl = igToken ? `${IG_GRAPH}/me/messages` : `${GRAPH}/${pageId}/messages`
+  const sendToken = igToken ?? pageToken
 
   const sinceInbound = conversation.lastInboundAt ? Date.now() - conversation.lastInboundAt.getTime() : Infinity
   if (sinceInbound > 7 * DAY_MS) return { ok: false, error: 'More than 7 days since the customer last messaged — Meta does not allow a reply until they message again' }
@@ -84,9 +90,9 @@ export async function sendMetaDm(
   let providerMessageId: string | undefined
   for (const part of parts) {
     try {
-      const res = await fetch(`${GRAPH}/${pageId}/messages`, {
+      const res = await fetch(sendUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${pageToken}` },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sendToken}` },
         body: JSON.stringify({ recipient: { id: conversation.externalUserId }, ...messaging, message: part }),
       })
       const data = await res.json().catch(() => ({})) as { message_id?: string; error?: { message?: string; code?: number; error_subcode?: number } }
@@ -150,11 +156,11 @@ export function hasMetaMessagingEvents(body: MetaMessagingBody): boolean {
   return (body.object === 'page' || body.object === 'instagram') && !!body.entry?.some(e => e.messaging?.length)
 }
 
-async function fetchProfile(platform: MetaDmPlatform, userId: string, token: string | null) {
-  if (!token) return null
+async function fetchProfile(platform: MetaDmPlatform, userId: string, auth: { token: string; graph: string } | null) {
+  if (!auth) return null
   const fields = platform === 'INSTAGRAM' ? 'name,username,profile_pic' : 'first_name,last_name,profile_pic'
   try {
-    const res = await fetch(`${GRAPH}/${userId}?fields=${fields}`, { headers: { Authorization: `Bearer ${token}` } })
+    const res = await fetch(`${auth.graph}/${userId}?fields=${fields}`, { headers: { Authorization: `Bearer ${auth.token}` } })
     if (!res.ok) return null
     const p = await res.json() as { name?: string; username?: string; first_name?: string; last_name?: string; profile_pic?: string }
     return {
@@ -293,7 +299,10 @@ export async function handleMetaMessagingEvents(db: PrismaClient, tenantId: stri
       const profile = await (async () => {
         const existing = await db.instagramConversation.findUnique({ where: key, select: { id: true } })
         if (existing) return null
-        return fetchProfile(platform, customerId, brand ? (await brandConfig(tenantId, brand)).pageToken : null)
+        if (!brand) return null
+        const igToken = platform === 'INSTAGRAM' ? await getIgLoginToken(tenantId, brand) : null
+        const pageToken = igToken ? null : (await brandConfig(tenantId, brand)).pageToken
+        return fetchProfile(platform, customerId, igToken ? { token: igToken, graph: IG_GRAPH } : pageToken ? { token: pageToken, graph: GRAPH } : null)
       })()
 
       const touch = (id: string) => db.instagramConversation.update({
