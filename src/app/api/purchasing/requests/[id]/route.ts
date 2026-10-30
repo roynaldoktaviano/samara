@@ -211,8 +211,57 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       qty: toBaseQty(l.quantity, l.unit, itemMasterMap.get(l.itemId)),
     }])
   }
+  // An item's restock figures (To Be Order / PO / Pending, sent from stock) sit on ONE line so
+  // they're never counted twice — the first vessel line of it, never a restock line (that one
+  // IS the To Be Order) or a rejected line, whatever order the rows come back in.
   const firstLineOfItem = new Map<string, string>()
-  for (const item of request.items) if (item.itemId && !firstLineOfItem.has(item.itemId)) firstLineOfItem.set(item.itemId, item.id)
+  for (const item of request.items) {
+    if (!item.itemId || item.restockLocationId || item.verifyRejectedAt || firstLineOfItem.has(item.itemId)) continue
+    firstLineOfItem.set(item.itemId, item.id)
+  }
+
+  // What's already on its way to the warehouse each backordered line waits at — another PR's
+  // line to that warehouse (a restock not ordered yet) or an open PO to it. The warehouse check
+  // nets this off the To Be Order (stockCheck.ts), so a backorder it covers gets no restock line
+  // of its own; listing it shows where that line's stock will come from.
+  const backordered = request.items.filter(i => i.itemId && i.backorderQty > 0 && i.backorderLocationId && !i.restockLocationId)
+  const backorderLocIds = [...new Set(backordered.map(i => i.backorderLocationId!))]
+  const backorderItemIds = [...new Set(backordered.map(i => i.itemId!))]
+  type Incoming = { kind: 'PR' | 'PO'; id: string; number: string; status: string; qty: number; expectedAt: Date | null }
+  const incomingByKey = new Map<string, Incoming[]>() // key: `${itemId}:${locationId}`
+  if (backordered.length) {
+    const masters = new Map((await db.purchaseItem.findMany({
+      where: { id: { in: backorderItemIds } }, select: { id: true, baseUnit: true, purchaseUnit: true, conversionFactor: true },
+    })).map(m => [m.id, m]))
+    const [prLines, poLines] = await Promise.all([
+      db.purchaseRequestItem.findMany({
+        where: {
+          itemId: { in: backorderItemIds }, convertedAt: null, verifyRejectedAt: null, requestId: { not: id },
+          request: { status: { in: ['DRAFT', 'PENDING_APPROVAL', 'ON_PROCESS'] } },
+          OR: [{ restockLocationId: { in: backorderLocIds } }, { restockLocationId: null, request: { deliveryLocationId: { in: backorderLocIds } } }],
+        },
+        select: { itemId: true, quantity: true, unit: true, restockLocationId: true, request: { select: { id: true, prNumber: true, deliveryLocationId: true } } },
+      }),
+      db.purchaseOrderItem.findMany({
+        where: {
+          itemId: { in: backorderItemIds },
+          order: { status: { in: ['DRAFT', 'ORDERED', 'IN_TRANSIT', 'PARTIALLY_RECEIVED'] }, deliveryLocationId: { in: backorderLocIds }, OR: [{ requestId: null }, { requestId: { not: id } }] },
+        },
+        select: { itemId: true, orderedQty: true, receivedQty: true, order: { select: { id: true, poNumber: true, status: true, expectedAt: true, deliveryLocationId: true } } },
+      }),
+    ])
+    const push = (key: string, row: Incoming) => incomingByKey.set(key, [...(incomingByKey.get(key) ?? []), row])
+    for (const l of prLines) {
+      const loc = l.restockLocationId ?? l.request.deliveryLocationId
+      if (!l.itemId || !loc) continue
+      push(`${l.itemId}:${loc}`, { kind: 'PR', id: l.request.id, number: l.request.prNumber, status: 'NOT_ORDERED', qty: toBaseQty(l.quantity, l.unit, masters.get(l.itemId)), expectedAt: null })
+    }
+    for (const l of poLines) {
+      const left = Math.max(0, l.orderedQty - l.receivedQty) * (masters.get(l.itemId!)?.conversionFactor || 1)
+      if (!l.itemId || !l.order.deliveryLocationId || left <= 0) continue
+      push(`${l.itemId}:${l.order.deliveryLocationId}`, { kind: 'PO', id: l.order.id, number: l.order.poNumber, status: l.order.status, qty: left, expectedAt: l.order.expectedAt })
+    }
+  }
 
   // Free stock where each backordered line waits. A backorder ships by itself only when stock
   // arrives (a PO receipt / incoming TR); stock freed any other way (a cancelled TR, an opname)
@@ -276,11 +325,15 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       transferEligible: warehouseStock.length > 0,
       sentFromStock: processed ? (isFirst ? sentFromStock.get(item.itemId!) ?? 0 : 0) : null,
       toBeOrderSplit,
-      restockOrders: processed && isFirst && !warehouseOnly ? restockOrders.get(item.itemId!) ?? [] : [],
+      // Warehouse sees them too: which PO brings the shortage in, and when — it receives that PO.
+      restockOrders: processed && isFirst ? restockOrders.get(item.itemId!) ?? [] : [],
       requestedBase: requiredBaseQty,
       backorderFree: item.itemId && item.backorderQty > 0 && item.backorderLocationId
         ? backorderFree.get(`${item.itemId}:${item.backorderLocationId}`) ?? 0
         : 0,
+      backorderIncoming: item.itemId && item.backorderQty > 0 && item.backorderLocationId
+        ? incomingByKey.get(`${item.itemId}:${item.backorderLocationId}`) ?? []
+        : [],
     }
   })
 

@@ -375,9 +375,12 @@ export default function SuperAdminPage() {
   useEffect(() => {
     const q = new URLSearchParams(window.location.search)
     const connected = q.get('igConnected'), warning = q.get('igWarning'), error = q.get('igError')
-    if (connected) toast.success(`Instagram connected: ${connected}`)
-    if (warning) toast.warning(warning, { duration: 15000 })
-    if (error) toast.error(error, { duration: 15000 })
+    // Deferred: this effect runs before the layout's <Sonner> subscribes, so a toast fired now is dropped.
+    setTimeout(() => {
+      if (connected) toast.success(`Instagram connected: ${connected}`)
+      if (warning) toast.warning(warning, { duration: 15000 })
+      if (error) toast.error(error, { duration: 15000 })
+    }, 0)
     if (connected || warning || error) {
       const tenant = q.get('igTenant')
       window.history.replaceState(null, '', tenant ? `/super-admin?igTenant=${encodeURIComponent(tenant)}` : '/super-admin')
