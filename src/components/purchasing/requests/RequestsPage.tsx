@@ -2818,8 +2818,31 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                     if (!grouped) return <div className="p-4">{grid(sortedItems)}</div>
                     const counts = STAGES.map(st => ({ ...st, items: shipLines.filter(it => lineStage(it) === st.key) })).filter(st => st.items.length)
                     const doneCount = shipLines.filter(it => ['sent', 'ordered', 'rejected'].includes(lineStage(it))).length
+                    // Restock lines are Purchasing's to-do on this PR — on top while any is still to be
+                    // ordered so it's seen without scrolling, back at the bottom once all are on a PO.
+                    // (Warehouse never gets restock lines — see GET ../route.ts.)
+                    const restockOpen = restockLines.filter(it => !it.convertedAt && !it.verifyRejectedAt)
+                    const restockNoSupplier = restockOpen.filter(it => !it.supplierId).length
+                    const restockFirst = restockOpen.length > 0
+                    const restockSection = restockLines.length > 0 && (
+                      <section className={`rounded-lg border p-3 dark:bg-violet-500/5 ${restockFirst ? 'border-violet-300 bg-violet-50/70 dark:border-violet-500/50' : 'border-violet-200 bg-violet-50/40 dark:border-violet-500/30'}`}>
+                        <div className="mb-2 flex flex-wrap items-start justify-between gap-x-3 gap-y-1">
+                          <div className="min-w-0">
+                            <h4 className="text-sm font-semibold text-violet-700 dark:text-violet-300">Restock for the warehouse</h4>
+                            <p className="text-xs text-muted-foreground">To Be Order from the warehouse check — buy these to {[...new Set(restockLines.map(it => it.restockLocation?.name).filter(Boolean))].join(', ') || 'the warehouse'}. When they arrive, what the vessel is still waiting for ships to it automatically.</p>
+                          </div>
+                          {restockFirst && (
+                            <span className="shrink-0 text-xs font-medium text-violet-700 dark:text-violet-300">
+                              {restockOpen.length} to order{restockNoSupplier > 0 && <span className="text-warning"> · {restockNoSupplier} need a supplier</span>}
+                            </span>
+                          )}
+                        </div>
+                        {grid(restockLines)}
+                      </section>
+                    )
                     return (
                       <div className="p-4 space-y-5">
+                        {restockFirst && restockSection}
                         <div className="rounded-lg border bg-muted/20 px-4 py-3">
                           <div className="flex items-center justify-between gap-3 text-xs">
                             <span className="font-medium">{doneCount} of {shipLines.length} items handled</span>
@@ -2844,15 +2867,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                             {grid(st.items)}
                           </section>
                         ))}
-                        {restockLines.length > 0 && (
-                          <section className="rounded-lg border border-violet-200 bg-violet-50/40 p-3 dark:border-violet-500/30 dark:bg-violet-500/5">
-                            <div className="mb-2">
-                              <h4 className="text-sm font-semibold text-violet-700 dark:text-violet-300">Restock for the warehouse</h4>
-                              <p className="text-xs text-muted-foreground">To Be Order from the warehouse check — buy these to {[...new Set(restockLines.map(it => it.restockLocation?.name).filter(Boolean))].join(', ') || 'the warehouse'}. When they arrive, any shortage above ships to the vessel automatically.</p>
-                            </div>
-                            {grid(restockLines)}
-                          </section>
-                        )}
+                        {!restockFirst && restockSection}
                       </div>
                     )
                   })()}
