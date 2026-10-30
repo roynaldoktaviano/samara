@@ -60,6 +60,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       },
       deliveryLocation: { select: { id: true, name: true, type: true, managedBy: true, yachtId: true } },
       requestedByEmployee: { select: { id: true, fullName: true, employeeNumber: true } },
+      approverEmployee: { select: { id: true, fullName: true } },
       approvedBy: { select: { id: true, name: true } },
       verifiedBy: { select: { id: true, name: true } },
       convertedBy: { select: { id: true, name: true } },

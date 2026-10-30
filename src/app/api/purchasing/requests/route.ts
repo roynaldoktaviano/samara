@@ -44,8 +44,12 @@ export async function GET() {
       // DRAFT. But whoever submitted it should still see it here (not just vanish from
       // their own view) so they know it's sitting with their manager — the manager check
       // itself lives in the approval endpoint's identity check, not here.
+      // Purchasing/Admin do see them though — read-only, with the approver named — so they
+      // know what's coming and whose sign-off it's stuck on.
       AND: [
-        { OR: [{ status: { not: 'PENDING_APPROVAL' } }, { requestedById: session.user.id }] },
+        ...(roleMatches(role, ['PURCHASING', 'ADMIN', 'SUPER_ADMIN'])
+          ? []
+          : [{ OR: [{ status: { not: 'PENDING_APPROVAL' as const } }, { requestedById: session.user.id }] }]),
         ...(isOwnOnly
           ? [{ OR: [{ requestedById: session.user.id }, ...(yachtScope ? [yachtScope] : [])] }]
           : []),
@@ -70,6 +74,7 @@ export async function GET() {
       },
       deliveryLocation: { select: { id: true, name: true, type: true, managedBy: true, yachtId: true } },
       requestedByEmployee: { select: { id: true, fullName: true, employeeNumber: true } },
+      approverEmployee: { select: { id: true, fullName: true } },
       restockFor: { select: { id: true, prNumber: true } },
       verifiedBy: { select: { id: true, name: true } },
       tripBooking: { select: tripBookingSelect },
@@ -173,8 +178,15 @@ export async function POST(req: NextRequest) {
   if (purpose === 'TRIP' && !tripBookingId && !openTripId) {
     return NextResponse.json({ error: 'Please select which trip this request is for' }, { status: 400 })
   }
-  const loc = await db.stockLocation.findUnique({ where: { id: deliveryLocationId }, select: { id: true } })
+  const loc = await db.stockLocation.findUnique({ where: { id: deliveryLocationId }, select: { id: true, yachtId: true } })
   if (!loc) return NextResponse.json({ error: 'Selected vessel/location was not found' }, { status: 400 })
+  // Boat Captain / Cruise Director only ever request for their own yacht — the form locks
+  // "Deliver to" to it, this keeps a hand-crafted request from going anywhere else.
+  if (roleMatches(role, ['BOAT_CAPTAIN', 'CRUISE_DIRECTOR']) && !roleMatches(role, ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE'])) {
+    const yachtId = await resolveAssignedYachtId(db, session.user.id)
+    if (!yachtId) return NextResponse.json({ error: 'No yacht is assigned to your account yet — ask Admin to set it' }, { status: 403 })
+    if (loc.yachtId !== yachtId) return NextResponse.json({ error: 'You can only request for your own yacht' }, { status: 403 })
+  }
   const tripLink = purpose === 'TRIP' ? await resolveTripLink(db, { tripBookingId, openTripId }) : { tripBookingId: null, openTripId: null }
   if ('error' in tripLink) return NextResponse.json({ error: 'Selected trip was not found' }, { status: 400 })
   const inventoryItemIds = [...new Set(items.map(it => it.sourceInventoryItemId).filter((x): x is string => !!x))]

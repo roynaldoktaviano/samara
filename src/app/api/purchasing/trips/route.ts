@@ -6,7 +6,8 @@ import { getDb } from '@/lib/get-db'
 import { roleMatches } from '@/lib/role-utils'
 import { listUpcomingTrips } from '@/lib/purchasing/tripLink'
 
-const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE']
+// Crew/Boat Captain/Cruise Director pick a trip too when filing a "Trip" Purchase Request.
+const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE', 'CREW', 'BOAT_CAPTAIN', 'CRUISE_DIRECTOR']
 
 // Trip picker (Kapal → Trip) shared by Purchase Requests, Purchase Orders, Service Orders
 // and Stock Transfers — see src/components/purchasing/TripPicker.tsx. Search/filtering by

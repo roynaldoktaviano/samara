@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useSession } from 'next-auth/react'
 import { toast } from 'sonner'
-import { Plus, Minus, ChevronRight, ChevronLeft, Trash2, Package, Search, FileText, ChevronDown, Check, Building2, CheckCircle2, Pencil, X, AlertTriangle, Download, ImagePlus, Camera, ShoppingCart, Send, Users, Paperclip, Clock, ArrowRightLeft } from 'lucide-react'
+import { Plus, Minus, ChevronRight, ChevronLeft, Trash2, Package, Search, FileText, ChevronDown, Check, Building2, CheckCircle2, Pencil, X, AlertTriangle, Download, ImagePlus, Camera, ShoppingCart, Send, Users, Paperclip, Clock, ArrowRightLeft, Ship } from 'lucide-react'
 import { ITEM_TYPES, ITEM_TYPE_LABELS, type PurchaseItemType } from '@/lib/purchase-item-types'
 import { useFileDrop } from '@/hooks/useFileDrop'
 import { getBand, requiredQuotationCount, BAND_LABEL, RECURRING_SUPPLIER_ORDER_THRESHOLD } from '@/lib/purchasing/quotationBands'
@@ -77,6 +77,8 @@ interface PurchaseRequest {
   requestedBy: { name: string } | null
   requestedByEmployee: { id: string; fullName: string; employeeNumber: string } | null
   approverEmployeeId?: string | null
+  // The manager whose sign-off a PENDING_APPROVAL PR is waiting on.
+  approverEmployee?: { id: string; fullName: string } | null
   approvedBy?: { name: string | null } | null
   approvedAt?: string | null
   verifiedBy: { name: string } | null
@@ -140,6 +142,7 @@ function leastAdvancedPo(orders: PurchaseRequest['orders']): { po: NonNullable<P
 }
 const FILTER_TABS = [
   { key: 'ALL', label: 'All' },
+  { key: 'PENDING_APPROVAL', label: 'Pending Approval' },
   { key: 'DRAFT', label: 'Draft' },
   // Not a status: every PR Warehouse still has lines to check — DRAFT plus parallel ON_PROCESS ones.
   { key: 'WAREHOUSE', label: 'Warehouse Check' },
@@ -305,6 +308,9 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
   const canWarehouseCheck = ['WAREHOUSE', 'ADMIN', 'SUPER_ADMIN'].includes((session?.user as { role?: string })?.role ?? '')
   // Who can release free warehouse stock to a backordered line ("Ship from stock now").
   const canShipBackorder = ['WAREHOUSE', 'PURCHASING', 'ADMIN', 'SUPER_ADMIN'].includes((session?.user as { role?: string })?.role ?? '')
+  // Boat Captain / Cruise Director request for their own yacht only — "Deliver to" is locked
+  // to its vessel location (enforced server-side too, see POST ../requests).
+  const isYachtRole = ['BOAT_CAPTAIN', 'CRUISE_DIRECTOR'].includes((session?.user as { role?: string })?.role ?? '')
   // Warehouse works the item list only — the PR Timeline is hidden for that role.
   const hideTimeline = (session?.user as { role?: string })?.role === 'WAREHOUSE'
   const [requests, setRequests] = useState<PurchaseRequest[]>([])
@@ -323,6 +329,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
   // never actually restricts access, it only picks what's shown first. Everyone else
   // (myDivision null) never sees this toggle and always gets the full list.
   const [myDivision, setMyDivision] = useState<'BOAT_OPERATION' | 'BUILDING_MATERIAL' | null>(null)
+  const [assignedYachtId, setAssignedYachtId] = useState<string | null>(null)
   const [divisionScope, setDivisionScope] = useState<'MINE' | 'ALL'>('MINE')
   // List page (same inbox list on every screen size).
   const [cardPage, setCardPage] = useState(1)
@@ -434,6 +441,9 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
   // whenever that's a vessel, as the sensible default.
   const [invLocationId, setInvLocationId] = useState('')
   const deliveryIsVessel = locations.find(l => l.id === deliveryLocationId)?.type === 'VESSEL'
+  const ownVessel = isYachtRole && assignedYachtId
+    ? locations.find(l => l.type === 'VESSEL' && !l.parentId && l.yachtId === assignedYachtId) ?? null
+    : null
   useEffect(() => {
     if (deliveryIsVessel) setInvLocationId(deliveryLocationId)
   }, [deliveryIsVessel, deliveryLocationId])
@@ -556,7 +566,11 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
     if (lRes.ok) setLocations((await lRes.json()).filter((l: StockLocation) => l.isActive))
     if (eRes.ok) setEmployees(await eRes.json())
     if (tRes.ok) setTrips(await tRes.json())
-    if (dRes.ok) setMyDivision((await dRes.json()).purchasingDivision)
+    if (dRes.ok) {
+      const d = await dRes.json()
+      setMyDivision(d.purchasingDivision)
+      setAssignedYachtId(d.assignedYachtId)
+    }
     setLoading(false)
   }, [])
 
@@ -1369,6 +1383,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
         ? `${least.po.currentLegLabel ?? PO_STATUS_LABEL[least.po.status] ?? least.po.status}${least.count > 1 ? ` (+${least.count - 1})` : ''}`
         : prStatusLabel(r)
       const note = least ? currentLocationLabel(least.po)
+        : r.status === 'PENDING_APPROVAL' ? `Waiting for ${r.approverEmployee?.fullName ?? 'manager'}`
         : r.status === 'ON_PROCESS' && r.warehousePending ? 'Warehouse still checking'
         : r.status === 'ON_PROCESS' && r.outstanding ? 'Waiting restock'
         : null
@@ -1382,7 +1397,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
     <div className="space-y-5">
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-2xl font-bold tracking-tight">Purchase Requests</h2>
-        <button onClick={() => setView('create')} className="flex items-center gap-2 bg-primary hover:bg-primary-hover text-primary-foreground text-sm font-medium px-4 py-2 rounded-md transition-colors">
+        <button onClick={() => { if (ownVessel) setDeliveryLocationId(ownVessel.id); setView('create') }} className="flex items-center gap-2 bg-primary hover:bg-primary-hover text-primary-foreground text-sm font-medium px-4 py-2 rounded-md transition-colors">
           <Plus className="h-4 w-4" /> New PR
         </button>
       </div>
@@ -1534,6 +1549,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
     return (
       <CreateRequestView
         items={items} locations={locations} employees={employees}
+        yachtRole={isYachtRole} ownVessel={ownVessel}
         deliveryLocationId={deliveryLocationId} setDeliveryLocationId={setDeliveryLocationId}
         requestedByEmployeeId={requestedByEmployeeId} setRequestedByEmployeeId={updateRequestedByEmployeeId}
         notes={notes} setNotes={setNotes}
@@ -1644,6 +1660,11 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                   </button>
                 )}
               </>
+            )}
+            {selected.status === 'PENDING_APPROVAL' && (
+              <span className="text-sm text-muted-foreground italic">
+                Waiting for {(detail ?? selected).approverEmployee?.fullName ?? 'manager'}&apos;s approval
+              </span>
             )}
             {selected.status === 'PENDING_APPROVAL' && (selected.createdBy?.id === session?.user?.id || isAdmin) && (
               <button onClick={() => deleteReq(selected)}
@@ -1793,7 +1814,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
               ...((detail.approverEmployeeId || detail.approvedAt) ? [{
                 key: 'approved', done: !!detail.approvedAt, label: 'Manager Approved',
                 date: detail.approvedAt ? formatDate(detail.approvedAt, 'datetime') : null,
-                sub: [detail.approvedBy?.name ? `by ${detail.approvedBy.name}` : (detail.status === 'PENDING_APPROVAL' ? 'Waiting for manager' : null)],
+                sub: [detail.approvedBy?.name ? `by ${detail.approvedBy.name}` : (detail.status === 'PENDING_APPROVAL' ? `Waiting for ${detail.approverEmployee?.fullName ?? 'manager'}` : null)],
               }] : []),
               ...(!skippedWarehouse ? [{
                 key: 'verified', done: !!detail.verifiedAt || fulfilledFromStock,
@@ -3575,6 +3596,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
 
 function CreateRequestView({
   items, locations, employees,
+  yachtRole, ownVessel,
   deliveryLocationId, setDeliveryLocationId,
   requestedByEmployeeId, setRequestedByEmployeeId,
   notes, setNotes,
@@ -3598,6 +3620,7 @@ function CreateRequestView({
   onBack,
 }: {
   items: PurchaseItem[]; locations: StockLocation[]; employees: EmployeeOption[]
+  yachtRole: boolean; ownVessel: StockLocation | null
   deliveryLocationId: string; setDeliveryLocationId: (id: string) => void
   requestedByEmployeeId: string; setRequestedByEmployeeId: (id: string) => void
   notes: string; setNotes: (v: string) => void
@@ -3668,7 +3691,7 @@ function CreateRequestView({
 
   const cartPanelProps = {
     cart, removeCartLine, changeCartQty, updateCartLine,
-    locations, deliveryLocationId, setDeliveryLocationId,
+    locations, deliveryLocationId, setDeliveryLocationId, yachtRole, ownVessel,
     employees, requestedByEmployeeId, setRequestedByEmployeeId,
     notes, setNotes,
     neededByDate, setNeededByDate, isUrgent, setIsUrgent, urgentReason, setUrgentReason,
@@ -3732,7 +3755,7 @@ function CreateRequestView({
 
             {catalogSource === 'inventory' ? (
               <InventoryFilters
-                vessels={locations.filter(l => l.type === 'VESSEL' && l.isActive && !l.parentId)}
+                vessels={yachtRole ? (ownVessel ? [ownVessel] : []) : locations.filter(l => l.type === 'VESSEL' && l.isActive && !l.parentId)}
                 invLocationId={invLocationId} setInvLocationId={setInvLocationId}
                 invRoomId={invRoomId} setInvRoomId={setInvRoomId}
                 invCategoryId={invCategoryId} setInvCategoryId={setInvCategoryId}
@@ -4068,7 +4091,7 @@ function InventoryPickerPanel({
 
 function RequestCartPanel({
   cart, removeCartLine, changeCartQty, updateCartLine,
-  locations, deliveryLocationId, setDeliveryLocationId,
+  locations, deliveryLocationId, setDeliveryLocationId, yachtRole = false, ownVessel = null,
   employees, requestedByEmployeeId, setRequestedByEmployeeId,
   notes, setNotes,
   neededByDate, setNeededByDate, isUrgent, setIsUrgent, urgentReason, setUrgentReason,
@@ -4080,6 +4103,7 @@ function RequestCartPanel({
   cart: RequestLine[]; removeCartLine: (key: string) => void; changeCartQty: (key: string, delta: number) => void
   updateCartLine: (key: string, patch: Partial<RequestLine>) => void
   locations: StockLocation[]; deliveryLocationId: string; setDeliveryLocationId: (id: string) => void
+  yachtRole?: boolean; ownVessel?: StockLocation | null
   employees: EmployeeOption[]; requestedByEmployeeId: string; setRequestedByEmployeeId: (id: string) => void
   notes: string; setNotes: (v: string) => void
   neededByDate: string; setNeededByDate: (v: string) => void
@@ -4209,6 +4233,19 @@ function RequestCartPanel({
         <div className="p-4 space-y-3.5 border-t bg-muted/20">
           <div className="space-y-1">
             <label className={label}>Deliver to <span className="text-destructive">*</span></label>
+            {/* Boat Captain / Cruise Director: always their own vessel, not a choice. */}
+            {yachtRole ? (
+              ownVessel ? (
+                <div className="w-full h-10 border rounded-lg px-3 text-sm bg-muted/50 flex items-center gap-2">
+                  <Ship className="h-4 w-4 text-muted-foreground shrink-0" />
+                  <span className="truncate">{ownVessel.name}</span>
+                </div>
+              ) : (
+                <p className="text-xs text-destructive bg-destructive/10 border border-destructive/30 rounded-md px-3 py-2">
+                  No yacht is assigned to your account yet — ask Admin to set it.
+                </p>
+              )
+            ) : (
             <select
               className={`w-full h-10 border rounded-lg px-3 text-sm bg-card focus:outline-none focus:ring-1 focus:ring-ring ${!deliveryLocationId && cart.length > 0 ? 'border-warning' : ''}`}
               value={deliveryLocationId} onChange={e => changeDeliveryLocation(e.target.value)}
@@ -4216,6 +4253,7 @@ function RequestCartPanel({
               <option value="">Select location…</option>
               {renderLocationOptions(locations, { topLevelOnly: true })}
             </select>
+            )}
           </div>
 
           {/* Purpose — general restocking vs a specific upcoming trip. Trip requests link
@@ -4225,7 +4263,7 @@ function RequestCartPanel({
             <div className="flex gap-1 bg-muted rounded-lg p-1">
               <button type="button" onClick={() => setPurpose('STOCK_INVENTORY')}
                 className={`flex-1 px-2 h-8 text-xs font-medium rounded-md transition-colors ${purpose === 'STOCK_INVENTORY' ? 'bg-card shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
-                Stock & Inventory
+                {yachtRole ? 'Vessel Inventory' : 'Stock & Inventory'}
               </button>
               <button type="button" onClick={() => setPurpose('TRIP')}
                 className={`flex-1 px-2 h-8 text-xs font-medium rounded-md transition-colors ${purpose === 'TRIP' ? 'bg-card shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>

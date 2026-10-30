@@ -7,9 +7,9 @@ import { roleMatches } from '@/lib/role-utils'
 import { defaultTreatmentForType } from '@/lib/purchasing/treatment'
 
 const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN']
-// Warehouse needs the item catalog to build a Purchase Request, but item/pricing
-// management itself (POST below) stays Purchasing-only.
-const READ_ALLOWED = [...ALLOWED, 'WAREHOUSE']
+// Warehouse/Crew/Boat Captain/Cruise Director need the item catalog to build a Purchase
+// Request, but item/pricing management itself (POST below) stays Purchasing-only.
+const READ_ALLOWED = [...ALLOWED, 'WAREHOUSE', 'CREW', 'BOAT_CAPTAIN', 'CRUISE_DIRECTOR']
 
 export async function GET() {
   const session = await getServerSession(authOptions)

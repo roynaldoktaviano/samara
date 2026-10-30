@@ -8,9 +8,10 @@ import { CONSUMPTION_MODES } from '@/lib/purchasing/consumptionMode'
 import type { StockConsumptionMode } from '@prisma/client'
 
 const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE']
-// GET-only: Boat Captain/Cruise Director need the location list purely to populate the
-// "Receive Items" modal's location picker for their own PO — never location create/edit.
-const VIEW_ALLOWED = [...ALLOWED, 'BOAT_CAPTAIN', 'CRUISE_DIRECTOR']
+// GET-only: Boat Captain/Cruise Director need the location list to populate the "Receive
+// Items" modal's location picker for their own PO, and Crew/Boat Captain/Cruise Director
+// the PR "Deliver to" picker — never location create/edit.
+const VIEW_ALLOWED = [...ALLOWED, 'CREW', 'BOAT_CAPTAIN', 'CRUISE_DIRECTOR']
 
 export async function GET() {
   const session = await getServerSession(authOptions)
