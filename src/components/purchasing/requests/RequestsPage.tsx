@@ -52,7 +52,7 @@ interface InventoryItemOption {
   id: string; itemNumber: string; name: string; quantity: number; unitPrice: number; photoKeys?: string[]
   category: { id: string; name: string }; room: { id: string; name: string }
 }
-interface RequestLine { id?: string; key?: string; itemId: string; itemName: string; baseUnit: string; purchaseUnit: string; itemUnit: string; unit?: string; quantity: number; estimatedCost: number; supplierId: string; supplierName: string; supplierSearch: string; supplierOpen: boolean; notes: string; search: string; open: boolean; currentStock?: number | null; onHandStock?: number | null; itemTreatment?: Treatment | null; reservedStock?: number; minStock?: number | null; stockCheck?: { locationId: string; locationName: string; requested: number; availability: number; reserve: number; onOrder: number; ending: number; shortage: number; minStock: number; toBeOrder: number; restockQty: number } | null; conversionFactor?: number | null; imageKeys?: string[]; isCustom?: boolean; isStockItem?: boolean; sourceInventoryItemId?: string | null; sourceInventoryItem?: { id: string; itemNumber: string; name: string; room: { name: string } | null; category: { name: string } | null } | null; warehouseStock?: { locationId: string; locationName: string; qty: number }[]; transferEligible?: boolean; quotations?: Quotation[]; exemptionReason?: string | null; selectionJustification?: string | null; requestedByEmployeeId?: string; quotationApproverId?: string | null; quotationApprover?: { id: string; name: string | null } | null; quotationSubmittedAt?: string | null; quotationApprovedById?: string | null; quotationApprovedBy?: { id: string; name: string | null } | null; quotationApprovedAt?: string | null; quotationRejectedBy?: { id: string; name: string | null } | null; quotationRejectedAt?: string | null; quotationRejectionReason?: string | null; convertedAt?: string | null; convertedPoId?: string | null; verifyRejectedById?: string | null; verifyRejectedBy?: { id: string; name: string | null } | null; verifyRejectedAt?: string | null; verifyRejectionReason?: string | null; warehouseDecision?: 'TRANSFER' | 'PURCHASE' | null; backorderQty?: number; backorderLocationId?: string | null; viaWarehouse?: boolean; warehouseCheckedAt?: string | null; warehouseCheckNote?: string | null; requestType?: 'NEW' | 'REPLACEMENT'; damageDetail?: string | null; transfer?: { id: string; transferNumber: string; status: string; fromLocationName: string } | null; sentFromStock?: number | null; toBeOrderSplit?: { po: number; pending: number; received?: number } | null; reservations?: { id: string; stockQty: number; reservedQty: number; source: string; transferId: string | null; transferNumber: string | null; purchaseOrderId: string | null; poNumber: string | null; createdAt: string }[]; requestedBase?: number; restockLocationId?: string | null; restockLocation?: { id: string; name: string } | null; restockOrders?: { prId: string; prNumber: string; poId: string | null; poNumber: string | null; poStatus: string | null; poExpectedAt?: string | null; qty: number }[]; warehouseApprovedAt?: string | null; warehouseReserveQty?: number | null; warehouseFromLocationId?: string | null }
+interface RequestLine { id?: string; key?: string; itemId: string; itemName: string; baseUnit: string; purchaseUnit: string; itemUnit: string; unit?: string; quantity: number; estimatedCost: number; supplierId: string; supplierName: string; supplierSearch: string; supplierOpen: boolean; notes: string; search: string; open: boolean; currentStock?: number | null; onHandStock?: number | null; itemTreatment?: Treatment | null; reservedStock?: number; minStock?: number | null; stockCheck?: { locationId: string; locationName: string; requested: number; availability: number; reserve: number; onOrder: number; ending: number; shortage: number; minStock: number; toBeOrder: number; restockQty: number } | null; conversionFactor?: number | null; imageKeys?: string[]; isCustom?: boolean; isStockItem?: boolean; sourceInventoryItemId?: string | null; sourceInventoryItem?: { id: string; itemNumber: string; name: string; room: { name: string } | null; category: { name: string } | null } | null; warehouseStock?: { locationId: string; locationName: string; qty: number }[]; transferEligible?: boolean; quotations?: Quotation[]; exemptionReason?: string | null; selectionJustification?: string | null; requestedByEmployeeId?: string; quotationApproverId?: string | null; quotationApprover?: { id: string; name: string | null } | null; quotationSubmittedAt?: string | null; quotationApprovedById?: string | null; quotationApprovedBy?: { id: string; name: string | null } | null; quotationApprovedAt?: string | null; quotationRejectedBy?: { id: string; name: string | null } | null; quotationRejectedAt?: string | null; quotationRejectionReason?: string | null; convertedAt?: string | null; convertedPoId?: string | null; verifyRejectedById?: string | null; verifyRejectedBy?: { id: string; name: string | null } | null; verifyRejectedAt?: string | null; verifyRejectionReason?: string | null; warehouseDecision?: 'TRANSFER' | 'PURCHASE' | null; backorderQty?: number; backorderLocationId?: string | null; viaWarehouse?: boolean; warehouseCheckedAt?: string | null; warehouseCheckNote?: string | null; requestType?: 'NEW' | 'REPLACEMENT'; damageDetail?: string | null; transfer?: { id: string; transferNumber: string; status: string; fromLocationName: string } | null; sentFromStock?: number | null; toBeOrderSplit?: { po: number; pending: number; received?: number } | null; reservations?: { id: string; stockQty: number; reservedQty: number; source: string; transferId: string | null; transferNumber: string | null; purchaseOrderId: string | null; poNumber: string | null; createdAt: string }[]; requestedBase?: number; backorderFree?: number; restockLocationId?: string | null; restockLocation?: { id: string; name: string } | null; restockOrders?: { prId: string; prNumber: string; poId: string | null; poNumber: string | null; poStatus: string | null; poExpectedAt?: string | null; qty: number }[]; warehouseApprovedAt?: string | null; warehouseReserveQty?: number | null; warehouseFromLocationId?: string | null }
 interface PurchaseRequest {
   id: string
   prNumber: string
@@ -303,6 +303,8 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
   // plus Admin/Super Admin as a manual override — gates the physical stock-check step at
   // DRAFT (see PATCH .../items/[itemId]/warehouse-check and .../warehouse-forward).
   const canWarehouseCheck = ['WAREHOUSE', 'ADMIN', 'SUPER_ADMIN'].includes((session?.user as { role?: string })?.role ?? '')
+  // Who can release free warehouse stock to a backordered line ("Ship from stock now").
+  const canShipBackorder = ['WAREHOUSE', 'PURCHASING', 'ADMIN', 'SUPER_ADMIN'].includes((session?.user as { role?: string })?.role ?? '')
   // Warehouse works the item list only — the PR Timeline is hidden for that role.
   const hideTimeline = (session?.user as { role?: string })?.role === 'WAREHOUSE'
   const [requests, setRequests] = useState<PurchaseRequest[]>([])
@@ -327,6 +329,8 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
   const LIST_PAGE_SIZE = 20
   // List search (PR no., items, requester, destination).
   const [search, setSearch] = useState('')
+  // PR line id whose backorder is being shipped from stock right now.
+  const [shippingBackorder, setShippingBackorder] = useState<string | null>(null)
   // List filter chips: only open Urgent PRs / only auto Restock PRs.
   const [urgentOnly, setUrgentOnly] = useState(false)
   const [restockOnly, setRestockOnly] = useState(false)
@@ -1223,6 +1227,19 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
     await fetchDetail(detail.id)
   }
 
+  // "Ship from stock now" on a backordered line: free stock at its warehouse goes onto a TR
+  // (oldest backorder first) — see POST .../items/[itemId]/ship-backorder.
+  async function shipBackorder(itemId: string) {
+    if (!detail) return
+    setShippingBackorder(itemId)
+    const res = await fetch(`/api/purchasing/requests/${detail.id}/items/${itemId}/ship-backorder`, { method: 'POST' })
+    const data = await res.json().catch(() => ({}))
+    setShippingBackorder(null)
+    if (!res.ok) { toast.error(data.error ?? 'Failed to ship from stock'); return }
+    toast.success(data.transferNumbers?.length ? `Ready to dispatch on ${data.transferNumbers.join(', ')}` : 'Shipped from stock')
+    await fetchDetail(detail.id)
+  }
+
   // Warehouse's "Process Purchase Request" — decides every approved line at once (TR for the
   // Reserve + backorder for the rest), puts To Be Order on restock lines to the warehouse, then
   // closes the PR straight to CONVERTED if everything came from stock, else ON_PROCESS.
@@ -1975,7 +1992,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                       // A check that reserved nothing (all bought by Purchasing) isn't a batch — just note it.
                       if (r.reserved <= 0) return (
                         <p key={r.key} className="px-3 py-2.5 text-[11px] text-muted-foreground">
-                          {r.date ? formatDate(r.date) : '—'} · {r.restock ? 'Restock arrived' : 'Warehouse check'}
+                          {r.date ? formatDate(r.date) : '—'} · {r.restock ? (r.po ? 'Restock arrived' : 'From warehouse stock') : 'Warehouse check'}
                           {r.stock !== null && <> · stock then {lineQtyLabel(item, r.stock)}</>} — nothing reserved
                         </p>
                       )
@@ -1992,7 +2009,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                                   Batch {k + 1} · <span className="font-semibold tabular-nums">{lineQtyLabel(item, r.reserved)}</span>
                                 </p>
                                 <p className="text-[11px] text-muted-foreground">
-                                  {r.restock ? 'Restock arrived' : 'Warehouse check'}
+                                  {r.restock ? (r.po ? 'Restock arrived' : 'From warehouse stock') : 'Warehouse check'}
                                   {r.stock !== null && <> · stock then {lineQtyLabel(item, r.stock)}</>}
                                   {r.po && <> · {docLink(r.po.number, onOpenPo ? () => onOpenPo(r.po!.id) : undefined)}</>}
                                   {r.tr && <> · {docLink(r.tr.number, onOpenTransfer && r.tr.id ? () => onOpenTransfer(r.tr!.id!) : undefined)}</>}
@@ -2017,10 +2034,12 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                       ) : (
                         <div className="flex items-start gap-1.5">
                           <Clock className="h-3.5 w-3.5 mt-px shrink-0 text-warning" />
-                          <div>
+                          <div className="flex-1 min-w-0">
                             <p className="font-medium text-warning">Next batch · {lineQtyLabel(item, remaining)} remaining</p>
                             <p className="text-muted-foreground mt-0.5">
-                              {nextOrder?.poId && nextOrder.poNumber ? (
+                              {(item.backorderFree ?? 0) > 0 ? (
+                                <>{lineQtyLabel(item, item.backorderFree!)} is free at the warehouse now — it only ships by itself when a restock arrives, so send it from stock.</>
+                              ) : nextOrder?.poId && nextOrder.poNumber ? (
                                 <>Restock on {docLink(nextOrder.poNumber, onOpenPo ? () => onOpenPo(nextOrder.poId!) : undefined)}
                                   {nextOrder.poStatus && <> ({PO_STATUS_LABEL[nextOrder.poStatus] ?? nextOrder.poStatus})</>}
                                   {nextOrder.poExpectedAt && <> · ETA {formatDate(nextOrder.poExpectedAt)}</>}
@@ -2033,6 +2052,13 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                                 <>Waiting for restock at the warehouse — reserved automatically once it arrives.</>
                               )}
                             </p>
+                            {canShipBackorder && (item.backorderFree ?? 0) > 0 && (item.backorderQty ?? 0) > 0 && (
+                              <button onClick={() => shipBackorder(item.id!)} disabled={shippingBackorder === item.id}
+                                className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md bg-primary text-primary-foreground hover:bg-primary-hover transition-colors disabled:opacity-50">
+                                <ArrowRightLeft className="h-3.5 w-3.5" />
+                                {shippingBackorder === item.id ? 'Shipping…' : `Ship ${lineQtyLabel(item, Math.min(item.backorderQty!, item.backorderFree!))} from stock now`}
+                              </button>
+                            )}
                           </div>
                         </div>
                       )}

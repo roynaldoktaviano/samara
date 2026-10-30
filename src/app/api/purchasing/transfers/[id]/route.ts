@@ -12,6 +12,7 @@ import { tripFromBooking, tripFromOpenTrip, tripBookingSelect, openTripSelect } 
 import { resolveAssignedYachtId } from '@/lib/purchasing/yachtScope'
 import { canDispatchFrom, DISPATCH_OWNER_LABEL } from '@/lib/purchasing/dispatchPermission'
 import { backorderShortDispatch, reopenForCancelledTransfer } from '@/lib/purchasing/prLineReopen'
+import { allocateBackorders } from '@/lib/purchasing/backorders'
 
 class AlreadyDispatchedError extends Error {}
 
@@ -230,6 +231,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (!cancelled.count) return NextResponse.json({ error: 'Only a PENDING transfer can be cancelled' }, { status: 409 })
     // A PR's warehouse transfer: its lines must not stay "fulfilled" — put them back to be processed.
     const reopened = await reopenForCancelledTransfer(db, id, session.user.id)
+    // The stock it reserved is free again — hand it to backorders waiting at that warehouse.
+    await allocateBackorders(db, transfer.fromLocationId, transfer.items.map(i => i.itemId))
     emitTenantEvent(session.user.tenantId, 'purchasing-transfers')
     if (reopened.length) emitTenantEvent(session.user.tenantId, 'purchasing-requests')
     return NextResponse.json({ ok: true, reopenedItems: reopened })

@@ -9,6 +9,7 @@ import { emitTenantEvent } from '@/lib/realtime-bus'
 import { notifyByRole, notifyByRoleForRequest } from '@/lib/notify-purchasing'
 import { createOrAppendTransfer, toBaseQty } from '@/lib/purchasing/transferActions'
 import { computeStockChecks } from '@/lib/purchasing/stockCheck'
+import { freeStock } from '@/lib/purchasing/warehouseProcess'
 import { warehouseHomeLocationId } from '@/lib/purchasing/warehouseHome'
 import { effectiveTreatment, type Treatment } from '@/lib/purchasing/treatment'
 import { routePrLines, initialPrStatus, notifyPrRouted } from '@/lib/purchasing/requestItems'
@@ -213,6 +214,13 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const firstLineOfItem = new Map<string, string>()
   for (const item of request.items) if (item.itemId && !firstLineOfItem.has(item.itemId)) firstLineOfItem.set(item.itemId, item.id)
 
+  // Free stock where each backordered line waits. A backorder ships by itself only when stock
+  // arrives (a PO receipt / incoming TR); stock freed any other way (a cancelled TR, an opname)
+  // lets the UI offer "Ship from stock now" instead of the line waiting for nothing.
+  const backorderFree = await freeStock(db, request.items
+    .filter(i => i.itemId && i.backorderQty > 0 && i.backorderLocationId)
+    .map(i => ({ itemId: i.itemId!, locationId: i.backorderLocationId! })))
+
   const items = request.items.map(item => {
     const master = item.itemId ? itemMasterMap.get(item.itemId) : null
     const isFirst = !!item.itemId && firstLineOfItem.get(item.itemId) === item.id
@@ -270,6 +278,9 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       toBeOrderSplit,
       restockOrders: processed && isFirst && !warehouseOnly ? restockOrders.get(item.itemId!) ?? [] : [],
       requestedBase: requiredBaseQty,
+      backorderFree: item.itemId && item.backorderQty > 0 && item.backorderLocationId
+        ? backorderFree.get(`${item.itemId}:${item.backorderLocationId}`) ?? 0
+        : 0,
     }
   })
 

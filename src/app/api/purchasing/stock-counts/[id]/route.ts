@@ -6,6 +6,7 @@ import { getDb } from '@/lib/get-db'
 import { roleMatches } from '@/lib/role-utils'
 import { effectiveConsumptionMode } from '@/lib/purchasing/consumptionMode'
 import { qtyLabel } from '@/lib/purchasing/units'
+import { allocateBackorders } from '@/lib/purchasing/backorders'
 
 const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE']
 
@@ -138,6 +139,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         })
       }
     }
+    // A count that found more than the system had frees stock — hand it to backorders waiting there.
+    await allocateBackorders(db, updated.locationId, updated.items.filter(ci => ci.countedQty > ci.systemQty).map(ci => ci.itemId))
   }
 
   return NextResponse.json(updated)
