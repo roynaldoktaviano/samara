@@ -35,10 +35,14 @@ export const IG_LOGIN_BRAND_KEYS: Record<WhatsappBrand, {
 /** Every Instagram App Secret configured — the webhook accepts a signature from any of them. */
 export const IG_LOGIN_APP_SECRET_KEYS: TenantSecretKey[] = ['igLoginAppSecret', 'igLoginMischiefAppSecret', 'igLoginOtiumAppSecret']
 
+/** Public base URL — behind the proxy req.nextUrl.origin is the bind address (0.0.0.0:3000). */
+export function appBaseUrl() {
+  return (process.env.NEXT_PUBLIC_APP_URL || process.env.NEXTAUTH_URL || '').replace(/\/+$/, '')
+}
+
 /** The OAuth redirect URI — shared by Instagram Login and Facebook Login for Business. */
 export function igLoginRedirectUri() {
-  const base = (process.env.NEXT_PUBLIC_APP_URL || process.env.NEXTAUTH_URL || '').replace(/\/+$/, '')
-  return `${base}/api/meta/instagram/callback`
+  return `${appBaseUrl()}/api/meta/instagram/callback`
 }
 
 /** The brand's own Instagram app when it sits in a separate Meta App, else the shared one. */
@@ -114,9 +118,13 @@ function graphError(data: GraphError, status: number) {
   return data.error_message || (typeof data.error === 'string' ? data.error : null) || `Instagram returned ${status}`
 }
 
-async function igJson<T>(res: Response): Promise<T> {
+// `step` prefixes the message so a failed connect says which call Instagram rejected.
+async function igJson<T>(res: Response, step?: string): Promise<T> {
   const data = await res.json().catch(() => ({})) as T & GraphError
-  if (!res.ok || (typeof data.error === 'object' && data.error)) throw new Error(graphError(data, res.status))
+  if (!res.ok || (typeof data.error === 'object' && data.error)) {
+    const message = graphError(data, res.status)
+    throw new Error(step ? `${step}: ${message}` : message)
+  }
   return data
 }
 
@@ -134,20 +142,20 @@ export async function connectIgLogin(tenantId: string, brand: WhatsappBrand, raw
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({ client_id: app.appId, client_secret: app.appSecret, grant_type: 'authorization_code', redirect_uri: igLoginRedirectUri(), code }),
-  }))
+  }), 'Code exchange')
   const shortToken = short.access_token ?? short.data?.[0]?.access_token
   if (!shortToken) throw new Error('Instagram did not return an access token')
 
   const long = await igJson<{ access_token: string; expires_in?: number }>(await fetch(
     `https://graph.instagram.com/access_token?${new URLSearchParams({ grant_type: 'ig_exchange_token', client_secret: app.appSecret, access_token: shortToken })}`,
-  ))
+  ), 'Long-lived token')
   const token = long.access_token
   const expiresAt = new Date(Date.now() + (long.expires_in ?? 60 * 24 * 3600) * 1000)
 
   // user_id is the professional account id Instagram puts in webhook entries (entry.id).
   const me = await igJson<{ user_id?: string; id?: string; username?: string }>(await fetch(
     `${IG_GRAPH}/me?fields=user_id,username`, { headers: { Authorization: `Bearer ${token}` } },
-  ))
+  ), 'Account lookup')
   const igAccountId = me.user_id ?? me.id
   if (!igAccountId) throw new Error('Instagram did not return the account id')
 

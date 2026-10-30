@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { connectFacebookLogin } from '@/lib/facebook-login'
-import { connectIgLogin, verifyIgLoginState } from '@/lib/instagram-login'
+import { appBaseUrl, connectIgLogin, verifyIgLoginState } from '@/lib/instagram-login'
 import { logSuperAdmin } from '@/lib/super-admin-log'
 import { WHATSAPP_BRAND_LABELS } from '@/lib/whatsapp-brands'
 
@@ -13,7 +13,7 @@ import { WHATSAPP_BRAND_LABELS } from '@/lib/whatsapp-brands'
 export async function GET(req: NextRequest) {
   const params = req.nextUrl.searchParams
   const back = (q: Record<string, string>) => {
-    const url = new URL('/super-admin', req.nextUrl.origin)
+    const url = new URL('/super-admin', appBaseUrl() || req.nextUrl.origin)
     for (const [k, v] of Object.entries(q)) url.searchParams.set(k, v)
     const res = NextResponse.redirect(url)
     res.cookies.delete({ name: 'ig_login_nonce', path: '/api/meta/instagram' })

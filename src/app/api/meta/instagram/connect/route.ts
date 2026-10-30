@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { facebookLoginAuthorizeUrl } from '@/lib/facebook-login'
-import { igLoginAuthorizeUrl, signIgLoginState } from '@/lib/instagram-login'
+import { appBaseUrl, igLoginAuthorizeUrl, signIgLoginState } from '@/lib/instagram-login'
 import { WHATSAPP_BRANDS, type WhatsappBrand } from '@/lib/whatsapp-brands'
 
 // Super Admin → "Connect Instagram" (Instagram Login) or "Connect via Facebook" (Facebook Login
@@ -25,7 +25,7 @@ export async function GET(req: NextRequest) {
   const state = signIgLoginState({ tenantId, brand, nonce, via })
   const url = via === 'facebook' ? await facebookLoginAuthorizeUrl(tenantId, state) : await igLoginAuthorizeUrl(tenantId, brand, state)
   if (!url) {
-    const back = new URL('/super-admin', req.nextUrl.origin)
+    const back = new URL('/super-admin', appBaseUrl() || req.nextUrl.origin)
     back.searchParams.set('igTenant', tenantId)
     back.searchParams.set('igError', via === 'facebook'
       ? 'Set the Meta App ID, Meta DM App Secret and Login Configuration ID first (Secrets → Facebook & Instagram DM)'
