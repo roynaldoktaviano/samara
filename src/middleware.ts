@@ -34,6 +34,10 @@ const PUBLIC_PATHS = [
   '/agent-portal',
   '/api/agent-portal',
   '/media-kit',
+    // Per-yacht availability calendar (e.g. Mischief) — shared as a plain link with external
+  // partners; its API (/api/public/yacht-calendar) only ever returns booked dates
+  '/calendar/yacht',
+
   // Sales presentation microsite — gated by its own shared password, not staff NextAuth
   '/sales-pro',
   '/api/sales-pro',
