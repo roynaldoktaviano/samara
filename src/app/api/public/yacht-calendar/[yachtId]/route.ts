@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { withRetry } from '@/lib/db'
+import { resolveTenantByLookup } from '@/lib/resolve-tenant'
 
 // Public, unauthenticated, single-yacht calendar feed — deliberately returns nothing
 // beyond a list of booked dates. No customer, status, price, or trip info leaks here,
@@ -8,13 +9,16 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ yac
   const { yachtId } = await params
 
   try {
-    const yacht = await db.yacht.findUnique({
-      where: { id: yachtId },
-      select: { id: true, name: true, deletedAt: true },
-    })
-    if (!yacht || yacht.deletedAt) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    // No session on this public route, so the yacht's tenant is found by scanning — a
+    // plain `db` lookup only ever hits the default tenant and 404s for every other one.
+    const found = await resolveTenantByLookup(client => client.yacht.findFirst({
+      where: { id: yachtId, deletedAt: null },
+      select: { id: true, name: true },
+    }))
+    if (!found) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    const { db, record: yacht } = found
 
-    const [bookings, openTrips, internalEvents] = await Promise.all([
+    const [bookings, openTrips, internalEvents] = await withRetry(db, () => Promise.all([
       db.booking.findMany({
         where: { yachtId, status: { not: 'cancelled' } },
         select: { startDate: true, endDate: true },
@@ -30,7 +34,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ yac
         where: { internalOnly: false, OR: [{ yachtId }, { yachtId: null }] },
         select: { startDate: true, endDate: true },
       }),
-    ])
+    ]))
 
     const booked = new Set<string>()
     const markRange = (start: Date, end: Date) => {
