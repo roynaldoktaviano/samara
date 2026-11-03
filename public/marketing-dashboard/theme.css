@@ -1,0 +1,146 @@
+/* Base reset the Dashboard type applies globally (Tailwind v4 preflight), copied from its stylesheet */
+@layer base {
+*,:after,:before,::backdrop{box-sizing:border-box;border:0 solid;margin:0;padding:0}
+::file-selector-button{box-sizing:border-box;border:0 solid;margin:0;padding:0}
+html,:host{-webkit-text-size-adjust:100%;tab-size:4;line-height:1.5;font-family:var(--default-font-family,-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", "Noto Sans", Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji");font-feature-settings:var(--default-font-feature-settings,normal);font-variation-settings:var(--default-font-variation-settings,normal);-webkit-tap-highlight-color:transparent}
+hr{height:0;color:inherit;border-top-width:1px}
+abbr:where([title]){-webkit-text-decoration:underline dotted;text-decoration:underline dotted}
+h1,h2,h3,h4,h5,h6{font-size:inherit;font-weight:inherit}
+a{color:inherit;-webkit-text-decoration:inherit;-webkit-text-decoration:inherit;-webkit-text-decoration:inherit;text-decoration:inherit}
+b,strong{font-weight:bolder}
+code,kbd,samp,pre{font-family:var(--default-mono-font-family,ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace);font-feature-settings:var(--default-mono-font-feature-settings,normal);font-variation-settings:var(--default-mono-font-variation-settings,normal);font-size:1em}
+small{font-size:80%}
+sub,sup{vertical-align:baseline;font-size:75%;line-height:0;position:relative}
+sub{bottom:-.25em}
+sup{top:-.5em}
+table{text-indent:0;border-color:inherit;border-collapse:collapse}
+:-moz-focusring:where(:not(iframe)){outline:auto}
+progress{vertical-align:baseline}
+summary{display:list-item}
+ol,ul,menu{list-style:none}
+img,svg,video,canvas,audio,iframe,embed,object{vertical-align:middle;display:block}
+img,video{max-width:100%;height:auto}
+button,input,select,optgroup,textarea{font:inherit;font-feature-settings:inherit;font-variation-settings:inherit;letter-spacing:inherit;color:inherit;opacity:1;background-color:#0000;border-radius:0}
+::file-selector-button{font:inherit;font-feature-settings:inherit;font-variation-settings:inherit;letter-spacing:inherit;color:inherit;opacity:1;background-color:#0000;border-radius:0}
+:where(select:is([multiple],[size])) optgroup{font-weight:bolder}
+:where(select:is([multiple],[size])) optgroup option{padding-inline-start:20px}
+::file-selector-button{margin-inline-end:4px}
+::placeholder{opacity:1}
+@supports (not ((-webkit-appearance:-apple-pay-button))) or (contain-intrinsic-size:1px){::placeholder{color:currentColor}
+@supports (color:color-mix(in lab, red, red)){::placeholder{color:color-mix(in oklab, currentcolor 50%, transparent)}
+}
+}
+textarea{resize:vertical}
+::-webkit-search-decoration{-webkit-appearance:none}
+::-webkit-date-and-time-value{min-height:1lh;text-align:inherit}
+::-webkit-datetime-edit{display:inline-flex}
+::-webkit-datetime-edit-fields-wrapper{padding:0}
+::-webkit-datetime-edit{padding-block:0}
+::-webkit-datetime-edit-year-field{padding-block:0}
+::-webkit-datetime-edit-month-field{padding-block:0}
+::-webkit-datetime-edit-day-field{padding-block:0}
+::-webkit-datetime-edit-hour-field{padding-block:0}
+::-webkit-datetime-edit-minute-field{padding-block:0}
+::-webkit-datetime-edit-second-field{padding-block:0}
+::-webkit-datetime-edit-millisecond-field{padding-block:0}
+::-webkit-datetime-edit-meridiem-field{padding-block:0}
+::-webkit-calendar-picker-indicator{line-height:1}
+:-moz-ui-invalid{box-shadow:none}
+button,input:where([type=button],[type=reset],[type=submit]){appearance:button}
+::file-selector-button{appearance:button}
+::-webkit-inner-spin-button{height:auto}
+::-webkit-outer-spin-button{height:auto}
+[hidden]:where(:not([hidden=until-found])){display:none!important}
+*, ::before, ::after { border-color: var(--cds-border); }
+}
+
+/* Design tokens of the claude.ai Dashboard type (comfortable density), resolved to plain values
+   so the page's own styles render the same outside claude.ai. Light first, dark follows the OS. */
+:root {
+  color-scheme: light dark;
+  --font-anthropic-sans: "Anthropic Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-anthropic-serif: "Anthropic Serif", ui-serif, Georgia, "Times New Roman", serif;
+
+  --cds-font-size-caption: .75rem;
+  --cds-font-size-body: .875rem;
+  --cds-font-size-heading: .9375rem;
+  --cds-font-size-title: 1.375rem;
+  --cds-font-weight-medium: 500;
+  --cds-gap-xs: .5rem;
+  --cds-gap-sm: .75rem;
+  --cds-gap-md: 1rem;
+  --cds-gap-lg: 1.75rem;
+  --cds-pad-xs: .375rem;
+  --cds-pad-sm: .5rem;
+  --cds-pad-md: .75rem;
+  --cds-pad-lg: 1rem;
+  --cds-pad-xl: 1.5rem;
+  --cds-radius: .5rem;
+  --cds-dur-slow: .45s;
+
+  --color-fg: #0b0b0b;
+  --color-fg-muted: #898781;
+  --color-bg: #f9f9f7;
+  --color-panel: #fff;
+  --color-border-line: rgb(11 11 11 / 10%);
+  --color-ok: #006300;
+  --color-warn: #734500;
+  --color-bad: #8e2626;
+
+  --cds-border: rgb(11 11 11 / 10%);
+  --cds-text-secondary: #52514e;
+  --cds-surface-popover: #fff;
+  --cds-shadow-popover: 0 8px 24px #0000001f, 0 2px 6px #00000014;
+  --cds-chart-muted: #c3c2b7;
+  --cds-chart-status-critical: #d03b3b;
+  --cds-chart-grid: rgb(11 11 11 / 10%);
+  --cds-chart-axis: #c3c2b7;
+  --cds-chart-reference: #898781;
+  --cds-chart-categorical-1: #2a78d6;
+  --cds-chart-categorical-2: #eb6834;
+  --cds-chart-categorical-3: #1baf7a;
+  --cds-chart-categorical-4: #eda100;
+  --cds-chart-categorical-5: #e87ba4;
+  --cds-chart-categorical-6: #008300;
+  --cds-chart-categorical-7: #6250d6;
+  --cds-chart-categorical-8: #e34948;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-fg: #f0efec;
+    --color-fg-muted: #898781;
+    --color-bg: #0b0b0b;
+    --color-panel: #1a1a19;
+    --color-border-line: rgb(255 255 255 / 10%);
+    --color-ok: #0ca30c;
+    --color-warn: #db9300;
+    --color-bad: #ec7e7e;
+
+    --cds-border: rgb(255 255 255 / 10%);
+    --cds-text-secondary: #c3c2b7;
+    --cds-surface-popover: #20201f;
+    --cds-shadow-popover: 0 8px 24px #00000052, 0 2px 6px #0003;
+    --cds-chart-muted: #5f5e5a;
+    --cds-chart-grid: rgb(255 255 255 / 10%);
+    --cds-chart-axis: #383835;
+    --cds-chart-reference: #97958d;
+    --cds-chart-categorical-1: #3987e5;
+    --cds-chart-categorical-2: #d95926;
+    --cds-chart-categorical-3: #199e70;
+    --cds-chart-categorical-4: #c98500;
+    --cds-chart-categorical-5: #d55181;
+    --cds-chart-categorical-7: #9085e9;
+    --cds-chart-categorical-8: #e66767;
+  }
+}
+
+html, body { margin: 0; background: var(--color-bg); }
+#dash-root { color: var(--color-fg); font-family: var(--font-anthropic-sans); font-size: 14px; line-height: 1.45; padding: clamp(var(--cds-pad-md), 4%, var(--cds-pad-xl)); }
+
+/* Loading placeholders, as the Dashboard runtime draws them */
+.dash-skeleton { -webkit-text-fill-color: transparent !important; background-image: linear-gradient(color-mix(in srgb, currentColor 13%, transparent) 0 0) !important; border-radius: .3em; }
+.dash-skeleton > * { visibility: hidden !important; }
+.dash-skeleton:empty::before { content: ""; width: 3ch; display: inline-block; }
+.dash-skeleton:not(:empty, :has(> :not(span, small, b, strong, em, i, sup, sub))) { background-image: none !important; }
+.dash-skeleton:not(:empty, :has(> :not(span, small, b, strong, em, i, sup, sub)))::before { content: "" !important; display: inline-block !important; vertical-align: -.1em; border-radius: .3em; width: 5ch; height: .9em; margin-inline-end: -1em; background-image: linear-gradient(color-mix(in srgb, currentColor 13%, transparent) 0 0) !important; }

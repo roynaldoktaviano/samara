@@ -1,0 +1,772 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Samara Marketing Intelligence</title>
+<link rel="icon" href="/app-icons/icon-192.png">
+<link rel="stylesheet" href="/marketing-dashboard/theme.css">
+</head>
+<body>
+<div id="dash-root">
+<style>
+.smi { font-family: var(--font-anthropic-sans); color: var(--color-fg); display: flex; flex-direction: column; gap: 1.5rem; }
+.smi * { box-sizing: border-box; }
+.smi-head { display: flex; flex-direction: column; gap: var(--cds-gap-xs); }
+.smi-head h1 { font-family: var(--font-anthropic-serif); font-weight: 400; font-size: var(--cds-font-size-title); margin: 0; text-wrap: balance; }
+.smi-take { margin: 0; max-width: 70ch; color: var(--color-fg); font-size: var(--cds-font-size-body); line-height: 1.5; }
+.smi-meta { display: flex; flex-wrap: wrap; gap: var(--cds-gap-sm); align-items: center; color: var(--color-fg-muted); font-size: var(--cds-font-size-caption); }
+.smi-badge { border: 1px solid var(--color-warn); color: var(--color-warn); border-radius: 999px; padding: 1px 8px; font-size: var(--cds-font-size-caption); letter-spacing: .02em; }
+.smi-tabs { display: flex; flex-wrap: wrap; gap: var(--cds-gap-sm) var(--cds-gap-lg); border-bottom: 1px solid var(--color-border-line); }
+.tgroup { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.tglabel { font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); text-transform: uppercase; letter-spacing: .06em; padding: 0 var(--cds-pad-md); }
+.tgrow { display: flex; flex-wrap: wrap; gap: 2px; }
+.smi h2.grp { margin-top: var(--cds-gap-sm); }
+.more { border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); padding: var(--cds-pad-sm) var(--cds-pad-md); }
+.more > summary { cursor: pointer; font-size: var(--cds-font-size-body); color: var(--color-fg-muted); padding: 4px 0; }
+.more[open] > summary { margin-bottom: var(--cds-gap-md); color: var(--color-fg); }
+.more-body { display: flex; flex-direction: column; gap: var(--cds-gap-lg); }
+.dec-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 28rem), 1fr)); gap: var(--cds-gap-md); }
+.dec-head { display: flex; gap: var(--cds-gap-sm); align-items: baseline; flex-wrap: wrap; }
+.dec-n { font-family: var(--font-anthropic-serif); font-size: var(--cds-font-size-title); color: var(--color-fg-muted); min-width: 1.2em; }
+.dec-head h3 { flex: 1 1 14rem; }
+.dec .verdict { font-size: var(--cds-font-size-body); line-height: 1.55; }
+.dec .ev { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr)); gap: var(--cds-gap-sm); border-top: 1px solid var(--color-border-line); padding-top: var(--cds-gap-sm); }
+.dec .ev div { display: flex; flex-direction: column; gap: 2px; font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); }
+.smi .dec .ev b { color: var(--color-fg); font-family: var(--font-anthropic-serif); font-weight: 400; font-size: var(--cds-font-size-heading); font-variant-numeric: tabular-nums; }
+.dec .meta { font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); line-height: 1.45; margin: 0; }
+.dec .meta strong { color: var(--color-fg); font-weight: var(--cds-font-weight-medium); }
+.dec .btn { align-self: flex-start; }
+.qbar { border-left: 3px solid var(--color-fg); padding: 2px 0 2px var(--cds-pad-md); display: flex; flex-direction: column; gap: 4px; }
+.qbar .qq { font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); text-transform: uppercase; letter-spacing: .06em; }
+.qbar .qt { font-size: var(--cds-font-size-heading); font-weight: var(--cds-font-weight-medium); }
+.qbar .qa { margin: 0; font-size: var(--cds-font-size-body); line-height: 1.5; max-width: 85ch; }
+.qbar .qlink { font: inherit; font-size: var(--cds-font-size-caption); background: none; border: 0; padding: 0; color: var(--color-fg-muted); text-decoration: underline; cursor: pointer; align-self: flex-start; }
+
+.fwd { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr)); gap: var(--cds-gap-md); }
+.fwd > div { display: flex; flex-direction: column; gap: 4px; font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); line-height: 1.45; }
+.smi .fwd b.big { font-family: var(--font-anthropic-serif); font-weight: 400; font-size: var(--cds-font-size-title); color: var(--color-fg); font-variant-numeric: tabular-nums; }
+.smi .fwd b { color: var(--color-fg); font-weight: var(--cds-font-weight-medium); }
+.fwd-lists { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr)); gap: var(--cds-gap-md); }
+.fwd-lists h4 { margin: 0 0 4px; font-size: var(--cds-font-size-body); font-weight: var(--cds-font-weight-medium); }
+.fwd-lists ul { margin: 0; padding-left: 1.1em; display: flex; flex-direction: column; gap: 4px; font-size: var(--cds-font-size-caption); line-height: 1.45; }
+.only-d .g-a, .only-d .g-c, .only-a .g-d, .only-a .g-c, .only-c .g-d, .only-c .g-a { display: none; }
+.yn-yes { color: var(--color-ok); } .yn-no { color: var(--color-fg-muted); }
+.gov h4 { margin: var(--cds-gap-sm) 0 4px; font-size: var(--cds-font-size-body); font-weight: var(--cds-font-weight-medium); }
+.gov p, .gov li { font-size: var(--cds-font-size-body); line-height: 1.5; max-width: 80ch; }
+.gov ul { margin: 0; padding-left: 1.2em; display: flex; flex-direction: column; gap: 4px; }
+.smi .gov td { white-space: normal; text-align: left; vertical-align: top; min-width: 9rem; }
+.smi .gov th { text-align: left; }
+.smi-tabs button { font: inherit; font-size: var(--cds-font-size-body); background: none; border: 0; border-bottom: 2px solid transparent; color: var(--color-fg-muted); padding: var(--cds-pad-sm) var(--cds-pad-md); cursor: pointer; white-space: nowrap; }
+.smi-tabs button[aria-selected="true"] { color: var(--color-fg); border-bottom-color: var(--color-fg); }
+.smi-tabs button:focus-visible, .smi button:focus-visible, .smi select:focus-visible, .smi input:focus-visible { outline: 2px solid var(--color-fg); outline-offset: 2px; }
+.smi-filters { display: flex; flex-wrap: wrap; gap: var(--cds-gap-sm); align-items: end; }
+.smi-field { display: flex; flex-direction: column; gap: 2px; font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); min-width: 0; }
+.smi select, .smi input { font: inherit; font-size: var(--cds-font-size-body); color: var(--color-fg); background: var(--color-panel); border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); padding: 6px 8px; min-width: 0; }
+.smi input[type=number] { width: 9rem; }
+.smi .btn { font: inherit; font-size: var(--cds-font-size-caption); background: none; border: 1px solid var(--color-border-line); color: var(--color-fg); border-radius: var(--cds-radius); padding: 6px 10px; cursor: pointer; }
+.page { display: flex; flex-direction: column; gap: 1.25rem; }
+.page h2 { font-size: var(--cds-font-size-heading); font-weight: var(--cds-font-weight-medium); margin: 0; }
+.sec-note { margin: 0; color: var(--color-fg-muted); font-size: var(--cds-font-size-caption); max-width: 80ch; line-height: 1.45; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr)); gap: 1.25rem; }
+.grid > .card > .chart { margin-top: auto; }
+.card { background: var(--color-panel); border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); padding: 1.25rem; display: flex; flex-direction: column; gap: var(--cds-gap-sm); min-width: 0; }
+.card h3 { margin: 0; font-size: var(--cds-font-size-heading); font-weight: var(--cds-font-weight-medium); }
+.card .note { margin: 0; color: var(--color-fg-muted); font-size: var(--cds-font-size-caption); line-height: 1.4; }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr)); gap: var(--cds-gap-md); }
+.kpi { background: var(--color-panel); border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); padding: .875rem 1rem; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.kpi .lbl { font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); }
+.smi .kpi b { font-family: var(--font-anthropic-serif); font-weight: 400; font-size: var(--cds-font-size-title); font-variant-numeric: tabular-nums; }
+.kpi .sub { font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); font-variant-numeric: tabular-nums; }
+.chart { position: relative; min-height: 220px; width: 100%; }
+.chart svg { display: block; overflow: visible; }
+.chart text { fill: var(--color-fg-muted); font-size: 11px; font-family: var(--font-anthropic-sans); }
+.tt { position: absolute; pointer-events: none; background: var(--cds-surface-popover); border: 1px solid var(--cds-border); border-radius: var(--cds-radius); box-shadow: var(--cds-shadow-popover); padding: var(--cds-pad-xs) var(--cds-pad-sm); font-size: var(--cds-font-size-caption); white-space: nowrap; z-index: 5; }
+.tt .h { color: var(--cds-text-secondary); margin-bottom: 2px; }
+.tt .sw { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 6px; }
+.tbl-wrap { overflow: auto; max-height: 480px; border-radius: var(--cds-radius); }
+.smi table { border-collapse: collapse; width: 100%; font-size: var(--cds-font-size-caption); font-variant-numeric: tabular-nums; }
+.smi th { position: sticky; top: 0; background: var(--color-panel); text-align: right; font-weight: var(--cds-font-weight-medium); color: var(--color-fg-muted); padding: 8px 10px; border-bottom: 1px solid var(--color-border-line); white-space: nowrap; z-index: 1; }
+.smi th button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+.smi td { text-align: right; padding: 8px 10px; border-bottom: 1px solid var(--color-border-line); white-space: nowrap; }
+.smi th:first-child, .smi td:first-child, .smi td.l, .smi th.l { text-align: left; }
+.smi td.wrap { white-space: normal; min-width: 14rem; text-align: left; color: var(--color-fg-muted); }
+.smi tr.click { cursor: pointer; }
+.smi tr.click:hover td, .smi tr.sel td { background: color-mix(in srgb, var(--color-fg) 5%, transparent); }
+.pill { display: inline-block; border-radius: 999px; padding: 1px 8px; font-size: var(--cds-font-size-caption); white-space: nowrap; }
+.pill.bad { color: var(--color-bad); background: color-mix(in srgb, var(--color-bad) 12%, transparent); }
+.pill.warn { color: var(--color-warn); background: color-mix(in srgb, var(--color-warn) 14%, transparent); }
+.pill.ok { color: var(--color-ok); background: color-mix(in srgb, var(--color-ok) 12%, transparent); }
+.pill.muted { color: var(--color-fg-muted); background: color-mix(in srgb, var(--color-fg) 7%, transparent); }
+.funnel { display: flex; flex-direction: column; gap: var(--cds-gap-sm); }
+.fstep { display: grid; grid-template-columns: minmax(7rem, 10rem) 1fr; gap: var(--cds-gap-sm); align-items: center; font-size: var(--cds-font-size-caption); }
+.fbar { position: relative; height: 26px; }
+.fbar i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px; background: var(--fill, var(--cds-chart-muted)); min-width: 2px; }
+.fbar span { position: absolute; left: 8px; top: 50%; transform: translateY(-50%); color: var(--color-fg); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.fdrop { grid-column: 2; color: var(--color-fg-muted); font-size: var(--cds-font-size-caption); margin-top: -4px; }
+.fdrop.worst { color: var(--color-bad); }
+.alerts { display: flex; flex-direction: column; gap: var(--cds-gap-xs); margin: 0; padding: 0; list-style: none; }
+.alerts li { border-left: 3px solid var(--color-bad); padding: 4px 10px; font-size: var(--cds-font-size-body); line-height: 1.45; }
+.alerts li.warn { border-left-color: var(--color-warn); }
+.alerts li.ok { border-left-color: var(--color-ok); }
+.occ { position: relative; height: 10px; width: 8rem; background: color-mix(in srgb, var(--color-fg) 8%, transparent); border-radius: 4px; display: inline-block; vertical-align: middle; }
+.occ i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px; background: var(--fill); }
+.occ u { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--color-fg); }
+.planner { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr)); gap: var(--cds-gap-md); align-items: end; }
+.verdict { font-size: var(--cds-font-size-body); line-height: 1.5; margin: 0; }
+.verdict strong { font-weight: var(--cds-font-weight-medium); }
+.rates { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr)); gap: var(--cds-gap-sm); }
+.rate { display: flex; flex-direction: column; gap: 2px; font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); }
+.smi .rate b { color: var(--color-fg); font-size: var(--cds-font-size-body); font-weight: var(--cds-font-weight-medium); font-variant-numeric: tabular-nums; }
+.tactics { margin: 0; padding-left: 1.2em; display: flex; flex-direction: column; gap: 6px; font-size: var(--cds-font-size-body); line-height: 1.45; }
+.legend { display: flex; flex-wrap: wrap; gap: var(--cds-gap-md); font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+[data-dash-source-state=empty] { color: transparent; }
+[data-dash-source-state=refreshing] { opacity: .5; transition: opacity var(--cds-dur-slow); }
+.failed { display: flex; align-items: center; justify-content: center; gap: 6px; min-height: inherit; color: var(--color-fg-muted); font-size: var(--cds-font-size-caption); }
+.failed::before { content: ""; width: .375rem; height: .375rem; border-radius: 50%; background: var(--color-bad); }
+.delta { font-size: var(--cds-font-size-caption); font-variant-numeric: tabular-nums; color: var(--color-fg-muted); }
+.delta.good { color: var(--color-ok); } .delta.bad { color: var(--color-bad); }
+.tgt-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 24rem), 1fr)); gap: var(--cds-gap-lg); }
+.tgt { display: flex; flex-direction: column; gap: var(--cds-gap-sm); min-width: 0; }
+.tgt h4 { margin: 0; font-size: var(--cds-font-size-body); font-weight: var(--cds-font-weight-medium); display: flex; gap: var(--cds-gap-sm); align-items: center; flex-wrap: wrap; }
+.tgt .big { font-family: var(--font-anthropic-serif); font-weight: 400; font-size: var(--cds-font-size-title); font-variant-numeric: tabular-nums; }
+.tgt .line { font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); line-height: 1.45; font-variant-numeric: tabular-nums; }
+.tgt .line b, .smi .tgt .line b { color: var(--color-fg); font-weight: var(--cds-font-weight-medium); }
+.prog { position: relative; height: 12px; border-radius: 6px; background: color-mix(in srgb, var(--color-fg) 8%, transparent); }
+.prog i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 6px; background: var(--fill, var(--cds-chart-muted)); max-width: 100%; }
+.prog u { position: absolute; top: -4px; bottom: -4px; width: 2px; background: var(--color-fg); }
+.tgt-sep { border: 0; border-top: 1px solid var(--color-border-line); margin: var(--cds-gap-xs) 0; width: 100%; }
+.cover-list { margin: 0; padding-left: 1.2em; display: flex; flex-direction: column; gap: 4px; font-size: var(--cds-font-size-body); line-height: 1.45; }
+@media (max-width: 640px) { .fstep { grid-template-columns: 6.5rem 1fr; } .hide-narrow { display: none; } }
+
+/* Page width: content stays at a readable width on wide screens */
+#dash-root > :not(dialog) { max-width: 1280px; margin-inline: auto; }
+
+/* Data panel: import, export, templates and backup */
+.dm-bar { display: flex; flex-direction: row; flex-wrap: wrap; gap: var(--cds-gap-sm); align-items: center; justify-content: flex-end; color: var(--color-fg-muted); font-size: var(--cds-font-size-caption); margin-bottom: var(--cds-gap-md); }
+.dm-head { display: flex; gap: var(--cds-gap-md); align-items: flex-start; justify-content: space-between; }
+.dm-head > div { display: flex; flex-direction: column; gap: var(--cds-gap-xs); }
+.dm h2 { font-family: var(--font-anthropic-serif); font-weight: 400; font-size: var(--cds-font-size-title); margin: 0; }
+.dm-actions { display: flex; flex-wrap: wrap; gap: var(--cds-gap-sm); align-items: center; }
+.dm-count { color: var(--color-fg-muted); font-size: var(--cds-font-size-caption); margin-left: auto; }
+.dm-row-actions { display: flex; gap: 6px; justify-content: flex-end; }
+.dm-desc { color: var(--color-fg-muted); margin-top: 2px; max-width: 34rem; }
+.dm-file { max-width: 14rem; overflow: hidden; text-overflow: ellipsis; }
+.smi .dm-tbl { max-height: none; }
+.smi .dm-tbl td { vertical-align: top; }
+.smi .dm-tbl td b { color: var(--color-fg); font-weight: var(--cds-font-weight-medium); }
+.dm-msg { border-left: 3px solid var(--color-ok); padding: 6px 12px; font-size: var(--cds-font-size-body); line-height: 1.45; background: var(--color-panel); border-radius: 0 var(--cds-radius) var(--cds-radius) 0; }
+.dm-msg.bad { border-left-color: var(--color-bad); color: var(--color-bad); }
+.smi .btn-primary { background: var(--color-fg); color: var(--color-bg); border-color: var(--color-fg); }
+.smi .btn-danger { color: var(--color-bad); }
+.dm-dialog { width: min(1180px, calc(100vw - 32px)); max-height: calc(100vh - 48px); border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); background: var(--color-bg); color: var(--color-fg); padding: var(--cds-pad-xl); margin: auto; box-shadow: var(--cds-shadow-popover); }
+.dm-dialog::backdrop { background: rgb(0 0 0 / 35%); }
+</style>
+
+<div class="smi dm-bar" id="dm-bar"><span id="dm-bar-text">Loading data…</span><button type="button" class="btn" id="dm-open">Data: import &amp; export</button></div>
+<dialog class="dm-dialog" id="dm-dialog" aria-label="Data"><div class="smi dm" id="dm-panel"></div></dialog>
+
+<div class="smi" id="dash-main">
+  <header class="smi-head">
+    <h1 id="title">Samara Marketing Intelligence</h1>
+    <p class="smi-take" id="takeaway"><span class="dash-skeleton">—</span></p>
+    <div class="smi-meta"><span id="asof">Leads to —</span><span>All money in USD</span></div>
+  </header>
+
+  <nav class="smi-tabs" role="tablist" aria-label="Sections">
+    <div class="tgroup"><span class="tglabel">Decide</span><div class="tgrow">
+      <button role="tab" data-tab="decisions" aria-selected="true">Decisions</button></div></div>
+    <div class="tgroup"><span class="tglabel">Commercial</span><div class="tgrow">
+      <button role="tab" data-tab="overview" aria-selected="false">Executive overview</button>
+      <button role="tab" data-tab="revenue" aria-selected="false">Revenue &amp; commercial</button>
+      <button role="tab" data-tab="inventory" aria-selected="false">Inventory &amp; coverage</button></div></div>
+    <div class="tgroup"><span class="tglabel">Marketing performance</span><div class="tgrow">
+      <button role="tab" data-tab="spend" aria-selected="false">Marketing spend</button>
+      <button role="tab" data-tab="campaigns" aria-selected="false">Campaign performance</button></div></div>
+    <div class="tgroup"><span class="tglabel">Customer intelligence</span><div class="tgrow">
+      <button role="tab" data-tab="markets" aria-selected="false">Markets &amp; lead time</button>
+      <button role="tab" data-tab="sales" aria-selected="false">Sales &amp; conversion</button>
+      <button role="tab" data-tab="journey" aria-selected="false">Guest journey &amp; retention</button>
+      <button role="tab" data-tab="b2b" aria-selected="false">B2B &amp; partnerships</button></div></div>
+    <div class="tgroup"><span class="tglabel">Planning</span><div class="tgrow">
+      <button role="tab" data-tab="planner" aria-selected="false">Budget planner &amp; forecasting</button>
+      <button role="tab" data-tab="season" aria-selected="false">Seasonality &amp; demand</button></div></div>
+    <div class="tgroup"><span class="tglabel">Governance</span><div class="tgrow">
+      <button role="tab" data-tab="govern" aria-selected="false">Definitions &amp; roadmap</button></div></div>
+  </nav>
+
+  <div class="smi-filters" id="filters">
+    <label class="smi-field" data-f="brand">Brand<select id="f-brand"></select></label>
+    <label class="smi-field" data-f="dest">Destination<select id="f-dest"></select></label>
+    <label class="smi-field" data-f="vtype">Voyage type<select id="f-vtype"></select></label>
+    <label class="smi-field" data-f="year">Period<select id="f-year"></select></label>
+    <button class="btn" id="f-reset" type="button">Reset filters</button>
+  </div>
+
+  <!-- DECISIONS -->
+  <section class="page" id="decisions">
+    <p class="sec-note">The five decisions this dashboard exists to support, answered from the analysis tabs. Each answer is worked out by written rules (see Definitions &amp; roadmap), shows the three figures behind it, says how much evidence it rests on and what would change it, and links to the detail. Nothing here is a task: what to do about it is your call. Uses the brand filter.</p>
+    <div class="card dec dec-changed" id="dec-0" data-source="decisions"><div class="dash-skeleton" style="min-height: 80px"></div></div>
+    <div class="dec-list" id="dec-list" data-source="decisions"><div class="dash-skeleton" style="min-height: 240px"></div></div>
+  </section>
+
+  <!-- OVERVIEW -->
+  <section class="page" id="overview" hidden>
+    <div class="card" id="targets-card">
+      <h3>Targets: revenue and marketing budget</h3>
+      <p class="note">Revenue counts bookings by departure year, net of cancellations. The tick shows where the same point last year would put you. Uses the brand filter.</p>
+      <div class="tgt-grid" id="targets" data-source="yearly"><div class="dash-skeleton" style="min-height: 180px"></div></div>
+    </div>
+
+    <h2 class="grp" id="h-commercial">Commercial performance</h2>
+    <div class="kpis" id="comm-kpis">
+      <div class="kpi"><span class="lbl">Booking value</span><b class="dash-skeleton" data-source="commercial" data-field="revenue">—</b><span class="sub"><span data-source="commercial" data-field="bookings">—</span> bookings · avg <span data-source="commercial" data-field="avg_value">—</span></span></div>
+      <div class="kpi"><span class="lbl">Cabin utilisation</span><b class="dash-skeleton" data-source="commercial" data-field="util_cabin">—</b><span class="sub"><span data-source="commercial" data-field="cabins_sold">—</span> of <span data-source="commercial" data-field="cabins">—</span> cabins</span></div>
+      <div class="kpi"><span class="lbl">Private charters: yacht-nights sold</span><b class="dash-skeleton" data-source="commercial" data-field="util_yacht">—</b><span class="sub">RevPAN <span data-source="commercial" data-field="revpan">—</span> per yacht-night</span></div>
+      <div class="kpi"><span class="lbl">Shared voyages: RevPAC</span><b class="dash-skeleton" data-source="commercial" data-field="revpacn">—</b><span class="sub">revenue per available cabin-night</span></div>
+      <div class="kpi"><span class="lbl">Unsold value at risk</span><b class="dash-skeleton" data-source="commercial" data-field="at_risk">—</b><span class="sub">projected to stay unsold · <span data-source="commercial" data-field="unsold_value">—</span> unsold today</span></div>
+    </div>
+    <p class="sec-note" id="comm-note">Departures in the year shown, by departure date (the period filter picks the year; "to date" and last-90/30-day views use the current year). Private charters are measured per yacht-night, shared voyages per cabin-night, never together. Available nights are scheduled departure nights. Pace against the revenue target is in the target card above.</p>
+
+    <h2 class="grp">Marketing performance</h2>
+    <div class="kpis" id="kpis">
+      <div class="kpi"><span class="lbl">Bookings</span><b class="dash-skeleton" data-source="cube" data-field="bookings">—</b><span class="sub"><span data-source="cube" data-field="cabins">—</span> cabins</span></div>
+      <div class="kpi"><span class="lbl">Booking value</span><b class="dash-skeleton" data-source="cube" data-field="revenue">—</b><span class="sub">avg <span data-source="cube" data-field="avg_value">—</span> · ROAS <span data-source="cube" data-field="roas">—</span>×</span></div>
+      <div class="kpi"><span class="lbl">Contribution margin</span><b class="dash-skeleton" data-source="cube" data-field="margin">—</b><span class="sub"><span data-source="cube" data-field="margin_roi">—</span>× marketing spend</span></div>
+      <div class="kpi"><span class="lbl">Marketing spend</span><b class="dash-skeleton" data-source="cube" data-field="spend">—</b><span class="sub">ads <span data-source="cube" data-field="ad_spend">—</span> · other <span data-source="cube" data-field="other_spend">—</span></span></div>
+      <div class="kpi"><span class="lbl">CPL (cost per lead)</span><b class="dash-skeleton" data-source="cube" data-field="cpl">—</b><span class="sub">per qualified <span data-source="cube" data-field="cpql">—</span></span></div>
+      <div class="kpi"><span class="lbl">CAC (cost per booking)</span><b class="dash-skeleton" data-source="cube" data-field="cac">—</b><span class="sub">P2B <span data-source="cube" data-field="p2b">—</span></span></div>
+      <div class="kpi"><span class="lbl">Qualified leads</span><b class="dash-skeleton" data-source="cube" data-field="qualified">—</b><span class="sub">lead to booking <span data-source="cube" data-field="l2b">—</span></span></div>
+      <div class="kpi"><span class="lbl">Marketing-attributed value</span><b class="dash-skeleton" data-source="cube" data-field="mkt_revenue">—</b><span class="sub"><span data-source="cube" data-field="mkt_share">—</span> of value · ROAS <span data-source="cube" data-field="mkt_roas">—</span>×</span></div>
+    </div>
+    <p class="sec-note">Marketing spend is everything: Meta and Google plus PR, influencers, content, events, agent trips and agency fees, each spread over the enquiries it could have brought (method in Sources, under "Leads with full marketing cost"). CPL and CAC divide it by every lead and booking in the selection. Results are grouped by the month the enquiry came in; the change is against <span id="cmp-label">the same period last year</span>. Marketing-attributed value is bookings whose enquiry came through a marketing channel (not an agent, not direct or a referral). It is attributed, not proven incremental: what marketing caused on top of what would have happened anyway needs holdout or on/off tests.</p>
+
+    <h2 class="grp">Looking ahead</h2>
+    <div class="card" id="fwd-card">
+      <h3>Forward look</h3>
+      <p class="note">Bookings likely to be confirmed in the next 30, 60 and 90 days, from the same days last year scaled by the recent trend (range in brackets), and the departures falling in each window. Uses the brand filter.</p>
+      <div class="fwd" id="fwd" data-source="forecast"><div class="dash-skeleton" style="min-height: 90px"></div></div>
+      <div class="fwd-lists" id="fwd-lists">
+        <div><h4>Markets showing more demand</h4><ul id="fwd-rise"></ul></div>
+        <div><h4>Destinations with falling enquiries</h4><ul id="fwd-fall"></ul></div>
+        <div><h4>Campaigns likely to miss cost targets</h4><ul id="fwd-camp"></ul></div>
+      </div>
+    </div>
+    <div class="card" id="watch-card">
+      <h3>Performance watch</h3>
+      <p class="note">Observations raised by fixed rules (thresholds in Definitions &amp; roadmap). They show where to look, not what to do: validated findings move to the Command Center as actions. Uses the brand filter.</p>
+      <div class="tbl-wrap"><table id="t-watch" data-source="watch" data-row-key="key">
+        <thead><tr><th class="l" data-field="area">Area</th><th class="l" data-field="observation">Observation</th><th class="l" data-field="severity">Level</th><th class="l hide-narrow" data-field="look">Look in</th></tr></thead><tbody></tbody></table></div>
+    </div>
+
+    <details class="more"><summary>Show detail: funnel, channels, revenue quality, guests and monthly trends</summary><div class="more-body">
+
+
+    <div class="grid">
+      <div class="card" id="funnel-card">
+        <h3>Sales funnel</h3>
+        <p class="note">Enquiries to confirmed bookings, with the cost of each stage. The red line is the biggest drop.</p>
+        <div class="funnel" id="funnel" data-source="cube"></div>
+      </div>
+      <div class="card">
+        <h3>Where bookings came from</h3>
+        <p class="note">Last channel before enquiry. Cost includes ads and each channel's share of other marketing costs.</p>
+        <div class="tbl-wrap"><table id="t-channels" data-source="channels" data-row-key="key">
+          <thead><tr><th class="l" data-field="channel">Channel</th><th data-field="leads">Leads</th><th data-field="spend">Cost</th><th data-field="cpl">CPL</th><th data-field="bookings">Bookings</th><th data-field="share">Share</th><th data-field="cac">CAC</th><th data-field="revenue">Value</th><th data-field="margin">Margin</th><th data-field="roas">ROAS</th></tr></thead>
+          <tbody></tbody></table></div>
+      </div>
+    </div>
+
+    <div class="grid">
+      <div class="card" id="quality-card">
+        <h3>Revenue quality</h3>
+        <p class="note">Bookings from enquiries in the selection. Booking value is after discounts; margin is after agent commission.</p>
+        <div class="rates" id="quality" data-source="cube"></div>
+      </div>
+      <div class="card" id="guests-card">
+        <h3>New, repeat and referred guests</h3>
+        <p class="note">Repeat and referred guests cost little to win, so a referral or loyalty offer is often the cheapest way to grow.</p>
+        <div class="rates" id="guests" data-source="cube"></div>
+      </div>
+    </div>
+
+    <div class="grid">
+      <div class="card"><h3>Enquiries per month</h3><p class="note">Bars show leads by enquiry month; hover for bookings those leads became.</p><div class="chart dash-skeleton" id="c-leads" data-source="monthly"></div></div>
+      <div class="card"><h3>CPL per month</h3><p class="note">Paid leads only. January runs above average and November–December below.</p><div class="chart dash-skeleton" id="c-cpl" data-source="monthly"></div></div>
+    </div>
+    </div></details>
+  </section>
+
+  <!-- REVENUE & COMMERCIAL -->
+  <section class="page" id="revenue" hidden>
+    <p class="sec-note">What the inventory earned, by departure. Marketing uses these figures to make commercially informed spending decisions; it does not own or verify them. Booking value, margin, discounts and cancellations come from the CRM and ERP export and should be signed off with Finance and Sales before they are quoted outside marketing. Private charters are measured per yacht-night, shared voyages per cabin-night.</p>
+    <div class="smi-filters"><label class="smi-field">Departure year<select id="rev-year"></select></label></div>
+    <div class="kpis" id="rev-kpis">
+      <div class="kpi"><span class="lbl">Booking value</span><b class="dash-skeleton" data-source="commercial" data-field="revenue">—</b><span class="sub"><span data-source="commercial" data-field="bookings">—</span> bookings · <span data-source="commercial" data-field="departures">—</span> departures</span></div>
+      <div class="kpi"><span class="lbl">Contribution margin</span><b class="dash-skeleton" data-source="commercial" data-field="margin">—</b><span class="sub"><span data-source="commercial" data-field="margin_pct">—</span> of booking value</span></div>
+      <div class="kpi"><span class="lbl">Cabin utilisation</span><b class="dash-skeleton" data-source="commercial" data-field="util_cabin">—</b><span class="sub"><span data-source="commercial" data-field="cabin_nights_sold">—</span> of <span data-source="commercial" data-field="cabin_nights">—</span> cabin-nights</span></div>
+      <div class="kpi"><span class="lbl">RevPAN (private charters)</span><b class="dash-skeleton" data-source="commercial" data-field="revpan">—</b><span class="sub">yacht-nights sold <span data-source="commercial" data-field="util_yacht">—</span></span></div>
+      <div class="kpi"><span class="lbl">RevPAC (shared voyages)</span><b class="dash-skeleton" data-source="commercial" data-field="revpacn">—</b><span class="sub">per available cabin-night</span></div>
+      <div class="kpi"><span class="lbl">Revenue at risk</span><b class="dash-skeleton" data-source="commercial" data-field="at_risk">—</b><span class="sub">projected unsold on <span data-source="commercial" data-field="ahead">—</span> departures ahead</span></div>
+      <div class="kpi"><span class="lbl">Cancelled</span><b class="dash-skeleton" data-source="commercial" data-field="cancelled_value">—</b><span class="sub"><span data-source="commercial" data-field="cancel_rate">—</span> of bookings</span></div>
+      <div class="kpi"><span class="lbl">Discounts and commission</span><b class="dash-skeleton" data-source="commercial" data-field="discount">—</b><span class="sub"><span data-source="commercial" data-field="discount_rate">—</span> off list · commission <span data-source="commercial" data-field="commission">—</span></span></div>
+    </div>
+    <div class="card"><h3>Booking value by destination</h3><p class="note">Bars: booking value for departures in the year. Hover for utilisation and value at risk.</p><div class="chart dash-skeleton" id="c-revdest" data-source="commercial"></div></div>
+    <div class="card">
+      <h3>Product performance: yacht and destination</h3>
+      <p class="note">Revenue at risk values the cabins on departures ahead that are projected to stay unsold at the average price per cabin for that destination and voyage type.</p>
+      <div class="tbl-wrap"><table id="t-rev" data-source="commercial" data-row-key="key">
+        <thead><tr><th class="l" data-field="brand">Yacht</th><th class="l" data-field="dest">Destination</th><th data-field="departures">Departures</th><th data-field="cabins_sold">Cabins sold</th><th data-field="util_cabin">Utilisation</th><th data-field="revenue">Value</th><th data-field="avg_value">Avg booking</th><th data-field="margin_pct">Margin</th><th data-field="revpacn">RevPAC</th><th data-field="revpan">RevPAN</th><th data-field="discount_rate">Discount</th><th data-field="cancel_rate">Cancelled</th><th data-field="at_risk">At risk</th></tr></thead>
+        <tbody></tbody></table></div>
+    </div>
+    <div class="card">
+      <h3>Acquisition economics by brand</h3>
+      <p class="note" id="acq-note">Enquiries made in the year (all time where the year has no enquiries yet), with the full marketing cost.</p>
+      <div class="tbl-wrap"><table id="t-acq" data-source="cube" data-row-key="slice">
+        <thead><tr><th class="l" data-field="brand">Brand</th><th data-field="spend">Marketing cost</th><th data-field="qualified">Qualified</th><th data-field="cpql">Per qualified</th><th data-field="bookings">Bookings</th><th data-field="cac">CAC</th><th data-field="revenue">Value</th><th data-field="roas">ROAS</th><th data-field="mkt_revenue">Marketing-attributed</th><th data-field="margin_roi">Margin return</th></tr></thead>
+        <tbody></tbody></table></div>
+    </div>
+  </section>
+
+  <!-- B2B & PARTNERSHIPS -->
+  <section class="page" id="b2b" hidden>
+    <p class="sec-note">Agent-led enquiries are those whose channel is Agent / B2B. Country here is where the guest lives: the agency's own country and name are not in the data yet, so there is no per-agent ranking until the CRM records the agency (see Definitions &amp; roadmap). Commission and agent terms are Sales and Finance decisions; this view shows results to inform them.</p>
+    <div class="kpis" id="b2b-kpis">
+      <div class="kpi"><span class="lbl">Agent enquiries</span><b class="dash-skeleton" data-source="b2b" data-field="leads">—</b><span class="sub">lead to booking <span data-source="b2b" data-field="l2b">—</span></span></div>
+      <div class="kpi"><span class="lbl">Agent bookings</span><b class="dash-skeleton" data-source="b2b" data-field="bookings">—</b><span class="sub"><span data-source="b2b" data-field="share_bookings">—</span> of all bookings</span></div>
+      <div class="kpi"><span class="lbl">Agent booking value</span><b class="dash-skeleton" data-source="b2b" data-field="value">—</b><span class="sub"><span data-source="b2b" data-field="share_value">—</span> of all value</span></div>
+      <div class="kpi"><span class="lbl">Average agent booking</span><b class="dash-skeleton" data-source="b2b" data-field="avg_value">—</b><span class="sub">median <span data-source="b2b" data-field="cycle_median">—</span> days to close</span></div>
+      <div class="kpi"><span class="lbl">Commission paid</span><b class="dash-skeleton" data-source="b2b" data-field="commission">—</b><span class="sub"><span data-source="b2b" data-field="commission_rate">—</span> of agent value</span></div>
+    </div>
+    <div class="card">
+      <h3>Agent against direct</h3>
+      <div class="tbl-wrap"><table id="t-route" data-source="b2b" data-row-key="key">
+        <thead><tr><th class="l" data-field="label">Route</th><th data-field="leads">Enquiries</th><th data-field="bookings">Bookings</th><th data-field="l2b">Lead to booking</th><th data-field="p2b">P2B</th><th data-field="value">Value</th><th data-field="share_value">Share of value</th><th data-field="avg_value">Avg booking</th><th data-field="commission">Commission</th><th data-field="cycle_median">Days to close</th><th data-field="cancel_rate">Cancelled</th></tr></thead>
+        <tbody></tbody></table></div>
+    </div>
+    <div class="grid">
+      <div class="card">
+        <h3>Agent results by guest country</h3>
+        <div class="tbl-wrap"><table id="t-b2bmkt" data-source="b2b" data-row-key="key">
+          <thead><tr><th class="l" data-field="label">Guest country</th><th data-field="leads">Enquiries</th><th data-field="bookings">Bookings</th><th data-field="l2b">Lead to booking</th><th data-field="value">Value</th><th data-field="avg_value">Avg booking</th></tr></thead>
+          <tbody></tbody></table></div>
+      </div>
+      <div class="card">
+        <h3>Distribution by destination</h3>
+        <p class="note">Each destination's share of agent bookings against its share of all bookings. Well below means agents sell it less than guests book it: a sign agents may know the product less.</p>
+        <div class="tbl-wrap"><table id="t-b2bdest" data-source="b2b" data-row-key="key">
+          <thead><tr><th class="l" data-field="label">Destination</th><th data-field="bookings">Agent bookings</th><th data-field="share_agent">Share of agent</th><th data-field="share_all">Share of all</th><th data-field="value">Value</th></tr></thead>
+          <tbody></tbody></table></div>
+      </div>
+    </div>
+    <div class="card">
+      <h3>Partnership investment and what followed</h3>
+      <p class="note">Each fam trip, trade show and event, with agent enquiries for that brand (and destination, where it had one) in the 6 months before and after. Before-and-after is a pointer, not proof: season and other activity move these numbers too. Uses the period filter on the activity date.</p>
+      <div class="tbl-wrap"><table id="t-b2bact" data-source="b2b" data-row-key="key">
+        <thead><tr><th class="l" data-field="date">Date</th><th class="l" data-field="category">Type</th><th class="l" data-field="label">Partner</th><th class="l hide-narrow" data-field="brand">Brand</th><th class="l hide-narrow" data-field="destination">Destination</th><th data-field="cost">Cost</th><th data-field="leads_before">Agent leads before</th><th data-field="leads_after">After</th><th data-field="lift">Change</th><th data-field="bookings_after">Bookings after</th><th data-field="value_after">Value after</th><th class="l" data-field="window">Window</th></tr></thead>
+        <tbody></tbody></table></div>
+    </div>
+  </section>
+
+  <!-- DEFINITIONS & ROADMAP -->
+  <section class="page gov" id="govern" hidden>
+    <p class="sec-note">How every important number is defined, where it comes from and who owns it, and what is built against the Marketing Intelligence review. Today every source is a file imported into this browser (Data: import &amp; export).</p>
+    <div class="card">
+      <h3>Metric definitions</h3>
+      <div class="tbl-wrap" style="max-height: none"><table id="t-defs"><thead><tr><th>Metric</th><th>Definition</th><th>Source</th><th>Proposed owner</th></tr></thead><tbody><tr><td>Decision answers</td><td>Written rules that combine the analysis tabs into one answer per decision. Confidence: High with 30+ bookings behind the answer (150+ qualified leads for decision 3), Medium with 10+ (50+), otherwise Low; decision 1 uses the share of upcoming departures with past years to compare. Cheapest channel excludes direct, referral and organic, which cannot be bought.</td><td>Calculated</td><td>Marketing</td></tr><tr><td>Enquiry (lead)</td><td>Every first contact recorded in the CRM, one per guest per trip request. Duplicates (same person, same trip, within 30 days) should merge into the first.</td><td>CRM enquiries</td><td>Sales ops</td></tr><tr><td>Qualified lead</td><td>A lead sales has confirmed has a real trip in mind: dates, group size and budget plausible for our product. Set by sales, not by the form.</td><td>CRM enquiries</td><td>Sales, agreed with Marketing</td></tr><tr><td>Confirmed booking</td><td>Deposit received. Cancelled bookings are excluded from booking value and counted separately.</td><td>CRM / ERP</td><td>Sales and Finance</td></tr><tr><td>Booking value</td><td>Price after discounts, before agent commission, in USD.</td><td>CRM / ERP</td><td>Finance</td></tr><tr><td>Contribution margin</td><td>Booking value less voyage running cost and agent commission, as exported by the ERP.</td><td>ERP</td><td>Finance</td></tr><tr><td>Marketing cost</td><td>Meta and Google spend plus every cost in the spend record (PR, influencers, content, events, agent trips, agency fees), cash plus operational. Cabins given away are valued separately and not added.</td><td>Ad accounts, spend record</td><td>Marketing</td></tr><tr><td>CPL / cost per qualified lead / CAC</td><td>Marketing cost ÷ leads, ÷ qualified leads, ÷ bookings, over the same enquiries.</td><td>Calculated</td><td>Marketing</td></tr><tr><td>ROAS</td><td>Booking value ÷ marketing cost. Margin return uses contribution margin instead.</td><td>Calculated</td><td>Marketing</td></tr><tr><td>Marketing-attributed value</td><td>Value of bookings whose enquiry came through a marketing channel (not Agent / B2B, not direct or referral). Attributed, not incremental.</td><td>Calculated</td><td>Marketing</td></tr><tr><td>Cabin utilisation</td><td>Cabin-nights sold ÷ cabin-nights on scheduled departures.</td><td>Departure schedule + CRM</td><td>Operations</td></tr><tr><td>RevPAN</td><td>Private-charter booking value ÷ scheduled private-charter yacht-nights.</td><td>Calculated</td><td>Finance</td></tr><tr><td>RevPAC</td><td>Shared-voyage booking value ÷ scheduled shared-voyage cabin-nights.</td><td>Calculated</td><td>Finance</td></tr><tr><td>Booking pace</td><td>Cabins sold now against where past departures of the same destination and month stood at the same number of days out.</td><td>Calculated</td><td>Marketing</td></tr><tr><td>Coverage score</td><td>Five checks worth 20 each (paid campaign, content, target markets, agents, qualified audience). See Inventory &amp; coverage.</td><td>Calculated</td><td>Marketing</td></tr><tr><td>Inventory risk index</td><td>Fixed points out of 10: ≤60 days away 2 (≤120: 1); ≥50% unsold 2 (≥25%: 1); sold &lt;70% of past pace 2 (&lt;90%: 1); inside booking window 1; warm conversations &lt; half the unsold cabins 1; coverage &lt;50 1; no booking in 30 days 1. High 6+, medium 3–5.</td><td>Calculated</td><td>Marketing</td></tr><tr><td>Bookings forecast</td><td>Bookings confirmed in the same 30/60/90 days a year earlier × last-90-day trend against a year earlier; range from the 30- and 180-day trends.</td><td>Calculated</td><td>Marketing</td></tr><tr><td>Performance watch thresholds</td><td>Pace: behind status on the pace table. Cost: paid channel cost per qualified lead +15% (High +30%). Inventory: ≤75 days, 2+ unsold, gap or behind. Conversion: P2B −15% (High −25%), 25+ resolved proposals. Campaign: live, 15+ leads in 60 days, cost per qualified lead 40%+ above channel. Reply: median +50% and 1h+. Demand: ±25% / −20% enquiries, 20+ leads a year earlier.</td><td>Calculated</td><td>Marketing</td></tr><tr><td>Attribution confidence</td><td>High: click-tracked ad and first touch known. Medium: first touch known, channel self-reported or hand-entered. Low: first touch unknown.</td><td>Calculated</td><td>Marketing</td></tr><tr><td>Lost-reason group</td><td>Commercial constraint: price, budget, dates, fit, competitor. Sales follow-up: no response, insufficient information. Guest timing: postponed. Unknown: blank.</td><td>CRM</td><td>Sales</td></tr></tbody></table></div>
+    </div>
+    <div class="card">
+      <h3>Open definitions to agree</h3>
+      <ul id="gov-open"><li>What counts as a qualified lead, and who sets it?</li><li>When is a booking confirmed: deposit, contract or full payment?</li><li>How are duplicate enquiries merged, and which source keeps the credit?</li><li>When an agent enquires for a guest who already visited the website, is the booking agent or direct, and which channel is credited?</li><li>Is marketing-attributed value reported as is, or only after an incrementality test?</li><li>Which costs count as marketing: does agent commission, or comped cabins, ever count?</li></ul>
+    </div>
+    <div class="card">
+      <h3>Data sources and refresh</h3>
+      <div class="tbl-wrap" style="max-height: none"><table id="t-srcs"><thead><tr><th>Source today</th><th>Real system</th><th>Feeds</th><th>Refresh once connected</th></tr></thead><tbody><tr><td>CRM enquiries (imported file)</td><td>Freshsales / Zoho CRM + ERP export</td><td>Every enquiry, funnel, booking and guest figure</td><td>Daily</td></tr><tr><td>Departure schedule (imported file)</td><td>Booking and inventory system</td><td>Inventory, utilisation, pace, coverage, risk</td><td>Daily</td></tr><tr><td>Ad spend (imported file)</td><td>Meta Ads, Google Ads</td><td>Ad cost, delivery, CPL</td><td>Daily</td></tr><tr><td>Marketing spend record (imported file)</td><td>Finance export or shared sheet</td><td>PR, influencer, content, event, agent and fee costs</td><td>Weekly</td></tr><tr><td>Marketing calendar (imported file)</td><td>Command Center campaign plan</td><td>What activity is aimed at which departure</td><td>On change</td></tr><tr><td>Marketing budget (imported file)</td><td>Approved budget</td><td>Budget, plan to date</td><td>On approval</td></tr><tr><td>Targets (imported file)</td><td>Approved targets</td><td>Revenue, cabin and qualified-lead targets</td><td>On approval</td></tr><tr><td>Not connected yet</td><td>Google Analytics, email platform, WhatsApp, agency records</td><td>Website coverage, touchpoints, per-agent results, digital infrastructure spend</td><td>—</td></tr></tbody></table></div>
+    </div>
+    <div class="card">
+      <h3>Roadmap against the review</h3>
+      <div class="tbl-wrap" style="max-height: none"><table id="t-road"><thead><tr><th>Module</th><th>Built in this version</th><th>Needs data or a decision</th><th>Phase</th></tr></thead><tbody><tr><td>00 Decisions (front door)</td><td>Five recurring decisions answered with evidence, confidence and what would change them; what changed in 30 days; every tab opens with its question and answer; supporting detail folds away</td><td>Confirm these are the right five decisions; add a "since last week" view once data refreshes weekly</td><td>1</td></tr><tr><td>01 Executive overview</td><td>Commercial strip (utilisation, RevPAN, RevPAC, value at risk), marketing KPIs incl. qualified leads and marketing-attributed value, forward look, Performance Watch</td><td>Incremental lift needs holdout or on/off tests</td><td>1–3</td></tr><tr><td>02 Revenue &amp; commercial</td><td>New tab: value, margin, utilisation, RevPAN/RevPAC, revenue quality, revenue at risk, product table, acquisition economics</td><td>Finance sign-off on margin and refunds</td><td>1–2</td></tr><tr><td>03 Inventory &amp; coverage</td><td>Coverage score (5 checks), inventory risk index with reasons, on top of pace and coverage status</td><td>Website presence per product; holds and blocked inventory from the booking system</td><td>2</td></tr><tr><td>04 Marketing spend</td><td>Investment types (paid, brand &amp; content, PR &amp; partnerships, infrastructure), by destination, by objective; paid vs committed</td><td>Digital infrastructure costs in the spend record</td><td>1</td></tr><tr><td>05 Campaign performance</td><td>Delivery / acquisition / commercial perspectives, side-by-side comparison</td><td>Reach and frequency from the ad accounts; inventory-adjusted comparison</td><td>1–2</td></tr><tr><td>06 Budget planner &amp; forecasting</td><td>Sensitivity at −50% to +50% with diminishing returns and inventory cap</td><td>Allocation by market and quarter needs the approved plan split that way</td><td>3</td></tr><tr><td>07 Markets &amp; lead time</td><td>Market opportunity index, booking windows by market × voyage type × destination</td><td>Agency country; market size and competition</td><td>2</td></tr><tr><td>08 Seasonality &amp; demand</td><td>Travel vs booking seasonality, marketing timing per destination and month</td><td>—</td><td>2</td></tr><tr><td>09 Sales &amp; conversion</td><td>Full pipeline with time in stage, response, bottleneck split, lost-reason groups</td><td>Negotiation stage and new lost reasons in the CRM; unanswered-enquiry flag</td><td>1–2</td></tr><tr><td>10 Guest journey &amp; retention</td><td>Segments, attribution confidence and assists, new/repeat/referred value</td><td>Guest ID across brands for lifetime value and cross-brand moves</td><td>2</td></tr><tr><td>11 B2B &amp; partnerships</td><td>New tab: agent vs direct, by guest country and destination, partnership before/after</td><td>Agency name and country, product training records</td><td>2</td></tr><tr><td>Data governance</td><td>Definitions, sources, proposed owners (this tab)</td><td>Owners to confirm each definition</td><td>1</td></tr></tbody></table></div>
+      <h4>Phases</h4>
+      <ul id="gov-phases"><li><b>Phase 1 — reliable visibility.</b> Replace imported files with live CRM, booking system, ad accounts and spend record; agree the open definitions; confirm owners.</li><li><b>Phase 2 — connected intelligence.</b> Coverage, risk, timing and market opportunity running on real data; agency fields and guest ID added to the CRM.</li><li><b>Phase 3 — predictive intelligence.</b> Replace trend forecasts and fixed risk points with models once there are two or more seasons of clean history; add anomaly detection and holdout-based incrementality.</li></ul>
+    </div>
+    <div class="card">
+      <h3>Where this build departs from the review</h3>
+      <ul id="gov-notes"><li><b>Attributed, not incremental.</b> The dashboard labels marketing-attributed value plainly and does not claim incremental revenue: that needs holdout or on/off tests, which belong in Phase 3.</li><li><b>Fixed rules before models.</b> Coverage score, risk index, forecasts and watch thresholds are transparent rules with their thresholds written down, as the review advised. They are starting points to tune on real history.</li><li><b>Overview stays a summary.</b> The detailed tables live in their tabs; the overview carries headline numbers, the forward look and Performance Watch.</li><li><b>Observations, not instructions.</b> Performance Watch states what moved and where to look. Turning findings into tasks stays in the Command Center.</li><li><b>What the imported files can't show yet.</b> Per-agent results, website coverage, holds and blocked inventory, negotiation stage, lifetime value across brands and digital infrastructure spend are listed above with the data each needs, rather than shown with made-up numbers.</li><li><b>Eleven modules, four groups.</b> Navigation groups the modules under Commercial, Marketing performance, Customer intelligence and Planning, plus this governance tab.</li></ul>
+    </div>
+  </section>
+
+  <!-- CAMPAIGNS -->
+  <section class="page" id="campaigns" hidden>
+    <p class="sec-note">Each campaign judged three ways: delivery (did it reach people: impressions, clicks, CTR, CPC), acquisition (did it bring interest worth having: leads, qualified leads and their cost) and commercial (did it contribute to bookings: bookings, CAC, value, ROAS, margin). "Share of year" is its booking value against all bookings made that year; "Best month" is the month it contributed most and its share of that month. The diagnosis compares each stage with the median campaign on the same channel. Approvals, tasks and production schedules live in the Command Center, not here.</p>
+    <div class="smi-filters"><label class="smi-field">Search campaigns<input id="c-search" type="search" placeholder="Raja Ampat, Last-minute…"></label>
+      <label class="smi-field">Perspective<select id="c-view"><option value="">All three</option><option value="d">Delivery</option><option value="a">Acquisition</option><option value="c">Commercial</option></select></label></div>
+    <div class="card">
+      <div class="tbl-wrap"><table id="t-campaigns" data-source="campaigns" data-row-key="campaign">
+        <thead><tr>
+          <th class="l" data-field="campaign">Campaign</th><th data-field="spend">Spend</th><th data-field="impressions" class="hide-narrow g-d">Impressions</th><th data-field="clicks" class="hide-narrow g-d">Clicks</th><th data-field="ctr" class="hide-narrow g-d">CTR</th><th data-field="cpc" class="hide-narrow g-d">CPC</th>
+          <th data-field="leads" class="g-a">Leads</th><th data-field="cpl" class="g-a">CPL</th><th data-field="qualified" class="g-a">Qualified</th><th data-field="cpql" class="g-a">CPQL</th><th data-field="proposals" class="g-a">Proposals</th>
+          <th data-field="bookings" class="g-c">Bookings</th><th data-field="p2b" class="g-c">P2B</th><th data-field="cac" class="g-c">CAC</th><th data-field="revenue" class="g-c">Value</th><th data-field="roas" class="g-c">ROAS</th><th data-field="margin" class="g-c">Margin</th>
+          <th data-field="share_year" class="g-c">Share of year</th><th data-field="share_month" class="g-c">Best month</th><th class="l" data-field="diagnosis">Diagnosis</th>
+        </tr></thead><tbody></tbody></table></div>
+    </div>
+    <div class="card" id="camp-detail">
+      <h3 id="camp-title">Pick a campaign above</h3>
+      <p class="note" id="camp-sub">Click a row to see its funnel and what to check.</p>
+      <div class="funnel" id="camp-funnel" data-source="campaigns"></div>
+    </div>
+    <details class="more"><summary>Show detail: compare two campaigns side by side</summary><div class="more-body">
+    <div class="card" id="camp-compare">
+      <h3>Compare two campaigns</h3>
+      <p class="note">Side by side across delivery, acquisition and commercial results. When comparing seasons, check the inventory each had to sell in Inventory &amp; coverage: a campaign aimed at a nearly full month cannot book much whatever it does.</p>
+      <div class="smi-filters"><label class="smi-field">Campaign A<select id="cmp-a"></select></label><label class="smi-field">Campaign B<select id="cmp-b"></select></label></div>
+      <div class="tbl-wrap"><table id="t-cmp"><thead><tr><th class="l">Measure</th><th id="cmp-ha">A</th><th id="cmp-hb">B</th></tr></thead><tbody></tbody></table></div>
+    </div>
+    </div></details>
+  </section>
+
+  <!-- PLANNER -->
+  <section class="page" id="planner" hidden>
+    <p class="sec-note">Pick a departure month, a market and a budget. The planner uses past campaigns for the same brand, market and booking window (days between enquiry and departure) to estimate leads, bookings and cabins, and works backwards from the cabins you need to fill. Optimistic and conservative use the cheaper and dearer quarter of past monthly CPLs; conservative also assumes sales close 20% less often, optimistic 10% more.</p>
+    <div class="card">
+      <div class="planner">
+        <label class="smi-field">Brand<select id="pl-brand"></select></label>
+        <label class="smi-field">Departure month<select id="pl-month"></select></label>
+        <label class="smi-field">Days until departure<input id="pl-days" type="number" min="7" max="600" step="1"></label>
+        <label class="smi-field">Target market<select id="pl-group"></select></label>
+        <label class="smi-field">Budget (USD)<input id="pl-budget" type="number" min="0" step="100" value="2000"></label>
+        <label class="smi-field">Cabins to fill<input id="pl-cabins" type="number" min="1" step="1"></label>
+        <label class="smi-field">Meta's estimate (leads, optional)<input id="pl-meta" type="number" min="0" step="1"></label>
+      </div>
+    </div>
+    <div class="card" id="pl-context-card">
+      <h3>Inventory for this departure month</h3>
+      <p class="verdict" id="pl-context"><span class="dash-skeleton">—</span></p>
+    </div>
+    <div class="card">
+      <h3>Historical rates used</h3>
+      <p class="note" id="pl-rates-note">—</p>
+      <div class="rates" id="pl-rates"></div>
+    </div>
+    <div class="grid">
+      <div class="card">
+        <h3>What this budget buys</h3>
+        <p class="note">Bookings count only those likely to close before departure, from how long past bookings in this segment took to close.</p>
+        <div class="tbl-wrap"><table id="t-scen"><thead><tr><th class="l">Scenario</th><th>CPL</th><th>Leads</th><th>Qualified</th><th>Proposals</th><th>Bookings</th><th>Cabins</th><th>CAC</th><th>Value</th><th>Margin</th></tr></thead><tbody></tbody></table></div>
+      </div>
+      <div class="card">
+        <h3>What it takes to fill the cabins</h3>
+        <p class="note" id="pl-target-note">—</p>
+        <div class="tbl-wrap"><table id="t-target"><thead><tr><th class="l">Scenario</th><th>Bookings</th><th>Proposals</th><th>Qualified</th><th>Leads</th><th>Budget</th></tr></thead><tbody></tbody></table></div>
+      </div>
+    </div>
+    <div class="card" id="pl-sens-card">
+      <h3>If you change the budget</h3>
+      <p class="note" id="pl-sens-note">The base case at lower and higher budgets. Assumes each extra dollar buys slightly dearer leads (cost per lead moves with the budget to the power 0.2, so doubling the budget raises CPL about 15%) and caps cabins at those still unsold. Ranges use the optimistic and conservative rates. Forecasts, not guarantees: spending less is sometimes the right call.</p>
+      <div class="tbl-wrap"><table id="t-sens"><thead><tr><th class="l">Change</th><th>Budget</th><th>CPL</th><th>Leads</th><th>Bookings</th><th>Range</th><th>Cabins</th><th>Value</th><th>Marginal cost per booking</th></tr></thead><tbody></tbody></table></div>
+    </div>
+    <div class="card">
+      <h3>Can marketing deliver it in time?</h3>
+      <p class="verdict" id="pl-verdict">—</p>
+      <h3 style="margin-top: var(--cds-gap-sm)">Tactics backed by the data</h3>
+      <ol class="tactics" id="pl-tactics"></ol>
+    </div>
+  </section>
+
+  <!-- INVENTORY -->
+  <section class="page" id="inventory" hidden>
+    <p class="sec-note">Every departure in the next 15 months, the marketing aimed at it, and whether it needs any. "Usually ends" is how full past departures to that destination in that month ended. High season is the top quarter of destination-months by fullness (and at least 60% full): when the month is on pace there, paid campaigns could move to a gap. Activity counts when the marketing calendar aims it at that yacht (or all yachts), destination and departure month; brand-wide press is not counted. "Live by" is when activity should be running, from how far ahead three in four past enquiries for that destination came in.</p>
+    <div class="kpis" id="cov-kpis">
+      <div class="kpi"><span class="lbl">Departures ahead</span><b class="dash-skeleton" data-source="coverage_sum" data-field="departures">—</b><span class="sub"><span data-source="coverage_sum" data-field="unsold">—</span> cabins unsold</span></div>
+      <div class="kpi"><span class="lbl">Gaps: no activity</span><b class="dash-skeleton" data-source="coverage_sum" data-field="gaps">—</b><span class="sub">departures</span></div>
+      <div class="kpi"><span class="lbl">Covered but behind</span><b class="dash-skeleton" data-source="coverage_sum" data-field="behind">—</b><span class="sub">departures</span></div>
+      <div class="kpi"><span class="lbl">Fills anyway, still paid</span><b class="dash-skeleton" data-source="coverage_sum" data-field="fills_anyway">—</b><span class="sub">departures</span></div>
+      <div class="kpi"><span class="lbl">Covered and on pace</span><b class="dash-skeleton" data-source="coverage_sum" data-field="covered">—</b><span class="sub">departures</span></div>
+      <div class="kpi"><span class="lbl">Sold out</span><b class="dash-skeleton" data-source="coverage_sum" data-field="sold_out">—</b><span class="sub">departures</span></div>
+    </div>
+    <div class="card" id="cov-alerts-card"><h3>Needs attention</h3><ul class="alerts" id="cov-alerts"><li class="dash-skeleton">—</li></ul></div>
+    <div class="card" id="risk-card">
+      <h3>Inventory risk index and coverage score</h3>
+      <p class="note">Coverage is five checks worth 20 each, so a score says exactly what is missing: a paid campaign aimed at the departure; the destination in live or planned press, influencer or content work; ads bought in one of the two countries that book this destination most; an agent fam trip or trade show for it in the last 12 months or next 3; and enough qualified enquiries in the last 60 days to reach the usual fill. Website presence is not tracked yet. Risk is fixed points out of 10 (days away, share unsold, pace, booking window, warm conversations, coverage, recent bookings): 6+ high, 3–5 medium. Rules, not a model: they can be tuned once there is enough real history.</p>
+      <div class="kpis" id="risk-kpis">
+        <div class="kpi"><span class="lbl">High risk</span><b class="dash-skeleton" data-source="risk_sum" data-field="high">—</b><span class="sub"><span data-source="risk_sum" data-field="high_unsold">—</span> unsold cabins</span></div>
+        <div class="kpi"><span class="lbl">Medium risk</span><b class="dash-skeleton" data-source="risk_sum" data-field="medium">—</b><span class="sub">departures</span></div>
+        <div class="kpi"><span class="lbl">Low or none</span><b class="dash-skeleton" data-source="risk_sum" data-field="low">—</b><span class="sub">departures</span></div>
+        <div class="kpi"><span class="lbl">Average coverage</span><b class="dash-skeleton" data-source="risk_sum" data-field="avg_coverage">—</b><span class="sub">out of 100</span></div>
+      </div>
+      <div class="tbl-wrap"><table id="t-risk" data-source="risk" data-row-key="trip_id">
+        <thead><tr><th class="l" data-field="departure">Departure</th><th class="l" data-field="brand">Yacht</th><th class="l" data-field="dest">Destination</th><th data-field="unsold">Unsold</th><th data-field="days_out">Days</th><th data-field="risk_points">Risk</th><th class="l" data-field="risk_band">Band</th><th data-field="coverage_score">Coverage</th><th class="l" data-field="cov_paid">Paid</th><th class="l" data-field="cov_content">Content</th><th class="l" data-field="cov_markets">Markets</th><th class="l" data-field="cov_agents">Agents</th><th class="l" data-field="cov_audience">Audience</th><th class="l" data-field="reasons">Why</th></tr></thead>
+        <tbody></tbody></table></div>
+    </div>
+    <div class="card" id="cov-table-card">
+      <h3>Departures and the marketing aimed at them</h3>
+      <p class="note">Bar: cabins sold. Black tick: where past years stood at this many days out. Click a departure to see the activity aimed at it.</p>
+      <div class="smi-filters"><label class="smi-field">Search<input id="cov-search" type="search" placeholder="Komodo, Otium, Gap…"></label>
+        <label class="smi-field">Status<select id="cov-status"><option value="">All statuses</option><option>Gap</option><option>Covered but behind</option><option>Fills anyway</option><option>Covered</option><option>Sold out</option></select></label></div>
+      <div class="tbl-wrap"><table id="t-cover" data-source="coverage" data-row-key="trip_id">
+        <thead><tr><th class="l" data-field="departure">Departure</th><th class="l" data-field="brand">Yacht</th><th class="l" data-field="dest">Destination</th><th class="l hide-narrow" data-field="vtype">Voyage</th><th data-field="sold">Sold</th><th data-field="cabins">Cabins</th><th class="l" data-field="occupancy">Sold vs usual by now</th><th data-field="hist">Usually ends</th><th data-field="warm">Warm</th><th data-field="n_cover">Activity</th><th data-field="live_by">Live by</th><th class="l" data-field="status">Status</th></tr></thead>
+        <tbody></tbody></table></div>
+    </div>
+    <div class="card" id="cov-detail">
+      <h3 id="cov-title">Pick a departure above</h3>
+      <p class="note" id="cov-sub">Its activity and what to do.</p>
+      <ul class="cover-list" id="cov-list"></ul>
+    </div>
+    <details class="more"><summary>Show detail: booking pace by month, all departures of a yacht together</summary><div class="more-body">
+    <div class="card" id="pace-card">
+      <h3>Booking pace by month</h3>
+      <p class="note">All of a yacht's departures in a month together, against how past years of the same month had sold at the same number of days out. Warm conversations are open enquiries and proposals for that month.</p>
+      <div class="tbl-wrap"><table id="t-pace" data-source="pace" data-row-key="key">
+        <thead><tr><th class="l" data-field="dep_month">Departure month</th><th class="l" data-field="brand">Yacht</th><th data-field="cabins_sold">Sold</th><th data-field="cabins_total">Cabins</th><th class="l" data-field="occupancy">Occupancy vs expected</th><th data-field="expected_now">Expected now</th><th data-field="hist_final_occ">Usually ends</th><th data-field="projected_final">Projected</th><th data-field="warm_conversations">Warm</th><th data-field="push_by">Live by</th><th class="l" data-field="status">Status</th></tr></thead>
+        <tbody></tbody></table></div>
+    </div>
+    </div></details>
+  </section>
+
+  <!-- SPEND -->
+  <section class="page" id="spend" hidden>
+    <p class="sec-note">Every marketing dollar: Meta and Google from the ad accounts, everything else from the spend record (influencers, PR, content, events, agent fam trips, agency fees). Costs count in the month they were paid. Cabins given away are valued at the average price per cabin for that destination and voyage type, times the chance the cabin would have sold; they are shown beside cash cost, not added to it. Shared costs (all brands) are split between brands by their share of ad spend that month. Reach and engagement for influencers and press belong in a separate content dashboard; this one is about money.</p>
+    <div class="card" id="budget-card">
+      <div class="smi-filters" style="justify-content: space-between; align-items: center;">
+        <h3 id="bud-title">Marketing budget</h3>
+        <label class="smi-field">Budget year<select id="bud-year"></select></label>
+      </div>
+      <p class="note">The year's budget for the brand picked above, how it was allocated across channels, what has been paid and committed, and what is left. The tick in each bar is where spending should be by now if the budget is spread as planned. Shared costs (PR retainer, agency fees, trade shows) are split between brands by their share of ad spend each month.</p>
+      <div class="kpis" id="bud-kpis">
+        <div class="kpi"><span class="lbl">Budget for the year</span><b class="dash-skeleton" data-source="budget_view" data-field="budget">—</b><span class="sub">planned to date <span data-source="budget_view" data-field="budget_to_date">—</span></span></div>
+        <div class="kpi"><span class="lbl">Spent so far</span><b class="dash-skeleton" data-source="budget_view" data-field="spent">—</b><span class="sub"><span data-source="budget_view" data-field="used_pct">—</span> of budget</span></div>
+        <div class="kpi"><span class="lbl">Committed</span><b class="dash-skeleton" data-source="budget_view" data-field="committed">—</b><span class="sub">agreed, not yet paid</span></div>
+        <div class="kpi"><span class="lbl">Left to spend</span><b class="dash-skeleton" data-source="budget_view" data-field="left">—</b><span class="sub">after paid and committed</span></div>
+        <div class="kpi"><span class="lbl">Booking value</span><b class="dash-skeleton" data-source="budget_view" data-field="revenue">—</b><span class="sub"><span data-source="budget_view" data-field="bookings">—</span> bookings from this year's enquiries</span></div>
+        <div class="kpi"><span class="lbl">ROAS (all spend)</span><b class="dash-skeleton" data-source="budget_view" data-field="roas">—</b><span class="sub">margin return <span data-source="budget_view" data-field="margin_roas">—</span></span></div>
+        <div class="kpi"><span class="lbl">CAC (cost per booking)</span><b class="dash-skeleton" data-source="budget_view" data-field="cac">—</b><span class="sub">CPL <span data-source="budget_view" data-field="cpl">—</span></span></div>
+      </div>
+      <p class="note">ROAS is booking value ÷ marketing spend (5.0× means $5 of bookings for every $1). Margin return uses contribution margin instead of booking value, so it shows what marketing actually earns. Bookings and value come from enquiries made in the budget year; recent enquiries may still book, so the current year's return keeps rising.</p>
+      <div style="display: flex; flex-direction: column; gap: var(--cds-gap-lg);">
+        <div>
+          <h3 style="margin-bottom: var(--cds-gap-sm)">Where it is allocated, spent and what it returned</h3>
+          <div class="tbl-wrap"><table id="t-budcat" data-source="budget_view" data-row-key="key">
+            <thead><tr><th class="l" data-field="category">Category</th><th data-field="budget">Budget</th><th data-field="alloc_share">Allocation</th><th data-field="spent">Spent</th><th data-field="committed">Committed</th><th data-field="left">Left</th><th class="l" data-field="used_pct">Used vs plan</th><th class="l" data-field="status">Status</th><th data-field="leads">Enquiries</th><th data-field="bookings">Bookings</th><th data-field="revenue">Booking value</th><th data-field="roas">ROAS</th><th data-field="margin_roas">Margin return</th><th data-field="cac">CAC</th></tr></thead>
+            <tbody></tbody></table></div>
+        </div>
+        <div>
+          <h3 style="margin-bottom: var(--cds-gap-sm)">By brand</h3>
+          <p class="note" style="margin-bottom: var(--cds-gap-sm)">Click a brand to see its budget.</p>
+          <div class="tbl-wrap"><table id="t-budbrand" data-source="budget_view" data-row-key="key">
+            <thead><tr><th class="l" data-field="brand">Brand</th><th data-field="budget">Budget</th><th data-field="spent">Spent</th><th data-field="committed">Committed</th><th data-field="left">Left</th><th class="l" data-field="used_pct">Used vs plan</th><th class="l" data-field="status">Status</th><th data-field="bookings">Bookings</th><th data-field="revenue">Booking value</th><th data-field="roas">ROAS</th><th data-field="margin_roas">Margin return</th><th data-field="cac">CAC</th></tr></thead>
+            <tbody></tbody></table></div>
+        </div>
+      </div>
+    </div>
+    <h2 id="sp-period-h">Spend in the selected period</h2>
+    <div class="kpis" id="sp-kpis">
+      <div class="kpi"><span class="lbl">Marketing spend</span><b class="dash-skeleton" data-source="spendsum" data-field="cost">—</b><span class="sub">paid in the period</span></div>
+      <div class="kpi"><span class="lbl">Ads (Meta and Google)</span><b class="dash-skeleton" data-source="spendsum" data-field="ads">—</b><span class="sub">from the ad accounts</span></div>
+      <div class="kpi"><span class="lbl">Everything else</span><b class="dash-skeleton" data-source="spendsum" data-field="other">—</b><span class="sub">from the spend record</span></div>
+      <div class="kpi"><span class="lbl">Cabins given away</span><b class="dash-skeleton" data-source="spendsum" data-field="comped_value">—</b><span class="sub">value at risk, not cash</span></div>
+      <div class="kpi"><span class="lbl">Committed, not yet paid</span><b class="dash-skeleton" data-source="spendsum" data-field="committed">—</b><span class="sub">booked for later dates</span></div>
+    </div>
+    <div class="card" id="sp-month-card"><h3>Spend per month against budget</h3><p class="note" id="sp-month-note">Bars: ads and other costs paid; lighter bars are committed for future months. Tick: monthly budget from the budget file.</p><div class="chart dash-skeleton" id="c-spend" data-source="spendsum"></div><div class="legend" id="sp-legend"></div></div>
+    <div class="card" id="sp-group-card">
+      <h3>Spend by investment type</h3>
+      <p class="note">Not every investment should be judged on short-term ROAS. Paid media is judged on cost per qualified lead, CAC and ROAS; brand and content over 6–12 months; PR and partnerships on reach, agent pipeline and assisted bookings as well as direct enquiries. Digital infrastructure (website, analytics, tools) is not in the spend record yet.</p>
+      <div class="tbl-wrap"><table id="t-spgroup" data-source="spend_split" data-row-key="key">
+        <thead><tr><th class="l" data-field="label">Investment type</th><th data-field="cost">Paid</th><th data-field="share">Share</th><th data-field="committed">Committed</th><th data-field="comped_value">Cabins given</th></tr></thead>
+        <tbody></tbody></table></div>
+    </div>
+    <details class="more"><summary>Show detail: spend by category, destination and objective, and the full spend record</summary><div class="more-body">
+    <div class="card" id="sp-cat-card">
+      <h3>Spend by category</h3>
+      <p class="note">Enquiries, bookings and revenue are shown where a category has its own channel. Cost per booking includes the value of cabins given away.</p>
+      <div class="tbl-wrap"><table id="t-spendcat" data-source="spendsum" data-row-key="key">
+        <thead><tr><th class="l" data-field="category">Category</th><th data-field="cost">Paid</th><th data-field="share">Share</th><th data-field="comped_value">Cabins given</th><th data-field="committed">Committed</th><th data-field="leads">Enquiries</th><th data-field="bookings">Bookings</th><th data-field="revenue">Revenue</th><th data-field="cost_per_booking">Cost per booking</th></tr></thead>
+        <tbody></tbody></table></div>
+    </div>
+    <div class="grid">
+      <div class="card">
+        <h3>Spend by destination</h3>
+        <p class="note">Each enquiry's share of the full marketing cost, by the destination it asked about.</p>
+        <div class="tbl-wrap"><table id="t-spdest" data-source="spend_split" data-row-key="key">
+          <thead><tr><th class="l" data-field="label">Destination</th><th data-field="cost">Cost</th><th data-field="qualified">Qualified</th><th data-field="cpql">Per qualified</th><th data-field="bookings">Bookings</th><th data-field="cac">CAC</th><th data-field="value">Value</th><th data-field="roas">ROAS</th></tr></thead>
+          <tbody></tbody></table></div>
+      </div>
+      <div class="card">
+        <h3>Spend by campaign objective</h3>
+        <p class="note">Awareness campaigns should not be held to the same CAC as conversion campaigns.</p>
+        <div class="tbl-wrap"><table id="t-spobj" data-source="spend_split" data-row-key="key">
+          <thead><tr><th class="l" data-field="label">Objective</th><th data-field="cost">Cost</th><th data-field="qualified">Qualified</th><th data-field="cpql">Per qualified</th><th data-field="bookings">Bookings</th><th data-field="cac">CAC</th><th data-field="value">Value</th><th data-field="roas">ROAS</th></tr></thead>
+          <tbody></tbody></table></div>
+      </div>
+    </div>
+    <div class="card" id="sp-ledger-card">
+      <h3>Spend record</h3>
+      <p class="note">Who we hosted or paid, what it cost in cash and in operations, and what it brought. Bookings and revenue are those of the activity's own enquiries.</p>
+      <div class="smi-filters"><label class="smi-field">Search<input id="sp-search" type="search" placeholder="Influencer, partner, Komodo…"></label>
+        <label class="smi-field">Category<select id="sp-cat"><option value="">All categories</option><option>Influencer</option><option>PR</option><option>Content production</option><option>Event / trade show</option><option>Agent fam trip</option><option>Agency fees</option></select></label></div>
+      <div class="tbl-wrap"><table id="t-ledger" data-source="ledger" data-row-key="cost_id">
+        <thead><tr><th class="l" data-field="date">Date</th><th class="l" data-field="category">Category</th><th class="l" data-field="partner">Partner</th><th class="l" data-field="description">What</th><th class="l hide-narrow" data-field="brand">Brand</th><th class="l hide-narrow" data-field="destination">Destination</th><th data-field="cash">Cash</th><th data-field="operational">Operational</th><th data-field="cabins_comped">Cabins given</th><th data-field="comped_value">Value of cabins</th><th data-field="total">Total paid</th><th data-field="bookings">Bookings</th><th data-field="revenue">Revenue</th><th class="l" data-field="status">Status</th></tr></thead>
+        <tbody></tbody></table></div>
+    </div>
+    </div></details>
+  </section>
+
+  <!-- MARKETS -->
+  <section class="page" id="markets" hidden>
+    <p class="sec-note">How each market enquires and books. Enquiry-to-departure is the gap between first message and the trip date; booking lead time is the gap between paying and departing; sales cycle is enquiry to booking. "Start" is how many days before departure to have campaigns live for that market.</p>
+    <div class="card">
+      <h3>Booking behaviour by market</h3>
+      <div class="tbl-wrap"><table id="t-markets" data-source="markets" data-row-key="key">
+        <thead><tr><th class="l" data-field="segment">Market</th><th data-field="leads">Leads</th><th data-field="cpl">CPL</th><th data-field="cac">CAC</th><th data-field="p2b">P2B</th><th data-field="e2d_median">Enquiry → departure</th><th data-field="book_lt_median">Booking lead time</th><th data-field="cycle_median">Sales cycle</th><th data-field="lm_share">Last-minute share</th><th data-field="lm_bookings">Last-minute bookings</th><th data-field="start_days">Start</th></tr></thead>
+        <tbody></tbody></table></div>
+    </div>
+    <details class="more"><summary>Show detail: how far ahead each market enquires, last-minute calls to action, Europe split</summary><div class="more-body">
+    <div class="card"><h3>How far ahead each market enquires</h3><p class="note">Bar: middle half of leads (25th–75th percentile), dot: median, in days before departure.</p><div class="chart dash-skeleton" id="c-e2d" data-source="markets" style="min-height: 360px"></div></div>
+    <div class="grid">
+      <div class="card">
+        <h3>Last-minute leads by call to action</h3>
+        <p class="note">Paid enquiries for departures 60 days out or less.</p>
+        <div class="tbl-wrap"><table id="t-lm" data-source="lastminute" data-row-key="key">
+          <thead><tr><th class="l" data-field="cta">Call to action</th><th data-field="leads">Leads</th><th data-field="cpl">CPL</th><th data-field="l2q">Qualified</th><th data-field="p2b">P2B</th><th data-field="bookings">Bookings</th><th data-field="cac">CAC</th><th data-field="cycle_median">Days to close</th></tr></thead>
+          <tbody></tbody></table></div>
+      </div>
+      <div class="card">
+        <h3>Europe: flying in or living in Asia?</h3>
+        <p class="note">Leads living in Europe against European expats living in Singapore and Hong Kong.</p>
+        <div class="tbl-wrap"><table id="t-eu" data-source="markets" data-row-key="key">
+          <thead><tr><th class="l" data-field="segment">Segment</th><th data-field="leads">Leads</th><th data-field="e2d_median">Enquiry → departure</th><th data-field="lm_bookings">Last-minute bookings</th><th data-field="cac">CAC</th></tr></thead>
+          <tbody></tbody></table></div>
+      </div>
+    </div>
+    </div></details>
+    <div class="card" id="mo-card">
+      <h3>Market opportunity: demand against investment</h3>
+      <p class="note">Each market's share of marketing cost against its share of booking value. An index above 1 means it returns more than its share of spend: worth investigating, not an automatic case for more budget, since market size, access, competition and how far extra spend would stretch are not in the data.</p>
+      <div class="smi-filters"><label class="smi-field">Period<select id="mo-period"><option value="All">2024 to date</option><option value="2024">2024</option><option value="2025">2025</option><option value="2026">2026 to date</option><option value="L90">Last 90 days</option></select></label></div>
+      <div class="tbl-wrap"><table id="t-mo" data-source="market_opp" data-row-key="key">
+        <thead><tr><th class="l" data-field="group">Market</th><th data-field="spend">Cost</th><th data-field="spend_share">Share of cost</th><th data-field="value">Value</th><th data-field="value_share">Share of value</th><th data-field="opp_index">Index</th><th data-field="value_per_usd">Value per $</th><th data-field="cac">CAC</th><th data-field="avg_value">Avg booking</th><th data-field="l2b">Lead to booking</th></tr></thead>
+        <tbody></tbody></table></div>
+    </div>
+    <div class="card" id="win-card">
+      <h3>Booking windows by market, voyage type and destination</h3>
+      <p class="note">Days before departure that booked guests enquired (middle half and median) and paid. Private charters and shared voyages are kept apart so their windows are not averaged into a misleading middle.</p>
+      <div class="smi-filters"><label class="smi-field">Destination<select id="win-dest"></select></label></div>
+      <div class="tbl-wrap"><table id="t-win" data-source="windows" data-row-key="key">
+        <thead><tr><th class="l" data-field="group">Market</th><th class="l" data-field="vtype">Voyage type</th><th data-field="bookings">Bookings</th><th data-field="e2d_p25">Enquiry: early quarter</th><th data-field="e2d_median">Median</th><th data-field="e2d_p75">Late quarter</th><th data-field="book_lt_median">Booking lead time</th></tr></thead>
+        <tbody></tbody></table></div>
+    </div>
+  </section>
+
+  <!-- SEASONALITY -->
+  <section class="page" id="season" hidden>
+    <p class="sec-note">Two different seasons. Travel seasonality is when guests sail; booking seasonality is when they decide, enquire and pay, often months earlier. Marketing has to follow the second to fill the first. Historical averages by calendar month across 2024–2026; the timing table looks forward. Uses the brand, destination and voyage filters (the timing table uses the destination filter).</p>
+    <div class="card"><h3>Travel seasonality: cabins sold by departure month</h3><p class="note">When people travel. High bars are the months that fill without extra push.</p><div class="chart dash-skeleton" id="c-seasdep" data-source="season"></div></div>
+    <div class="grid">
+      <div class="card"><h3>Booking seasonality: enquiries by month</h3><p class="note">When people enquire.</p><div class="chart dash-skeleton" id="c-seasleads" data-source="season"></div></div>
+      <div class="card"><h3>Booking seasonality: bookings confirmed by month</h3><p class="note">When people confirm and pay.</p><div class="chart dash-skeleton" id="c-seasbook" data-source="season"></div></div>
+    </div>
+    <div class="card"><h3>CPL index by enquiry month</h3><p class="note">1.00 is the yearly average CPL. Above the line, leads cost more.</p><div class="chart dash-skeleton" id="c-cplidx" data-source="season"></div></div>
+    <div class="card" id="timing-card">
+      <h3>Marketing timing: when to start for each departure month</h3>
+      <p class="note">From how far ahead past booked guests enquired for that destination and month: start marketing at the 75th percentile plus three weeks to prepare the campaign, before the next departure that month. "Late" means the date has passed with unsold cabins and nothing aimed at it.</p>
+      <div class="tbl-wrap"><table id="t-timing" data-source="timing" data-row-key="key">
+        <thead><tr><th class="l" data-field="moy">Departure month</th><th data-field="bookings">Past bookings</th><th data-field="e2d_median">Enquired (median)</th><th data-field="e2d_p75">Enquired (75%)</th><th class="l" data-field="peak_booking_moy">Most confirmed in</th><th data-field="start_days">Start, days before</th><th class="l" data-field="next_dep_month">Next departure</th><th data-field="unsold">Unsold</th><th class="l" data-field="start_by">Start by</th><th class="l" data-field="status">Status</th></tr></thead>
+        <tbody></tbody></table></div>
+    </div>
+  </section>
+
+  <!-- SALES -->
+  <section class="page" id="sales" hidden>
+    <p class="sec-note">Separates what marketing delivered from what sales converted, so problems are seen where they occur without assuming who fixes them. Plan is the qualified-lead target in the targets file. Uses the brand filter.</p>
+    <div class="card" id="st-card">
+      <div class="smi-filters" style="justify-content: space-between; align-items: center;"><h3>Pipeline: every stage, with time in stage</h3>
+        <label class="smi-field">Enquiry period<select id="st-period"><option value="All">2024 to date</option><option value="2024">2024</option><option value="2025">2025</option><option value="2026">2026 to date</option><option value="L90">Last 90 days</option><option value="L30">Last 30 days</option></select></label></div>
+      <p class="note">Enquiries → qualified → active conversation → proposal → booking. Negotiation is not a separate CRM stage yet, so it sits inside proposal to booking.</p>
+      <div class="funnel" id="st-funnel" data-source="stages"></div>
+      <div class="rates" id="st-rates" data-source="stages"></div>
+    </div>
+    <div class="card" id="bn-card">
+      <h3>Where the bottlenecks show up</h3>
+      <p class="note">Three places a lead can stall. Marketing: leads that never qualify (poor targeting or misleading promises). Sales process: slow replies, slow proposals, guests going quiet. Commercial constraints: price, dates, yacht or destination fit, competitors. Same enquiry period as above.</p>
+      <div class="grid" id="bn" data-source="stages"></div>
+    </div>
+    <div class="card"><h3>Qualified leads vs plan</h3><p class="note">Bars: qualified leads by enquiry month. Tick: plan.</p><div class="chart dash-skeleton" id="c-plan" data-source="health"></div></div>
+    <div class="card"><h3>Proposal-to-booking rate vs the previous 12 months</h3><p class="note">By the month proposals were sent; recent months still have open proposals.</p><div class="chart dash-skeleton" id="c-p2b" data-source="health"></div></div>
+    <details class="more"><summary>Show detail: month-by-month check of marketing delivery against sales conversion</summary><div class="more-body">
+    <div class="card">
+      <h3>Monthly check</h3>
+      <div class="tbl-wrap"><table id="t-health" data-source="health" data-row-key="key">
+        <thead><tr><th class="l" data-field="month">Month</th><th data-field="qualified">Qualified</th><th data-field="plan_qualified">Plan</th><th data-field="proposals">Proposals sent</th><th data-field="booked">Booked</th><th data-field="lost">Lost</th><th data-field="open">Open</th><th data-field="p2b">P2B</th><th data-field="p2b_baseline">Previous 12 mo</th><th data-field="reply_median">Median reply (h)</th><th class="l" data-field="flag">Reading</th></tr></thead>
+        <tbody></tbody></table></div>
+    </div>
+    </div></details>
+    <div class="grid">
+      <div class="card"><h3>Reply speed and booking rate</h3><p class="note">Qualified leads by how long our first reply took.</p><div class="chart dash-skeleton" id="c-speed" data-source="speed"></div></div>
+      <div class="card">
+        <h3>Why qualified leads were lost</h3>
+        <p class="note">A blank reason stays "Unknown" rather than forcing a guess. Suggested extra CRM reasons: yacht unsuitable, destination mismatch, group-size mismatch, competitor preference, insufficient information, budget mismatch.</p>
+        <div class="tbl-wrap"><table id="t-lost" data-source="lost" data-row-key="key">
+          <thead><tr><th class="l" data-field="reason">Reason</th><th class="l" data-field="group">Shows up in</th><th data-field="lost">Leads</th><th data-field="share">Share</th></tr></thead><tbody></tbody></table></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- JOURNEY -->
+  <section class="page" id="journey" hidden>
+    <p class="sec-note">What guests did before they booked, against qualified leads who did not book, then how well each journey is tracked and what happens after the booking. Touchpoints are observed digital interactions (website analytics, social, email and WhatsApp tools matched to the CRM); anything about why a guest chose us is inferred and labelled so. The segment picker applies to the three journey tables; attribution and retention use the brand filter.</p>
+    <div class="smi-filters"><label class="smi-field">Journey segment<select id="j-seg"></select></label><span class="sec-note" id="j-size" data-source="journey"></span></div>
+    <div class="grid">
+      <div class="card">
+        <h3>Touchpoints per lead</h3>
+        <div class="tbl-wrap"><table id="t-jmetric" data-source="journey" data-row-key="key">
+          <thead><tr><th class="l" data-field="label">Touchpoint</th><th data-field="booked">Booked</th><th data-field="not_booked">Didn't book</th><th data-field="ratio">Ratio</th></tr></thead><tbody></tbody></table></div>
+      </div>
+      <div class="card">
+        <h3>Page they spent most time on</h3>
+        <p class="note">Share of leads. A ratio above 1 means bookers lean on that page.</p>
+        <div class="tbl-wrap"><table id="t-jpage" data-source="journey" data-row-key="key">
+          <thead><tr><th class="l" data-field="label">Page</th><th data-field="booked">Booked</th><th data-field="not_booked">Didn't book</th><th data-field="ratio">Ratio</th></tr></thead><tbody></tbody></table></div>
+      </div>
+    </div>
+    <div class="card">
+      <h3>First touch to enquiry channel, for bookings</h3>
+      <div class="tbl-wrap"><table id="t-jpath" data-source="journey" data-row-key="key">
+        <thead><tr><th class="l" data-field="label">Path</th><th data-field="booked">Bookings</th><th data-field="ratio">Booking value</th></tr></thead><tbody></tbody></table></div>
+    </div>
+    <h2 class="grp">Attribution confidence</h2>
+    <div class="kpis" id="att-kpis">
+      <div class="kpi"><span class="lbl">First touch known</span><b class="dash-skeleton" data-source="attribution" data-field="known_share">—</b><span class="sub">of <span data-source="attribution" data-field="bookings">—</span> bookings</span></div>
+      <div class="kpi"><span class="lbl">Single-touch</span><b class="dash-skeleton" data-source="attribution" data-field="single_share">—</b><span class="sub">first touch = enquiry channel</span></div>
+      <div class="kpi"><span class="lbl">Assisted</span><b class="dash-skeleton" data-source="attribution" data-field="assisted_share">—</b><span class="sub">another channel came first</span></div>
+      <div class="kpi"><span class="lbl">High confidence</span><b class="dash-skeleton" data-source="attribution" data-field="high_share">—</b><span class="sub">click-tracked ad, first touch known</span></div>
+      <div class="kpi"><span class="lbl">Medium confidence</span><b class="dash-skeleton" data-source="attribution" data-field="medium_share">—</b><span class="sub">self-reported or hand-entered channel</span></div>
+      <div class="kpi"><span class="lbl">Low: unattributed</span><b class="dash-skeleton" data-source="attribution" data-field="low_share">—</b><span class="sub"><span data-source="attribution" data-field="low_value">—</span> of value</span></div>
+    </div>
+    <div class="card">
+      <h3>First touch, enquiry channel and assists</h3>
+      <p class="note">How often each channel was the first known touch for a booking, the channel the enquiry came through, and assists: first touch for a booking that enquired somewhere else. A channel with many assists does work that last-touch reporting misses.</p>
+      <div class="tbl-wrap"><table id="t-assist" data-source="attribution" data-row-key="key">
+        <thead><tr><th class="l" data-field="channel">Channel</th><th data-field="first">First touch</th><th data-field="enquiry">Enquiry channel</th><th data-field="assists">Assists</th><th data-field="assist_value">Assisted value</th></tr></thead><tbody></tbody></table></div>
+    </div>
+    <h2 class="grp">Guest retention and lifetime value</h2>
+    <div class="card">
+      <div class="smi-filters" style="justify-content: space-between; align-items: center;"><h3>New, repeat and referred guests</h3><label class="smi-field">Enquiry year<select id="ret-year"><option value="All">2024 to date</option><option value="2024">2024</option><option value="2025">2025</option><option value="2026">2026</option></select></label></div>
+      <p class="note">The relationship continues after the voyage. Marketing cost per booking includes every enquiry of that guest type, booked or not. True lifetime value, referrals a guest generates and moves between brands (a Samara guest later chartering Otium) need one guest ID across brands, which the data does not have yet.</p>
+      <div class="tbl-wrap"><table id="t-ret" data-source="retention" data-row-key="key">
+        <thead><tr><th class="l" data-field="guest">Guest</th><th data-field="bookings">Bookings</th><th data-field="share_bookings">Share</th><th data-field="value">Value</th><th data-field="share_value">Share of value</th><th data-field="avg_value">Avg booking</th><th data-field="cac">Marketing cost per booking</th></tr></thead><tbody></tbody></table></div>
+    </div>
+  </section>
+</div>
+
+</div>
+<script src="/marketing-dashboard/vendor/d3.min.js"></script>
+<script src="/marketing-dashboard/datasets.js"></script>
+<script src="/marketing-dashboard/dash-runtime.js"></script>
+<script src="/marketing-dashboard/calc.js"></script>
+<script src="/marketing-dashboard/intel.js"></script>
+<script src="/marketing-dashboard/decide.js"></script>
+<script src="/marketing-dashboard/ui.js"></script>
+<script src="/marketing-dashboard/intel-pages.js"></script>
+<script src="/marketing-dashboard/pages.js"></script>
+<script src="/marketing-dashboard/data-manager.js"></script>
+</body>
+</html>

@@ -38,6 +38,9 @@ const PUBLIC_PATHS = [
   // partners; its API (/api/public/yacht-calendar) only ever returns booked dates
   '/calendar/yacht',
 
+  // Marketing Intelligence dashboard — static page on dummy data (public/marketing-dashboard),
+  // open without login for now
+  '/marketing-dashboard',
   // Sales presentation microsite — gated by its own shared password, not staff NextAuth
   '/sales-pro',
   '/api/sales-pro',

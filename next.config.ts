@@ -26,6 +26,13 @@ const nextConfig: NextConfig = {
       { protocol: 'https', hostname: '*.public.blob.vercel-storage.com' },
     ],
   },
+  async rewrites() {
+    return [
+      // Marketing Intelligence dashboard is a standalone static page (own styles, d3, no React)
+      // so the ERP layout and Tailwind don't touch it — see public/marketing-dashboard.
+      { source: '/marketing-dashboard', destination: '/marketing-dashboard/index.html' },
+    ];
+  },
   async headers() {
     return [
       {
