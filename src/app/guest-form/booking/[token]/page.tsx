@@ -480,11 +480,11 @@ const EMPTY_TRAVEL: TravelData = {
 
 const ALL_STEPS: { id: Section; title: string; subtitle: string }[] = [
   { id: 'profile', title: 'Personal Details',   subtitle: 'Identity & contact info for every guest' },
-  { id: 'diving',  title: 'Diving Information', subtitle: 'Certification & equipment sizing per guest' },
   { id: 'medical', title: 'Medical & Health',   subtitle: 'One shared answer for the whole booking' },
   { id: 'food',    title: 'Food Preferences',   subtitle: 'One shared answer for the whole booking' },
   { id: 'drinks',  title: 'Drink Preferences',  subtitle: 'One shared answer for the whole booking' },
   { id: 'travel',  title: 'Travel Arrangements', subtitle: 'Arrival & departure pick-up details for the group' },
+  { id: 'diving',  title: 'Diving Information', subtitle: 'Certification & equipment sizing per guest' },
 ]
 
 function guestLabel(g: GuestRecord, i: number) {
