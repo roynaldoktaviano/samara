@@ -6,13 +6,14 @@ import localFont from 'next/font/local'
 // unstyled until a hard refresh. Dynamic rendering sends `Cache-Control: no-store` instead.
 export const dynamic = 'force-dynamic'
 
-// Self-hosted from @fontsource/merriweather via next/font/local. next/font/google broke
-// `next build` under Turbopack ("next/font/google queries have exactly one entry") and also
-// made the build depend on reaching Google Fonts; local files avoid both.
+// Self-hosted via next/font/local (files copied from @fontsource/merriweather). next/font/google
+// broke `next build` under Turbopack ("next/font/google queries have exactly one entry") and also
+// made the build depend on reaching Google Fonts. The files live in the repo rather than
+// node_modules so the build works even when the server skips `npm install`.
 const merriweather = localFont({
   src: [
-    { path: '../../../node_modules/@fontsource/merriweather/files/merriweather-latin-700-normal.woff2', weight: '700', style: 'normal' },
-    { path: '../../../node_modules/@fontsource/merriweather/files/merriweather-latin-900-normal.woff2', weight: '900', style: 'normal' },
+    { path: './fonts/merriweather-latin-700-normal.woff2', weight: '700', style: 'normal' },
+    { path: './fonts/merriweather-latin-900-normal.woff2', weight: '900', style: 'normal' },
   ],
   variable: '--font-merriweather',
   display: 'swap',
