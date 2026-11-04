@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 
 import { roleMatches } from '@/lib/role-utils'
+import { reroutePendingPrApprovals } from '@/lib/purchasing/rerouteApprovals'
 
 const ALLOWED = ['ADMIN', 'SUPER_ADMIN', 'HR']
 
@@ -40,6 +41,11 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   if (replacingEmployeeId !== undefined && replacingEmployeeId === id) {
     return NextResponse.json({ error: 'An employee cannot replace themselves' }, { status: 400 })
   }
+
+  // Read before the update so a Reports To change can move PRs still waiting on the old manager.
+  const before = managerId !== undefined
+    ? await db.employee.findUnique({ where: { id }, select: { managerId: true } })
+    : null
 
   try {
     const employee = await db.employee.update({
@@ -128,6 +134,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     // clearance/paklaring state) is equally stale at that point, so drop it too.
     if (isActive === true) {
       await db.employeeSeparation.deleteMany({ where: { employeeId: id } })
+    }
+    if (before && before.managerId !== employee.managerId) {
+      await reroutePendingPrApprovals(db, employee, before.managerId, employee.managerId)
     }
     return NextResponse.json(employee)
   } catch (err: unknown) {

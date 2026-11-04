@@ -5,6 +5,7 @@ import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 
 import { roleMatches } from '@/lib/role-utils'
+import { requirePayrollUnlock } from '@/lib/payroll-unlock'
 import { sendPushToUsers } from '@/lib/push'
 import { buildPayslipEntryDraft, computeTotals, countWeekdaysInMonth, countTripDaysInPeriod, matchEmployeesToYachts, TRIP_BOOKING_STATUSES } from '@/lib/payroll'
 
@@ -20,6 +21,8 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
   const session = await getServerSession(authOptions)
   const role = (session?.user as { role?: string })?.role ?? ''
   if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const locked = await requirePayrollUnlock(session)
+  if (locked) return locked
   const db = await getDb(session)
   const period = await db.payrollPeriod.findUnique({
     where: { id },
@@ -40,6 +43,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const session = await getServerSession(authOptions)
   const role = (session?.user as { role?: string })?.role ?? ''
   if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const locked = await requirePayrollUnlock(session)
+  if (locked) return locked
   const db = await getDb(session)
   const body = await req.json() as { action?: string; approvalNote?: string; rejectionNote?: string }
 

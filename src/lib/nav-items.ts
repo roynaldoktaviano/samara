@@ -131,7 +131,7 @@ export const navigationItems: NavItem[] = [
   { id: 'hr-business-trips', label: 'Business Trips', icon: Plane, roles: ['ADMIN', 'SUPER_ADMIN', 'HR'],              group: 'hr'         },
   { id: 'hr-candidates', label: 'Talent Pool',    icon: UserPlus,   roles: ['ADMIN', 'SUPER_ADMIN', 'HR'],             group: 'hr'         },
   { id: 'hr-entities-assignments', label: 'Entities & Assignments', icon: Building2, roles: ['ADMIN', 'SUPER_ADMIN', 'HR'], group: 'hr'   },
-  { id: 'hr-compensation', label: 'Roles & Compensation', icon: Wallet, roles: ['ADMIN', 'SUPER_ADMIN', 'HR'],         group: 'hr'         },
+  { id: 'hr-compensation', label: 'Roles',         icon: Briefcase, roles: ['ADMIN', 'SUPER_ADMIN', 'HR'],      group: 'hr'         },
   { id: 'hr-performance-reviews', label: 'Performance Reviews', icon: Star, roles: ['ADMIN', 'SUPER_ADMIN', 'HR'],     group: 'hr'         },
   { id: 'hr-payroll',    label: 'Payroll', icon: Banknote, roles: ['ADMIN', 'SUPER_ADMIN', 'HR', 'FINANCE'],           group: 'hr'         },
   { id: 'hr-attendance', label: 'Attendance Recap', icon: CalendarCheck, roles: ['ADMIN', 'SUPER_ADMIN', 'HR'],        group: 'hr'         },

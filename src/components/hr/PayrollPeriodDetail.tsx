@@ -103,7 +103,7 @@ const EDIT_FIELDS = [
   { key: 'loanDeduction', label: 'Loan', group: 'deduction' },
 ] as const
 
-export default function PayrollPeriodDetail({ periodId, onBack }: { periodId: string; onBack: () => void }) {
+export default function PayrollPeriodDetail({ periodId, onBack, onLocked }: { periodId: string; onBack: () => void; onLocked: () => void }) {
   const { data: session } = useSession()
   const role = (session?.user as { role?: string })?.role ?? ''
   const canManage = roleMatches(role, ['ADMIN', 'SUPER_ADMIN', 'HR', 'FINANCE'])
@@ -141,9 +141,10 @@ export default function PayrollPeriodDetail({ periodId, onBack }: { periodId: st
   const load = useCallback(async () => {
     setLoading(true)
     const res = await fetch(`/api/hr/payroll/periods/${periodId}`)
+    if (res.status === 423) { onLocked(); return }
     if (res.ok) setPeriod(await res.json())
     setLoading(false)
-  }, [periodId])
+  }, [periodId, onLocked])
 
   useEffect(() => { load() }, [load])
 

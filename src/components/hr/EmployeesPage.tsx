@@ -1046,7 +1046,7 @@ export default function EmployeesPage() {
       ) : (
         <div className="rounded-xl border overflow-hidden">
           <div className="overflow-x-auto"><table className="w-full text-sm">
-            <thead className="bg-muted/50 text-xs text-muted-foreground">
+            <thead className="bg-muted/50 text-xs text-muted-foreground whitespace-nowrap">
               <tr>
                 <th className="text-left px-4 py-3 font-medium">Employee</th>
                 <th className="text-left px-4 py-3 font-medium">Work Location</th>
@@ -1070,11 +1070,14 @@ export default function EmployeesPage() {
               ) : paginated.map(emp => (
                 <tr key={emp.id} onClick={() => openDetail(emp)} className={`cursor-pointer hover:bg-muted/30 transition-colors ${!emp.isActive ? 'opacity-50' : ''}`}>
                   <td className="px-4 py-3">
-                    <p className="font-medium flex items-center gap-1.5">
+                    <p className="font-medium min-w-48">
                       {emp.fullName}
-                      {emp.nickName && <span className="text-muted-foreground font-normal">({emp.nickName})</span>}
+                      {/* Some names were imported with the nickname already in brackets — don't show it twice. */}
+                      {emp.nickName && !emp.fullName.toLowerCase().includes(`(${emp.nickName.toLowerCase()})`) && (
+                        <span className="text-muted-foreground font-normal"> ({emp.nickName})</span>
+                      )}
                       {emp.userId && (
-                        <span title={`Linked to login: ${emp.user?.email ?? ''}`} className="inline-block h-1.5 w-1.5 rounded-full bg-success shrink-0" />
+                        <span title={`Linked to login: ${emp.user?.email ?? ''}`} className="inline-block h-1.5 w-1.5 rounded-full bg-success ml-1.5 align-middle" />
                       )}
                     </p>
                     <p className="text-xs text-muted-foreground font-mono">{emp.employeeNumber}</p>
@@ -1344,7 +1347,7 @@ export default function EmployeesPage() {
                   <option value="MEDIUM">Medium</option>
                   <option value="LOW">Low</option>
                 </NativeSelect>
-                <p className="text-[11px] text-muted-foreground">Skill tier within the role — compared against the approved salary range on Roles &amp; Compensation.</p>
+                <p className="text-[11px] text-muted-foreground">Skill tier within the role.</p>
               </div>
 
               <div className="space-y-1.5">

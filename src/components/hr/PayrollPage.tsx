@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useSession } from 'next-auth/react'
-import { Plus, Banknote } from 'lucide-react'
+import { Plus, Banknote, Lock } from 'lucide-react'
 import { roleMatches } from '@/lib/role-utils'
 import { StatusBadge, type StatusTone } from '@/components/ui/status-badge'
 import { formatDate } from '@/lib/format'
@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Input } from '@/components/ui/input'
 import { NativeSelect } from '@/components/ui/native-select'
 import { Label } from '@/components/ui/label'
+import { usePasswordGate } from '@/components/ui/password-gate'
 import PayrollPeriodDetail from './PayrollPeriodDetail'
 
 interface PeriodListItem {
@@ -38,7 +39,38 @@ const STATUS_TONE: Record<string, StatusTone> = {
 }
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 
+const UNLOCK_URL = '/api/hr/payroll/unlock'
+
+// Payroll asks for the user's password again every time the menu is opened, even though
+// they're already logged in. The unlock also lives server-side (src/lib/payroll-unlock.ts),
+// so nothing below fetches until it succeeds, and leaving the menu locks it again.
 export default function PayrollPage() {
+  const gate = usePasswordGate({ endpoint: UNLOCK_URL, description: 'Payroll is protected. Enter your account password to open it.' })
+  const { requestReveal, hide } = gate
+
+  useEffect(() => {
+    requestReveal()
+    return () => { fetch(UNLOCK_URL, { method: 'DELETE', keepalive: true }).catch(() => {}) }
+  }, [requestReveal])
+
+  const relock = useCallback(() => { hide(); requestReveal() }, [hide, requestReveal])
+
+  return (
+    <>
+      {gate.revealed ? <PayrollPeriods onLocked={relock} /> : (
+        <div className="rounded-xl border py-16 text-center">
+          <Lock className="h-8 w-8 mx-auto mb-3 text-muted-foreground opacity-40" />
+          <p className="font-semibold text-sm">Payroll is locked</p>
+          <p className="text-xs text-muted-foreground mt-1 mb-4">Re-enter your password to view salary data.</p>
+          <Button onClick={requestReveal}>Unlock</Button>
+        </div>
+      )}
+      {gate.dialog}
+    </>
+  )
+}
+
+function PayrollPeriods({ onLocked }: { onLocked: () => void }) {
   const { data: session } = useSession()
   const role = (session?.user as { role?: string })?.role ?? ''
   const canManage = roleMatches(role, ['ADMIN', 'SUPER_ADMIN', 'HR', 'FINANCE'])
@@ -56,9 +88,10 @@ export default function PayrollPage() {
   const load = useCallback(async () => {
     setLoading(true)
     const res = await fetch('/api/hr/payroll/periods')
+    if (res.status === 423) { onLocked(); return }
     if (res.ok) setPeriods(await res.json())
     setLoading(false)
-  }, [])
+  }, [onLocked])
 
   useEffect(() => { load() }, [load])
 
@@ -86,7 +119,7 @@ export default function PayrollPage() {
   }
 
   if (selectedId) {
-    return <PayrollPeriodDetail periodId={selectedId} onBack={() => { setSelectedId(null); load() }} />
+    return <PayrollPeriodDetail periodId={selectedId} onLocked={onLocked} onBack={() => { setSelectedId(null); load() }} />
   }
 
   return (

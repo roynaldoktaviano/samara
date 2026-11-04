@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -11,24 +11,27 @@ import { toast } from 'sonner'
 // Gates a "reveal" boolean behind re-entering your own current password (checked
 // server-side against your own session, see /api/auth/verify-password). Render
 // `dialog` wherever the modal should mount, and call `requestReveal` from an eye
-// button; `revealed` flips true once the password checks out.
-export function usePasswordGate() {
+// button; `revealed` flips true once the password checks out. Pass `endpoint` to check
+// against a route that also unlocks something server-side (e.g. /api/hr/payroll/unlock).
+export function usePasswordGate({ endpoint = '/api/auth/verify-password', description = 'Enter your account password to view this data.' }: { endpoint?: string; description?: string } = {}) {
   const [revealed, setRevealed] = useState(false)
   const [open, setOpen] = useState(false)
   const [password, setPassword] = useState('')
   const [checking, setChecking] = useState(false)
+  const requestReveal = useCallback(() => setOpen(true), [])
+  const hide = useCallback(() => setRevealed(false), [])
 
   async function submit() {
     if (!password) return
     setChecking(true)
     try {
-      const res = await fetch('/api/auth/verify-password', {
+      const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ password }),
       })
       if (!res.ok) {
-        toast.error('Incorrect password')
+        toast.error((await res.json().catch(() => null))?.error ?? 'Incorrect password')
         return
       }
       setRevealed(true)
@@ -44,7 +47,7 @@ export function usePasswordGate() {
       <DialogContent className="max-w-sm">
         <DialogHeader>
           <DialogTitle>Confirm your password</DialogTitle>
-          <DialogDescription>Enter your account password to view this data.</DialogDescription>
+          <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
         <div className="space-y-1.5">
           <Label htmlFor="password-gate-input" className="text-xs">Password</Label>
@@ -69,8 +72,8 @@ export function usePasswordGate() {
 
   return {
     revealed,
-    requestReveal: () => setOpen(true),
-    hide: () => setRevealed(false),
+    requestReveal,
+    hide,
     dialog,
   }
 }

@@ -5,6 +5,7 @@ import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 
 import { roleMatches } from '@/lib/role-utils'
+import { requirePayrollUnlock } from '@/lib/payroll-unlock'
 import { computeTotals, OtherIncomeItem } from '@/lib/payroll'
 
 const ALLOWED = ['ADMIN', 'SUPER_ADMIN', 'HR', 'FINANCE']
@@ -23,6 +24,8 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ entryI
   const session = await getServerSession(authOptions)
   const role = (session?.user as { role?: string })?.role ?? ''
   if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const locked = await requirePayrollUnlock(session)
+  if (locked) return locked
   const db = await getDb(session)
   const entry = await db.payslipEntry.findUnique({
     where: { id: entryId },
@@ -37,6 +40,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ en
   const session = await getServerSession(authOptions)
   const role = (session?.user as { role?: string })?.role ?? ''
   if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const locked = await requirePayrollUnlock(session)
+  if (locked) return locked
   const db = await getDb(session)
 
   const entry = await db.payslipEntry.findUnique({ where: { id: entryId }, include: { payrollPeriod: { select: { status: true } } } })
@@ -88,6 +93,8 @@ export async function DELETE(_: NextRequest, { params }: { params: Promise<{ ent
   const session = await getServerSession(authOptions)
   const role = (session?.user as { role?: string })?.role ?? ''
   if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const locked = await requirePayrollUnlock(session)
+  if (locked) return locked
   const db = await getDb(session)
 
   const entry = await db.payslipEntry.findUnique({ where: { id: entryId }, include: { payrollPeriod: { select: { status: true } } } })

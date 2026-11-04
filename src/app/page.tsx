@@ -1206,15 +1206,17 @@ export default function Home() {
               }
 
               // Every other role (incl. custom roles via allowedModules): when its items span
-              // two or more modules, title each module's block (NAV_GROUPS order) so a long
-              // mixed list isn't ambiguous. Single-module roles keep the plain flat list.
+              // two or more modules — or one module on top of the personal "main" items (e.g.
+              // HR's own "Business Trip" vs. the HR-wide "Business Trips") — title each
+              // module's block (NAV_GROUPS order) so a long mixed list isn't ambiguous.
+              // Only a list that's all one kind stays flat.
               const moduleGroups = NAV_GROUPS
                 .filter(g => g.key !== 'main')
                 .map(g => ({ ...g, items: visibleNavItems.filter(i => i.group === g.key) }))
                 .filter(g => g.items.length > 0)
+              const mainItems = visibleNavItems.filter(i => i.group === 'main')
 
-              if (moduleGroups.length >= 2) {
-                const mainItems = visibleNavItems.filter(i => i.group === 'main')
+              if (moduleGroups.length >= 2 || (moduleGroups.length === 1 && mainItems.length > 0)) {
                 return (
                   <SidebarGroup className="!p-3 pt-4">
                     <SidebarGroupLabel className="!h-auto px-2 pb-2.5 text-[11px] font-semibold uppercase tracking-wider text-sidebar-muted-foreground">

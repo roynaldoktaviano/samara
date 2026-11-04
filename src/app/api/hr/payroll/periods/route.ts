@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 
 import { roleMatches } from '@/lib/role-utils'
+import { requirePayrollUnlock } from '@/lib/payroll-unlock'
 
 const ALLOWED = ['ADMIN', 'SUPER_ADMIN', 'HR', 'FINANCE']
 
@@ -11,6 +12,8 @@ export async function GET() {
   const session = await getServerSession(authOptions)
   const role = (session?.user as { role?: string })?.role ?? ''
   if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const locked = await requirePayrollUnlock(session)
+  if (locked) return locked
   const db = await getDb(session)
   const periods = await db.payrollPeriod.findMany({
     orderBy: [{ year: 'desc' }, { month: 'desc' }],
@@ -29,6 +32,8 @@ export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions)
   const role = (session?.user as { role?: string })?.role ?? ''
   if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const locked = await requirePayrollUnlock(session)
+  if (locked) return locked
   const db = await getDb(session)
   const { year, month, cutoffDate, payDate, notes } = await req.json()
   if (!year || !month) return NextResponse.json({ error: 'Year and month are required' }, { status: 400 })
