@@ -10,17 +10,23 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { NativeSelect } from '@/components/ui/native-select'
 import { Label } from '@/components/ui/label'
+import { RupiahInput } from '@/components/ui/rupiah-input'
+import { SearchableSelect } from '@/components/ui/searchable-select'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { PhotoLightbox } from '@/components/purchasing/PhotoLightbox'
 import { formatDate, formatMoney } from '@/lib/format'
 import {
-  type RecruitmentRequestBase, type InterviewResult,
+  type RecruitmentRequestBase, type InterviewResult, type RecruitmentPriority,
   REQUEST_STATUS_LABEL, REQUEST_STATUS_TONE, CANDIDATE_STAGE_LABEL, RESULT_LABEL, RESULT_TONE,
-  EMPLOYMENT_STATUSES, RECRUITMENT_REASONS, RecruitmentRequestDetails,
+  RECRUITMENT_REASONS, RECRUITMENT_PRIORITIES, PRIORITY_LABEL, PriorityBadge, RecruitmentRequestDetails,
 } from '@/components/hr/recruitment-shared'
 
 interface RoleOption { id: string; title: string; jobDescription: string | null; location: { id: string; name: string } | null }
 interface LocationOption { id: string; name: string }
+interface EmployeeOption {
+  id: string; fullName: string; isActive: boolean; department: string | null
+  role: { id: string; title: string } | null; inMyTeam: boolean
+}
 interface VisibleCandidate {
   id: string; fullName: string; status: string
   phone: string | null; email: string | null; location: string | null
@@ -33,8 +39,9 @@ interface VisibleCandidate {
 interface MyRequest extends RecruitmentRequestBase { candidates: VisibleCandidate[] }
 
 const BLANK = {
-  roleId: '', headcount: '1', locationId: '', employmentStatus: '', reason: '' as string,
-  replacementFor: '', targetJoinDate: '', jobDescription: '', notes: '',
+  roleId: '', headcount: '1', locationId: '', reason: '' as string,
+  replacementEmployeeId: '', targetJoinDate: '', notes: '',
+  salary: '', priority: 'MEDIUM' as RecruitmentPriority,
 }
 
 export default function MyRecruitmentRequestsPage() {
@@ -45,6 +52,8 @@ export default function MyRecruitmentRequestsPage() {
   const [requests, setRequests] = useState<MyRequest[]>([])
   const [roles, setRoles] = useState<RoleOption[]>([])
   const [locations, setLocations] = useState<LocationOption[]>([])
+  const [employees, setEmployees] = useState<EmployeeOption[]>([])
+  const [requester, setRequester] = useState<{ fullName: string; department: string | null } | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
 
   const [modal, setModal] = useState(false)
@@ -68,6 +77,8 @@ export default function MyRecruitmentRequestsPage() {
       setRequests(data.requests ?? [])
       setRoles(data.roles ?? [])
       setLocations(data.locations ?? [])
+      setRequester(data.requester ?? null)
+      setEmployees(data.employees ?? [])
     }
     setLoading(false)
   }, [])
@@ -82,26 +93,34 @@ export default function MyRecruitmentRequestsPage() {
 
   function openAdd() { setForm({ ...BLANK }); setFormError(''); setModal(true) }
 
-  // Picking a position pulls in that role's job description (and its location, if the
-  // role is location-specific) — the requester can still edit both before submitting.
+  // Picking a role pre-fills its location if the role is location-specific (still editable).
+  // The job description isn't part of the form — it always comes from the role itself.
   function pickRole(roleId: string) {
     const role = roles.find(r => r.id === roleId)
+    setForm(f => ({ ...f, roleId, locationId: role?.location?.id ?? f.locationId }))
+  }
+  const selectedRole = roles.find(r => r.id === form.roleId) ?? null
+
+  // Replacing an employee usually means hiring for their role — pre-pick it if none chosen yet.
+  function pickReplacement(employeeId: string) {
+    const emp = employees.find(e => e.id === employeeId)
     setForm(f => ({
       ...f,
-      roleId,
-      jobDescription: role?.jobDescription ?? '',
-      locationId: role?.location?.id ?? f.locationId,
+      replacementEmployeeId: employeeId,
+      ...(!f.roleId && emp?.role && roles.some(r => r.id === emp.role!.id) && { roleId: emp.role.id }),
     }))
   }
+  const myTeam = employees.filter(e => e.inMyTeam)
+  const otherEmployees = employees.filter(e => !e.inMyTeam)
 
   async function submit() {
-    if (!form.roleId) { setFormError('Please select a position'); return }
-    if (!form.reason) { setFormError('Please select a reason'); return }
-    if (form.reason === 'Replacement' && !form.replacementFor.trim()) { setFormError('Please fill in who is being replaced'); return }
+    if (!form.roleId) { setFormError('Please select a job role'); return }
+    if (!form.reason) { setFormError('Please choose New Position or Replacement'); return }
+    if (form.reason === 'Replacement' && !form.replacementEmployeeId) { setFormError('Please select the employee being replaced'); return }
     setSaving(true); setFormError('')
     const res = await fetch('/api/hr/recruitment-requests/mine', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...form, headcount: Number(form.headcount) }),
+      body: JSON.stringify({ ...form, headcount: Number(form.headcount), salary: form.salary === '' ? null : Number(form.salary) }),
     })
     const data = await res.json()
     setSaving(false)
@@ -356,13 +375,14 @@ export default function MyRecruitmentRequestsPage() {
               <th className="text-left px-4 py-3 font-medium">Position</th>
               <th className="text-center px-4 py-3 font-medium">Headcount</th>
               <th className="text-left px-4 py-3 font-medium">Reason</th>
+              <th className="text-center px-4 py-3 font-medium">Priority</th>
               <th className="text-center px-4 py-3 font-medium">To Interview</th>
               <th className="text-center px-4 py-3 font-medium">Status</th>
             </tr>
           </thead>
           <tbody className="divide-y">
             {requests.length === 0 ? (
-              <tr><td colSpan={6} className="text-center py-12 text-muted-foreground text-sm">
+              <tr><td colSpan={7} className="text-center py-12 text-muted-foreground text-sm">
                 <ClipboardList className="h-8 w-8 mx-auto mb-2 opacity-20" />
                 You haven&apos;t requested any recruitment yet.
               </td></tr>
@@ -377,6 +397,7 @@ export default function MyRecruitmentRequestsPage() {
                   </td>
                   <td className="px-4 py-3 text-center text-xs tabular-nums">{r.headcount}</td>
                   <td className="px-4 py-3 text-muted-foreground text-xs">{r.reason}</td>
+                  <td className="px-4 py-3 text-center"><PriorityBadge priority={r.priority} /></td>
                   <td className="px-4 py-3 text-center">
                     {toInterview > 0 ? <StatusBadge tone="warning">{toInterview}</StatusBadge> : <span className="text-xs text-muted-foreground">—</span>}
                   </td>
@@ -398,13 +419,66 @@ export default function MyRecruitmentRequestsPage() {
           </DialogHeader>
           <div className="px-6 py-5 space-y-4 max-h-[70vh] overflow-y-auto">
             {formError && <p className="text-xs text-destructive bg-destructive/10 border border-destructive/30 rounded-lg px-3 py-2">{formError}</p>}
-            <div className="grid grid-cols-[1fr_7rem] gap-3">
+            {/* 1. Requestor — from the employee record, not editable */}
+            <div className="rounded-lg border bg-muted/40 px-3 py-2.5">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Requestor</p>
+              <p className="text-sm font-medium mt-0.5">{requester?.fullName ?? '—'}</p>
+              <p className="text-xs text-muted-foreground">{requester?.department ?? 'No department set on your employee profile'}</p>
+            </div>
+            {/* 2. Job Role — linked to Roles & their job description */}
+            <div className="space-y-1.5">
+              <Label htmlFor="rr-role" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Job Role</Label>
+              <SearchableSelect id="rr-role" value={form.roleId} onChange={pickRole}
+                placeholder="Select a job role…" searchPlaceholder="Search job role…" emptyText="No job role found."
+                options={roles.map(r => ({ value: r.id, label: r.title, description: r.location?.name }))} />
+            </div>
+            {/* Read-only: always the role's own job description (set by HR under Roles). */}
+            <div className="space-y-1.5">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Job Description &amp; Responsibilities</p>
+              {!form.roleId ? (
+                <p className="rounded-lg border border-dashed px-3 py-2.5 text-sm text-muted-foreground">Select a job role to see its job description.</p>
+              ) : selectedRole?.jobDescription ? (
+                <div className="max-h-48 overflow-y-auto rounded-lg border bg-muted/40 px-3 py-2.5 text-sm whitespace-pre-wrap">{selectedRole.jobDescription}</div>
+              ) : (
+                <p className="rounded-lg border border-warning/30 bg-warning/10 px-3 py-2.5 text-xs text-warning">
+                  This role has no job description yet — HR sets it under Roles.
+                </p>
+              )}
+            </div>
+            {/* 3. New / Replacement + 8. Priority */}
+            <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label htmlFor="rr-role" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Position</Label>
-                <NativeSelect id="rr-role" value={form.roleId} onChange={e => pickRole(e.target.value)}>
-                  <option value="">— Select a position —</option>
-                  {roles.map(r => <option key={r.id} value={r.id}>{r.title}{r.location ? ` (${r.location.name})` : ''}</option>)}
+                <Label htmlFor="rr-reason" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">New / Replacement</Label>
+                <NativeSelect id="rr-reason" value={form.reason} onChange={e => setForm(f => ({ ...f, reason: e.target.value }))}>
+                  <option value="">— Select —</option>
+                  {RECRUITMENT_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
                 </NativeSelect>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="rr-priority" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Priority</Label>
+                <NativeSelect id="rr-priority" value={form.priority} onChange={e => setForm(f => ({ ...f, priority: e.target.value as RecruitmentPriority }))}>
+                  {RECRUITMENT_PRIORITIES.map(p => <option key={p} value={p}>{PRIORITY_LABEL[p]}</option>)}
+                </NativeSelect>
+              </div>
+            </div>
+            {form.reason === 'Replacement' && (
+              <div className="space-y-1.5">
+                <Label htmlFor="rr-replacement-for" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Replacing</Label>
+                <SearchableSelect id="rr-replacement-for" value={form.replacementEmployeeId} onChange={pickReplacement}
+                  placeholder="Select the employee being replaced…" searchPlaceholder="Search name, role or department…" emptyText="No employee found."
+                  options={[...myTeam, ...otherEmployees].map(e => ({
+                    value: e.id,
+                    label: `${e.fullName}${e.isActive ? '' : ' (inactive)'}`,
+                    description: [e.role?.title, e.department].filter(Boolean).join(' · ') || undefined,
+                    group: myTeam.length === 0 ? undefined : e.inMyTeam ? 'Your team' : 'Other employees',
+                  }))} />
+              </div>
+            )}
+            {/* 4. Salary + 5. Headcount */}
+            <div className="grid grid-cols-[1fr_9rem] gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="rr-salary" className="gap-1 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Salary <span className="normal-case font-normal text-muted-foreground/70">(per month, optional)</span></Label>
+                <RupiahInput id="rr-salary" value={form.salary} onChange={salary => setForm(f => ({ ...f, salary }))} />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="rr-headcount" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Headcount</Label>
@@ -412,7 +486,13 @@ export default function MyRecruitmentRequestsPage() {
                   value={form.headcount} onChange={e => setForm(f => ({ ...f, headcount: e.target.value }))} />
               </div>
             </div>
+            {/* 6. Expected join date */}
             <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="rr-target-join" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Expected Join Date</Label>
+                <Input id="rr-target-join" type="date"
+                  value={form.targetJoinDate} onChange={e => setForm(f => ({ ...f, targetJoinDate: e.target.value }))} />
+              </div>
               <div className="space-y-1.5">
                 <Label htmlFor="rr-location" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Work Location</Label>
                 <NativeSelect id="rr-location" value={form.locationId} onChange={e => setForm(f => ({ ...f, locationId: e.target.value }))}>
@@ -420,45 +500,11 @@ export default function MyRecruitmentRequestsPage() {
                   {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
                 </NativeSelect>
               </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="rr-employment-status" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Employment Status</Label>
-                <NativeSelect id="rr-employment-status" value={form.employmentStatus} onChange={e => setForm(f => ({ ...f, employmentStatus: e.target.value }))}>
-                  <option value="">—</option>
-                  {EMPLOYMENT_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-                </NativeSelect>
-              </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="rr-reason" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Reason</Label>
-                <NativeSelect id="rr-reason" value={form.reason} onChange={e => setForm(f => ({ ...f, reason: e.target.value }))}>
-                  <option value="">— Select —</option>
-                  {RECRUITMENT_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
-                </NativeSelect>
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="rr-target-join" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Target Join Date</Label>
-                <Input id="rr-target-join" type="date"
-                  value={form.targetJoinDate} onChange={e => setForm(f => ({ ...f, targetJoinDate: e.target.value }))} />
-              </div>
-            </div>
-            {form.reason === 'Replacement' && (
-              <div className="space-y-1.5">
-                <Label htmlFor="rr-replacement-for" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Replacing</Label>
-                <Input id="rr-replacement-for" placeholder="Name of the employee who is leaving"
-                  value={form.replacementFor} onChange={e => setForm(f => ({ ...f, replacementFor: e.target.value }))} />
-              </div>
-            )}
+            {/* 7. Special request */}
             <div className="space-y-1.5">
-              <Label htmlFor="rr-job-description" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Job Description</Label>
-              <Textarea id="rr-job-description" rows={8} className="resize-y text-sm"
-                placeholder={form.roleId ? 'This role has no job description yet — describe the job here.' : 'Select a position to fill this in automatically.'}
-                value={form.jobDescription} onChange={e => setForm(f => ({ ...f, jobDescription: e.target.value }))} />
-              <p className="text-[11px] text-muted-foreground">Filled in from the role&apos;s job description — edit it if this hire needs something different.</p>
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="rr-notes" className="gap-1 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Notes <span className="normal-case font-normal text-muted-foreground/70">(optional)</span></Label>
-              <Textarea id="rr-notes" rows={2} className="resize-none"
+              <Label htmlFor="rr-notes" className="gap-1 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Special Request <span className="normal-case font-normal text-muted-foreground/70">(optional)</span></Label>
+              <Textarea id="rr-notes" rows={2} className="resize-none" placeholder="e.g. must speak Mandarin, needs a diving licence"
                 value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} />
             </div>
           </div>

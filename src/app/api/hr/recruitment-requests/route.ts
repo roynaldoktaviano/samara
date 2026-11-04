@@ -22,7 +22,7 @@ export async function GET() {
         orderBy: { createdAt: 'desc' },
         select: {
           id: true, fullName: true, status: true, convertedEmployeeId: true,
-          hrInterviewResult: true, userInterviewScheduledAt: true, userInterviewResult: true,
+          prescreenResult: true, hrInterviewResult: true, userInterviewScheduledAt: true, userInterviewResult: true,
         },
       },
     },

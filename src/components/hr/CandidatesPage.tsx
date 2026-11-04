@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Plus, X, Trash2, Pencil, Sparkles, Phone, Mail, Paperclip, Upload, UserPlus, Download, FileText, FileDown, Briefcase } from 'lucide-react'
+import { Plus, X, Trash2, Pencil, Sparkles, Phone, Mail, Paperclip, Upload, UserPlus, Download, FileText, FileDown, Briefcase, Link2 } from 'lucide-react'
 import { MultiFilePicker } from '@/components/ui/file-preview'
 import { PhotoLightbox } from '@/components/purchasing/PhotoLightbox'
 import { Button } from '@/components/ui/button'
@@ -11,10 +11,12 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { NativeSelect } from '@/components/ui/native-select'
 import { Label } from '@/components/ui/label'
+import { Checkbox } from '@/components/ui/checkbox'
+import { SearchableSelect } from '@/components/ui/searchable-select'
 import { readUploadFile, isPdfDataUrl, downloadDataUrl, extFromDataUrl } from '@/lib/fileUpload'
 import { formatDate, formatMoney } from '@/lib/format'
 
-interface EmployeeRole { id: string; title: string }
+interface EmployeeRole { id: string; title: string; isActive?: boolean }
 type InterviewResult = 'PASSED' | 'ON_HOLD' | 'FAILED'
 interface RecruitmentRequestLite {
   id: string; status: string; headcount: number
@@ -34,6 +36,10 @@ interface Candidate {
   assessmentScore: number | null
   skills: string[]
   languages: string[]
+  prescreenScheduledAt: string | null
+  prescreenMeetingLink: string | null
+  prescreenResult: InterviewResult | null
+  prescreenNotes: string | null
   hrInterviewScheduledAt: string | null
   hrInterviewMeetingLink: string | null
   hrInterviewResult: InterviewResult | null
@@ -50,14 +56,17 @@ interface Candidate {
   createdAt: string
 }
 
-const STATUSES = ['TALENT_POOL', 'SHORTLISTED', 'ASSESSMENT', 'HR_INTERVIEW', 'USER_INTERVIEW', 'OFFER', 'HIRED', 'REJECTED'] as const
+// Same order as CANDIDATE_STATUSES (src/lib/candidate-include.ts). TALENT_POOL is the
+// enum value for a freshly added candidate; it's labelled "New".
+const STATUSES = ['TALENT_POOL', 'SHORTLISTED', 'PRESCREEN', 'ASSESSMENT', 'HR_INTERVIEW', 'USER_INTERVIEW', 'OFFER', 'HIRED', 'REJECTED'] as const
 const STATUS_LABEL: Record<string, string> = {
-  TALENT_POOL: 'Talent Pool', SHORTLISTED: 'Shortlisted', ASSESSMENT: 'Assessment', HR_INTERVIEW: 'HR Interview',
+  TALENT_POOL: 'New', SHORTLISTED: 'Shortlisted', PRESCREEN: 'Prescreen', ASSESSMENT: 'Assessment', HR_INTERVIEW: 'HR Interview',
   USER_INTERVIEW: 'User Interview', OFFER: 'Offer', HIRED: 'Hired', REJECTED: 'Rejected',
 }
 const STATUS_COLOR: Record<string, string> = {
   TALENT_POOL: 'bg-muted text-foreground/80',
   SHORTLISTED: 'bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300',
+  PRESCREEN: 'bg-teal-100 text-teal-700 dark:bg-teal-500/15 dark:text-teal-300',
   ASSESSMENT: 'bg-info/15 text-info',
   HR_INTERVIEW: 'bg-purple-100 text-purple-700 dark:bg-purple-500/15 dark:text-purple-300',
   USER_INTERVIEW: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300',
@@ -73,14 +82,22 @@ const RESULT_COLOR: Record<InterviewResult, string> = {
   FAILED: 'bg-destructive/15 text-destructive',
 }
 
-type InterviewKind = 'hr' | 'user'
-const INTERVIEW_STAGE: Record<InterviewKind, typeof STATUSES[number]> = { hr: 'HR_INTERVIEW', user: 'USER_INTERVIEW' }
-const INTERVIEW_TITLE: Record<InterviewKind, string> = { hr: 'HR Interview', user: 'User Interview' }
+// The three scheduled rounds, in pipeline order: Prescreen (before Assessment), then
+// HR Interview, then User Interview.
+type InterviewKind = 'prescreen' | 'hr' | 'user'
+const INTERVIEW_KINDS: readonly InterviewKind[] = ['prescreen', 'hr', 'user']
+const INTERVIEW_STAGE: Record<InterviewKind, typeof STATUSES[number]> = { prescreen: 'PRESCREEN', hr: 'HR_INTERVIEW', user: 'USER_INTERVIEW' }
+const INTERVIEW_TITLE: Record<InterviewKind, string> = { prescreen: 'Prescreen', hr: 'HR Interview', user: 'User Interview' }
+// Candidate field names per round — the API takes the same names on PUT.
+const INTERVIEW_FIELDS = {
+  prescreen: { scheduledAt: 'prescreenScheduledAt', link: 'prescreenMeetingLink', result: 'prescreenResult', notes: 'prescreenNotes' },
+  hr: { scheduledAt: 'hrInterviewScheduledAt', link: 'hrInterviewMeetingLink', result: 'hrInterviewResult', notes: 'hrInterviewNotes' },
+  user: { scheduledAt: 'userInterviewScheduledAt', link: 'userInterviewMeetingLink', result: 'userInterviewResult', notes: 'userInterviewNotes' },
+} as const satisfies Record<InterviewKind, Record<'scheduledAt' | 'link' | 'result' | 'notes', keyof Candidate>>
 
 function interviewOf(c: Candidate, kind: InterviewKind) {
-  return kind === 'hr'
-    ? { scheduledAt: c.hrInterviewScheduledAt, link: c.hrInterviewMeetingLink, result: c.hrInterviewResult, notes: c.hrInterviewNotes }
-    : { scheduledAt: c.userInterviewScheduledAt, link: c.userInterviewMeetingLink, result: c.userInterviewResult, notes: c.userInterviewNotes }
+  const f = INTERVIEW_FIELDS[kind]
+  return { scheduledAt: c[f.scheduledAt], link: c[f.link], result: c[f.result], notes: c[f.notes] }
 }
 
 // Real, computed from readyJoinDate rather than a free-text field — "how soon can they
@@ -168,6 +185,13 @@ export default function CandidatesPage() {
 
   const [detailId, setDetailId] = useState<string | null>(null)
   const [detailPreview, setDetailPreview] = useState<string | null>(null)
+
+  // Checkbox selection → bulk "Link to Recruitment Request".
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [linkOpen, setLinkOpen] = useState(false)
+  const [linkRequestId, setLinkRequestId] = useState('')
+  const [linkSaving, setLinkSaving] = useState(false)
+  const [linkError, setLinkError] = useState('')
 
   const [scheduleTarget, setScheduleTarget] = useState<{ candidate: Candidate; kind: InterviewKind } | null>(null)
   const [scheduleForm, setScheduleForm] = useState({ datetime: '', link: '', result: '' as InterviewResult | '', notes: '' })
@@ -295,14 +319,15 @@ export default function CandidatesPage() {
     // (e.g. HR Interview notes after they've reached Offer) mustn't pull them back.
     const stage = INTERVIEW_STAGE[kind]
     const moveForward = STATUSES.indexOf(c.status) < STATUSES.indexOf(stage)
+    const f = INTERVIEW_FIELDS[kind]
     const res = await fetch(`/api/hr/candidates/${c.id}`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         ...(moveForward && { status: stage }),
-        [`${kind}InterviewScheduledAt`]: new Date(scheduleForm.datetime).toISOString(),
-        [`${kind}InterviewMeetingLink`]: scheduleForm.link.trim() || null,
-        [`${kind}InterviewResult`]: scheduleForm.result || null,
-        [`${kind}InterviewNotes`]: scheduleForm.notes,
+        [f.scheduledAt]: new Date(scheduleForm.datetime).toISOString(),
+        [f.link]: scheduleForm.link.trim() || null,
+        [f.result]: scheduleForm.result || null,
+        [f.notes]: scheduleForm.notes,
       }),
     })
     setScheduleSaving(false)
@@ -331,14 +356,43 @@ export default function CandidatesPage() {
     load()
   }
 
+  async function bulkLink() {
+    if (!linkRequestId) { setLinkError('Please select a recruitment request'); return }
+    setLinkSaving(true); setLinkError('')
+    const res = await fetch('/api/hr/candidates/bulk-link', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ candidateIds: [...selectedIds], recruitmentRequestId: linkRequestId }),
+    })
+    const data = await res.json().catch(() => ({}))
+    setLinkSaving(false)
+    if (!res.ok) { setLinkError(data.error ?? 'Failed to link candidates'); return }
+    setLinkOpen(false); setSelectedIds(new Set()); load()
+  }
+
   const filtered = candidates
     .filter(c => statusFilter === 'All' || c.status === statusFilter)
     .filter(c => roleFilter === 'All' || c.appliedRole?.id === roleFilter)
     .filter(c => requestFilter === 'All' || (requestFilter === 'None' ? !c.recruitmentRequest : c.recruitmentRequest?.id === requestFilter))
   const activeCount = candidates.filter(c => c.status !== 'HIRED' && c.status !== 'REJECTED').length
   const detailCandidate = candidates.find(c => c.id === detailId) ?? null
-  // Only approved requests take new candidates; keep the one already linked selectable when editing.
-  const linkableRequests = requests.filter(r => r.status === 'APPROVED' || r.id === form.recruitmentRequestId)
+  // Only approved requests take new candidates (keep the one already linked selectable when
+  // editing), and only requests for the candidate's own role — an SEO candidate never sees an
+  // Engineer request. No role picked yet → every approved request.
+  const linkableRequests = requests.filter(r =>
+    r.id === form.recruitmentRequestId ||
+    (r.status === 'APPROVED' && (!form.appliedRoleId || r.role.id === form.appliedRoleId)))
+
+  const selectedCandidates = candidates.filter(c => selectedIds.has(c.id))
+  const selectedRoles = [...new Map(selectedCandidates.filter(c => c.appliedRole).map(c => [c.appliedRole!.id, c.appliedRole!])).values()]
+  const bulkRequests = selectedRoles.length > 1 ? [] : requests.filter(r =>
+    r.status === 'APPROVED' && (selectedRoles.length === 0 || r.role.id === selectedRoles[0].id))
+  const allFilteredSelected = filtered.length > 0 && filtered.every(c => selectedIds.has(c.id))
+  function toggleSelected(id: string, on: boolean) {
+    setSelectedIds(prev => { const n = new Set(prev); if (on) n.add(id); else n.delete(id); return n })
+  }
+  function toggleAllFiltered(on: boolean) {
+    setSelectedIds(prev => { const n = new Set(prev); filtered.forEach(c => { if (on) n.add(c.id); else n.delete(c.id) }); return n })
+  }
   const requestLabel = (r: RecruitmentRequestLite) => `${r.role.title} ×${r.headcount} — ${r.requestedBy.name ?? 'Unknown'}`
 
   return (
@@ -389,6 +443,18 @@ export default function CandidatesPage() {
         <p className="text-xs text-destructive bg-destructive/10 border border-destructive/30 rounded-lg px-3 py-2">{convertError}</p>
       )}
 
+      {selectedCandidates.length > 0 && (
+        <div className="flex items-center justify-between gap-3 flex-wrap rounded-lg border border-primary/30 bg-primary/10 px-4 py-2.5">
+          <p className="text-sm font-medium">{selectedCandidates.length} candidate{selectedCandidates.length !== 1 ? 's' : ''} selected</p>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={() => setSelectedIds(new Set())}>Clear</Button>
+            <Button size="sm" onClick={() => { setLinkRequestId(''); setLinkError(''); setLinkOpen(true) }}>
+              <Link2 /> Link to Recruitment Request
+            </Button>
+          </div>
+        </div>
+      )}
+
       {loading ? (
         <div className="rounded-lg border overflow-hidden animate-pulse">
           <div className="h-10 bg-muted/50 border-b" />
@@ -399,6 +465,10 @@ export default function CandidatesPage() {
           <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead className="bg-muted/50 text-xs text-muted-foreground">
               <tr>
+                <th className="w-10 pl-4 pr-0 py-3">
+                  <Checkbox checked={allFilteredSelected} onCheckedChange={v => toggleAllFiltered(v === true)}
+                    aria-label="Select all candidates shown" disabled={filtered.length === 0} />
+                </th>
                 <th className="text-left px-4 py-3 font-medium">Candidate</th>
                 <th className="text-left px-4 py-3 font-medium">Applied Role</th>
                 <th className="text-left px-4 py-3 font-medium">Contact</th>
@@ -409,19 +479,25 @@ export default function CandidatesPage() {
             </thead>
             <tbody className="divide-y">
               {filtered.length === 0 ? (
-                <tr><td colSpan={6} className="text-center py-12 text-muted-foreground text-sm">
+                <tr><td colSpan={7} className="text-center py-12 text-muted-foreground text-sm">
                   <Sparkles className="h-8 w-8 mx-auto mb-2 opacity-20" />
                   No candidates {statusFilter !== 'All' || roleFilter !== 'All' || requestFilter !== 'All' ? 'match this filter' : 'yet'}.
                 </td></tr>
               ) : filtered.map(c => (
-                <tr key={c.id} onClick={() => setDetailId(c.id)} className="hover:bg-muted/30 transition-colors cursor-pointer">
+                <tr key={c.id} onClick={() => setDetailId(c.id)}
+                  className={`transition-colors cursor-pointer ${selectedIds.has(c.id) ? 'bg-primary/5' : 'hover:bg-muted/30'}`}>
+                  <td className="w-10 pl-4 pr-0 py-3" onClick={e => e.stopPropagation()}>
+                    <Checkbox checked={selectedIds.has(c.id)} onCheckedChange={v => toggleSelected(c.id, v === true)} aria-label={`Select ${c.fullName}`} />
+                  </td>
                   <td className="px-4 py-3 font-medium">{c.fullName}</td>
                   <td className="px-4 py-3 text-muted-foreground text-xs">
                     {c.appliedRole?.title ?? '—'}
-                    {c.recruitmentRequest && (
+                    {c.recruitmentRequest ? (
                       <span className="mt-0.5 flex items-center gap-1 text-[11px] text-primary-strong" title="Linked recruitment request">
                         <Briefcase className="h-3 w-3" /> Request by {c.recruitmentRequest.requestedBy.name ?? 'Unknown'}
                       </span>
+                    ) : (
+                      <span className="mt-0.5 block text-[11px] text-muted-foreground">No recruitment request linked</span>
                     )}
                   </td>
                   <td className="px-4 py-3 text-muted-foreground text-xs">
@@ -491,25 +567,36 @@ export default function CandidatesPage() {
                 value={form.fullName} onChange={e => setForm(f => ({ ...f, fullName: e.target.value }))} />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="cand-recruitment-request" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Recruitment Request</Label>
-              <NativeSelect id="cand-recruitment-request"
-                value={form.recruitmentRequestId}
-                onChange={e => {
-                  const req = requests.find(r => r.id === e.target.value)
-                  setForm(f => ({ ...f, recruitmentRequestId: e.target.value, ...(req && { appliedRoleId: req.role.id }) }))
-                }}>
-                <option value="">— Not linked —</option>
-                {linkableRequests.map(r => <option key={r.id} value={r.id}>{requestLabel(r)}</option>)}
-              </NativeSelect>
-              <p className="text-[11px] text-muted-foreground">Optional — the requester runs the User Interview for linked candidates.</p>
+              <Label htmlFor="cand-recruitment-request" className="gap-1 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Recruitment Request <span className="normal-case font-normal text-muted-foreground/70">(optional)</span></Label>
+              <SearchableSelect id="cand-recruitment-request" value={form.recruitmentRequestId}
+                onChange={v => {
+                  const req = requests.find(r => r.id === v)
+                  setForm(f => ({ ...f, recruitmentRequestId: v, ...(req && { appliedRoleId: req.role.id }) }))
+                }}
+                placeholder="Not linked yet" searchPlaceholder="Search role or requester…"
+                emptyText={form.appliedRoleId ? 'No approved request for this role yet.' : 'No approved recruitment requests yet.'}
+                options={[
+                  ...(form.recruitmentRequestId ? [{ value: '', label: '— Not linked —' }] : []),
+                  ...linkableRequests.map(r => ({ value: r.id, label: `${r.role.title} ×${r.headcount}`, description: `Requested by ${r.requestedBy.name ?? 'Unknown'}` })),
+                ]} />
+              <p className="text-[11px] text-muted-foreground">
+                {form.recruitmentRequestId
+                  ? 'The candidate applies for this request\u2019s role, and the requester runs the User Interview.'
+                  : 'Link it now or later, once an approved request for this role exists.'}
+              </p>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="cand-applied-role" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Applied Role</Label>
-              <NativeSelect id="cand-applied-role" disabled={!!form.recruitmentRequestId}
-                value={form.appliedRoleId} onChange={e => setForm(f => ({ ...f, appliedRoleId: e.target.value }))}>
-                <option value="">—</option>
-                {roles.map(r => <option key={r.id} value={r.id}>{r.title}</option>)}
-              </NativeSelect>
+              {form.recruitmentRequestId ? (
+                <p className="h-9 flex items-center rounded-md border bg-muted/40 px-3 text-sm">
+                  {requests.find(r => r.id === form.recruitmentRequestId)?.role.title ?? '—'}
+                </p>
+              ) : (
+                <SearchableSelect id="cand-applied-role" value={form.appliedRoleId}
+                  onChange={v => setForm(f => ({ ...f, appliedRoleId: v }))}
+                  placeholder="Select a role…" searchPlaceholder="Search role…" emptyText="No role found."
+                  options={roles.filter(r => r.isActive !== false || r.id === form.appliedRoleId).map(r => ({ value: r.id, label: r.title }))} />
+              )}
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
@@ -603,6 +690,50 @@ export default function CandidatesPage() {
             <Button onClick={save} loading={saving}>
               {saving ? 'Saving…' : editingId ? 'Save Changes' : 'Add Candidate'}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Bulk link to Recruitment Request ── */}
+      <Dialog open={linkOpen} onOpenChange={o => { if (!o) setLinkOpen(false) }}>
+        <DialogContent className="sm:max-w-md p-0 gap-0 overflow-hidden" aria-describedby={undefined} onInteractOutside={e => e.preventDefault()}>
+          <DialogHeader className="flex-row items-center gap-2 px-6 py-4 pr-12 border-b text-left">
+            <Link2 className="h-4 w-4 text-primary-strong" />
+            <DialogTitle className="text-sm font-bold">Link {selectedCandidates.length} Candidate{selectedCandidates.length !== 1 ? 's' : ''} to Recruitment Request</DialogTitle>
+          </DialogHeader>
+          <div className="px-6 py-5 space-y-4">
+            {linkError && <p className="text-xs text-destructive bg-destructive/10 border border-destructive/30 rounded-lg px-3 py-2">{linkError}</p>}
+            <div className="max-h-32 overflow-y-auto rounded-lg border divide-y text-sm">
+              {selectedCandidates.map(c => (
+                <div key={c.id} className="flex items-center justify-between gap-3 px-3 py-1.5">
+                  <span className="truncate">{c.fullName}</span>
+                  <span className="shrink-0 text-xs text-muted-foreground">{c.appliedRole?.title ?? 'No role'}</span>
+                </div>
+              ))}
+            </div>
+            {selectedRoles.length > 1 ? (
+              <p className="text-xs text-warning bg-warning/10 border border-warning/30 rounded-lg px-3 py-2">
+                These candidates are applying for different roles ({selectedRoles.map(r => r.title).join(', ')}). Select candidates with the same role to link them together.
+              </p>
+            ) : (
+              <div className="space-y-1.5">
+                <Label htmlFor="cand-bulk-request" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Recruitment Request</Label>
+                <SearchableSelect id="cand-bulk-request" value={linkRequestId} onChange={setLinkRequestId}
+                  placeholder="Select a recruitment request…" searchPlaceholder="Search role or requester…"
+                  emptyText={selectedRoles.length === 1 ? `No approved request for ${selectedRoles[0].title} yet.` : 'No approved recruitment requests yet.'}
+                  options={bulkRequests.map(r => ({ value: r.id, label: `${r.role.title} ×${r.headcount}`, description: `Requested by ${r.requestedBy.name ?? 'Unknown'}` }))} />
+                <p className="text-[11px] text-muted-foreground">
+                  {selectedRoles.length === 1
+                    ? `Only approved requests for ${selectedRoles[0].title} are shown.`
+                    : 'Candidates without a role take the request\u2019s role.'}
+                  {selectedCandidates.some(c => c.recruitmentRequest) && ' Candidates already linked elsewhere will be moved to this request.'}
+                </p>
+              </div>
+            )}
+          </div>
+          <DialogFooter className="px-6 py-4 border-t bg-muted/50">
+            <Button variant="outline" onClick={() => setLinkOpen(false)}>Cancel</Button>
+            <Button onClick={bulkLink} loading={linkSaving} disabled={selectedRoles.length > 1}>{linkSaving ? 'Linking…' : 'Link Candidates'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -716,8 +847,8 @@ export default function CandidatesPage() {
                 </div>
               )}
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                {(['hr', 'user'] as const).map(kind => {
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                {INTERVIEW_KINDS.map(kind => {
                   const iv = interviewOf(detailCandidate, kind)
                   return (
                     <div key={kind} className={`rounded-lg border px-4 py-3 ${iv.scheduledAt ? 'border-primary/30 bg-primary/10' : ''}`}>
@@ -774,13 +905,12 @@ export default function CandidatesPage() {
                   <FileDown /> Generate Offering Letter
                 </Button>
               ) : (
-                // Offer the next round that hasn't been scheduled yet; once both are, the
+                // Offer the next round that hasn't been scheduled yet; once all are, the
                 // per-round "Edit" links in the cards above take over.
-                !detailCandidate.hrInterviewScheduledAt ? (
-                  <Button onClick={() => openSchedule(detailCandidate, 'hr')}>Schedule HR Interview</Button>
-                ) : !detailCandidate.userInterviewScheduledAt ? (
-                  <Button onClick={() => openSchedule(detailCandidate, 'user')}>Schedule User Interview</Button>
-                ) : null
+                (() => {
+                  const next = INTERVIEW_KINDS.find(k => !interviewOf(detailCandidate, k).scheduledAt)
+                  return next ? <Button onClick={() => openSchedule(detailCandidate, next)}>Schedule {INTERVIEW_TITLE[next]}</Button> : null
+                })()
               )}
             </DialogFooter>
           </DialogContent>
@@ -823,7 +953,7 @@ export default function CandidatesPage() {
               </NativeSelect>
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="cand-interview-notes" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Interview Notes</Label>
+              <Label htmlFor="cand-interview-notes" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{scheduleTarget?.kind === 'prescreen' ? 'Prescreen Notes' : 'Interview Notes'}</Label>
               <Textarea id="cand-interview-notes" rows={3} className="resize-none"
                 value={scheduleForm.notes} onChange={e => setScheduleForm(f => ({ ...f, notes: e.target.value }))} />
             </div>

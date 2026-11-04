@@ -3834,7 +3834,8 @@ model Employee {
   loanInstallments          LoanInstallment[]
   assets                    EmployeeAsset[]
   separation                EmployeeSeparation?
-  recruitmentRequests       RecruitmentRequest[]
+  recruitmentRequests       RecruitmentRequest[] @relation("RecruitmentRequester")
+  recruitmentReplacements   RecruitmentRequest[] @relation("RecruitmentReplacement")
 
   @@index([legalEntityId])
   @@index([businessUnitId])
@@ -4514,8 +4515,9 @@ model LoanInstallment {
 }
 
 enum CandidateStatus {
-  TALENT_POOL
+  TALENT_POOL // shown as "New" in the UI — label only, the enum value is kept so no data migration is needed
   SHORTLISTED
+  PRESCREEN // short HR screening call before the assessment — added with ADD VALUE ... BEFORE 'ASSESSMENT'
   ASSESSMENT
   HR_INTERVIEW // was INTERVIEW — renamed in place (ALTER TYPE ... RENAME VALUE) so existing rows kept their stage
   USER_INTERVIEW // the hiring manager (Recruitment Request requester) interviews the candidate
@@ -4551,6 +4553,12 @@ model Candidate {
   offerLetterIssuedAt       DateTime?
   offerLetterIssuedById     String?
   offerLetterIssuedBy       User?            @relation("CandidateOfferLetterIssuedBy", fields: [offerLetterIssuedById], references: [id], onDelete: SetNull)
+  // Prescreen — a short screening call before Assessment, same shape as the interview
+  // rounds below (schedule + link + result + notes).
+  prescreenScheduledAt      DateTime?
+  prescreenMeetingLink      String?
+  prescreenResult           InterviewResult?
+  prescreenNotes            String?
   // Two interview rounds, each with a real date/time + meeting link and a recorded
   // outcome. HR Interview reuses the original single-interview columns (@map) so
   // schedules set before the split carried over.
@@ -4592,6 +4600,12 @@ enum InterviewResult {
   FAILED
 }
 
+enum RecruitmentPriority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
 enum RecruitmentRequestStatus {
   PENDING // waiting on HR
   APPROVED // HR is recruiting for it
@@ -4605,26 +4619,33 @@ enum RecruitmentRequestStatus {
 // the Roles. Goes straight to HR for approval; candidates are then linked to it via
 // Candidate.recruitmentRequestId and the requester runs the User Interview round.
 model RecruitmentRequest {
-  id               String                   @id @default(cuid())
-  roleId           String
-  role             EmployeeRole             @relation(fields: [roleId], references: [id])
-  headcount        Int                      @default(1)
-  locationId       String?
-  location         EmployeeWorkLocation?    @relation(fields: [locationId], references: [id], onDelete: SetNull)
-  employmentStatus String? // same free-text values as Employee.employmentStatus
-  reason           String // "New Position" | "Replacement" — free text like other HR classifiers
-  replacementFor   String? // who is being replaced, when reason is Replacement
-  targetJoinDate   DateTime?
-  // Snapshot of EmployeeRole.jobDescription at request time, editable by the requester —
+  id                    String                   @id @default(cuid())
+  roleId                String
+  role                  EmployeeRole             @relation(fields: [roleId], references: [id])
+  headcount             Int                      @default(1)
+  locationId            String?
+  location              EmployeeWorkLocation?    @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  employmentStatus      String? // same free-text values as Employee.employmentStatus
+  reason                String // "New Position" | "Replacement" — free text like other HR classifiers
+  replacementFor        String? // name of who is being replaced (snapshot of replacementEmployee.fullName; free text on older rows)
+  // The employee being replaced, picked from Employees when reason is Replacement.
+  replacementEmployeeId String?
+  replacementEmployee   Employee?                @relation("RecruitmentReplacement", fields: [replacementEmployeeId], references: [id], onDelete: SetNull)
+  targetJoinDate        DateTime? // "Expected Join Date" in the UI
+  salary                Float? // salary the requester is budgeting for this position (IDR / month)
+  priority              RecruitmentPriority      @default(MEDIUM)
+  // Snapshot of EmployeeRole.jobDescription at request time (not editable by the requester) —
   // later edits on the Role don't rewrite what was asked for.
-  jobDescription   String?
-  notes            String?
-  status           RecruitmentRequestStatus @default(PENDING)
+  jobDescription        String?
+  notes                 String? // "Special Request" in the UI
+  status                RecruitmentRequestStatus @default(PENDING)
 
   requestedById       String
   requestedBy         User      @relation("RecruitmentRequestedBy", fields: [requestedById], references: [id])
   requesterEmployeeId String?
-  requesterEmployee   Employee? @relation(fields: [requesterEmployeeId], references: [id], onDelete: SetNull)
+  requesterEmployee   Employee? @relation("RecruitmentRequester", fields: [requesterEmployeeId], references: [id], onDelete: SetNull)
+  // Employee.department at request time — a later transfer doesn't rewrite who asked from where.
+  requesterDepartment String?
 
   decidedById  String?
   decidedBy    User?     @relation("RecruitmentDecidedBy", fields: [decidedById], references: [id], onDelete: SetNull)
@@ -4640,6 +4661,7 @@ model RecruitmentRequest {
   @@index([status])
   @@index([requestedById])
   @@index([roleId])
+  @@index([replacementEmployeeId])
 }
 
 // ─── WhatsApp Chat (admin-only inbox, Freshchat-style) ─────────────────────────

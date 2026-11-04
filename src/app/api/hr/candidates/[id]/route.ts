@@ -6,7 +6,7 @@ import { getDb } from '@/lib/get-db'
 import { roleMatches } from '@/lib/role-utils'
 import { sendPushToUsers } from '@/lib/push'
 import { emitTenantEvent } from '@/lib/realtime-bus'
-import { CANDIDATE_INCLUDE, parseInterviewResult } from '@/lib/candidate-include'
+import { CANDIDATE_INCLUDE, CANDIDATE_STATUSES, parseInterviewResult } from '@/lib/candidate-include'
 
 const ALLOWED = ['ADMIN', 'SUPER_ADMIN', 'HR']
 
@@ -20,12 +20,18 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   const {
     fullName, appliedRoleId, phone, email, source, resumeFiles, expectedSalary, location, readyJoinDate,
     additionalDocuments, notes, status, assessmentScore, skills, languages, recruitmentRequestId,
+    prescreenScheduledAt, prescreenMeetingLink, prescreenNotes,
     hrInterviewScheduledAt, hrInterviewMeetingLink, hrInterviewNotes,
     userInterviewScheduledAt, userInterviewMeetingLink, userInterviewNotes,
   } = body
 
-  let hrInterviewResult, userInterviewResult
+  if (status !== undefined && !(CANDIDATE_STATUSES as readonly string[]).includes(status)) {
+    return NextResponse.json({ error: 'Invalid candidate status' }, { status: 400 })
+  }
+
+  let prescreenResult, hrInterviewResult, userInterviewResult
   try {
+    prescreenResult = parseInterviewResult(body.prescreenResult)
     hrInterviewResult = parseInterviewResult(body.hrInterviewResult)
     userInterviewResult = parseInterviewResult(body.userInterviewResult)
   } catch (e) {
@@ -34,17 +40,24 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
   const existing = await db.candidate.findUnique({
     where: { id },
-    select: { userInterviewScheduledAt: true, userInterviewResult: true, recruitmentRequestId: true },
+    select: { userInterviewScheduledAt: true, userInterviewResult: true, recruitmentRequestId: true, appliedRoleId: true },
   })
   if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-  // Linking to a Recruitment Request pins the applied role to the request's role.
+  // Linked to a Recruitment Request → the applied role is pinned to the request's role.
+  // Not linked → the role is picked from Roles (the same master the requests use).
   let roleFromRequest: string | undefined
   if (recruitmentRequestId) {
     const request = await db.recruitmentRequest.findUnique({ where: { id: recruitmentRequestId }, select: { roleId: true, status: true } })
     if (!request) return NextResponse.json({ error: 'Recruitment request not found' }, { status: 404 })
     if (recruitmentRequestId !== existing.recruitmentRequestId && request.status !== 'APPROVED') {
       return NextResponse.json({ error: 'Candidates can only be linked to an approved recruitment request' }, { status: 409 })
+    }
+    // A candidate can only join a request for their own role (an SEO candidate never lands
+    // on an Engineer request). No role yet → they take the request's role.
+    const candidateRole = appliedRoleId !== undefined ? appliedRoleId || null : existing.appliedRoleId
+    if (candidateRole && candidateRole !== request.roleId) {
+      return NextResponse.json({ error: 'That recruitment request is for a different role' }, { status: 400 })
     }
     roleFromRequest = request.roleId
   }
@@ -70,6 +83,10 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       ...(assessmentScore !== undefined && { assessmentScore: assessmentScore !== '' && assessmentScore !== null ? Number(assessmentScore) : null }),
       ...(skills !== undefined && { skills: Array.isArray(skills) ? skills : [] }),
       ...(languages !== undefined && { languages: Array.isArray(languages) ? languages : [] }),
+      ...(prescreenScheduledAt !== undefined && { prescreenScheduledAt: prescreenScheduledAt ? new Date(prescreenScheduledAt) : null }),
+      ...(prescreenMeetingLink !== undefined && { prescreenMeetingLink: prescreenMeetingLink?.trim() || null }),
+      ...(prescreenResult !== undefined && { prescreenResult }),
+      ...(prescreenNotes !== undefined && { prescreenNotes: prescreenNotes?.trim() || null }),
       ...(hrInterviewScheduledAt !== undefined && { hrInterviewScheduledAt: hrInterviewScheduledAt ? new Date(hrInterviewScheduledAt) : null }),
       ...(hrInterviewMeetingLink !== undefined && { hrInterviewMeetingLink: hrInterviewMeetingLink?.trim() || null }),
       ...(hrInterviewResult !== undefined && { hrInterviewResult }),

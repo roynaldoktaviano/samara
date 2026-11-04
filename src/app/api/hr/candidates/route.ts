@@ -31,13 +31,22 @@ export async function POST(req: NextRequest) {
   } = await req.json()
   if (!fullName?.trim()) return NextResponse.json({ error: 'Full name is required' }, { status: 400 })
 
-  // A candidate linked to a Recruitment Request is always applying for that request's role.
-  let roleId: string | null = appliedRoleId || null
+  // The applied role always comes from the same Roles master Recruitment Requests use:
+  // linked to a request → that request's role (locked); not linked yet (candidate came in
+  // before anyone asked for the position) → picked from Roles directly, linked later.
+  let roleId: string | null = null
   if (recruitmentRequestId) {
     const request = await db.recruitmentRequest.findUnique({ where: { id: recruitmentRequestId }, select: { roleId: true, status: true } })
     if (!request) return NextResponse.json({ error: 'Recruitment request not found' }, { status: 404 })
     if (request.status !== 'APPROVED') return NextResponse.json({ error: 'Candidates can only be linked to an approved recruitment request' }, { status: 409 })
+    if (appliedRoleId && appliedRoleId !== request.roleId) {
+      return NextResponse.json({ error: 'That recruitment request is for a different role' }, { status: 400 })
+    }
     roleId = request.roleId
+  } else if (appliedRoleId) {
+    const role = await db.employeeRole.findUnique({ where: { id: appliedRoleId }, select: { id: true } })
+    if (!role) return NextResponse.json({ error: 'That role no longer exists' }, { status: 400 })
+    roleId = role.id
   }
 
   const candidate = await db.candidate.create({

@@ -1,21 +1,24 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { X, Check, ThumbsUp, ThumbsDown, ClipboardList, ArrowLeft, CheckCircle2, RotateCcw, Users } from 'lucide-react'
+import { X, Check, ThumbsUp, ThumbsDown, ClipboardList, ArrowLeft, CheckCircle2, RotateCcw, Users, Bell } from 'lucide-react'
 import { toast } from 'sonner'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Textarea } from '@/components/ui/textarea'
+import { Input } from '@/components/ui/input'
+import { Checkbox } from '@/components/ui/checkbox'
 import { formatDate } from '@/lib/format'
 import {
   type RecruitmentRequestBase, type RecruitmentStatus, type InterviewResult,
   REQUEST_STATUS_LABEL, REQUEST_STATUS_TONE, CANDIDATE_STAGE_LABEL, RESULT_LABEL, RESULT_TONE,
-  RecruitmentRequestDetails,
+  PriorityBadge, RecruitmentRequestDetails,
 } from '@/components/hr/recruitment-shared'
 
 interface LinkedCandidate {
   id: string; fullName: string; status: string; convertedEmployeeId: string | null
+  prescreenResult: InterviewResult | null
   hrInterviewResult: InterviewResult | null
   userInterviewScheduledAt: string | null
   userInterviewResult: InterviewResult | null
@@ -23,6 +26,87 @@ interface LinkedCandidate {
 interface RecruitmentRequest extends RecruitmentRequestBase { candidates: LinkedCandidate[] }
 
 const FILTERS = ['All', 'PENDING', 'APPROVED', 'CLOSED', 'REJECTED', 'CANCELLED'] as const
+
+interface UserOption { id: string; name: string | null; email: string; role: string }
+
+// Extra people (besides HR) notified of every new request — e.g. management.
+function NotifyRecipientsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const [users, setUsers] = useState<UserOption[]>([])
+  const [picked, setPicked] = useState<Set<string>>(new Set())
+  const [query, setQuery] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    if (!open) return
+    let cancelled = false
+    fetch('/api/hr/recruitment-requests/notify-recipients')
+      .then(r => r.ok ? r.json() : Promise.reject())
+      .then((d: { userIds: string[]; users: UserOption[] }) => {
+        if (cancelled) return
+        setUsers(d.users); setPicked(new Set(d.userIds)); setQuery(''); setLoading(false)
+      })
+      .catch(() => { if (!cancelled) { toast.error('Failed to load users'); setLoading(false) } })
+    return () => { cancelled = true }
+  }, [open])
+
+  function toggle(id: string, on: boolean) {
+    setPicked(p => { const n = new Set(p); if (on) n.add(id); else n.delete(id); return n })
+  }
+
+  async function save() {
+    setSaving(true)
+    const res = await fetch('/api/hr/recruitment-requests/notify-recipients', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userIds: [...picked] }),
+    })
+    setSaving(false)
+    if (!res.ok) { toast.error('Failed to save'); return }
+    toast.success('Notification recipients saved')
+    onClose()
+  }
+
+  const q = query.trim().toLowerCase()
+  const shown = users
+    .filter(u => !q || (u.name ?? '').toLowerCase().includes(q) || u.email.toLowerCase().includes(q))
+    // Picked ones first so the current list is visible without scrolling.
+    .sort((a, b) => Number(picked.has(b.id)) - Number(picked.has(a.id)))
+
+  return (
+    <Dialog open={open} onOpenChange={o => { if (!o) onClose() }}>
+      <DialogContent className="sm:max-w-md p-0 gap-0 overflow-hidden" onInteractOutside={e => e.preventDefault()}>
+        <DialogHeader className="gap-0.5 px-6 py-4 pr-12 border-b text-left">
+          <DialogTitle className="text-sm font-bold flex items-center gap-2"><Bell className="h-4 w-4 text-primary-strong" /> Notification Recipients</DialogTitle>
+          <DialogDescription className="text-xs">
+            HR is always notified of new recruitment requests. Also notify:
+          </DialogDescription>
+        </DialogHeader>
+        <div className="px-6 py-4 space-y-3">
+          <Input placeholder="Search users…" aria-label="Search users" value={query} onChange={e => setQuery(e.target.value)} />
+          <div className="max-h-72 overflow-y-auto rounded-lg border divide-y">
+            {loading ? (
+              <p className="px-3 py-6 text-center text-sm text-muted-foreground">Loading…</p>
+            ) : shown.length === 0 ? (
+              <p className="px-3 py-6 text-center text-sm text-muted-foreground">No users match.</p>
+            ) : shown.map(u => (
+              <label key={u.id} className="flex items-center gap-3 px-3 py-2 text-sm cursor-pointer hover:bg-muted/40">
+                <Checkbox checked={picked.has(u.id)} onCheckedChange={v => toggle(u.id, v === true)} />
+                <span className="min-w-0 flex-1">
+                  <span className="block font-medium truncate">{u.name ?? u.email}</span>
+                  <span className="block text-xs text-muted-foreground truncate">{u.email} · {u.role}</span>
+                </span>
+              </label>
+            ))}
+          </div>
+          <p className="text-[11px] text-muted-foreground">{picked.size} selected</p>
+        </div>
+        <DialogFooter className="px-6 py-4 border-t bg-muted/50">
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={save} loading={saving} disabled={loading}>{saving ? 'Saving…' : 'Save'}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
 
 export default function RecruitmentRequestsPage() {
   const [requests, setRequests] = useState<RecruitmentRequest[]>([])
@@ -33,6 +117,7 @@ export default function RecruitmentRequestsPage() {
   const [decision, setDecision] = useState<'approve' | 'reject' | null>(null)
   const [decisionNote, setDecisionNote] = useState('')
   const [saving, setSaving] = useState(false)
+  const [notifyOpen, setNotifyOpen] = useState(false)
 
   const load = useCallback(async () => {
     const res = await fetch('/api/hr/recruitment-requests')
@@ -107,6 +192,7 @@ export default function RecruitmentRequestsPage() {
                         <p className="text-xs text-muted-foreground">{CANDIDATE_STAGE_LABEL[c.status] ?? c.status}</p>
                       </div>
                       <div className="flex items-center gap-1.5 flex-wrap justify-end text-xs">
+                        {c.prescreenResult && <StatusBadge tone={RESULT_TONE[c.prescreenResult]}>Prescreen: {RESULT_LABEL[c.prescreenResult]}</StatusBadge>}
                         {c.hrInterviewResult && <StatusBadge tone={RESULT_TONE[c.hrInterviewResult]}>HR: {RESULT_LABEL[c.hrInterviewResult]}</StatusBadge>}
                         {c.userInterviewResult
                           ? <StatusBadge tone={RESULT_TONE[c.userInterviewResult]}>User: {RESULT_LABEL[c.userInterviewResult]}</StatusBadge>
@@ -149,9 +235,14 @@ export default function RecruitmentRequestsPage() {
         </>
       ) : (
         <>
-          <div>
-            <h2 className="text-2xl font-bold tracking-tight">Recruitment</h2>
-            <p className="text-muted-foreground text-sm mt-1">Hiring requests from supervisors and heads</p>
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-2xl font-bold tracking-tight">Recruitment</h2>
+              <p className="text-muted-foreground text-sm mt-1">Hiring requests from supervisors and heads</p>
+            </div>
+            <Button variant="outline" onClick={() => setNotifyOpen(true)} className="shrink-0">
+              <Bell /> Notification Recipients
+            </Button>
           </div>
 
           <div className="flex gap-1 border-b overflow-x-auto">
@@ -184,13 +275,14 @@ export default function RecruitmentRequestsPage() {
                     <th className="text-center px-4 py-3 font-medium">Hired</th>
                     <th className="text-left px-4 py-3 font-medium">Requested By</th>
                     <th className="text-left px-4 py-3 font-medium">Reason</th>
-                    <th className="text-left px-4 py-3 font-medium">Target Join</th>
+                    <th className="text-center px-4 py-3 font-medium">Priority</th>
+                    <th className="text-left px-4 py-3 font-medium">Expected Join</th>
                     <th className="text-center px-4 py-3 font-medium">Status</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y">
                   {filtered.length === 0 ? (
-                    <tr><td colSpan={6} className="text-center py-12 text-muted-foreground text-sm">
+                    <tr><td colSpan={7} className="text-center py-12 text-muted-foreground text-sm">
                       <ClipboardList className="h-8 w-8 mx-auto mb-2 opacity-20" />
                       No recruitment requests {statusFilter !== 'All' ? `with status "${REQUEST_STATUS_LABEL[statusFilter as RecruitmentStatus]}"` : 'yet'}.
                     </td></tr>
@@ -203,9 +295,10 @@ export default function RecruitmentRequestsPage() {
                       <td className="px-4 py-3 text-center text-xs tabular-nums">{hiredCount(r)} / {r.headcount}</td>
                       <td className="px-4 py-3">
                         <p className="text-sm">{r.requesterEmployee?.fullName ?? r.requestedBy.name ?? '—'}</p>
-                        <p className="text-xs text-muted-foreground">{formatDate(r.createdAt)}</p>
+                        <p className="text-xs text-muted-foreground">{r.requesterDepartment ? `${r.requesterDepartment} · ` : ''}{formatDate(r.createdAt)}</p>
                       </td>
                       <td className="px-4 py-3 text-muted-foreground text-xs">{r.reason}</td>
+                      <td className="px-4 py-3 text-center"><PriorityBadge priority={r.priority} /></td>
                       <td className="px-4 py-3 text-muted-foreground text-xs whitespace-nowrap">{r.targetJoinDate ? formatDate(r.targetJoinDate) : '—'}</td>
                       <td className="px-4 py-3 text-center">
                         <StatusBadge tone={REQUEST_STATUS_TONE[r.status]}>{REQUEST_STATUS_LABEL[r.status]}</StatusBadge>
@@ -218,6 +311,8 @@ export default function RecruitmentRequestsPage() {
           )}
         </>
       )}
+
+      <NotifyRecipientsDialog open={notifyOpen} onClose={() => setNotifyOpen(false)} />
 
       {/* ── Approve/Reject Modal ── */}
       <Dialog open={!!decision} onOpenChange={o => { if (!o) { setDecision(null); setDecisionNote('') } }}>

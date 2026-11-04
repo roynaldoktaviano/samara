@@ -1,4 +1,4 @@
-import type { Prisma } from '@prisma/client'
+import type { CandidateStatus, Prisma } from '@prisma/client'
 
 // Shared by every /api/hr/candidates response so the Candidates page always gets the
 // same shape back, whichever endpoint it just called.
@@ -13,6 +13,11 @@ export const CANDIDATE_INCLUDE = {
   },
   userInterviewRecordedBy: { select: { id: true, name: true } },
 } satisfies Prisma.CandidateInclude
+
+// Pipeline order — same order as the CandidateStatus enum. TALENT_POOL is labelled "New" in the UI.
+export const CANDIDATE_STATUSES = [
+  'TALENT_POOL', 'SHORTLISTED', 'PRESCREEN', 'ASSESSMENT', 'HR_INTERVIEW', 'USER_INTERVIEW', 'OFFER', 'HIRED', 'REJECTED',
+] as const satisfies readonly CandidateStatus[]
 
 export const INTERVIEW_RESULTS = ['PASSED', 'ON_HOLD', 'FAILED'] as const
 export type InterviewResultValue = typeof INTERVIEW_RESULTS[number]

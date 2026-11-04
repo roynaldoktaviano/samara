@@ -5,9 +5,10 @@ import { getDb } from '@/lib/get-db'
 
 import { sendPushToUsers } from '@/lib/push'
 import { emitTenantEvent } from '@/lib/realtime-bus'
-import { RECRUITMENT_REASONS, RECRUITMENT_REQUEST_INCLUDE, REQUESTER_VISIBLE_CANDIDATE } from '@/lib/hr/recruitment'
-
-const HR_FALLBACK = ['ADMIN', 'SUPER_ADMIN', 'HR']
+import {
+  RECRUITMENT_PRIORITIES, RECRUITMENT_REASONS, RECRUITMENT_REQUEST_INCLUDE, REQUESTER_VISIBLE_CANDIDATE,
+  canRaiseRecruitmentRequest, getNewRequestRecipientIds,
+} from '@/lib/hr/recruitment'
 
 // Self-service side for supervisors/heads — identity-based like performance-reviews/mine:
 // anyone whose Employee record has direct reports (Employee.managerId → them) can raise a
@@ -20,9 +21,9 @@ export async function GET(req: NextRequest) {
 
   const me = await db.employee.findUnique({
     where: { userId: session.user.id },
-    select: { id: true, _count: { select: { directReports: true } } },
+    select: { id: true, fullName: true, department: true, _count: { select: { directReports: true } } },
   })
-  const canRequest = !!me && me._count.directReports > 0
+  const canRequest = !!me && canRaiseRecruitmentRequest(session.user.email, me._count.directReports)
   const pendingUserInterviews = await db.candidate.count({
     where: { recruitmentRequest: { requestedById: session.user.id }, status: 'USER_INTERVIEW', userInterviewResult: null },
   })
@@ -32,7 +33,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ canRequest, hasRequests, pendingUserInterviews })
   }
 
-  const [requests, roles, locations] = await Promise.all([
+  const [requests, roles, locations, employees] = await Promise.all([
     db.recruitmentRequest.findMany({
       where: { requestedById: session.user.id },
       orderBy: { createdAt: 'desc' },
@@ -61,9 +62,22 @@ export async function GET(req: NextRequest) {
     canRequest
       ? db.employeeWorkLocation.findMany({ where: { isActive: true }, orderBy: { name: 'asc' }, select: { id: true, name: true } })
       : [],
+    // "Replacing" picker — inactive ones included since the person may already have left.
+    canRequest
+      ? db.employee.findMany({
+          orderBy: [{ isActive: 'desc' }, { fullName: 'asc' }],
+          select: { id: true, fullName: true, isActive: true, managerId: true, department: true, role: { select: { id: true, title: true } } },
+        })
+      : [],
   ])
 
-  return NextResponse.json({ linked: !!me, canRequest, pendingUserInterviews, requests, roles, locations })
+  // Requestor block on the form — read-only, straight from the employee record.
+  const requester = me ? { fullName: me.fullName, department: me.department } : null
+
+  // Flag the requester's own direct reports so the picker can list them first.
+  const replaceable = employees.map(({ managerId, ...e }) => ({ ...e, inMyTeam: !!me && managerId === me.id }))
+
+  return NextResponse.json({ linked: !!me, canRequest, pendingUserInterviews, requester, requests, roles, locations, employees: replaceable })
 }
 
 export async function POST(req: NextRequest) {
@@ -71,15 +85,16 @@ export async function POST(req: NextRequest) {
   if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
   const body = await req.json() as {
-    roleId?: string; headcount?: number | string; locationId?: string; employmentStatus?: string
-    reason?: string; replacementFor?: string; targetJoinDate?: string; jobDescription?: string; notes?: string
+    roleId?: string; headcount?: number | string; locationId?: string
+    reason?: string; replacementEmployeeId?: string; targetJoinDate?: string; notes?: string
+    salary?: number | string | null; priority?: string
   }
 
   const me = await db.employee.findUnique({
     where: { userId: session.user.id },
-    select: { id: true, fullName: true, _count: { select: { directReports: true } } },
+    select: { id: true, fullName: true, department: true, _count: { select: { directReports: true } } },
   })
-  if (!me || me._count.directReports === 0) {
+  if (!me || !canRaiseRecruitmentRequest(session.user.email, me._count.directReports)) {
     return NextResponse.json({ error: 'Only supervisors and heads with team members can request recruitment' }, { status: 403 })
   }
 
@@ -92,8 +107,20 @@ export async function POST(req: NextRequest) {
 
   const reason = body.reason?.trim() ?? ''
   if (!(RECRUITMENT_REASONS as readonly string[]).includes(reason)) return NextResponse.json({ error: 'Please select a reason' }, { status: 400 })
-  if (reason === 'Replacement' && !body.replacementFor?.trim()) {
-    return NextResponse.json({ error: 'Please fill in who is being replaced' }, { status: 400 })
+  let replacement: { id: string; fullName: string } | null = null
+  if (reason === 'Replacement') {
+    if (!body.replacementEmployeeId) return NextResponse.json({ error: 'Please select the employee being replaced' }, { status: 400 })
+    replacement = await db.employee.findUnique({ where: { id: body.replacementEmployeeId }, select: { id: true, fullName: true } })
+    if (!replacement) return NextResponse.json({ error: 'That employee no longer exists' }, { status: 400 })
+  }
+
+  const priority = body.priority ?? 'MEDIUM'
+  if (!(RECRUITMENT_PRIORITIES as readonly string[]).includes(priority)) return NextResponse.json({ error: 'Please select a priority' }, { status: 400 })
+
+  let salary: number | null = null
+  if (body.salary !== undefined && body.salary !== null && body.salary !== '') {
+    salary = Number(body.salary)
+    if (!Number.isFinite(salary) || salary < 0) return NextResponse.json({ error: 'Salary must be a positive number' }, { status: 400 })
   }
 
   const request = await db.recruitmentRequest.create({
@@ -101,25 +128,30 @@ export async function POST(req: NextRequest) {
       roleId: role.id,
       headcount,
       locationId: body.locationId || null,
-      employmentStatus: body.employmentStatus?.trim() || null,
       reason,
-      replacementFor: reason === 'Replacement' ? body.replacementFor!.trim() : null,
+      replacementEmployeeId: replacement?.id ?? null,
+      replacementFor: replacement?.fullName ?? null,
       targetJoinDate: body.targetJoinDate ? new Date(body.targetJoinDate) : null,
-      // Not sent → fall back to the Role's own job description.
-      jobDescription: (body.jobDescription !== undefined ? body.jobDescription : role.jobDescription)?.trim() || null,
+      salary,
+      priority: priority as typeof RECRUITMENT_PRIORITIES[number],
+      // Always the role's own job description — requesters can't change it. Stored as a
+      // snapshot so the request still shows what it was raised against if HR edits the role later.
+      jobDescription: role.jobDescription?.trim() || null,
       notes: body.notes?.trim() || null,
       requestedById: session.user.id,
       requesterEmployeeId: me.id,
+      requesterDepartment: me.department?.trim() || null,
     },
     include: RECRUITMENT_REQUEST_INCLUDE,
   })
 
-  const hrUsers = await db.user.findMany({ where: { role: { in: HR_FALLBACK as never[] } }, select: { id: true } })
-  if (hrUsers.length) {
-    const title = 'New recruitment request'
-    const notifBody = `${me.fullName} requested to hire ${headcount}× ${role.title}.`
-    await db.notification.createMany({ data: hrUsers.map(u => ({ userId: u.id, type: 'RECRUITMENT_REQUESTED', title, body: notifBody })) }).catch(() => {})
-    sendPushToUsers(db, hrUsers.map(u => u.id), { title, body: notifBody }).catch(() => {})
+  const recipientIds = (await getNewRequestRecipientIds(db)).filter(id => id !== session.user.id)
+  if (recipientIds.length) {
+    const title = priority === 'HIGH' ? 'New recruitment request — High priority' : 'New recruitment request'
+    const dept = me.department?.trim() ? ` (${me.department.trim()})` : ''
+    const notifBody = `${me.fullName}${dept} requested to hire ${headcount}× ${role.title} — ${reason}.`
+    await db.notification.createMany({ data: recipientIds.map(userId => ({ userId, type: 'RECRUITMENT_REQUESTED', title, body: notifBody })) }).catch(() => {})
+    sendPushToUsers(db, recipientIds, { title, body: notifBody }).catch(() => {})
   }
 
   emitTenantEvent(session.user.tenantId, 'hr-recruitment')

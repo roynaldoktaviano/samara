@@ -1,25 +1,30 @@
 import type { StatusTone } from '@/components/ui/status-badge'
-import { formatDate } from '@/lib/format'
+import { StatusBadge } from '@/components/ui/status-badge'
+import { formatDate, formatMoney } from '@/lib/format'
 
 // Shared between the HR "Recruitment" screen and the requester's "Recruitment Request" screen.
 
 export type RecruitmentStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'CLOSED' | 'CANCELLED'
 export type InterviewResult = 'PASSED' | 'ON_HOLD' | 'FAILED'
+export type RecruitmentPriority = 'LOW' | 'MEDIUM' | 'HIGH'
 
 export interface RecruitmentRequestBase {
   id: string
   role: { id: string; title: string }
   headcount: number
   location: { id: string; name: string } | null
-  employmentStatus: string | null
   reason: string
   replacementFor: string | null
   targetJoinDate: string | null
+  salary: number | null
+  priority: RecruitmentPriority
   jobDescription: string | null
   notes: string | null
   status: RecruitmentStatus
   requestedBy: { id: string; name: string | null }
   requesterEmployee: { id: string; fullName: string; employeeNumber: string } | null
+  requesterDepartment: string | null
+  replacementEmployee: { id: string; fullName: string; employeeNumber: string; role: { title: string } | null } | null
   decidedBy: { id: string; name: string | null } | null
   decidedAt: string | null
   decisionNote: string | null
@@ -34,16 +39,28 @@ export const REQUEST_STATUS_TONE: Record<RecruitmentStatus, StatusTone> = {
   PENDING: 'warning', APPROVED: 'success', REJECTED: 'destructive', CLOSED: 'neutral', CANCELLED: 'neutral',
 }
 
+export const RECRUITMENT_PRIORITIES: RecruitmentPriority[] = ['LOW', 'MEDIUM', 'HIGH']
+export const PRIORITY_LABEL: Record<RecruitmentPriority, string> = { LOW: 'Low', MEDIUM: 'Medium', HIGH: 'High' }
+export const PRIORITY_TONE: Record<RecruitmentPriority, StatusTone> = { LOW: 'neutral', MEDIUM: 'warning', HIGH: 'destructive' }
+
+export function PriorityBadge({ priority }: { priority: RecruitmentPriority }) {
+  return <StatusBadge tone={PRIORITY_TONE[priority]}>{PRIORITY_LABEL[priority]}</StatusBadge>
+}
+
+/** "Name · Dept" for whoever raised the request. */
+export function requesterLabel(r: RecruitmentRequestBase): string {
+  const name = r.requesterEmployee?.fullName ?? r.requestedBy.name ?? 'Unknown'
+  return r.requesterDepartment ? `${name} · ${r.requesterDepartment}` : name
+}
+
 export const CANDIDATE_STAGE_LABEL: Record<string, string> = {
-  TALENT_POOL: 'Talent Pool', SHORTLISTED: 'Shortlisted', ASSESSMENT: 'Assessment', HR_INTERVIEW: 'HR Interview',
+  TALENT_POOL: 'New', SHORTLISTED: 'Shortlisted', PRESCREEN: 'Prescreen', ASSESSMENT: 'Assessment', HR_INTERVIEW: 'HR Interview',
   USER_INTERVIEW: 'User Interview', OFFER: 'Offer', HIRED: 'Hired', REJECTED: 'Rejected',
 }
 
 export const RESULT_LABEL: Record<InterviewResult, string> = { PASSED: 'Passed', ON_HOLD: 'On Hold', FAILED: 'Failed' }
 export const RESULT_TONE: Record<InterviewResult, StatusTone> = { PASSED: 'success', ON_HOLD: 'warning', FAILED: 'destructive' }
 
-// Same values as Employees' Employment Status picker (EmployeesPage EMPLOYMENT_STATUSES).
-export const EMPLOYMENT_STATUSES = ['Probation', 'Internship', 'Freelance', 'Contract (PKWT)', 'Permanent (PKWTT)']
 export const RECRUITMENT_REASONS = ['New Position', 'Replacement'] as const
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -60,11 +77,24 @@ export function RecruitmentRequestDetails({ request: r }: { request: Recruitment
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-        <Field label="Headcount">{r.headcount}</Field>
+        <Field label="Requestor">
+          {r.requesterEmployee?.fullName ?? r.requestedBy.name ?? 'Unknown'}
+          <span className="block text-xs text-muted-foreground font-normal">{r.requesterDepartment ?? 'No department'}</span>
+        </Field>
+        <Field label="Priority"><PriorityBadge priority={r.priority} /></Field>
+        <Field label="New / Replacement">
+          {r.reason}
+          {(r.replacementEmployee || r.replacementFor) && (
+            <span className="block text-xs text-muted-foreground font-normal">
+              Replacing {r.replacementEmployee?.fullName ?? r.replacementFor}
+              {r.replacementEmployee && ` (${r.replacementEmployee.employeeNumber}${r.replacementEmployee.role ? ` · ${r.replacementEmployee.role.title}` : ''})`}
+            </span>
+          )}
+        </Field>
+        <Field label="Headcount Requested">{r.headcount}</Field>
+        <Field label="Salary">{r.salary != null ? formatMoney(r.salary) : '—'}</Field>
+        <Field label="Expected Join Date">{r.targetJoinDate ? formatDate(r.targetJoinDate) : '—'}</Field>
         <Field label="Work Location">{r.location?.name ?? '—'}</Field>
-        <Field label="Employment Status">{r.employmentStatus ?? '—'}</Field>
-        <Field label="Reason">{r.reason}{r.replacementFor && <span className="text-muted-foreground font-normal"> · replacing {r.replacementFor}</span>}</Field>
-        <Field label="Target Join Date">{r.targetJoinDate ? formatDate(r.targetJoinDate) : '—'}</Field>
       </div>
 
       <div>
@@ -76,13 +106,13 @@ export function RecruitmentRequestDetails({ request: r }: { request: Recruitment
 
       {r.notes && (
         <div>
-          <p className="text-xs text-muted-foreground uppercase tracking-wide font-semibold mb-1">Notes</p>
+          <p className="text-xs text-muted-foreground uppercase tracking-wide font-semibold mb-1">Special Request</p>
           <p className="text-sm whitespace-pre-wrap">{r.notes}</p>
         </div>
       )}
 
       <div className="text-xs text-muted-foreground border-t pt-3">
-        Requested {formatDate(r.createdAt)} by {r.requesterEmployee?.fullName ?? r.requestedBy.name ?? 'Unknown'}
+        Requested {formatDate(r.createdAt)} by {requesterLabel(r)}
       </div>
 
       {(r.status === 'APPROVED' || r.status === 'REJECTED' || r.status === 'CLOSED') && (
