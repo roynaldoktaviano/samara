@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 
 import { roleMatches } from '@/lib/role-utils'
+import { CANDIDATE_INCLUDE } from '@/lib/candidate-include'
 
 const ALLOWED = ['ADMIN', 'SUPER_ADMIN', 'HR']
 
@@ -21,7 +22,10 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
   if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
 
-  const candidate = await db.candidate.findUnique({ where: { id } })
+  const candidate = await db.candidate.findUnique({
+    where: { id },
+    include: { recruitmentRequest: { select: { locationId: true, requesterEmployeeId: true } } },
+  })
   if (!candidate) return NextResponse.json({ error: 'Candidate not found' }, { status: 404 })
   if (candidate.status !== 'HIRED') return NextResponse.json({ error: 'Only hired candidates can be converted to an employee' }, { status: 400 })
   if (candidate.convertedEmployeeId) return NextResponse.json({ error: 'This candidate has already been converted to an employee' }, { status: 409 })
@@ -33,6 +37,9 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
       employeeNumber,
       fullName: candidate.fullName,
       roleId: candidate.appliedRoleId,
+      // Hired through a Recruitment Request → reports to whoever asked for the hire.
+      locationId: candidate.recruitmentRequest?.locationId ?? null,
+      managerId: candidate.recruitmentRequest?.requesterEmployeeId ?? null,
       phone: candidate.phone,
       personalEmail: candidate.email,
       employmentStatus: 'Probation',
@@ -44,7 +51,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
   const updated = await db.candidate.update({
     where: { id },
     data: { convertedEmployeeId: employee.id },
-    include: { appliedRole: { select: { id: true, title: true } } },
+    include: CANDIDATE_INCLUDE,
   })
 
   return NextResponse.json({ candidate: updated, employee })

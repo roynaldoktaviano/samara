@@ -30,14 +30,14 @@ export async function POST(req: NextRequest) {
   const role = (session?.user as { role?: string })?.role ?? ''
   if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
-  const { title, locationId } = await req.json()
+  const { title, locationId, jobDescription } = await req.json()
   if (!title?.trim()) return NextResponse.json({ error: 'Title is required' }, { status: 400 })
 
   const dup = await db.employeeRole.findFirst({ where: { title: { equals: title.trim(), mode: 'insensitive' } } })
   if (dup) return NextResponse.json({ error: `Role "${title.trim()}" already exists` }, { status: 409 })
 
   const created = await db.employeeRole.create({
-    data: { id: crypto.randomUUID(), title: title.trim(), locationId: locationId || null },
+    data: { id: crypto.randomUUID(), title: title.trim(), locationId: locationId || null, jobDescription: jobDescription?.trim() || null },
     include: { location: { select: { id: true, name: true } } },
   })
   return NextResponse.json(created, { status: 201 })

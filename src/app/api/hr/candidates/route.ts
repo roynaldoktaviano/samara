@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 
 import { roleMatches } from '@/lib/role-utils'
+import { CANDIDATE_INCLUDE } from '@/lib/candidate-include'
 
 const ALLOWED = ['ADMIN', 'SUPER_ADMIN', 'HR']
 
@@ -14,7 +15,7 @@ export async function GET() {
   const db = await getDb(session)
   const candidates = await db.candidate.findMany({
     orderBy: { createdAt: 'desc' },
-    include: { appliedRole: { select: { id: true, title: true } } },
+    include: CANDIDATE_INCLUDE,
   })
   return NextResponse.json(candidates)
 }
@@ -26,15 +27,25 @@ export async function POST(req: NextRequest) {
   const db = await getDb(session)
   const {
     fullName, appliedRoleId, phone, email, source, resumeFiles, expectedSalary, location, readyJoinDate,
-    additionalDocuments, notes, assessmentScore, skills, languages,
+    additionalDocuments, notes, assessmentScore, skills, languages, recruitmentRequestId,
   } = await req.json()
   if (!fullName?.trim()) return NextResponse.json({ error: 'Full name is required' }, { status: 400 })
+
+  // A candidate linked to a Recruitment Request is always applying for that request's role.
+  let roleId: string | null = appliedRoleId || null
+  if (recruitmentRequestId) {
+    const request = await db.recruitmentRequest.findUnique({ where: { id: recruitmentRequestId }, select: { roleId: true, status: true } })
+    if (!request) return NextResponse.json({ error: 'Recruitment request not found' }, { status: 404 })
+    if (request.status !== 'APPROVED') return NextResponse.json({ error: 'Candidates can only be linked to an approved recruitment request' }, { status: 409 })
+    roleId = request.roleId
+  }
 
   const candidate = await db.candidate.create({
     data: {
       id: crypto.randomUUID(),
       fullName: fullName.trim(),
-      appliedRoleId: appliedRoleId || null,
+      appliedRoleId: roleId,
+      recruitmentRequestId: recruitmentRequestId || null,
       phone: phone?.trim() || null,
       email: email?.trim() || null,
       source: source?.trim() || null,
@@ -49,7 +60,7 @@ export async function POST(req: NextRequest) {
       languages: Array.isArray(languages) ? languages : [],
       updatedAt: new Date(),
     },
-    include: { appliedRole: { select: { id: true, title: true } } },
+    include: CANDIDATE_INCLUDE,
   })
   return NextResponse.json(candidate, { status: 201 })
 }

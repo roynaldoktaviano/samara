@@ -22,8 +22,9 @@ const ALWAYS_ON: Partial<Record<Role, string[]>> = {
 }
 
 // Personal modules every login account gets regardless of role or admin override — e.g.
-// "My Works" is a private to-do list, so there's nothing to restrict.
-const ALWAYS_ON_EVERY_ROLE = ['my-works']
+// "My Works" is a private to-do list, so there's nothing to restrict. "Recruitment Request"
+// is gated by identity instead (only employees with direct reports see it in the sidebar).
+const ALWAYS_ON_EVERY_ROLE = ['my-works', 'my-recruitment']
 
 /** Modules a role can never have unchecked (used to grey out those checkboxes client-side too). */
 export function getForcedModules(role: Role): string[] {

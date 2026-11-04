@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Plus, X, Trash2, Pencil, Sparkles, Phone, Mail, Paperclip, Upload, UserPlus, Download, FileText, FileDown } from 'lucide-react'
+import { Plus, X, Trash2, Pencil, Sparkles, Phone, Mail, Paperclip, Upload, UserPlus, Download, FileText, FileDown, Briefcase } from 'lucide-react'
 import { MultiFilePicker } from '@/components/ui/file-preview'
 import { PhotoLightbox } from '@/components/purchasing/PhotoLightbox'
 import { Button } from '@/components/ui/button'
@@ -15,6 +15,12 @@ import { readUploadFile, isPdfDataUrl, downloadDataUrl, extFromDataUrl } from '@
 import { formatDate, formatMoney } from '@/lib/format'
 
 interface EmployeeRole { id: string; title: string }
+type InterviewResult = 'PASSED' | 'ON_HOLD' | 'FAILED'
+interface RecruitmentRequestLite {
+  id: string; status: string; headcount: number
+  role: EmployeeRole
+  requestedBy: { id: string; name: string | null }
+}
 interface AdditionalDocument { id: string; name: string; description: string; fileKey: string }
 interface Candidate {
   id: string; fullName: string; phone: string | null; email: string | null
@@ -24,30 +30,57 @@ interface Candidate {
   location: string | null
   readyJoinDate: string | null
   additionalDocuments: AdditionalDocument[]
-  status: 'TALENT_POOL' | 'SHORTLISTED' | 'ASSESSMENT' | 'INTERVIEW' | 'OFFER' | 'HIRED' | 'REJECTED'
+  status: typeof STATUSES[number]
   assessmentScore: number | null
   skills: string[]
   languages: string[]
-  interviewScheduledAt: string | null
-  interviewMeetingLink: string | null
+  hrInterviewScheduledAt: string | null
+  hrInterviewMeetingLink: string | null
+  hrInterviewResult: InterviewResult | null
+  hrInterviewNotes: string | null
+  userInterviewScheduledAt: string | null
+  userInterviewMeetingLink: string | null
+  userInterviewResult: InterviewResult | null
+  userInterviewNotes: string | null
+  userInterviewRecordedAt: string | null
+  userInterviewRecordedBy: { id: string; name: string | null } | null
   appliedRole: EmployeeRole | null
+  recruitmentRequest: RecruitmentRequestLite | null
   convertedEmployeeId: string | null
   createdAt: string
 }
 
-const STATUSES = ['TALENT_POOL', 'SHORTLISTED', 'ASSESSMENT', 'INTERVIEW', 'OFFER', 'HIRED', 'REJECTED'] as const
+const STATUSES = ['TALENT_POOL', 'SHORTLISTED', 'ASSESSMENT', 'HR_INTERVIEW', 'USER_INTERVIEW', 'OFFER', 'HIRED', 'REJECTED'] as const
 const STATUS_LABEL: Record<string, string> = {
-  TALENT_POOL: 'Talent Pool', SHORTLISTED: 'Shortlisted', ASSESSMENT: 'Assessment', INTERVIEW: 'Interview',
-  OFFER: 'Offer', HIRED: 'Hired', REJECTED: 'Rejected',
+  TALENT_POOL: 'Talent Pool', SHORTLISTED: 'Shortlisted', ASSESSMENT: 'Assessment', HR_INTERVIEW: 'HR Interview',
+  USER_INTERVIEW: 'User Interview', OFFER: 'Offer', HIRED: 'Hired', REJECTED: 'Rejected',
 }
 const STATUS_COLOR: Record<string, string> = {
   TALENT_POOL: 'bg-muted text-foreground/80',
   SHORTLISTED: 'bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300',
   ASSESSMENT: 'bg-info/15 text-info',
-  INTERVIEW: 'bg-purple-100 text-purple-700 dark:bg-purple-500/15 dark:text-purple-300',
+  HR_INTERVIEW: 'bg-purple-100 text-purple-700 dark:bg-purple-500/15 dark:text-purple-300',
+  USER_INTERVIEW: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300',
   OFFER: 'bg-warning/15 text-warning',
   HIRED: 'bg-success/15 text-success',
   REJECTED: 'bg-destructive/15 text-destructive',
+}
+
+const RESULT_LABEL: Record<InterviewResult, string> = { PASSED: 'Passed', ON_HOLD: 'On Hold', FAILED: 'Failed' }
+const RESULT_COLOR: Record<InterviewResult, string> = {
+  PASSED: 'bg-success/15 text-success',
+  ON_HOLD: 'bg-warning/15 text-warning',
+  FAILED: 'bg-destructive/15 text-destructive',
+}
+
+type InterviewKind = 'hr' | 'user'
+const INTERVIEW_STAGE: Record<InterviewKind, typeof STATUSES[number]> = { hr: 'HR_INTERVIEW', user: 'USER_INTERVIEW' }
+const INTERVIEW_TITLE: Record<InterviewKind, string> = { hr: 'HR Interview', user: 'User Interview' }
+
+function interviewOf(c: Candidate, kind: InterviewKind) {
+  return kind === 'hr'
+    ? { scheduledAt: c.hrInterviewScheduledAt, link: c.hrInterviewMeetingLink, result: c.hrInterviewResult, notes: c.hrInterviewNotes }
+    : { scheduledAt: c.userInterviewScheduledAt, link: c.userInterviewMeetingLink, result: c.userInterviewResult, notes: c.userInterviewNotes }
 }
 
 // Real, computed from readyJoinDate rather than a free-text field — "how soon can they
@@ -97,7 +130,7 @@ function TagInput({ id, values, onChange, placeholder }: { id?: string; values: 
 }
 
 const BLANK = {
-  fullName: '', appliedRoleId: '', phone: '', email: '', source: '', notes: '',
+  fullName: '', appliedRoleId: '', recruitmentRequestId: '', phone: '', email: '', source: '', notes: '',
   resumeFiles: [] as string[],
   expectedSalary: '',
   location: '',
@@ -108,13 +141,15 @@ const BLANK = {
   languages: [] as string[],
 }
 
-export default function TalentPoolPage() {
+export default function CandidatesPage() {
   const confirm = useConfirm()
   const [candidates, setCandidates] = useState<Candidate[]>([])
   const [roles, setRoles] = useState<EmployeeRole[]>([])
+  const [requests, setRequests] = useState<RecruitmentRequestLite[]>([])
   const [loading, setLoading] = useState(true)
   const [statusFilter, setStatusFilter] = useState<'All' | typeof STATUSES[number]>('All')
   const [roleFilter, setRoleFilter] = useState('All')
+  const [requestFilter, setRequestFilter] = useState('All')
 
   const [modal, setModal] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -134,20 +169,24 @@ export default function TalentPoolPage() {
   const [detailId, setDetailId] = useState<string | null>(null)
   const [detailPreview, setDetailPreview] = useState<string | null>(null)
 
-  const [scheduleTarget, setScheduleTarget] = useState<Candidate | null>(null)
-  const [scheduleForm, setScheduleForm] = useState({ datetime: '', link: '' })
+  const [scheduleTarget, setScheduleTarget] = useState<{ candidate: Candidate; kind: InterviewKind } | null>(null)
+  const [scheduleForm, setScheduleForm] = useState({ datetime: '', link: '', result: '' as InterviewResult | '', notes: '' })
   const [scheduleSaving, setScheduleSaving] = useState(false)
   const [scheduleError, setScheduleError] = useState('')
 
   const load = useCallback(async () => {
-    setLoading(true)
-    const [cRes, rRes] = await Promise.all([fetch('/api/hr/candidates'), fetch('/api/hr/roles')])
+    const [cRes, rRes, reqRes] = await Promise.all([fetch('/api/hr/candidates'), fetch('/api/hr/roles'), fetch('/api/hr/recruitment-requests')])
     if (cRes.ok) setCandidates(await cRes.json())
     if (rRes.ok) setRoles(await rRes.json())
+    if (reqRes.ok) setRequests(await reqRes.json())
     setLoading(false)
   }, [])
 
   useEffect(() => { load() }, [load])
+  useEffect(() => {
+    window.addEventListener('hr-recruitment-changed', load)
+    return () => window.removeEventListener('hr-recruitment-changed', load)
+  }, [load])
 
   function openAdd() { setEditingId(null); setForm({ ...BLANK }); setFormError(''); setModal(true) }
 
@@ -156,6 +195,7 @@ export default function TalentPoolPage() {
     setForm({
       fullName: c.fullName,
       appliedRoleId: c.appliedRole?.id ?? '',
+      recruitmentRequestId: c.recruitmentRequest?.id ?? '',
       phone: c.phone ?? '',
       email: c.email ?? '',
       source: c.source ?? '',
@@ -239,22 +279,30 @@ export default function TalentPoolPage() {
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
   }
 
-  function openSchedule(c: Candidate) {
-    setScheduleForm({ datetime: toDatetimeLocal(c.interviewScheduledAt), link: c.interviewMeetingLink ?? '' })
+  function openSchedule(c: Candidate, kind: InterviewKind) {
+    const iv = interviewOf(c, kind)
+    setScheduleForm({ datetime: toDatetimeLocal(iv.scheduledAt), link: iv.link ?? '', result: iv.result ?? '', notes: iv.notes ?? '' })
     setScheduleError('')
-    setScheduleTarget(c)
+    setScheduleTarget({ candidate: c, kind })
   }
 
   async function saveSchedule() {
     if (!scheduleTarget) return
+    const { candidate: c, kind } = scheduleTarget
     if (!scheduleForm.datetime) { setScheduleError('Please pick a date and time'); return }
     setScheduleSaving(true); setScheduleError('')
-    const res = await fetch(`/api/hr/candidates/${scheduleTarget.id}`, {
+    // Only move the candidate forward — recording a result on an earlier round
+    // (e.g. HR Interview notes after they've reached Offer) mustn't pull them back.
+    const stage = INTERVIEW_STAGE[kind]
+    const moveForward = STATUSES.indexOf(c.status) < STATUSES.indexOf(stage)
+    const res = await fetch(`/api/hr/candidates/${c.id}`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        status: 'INTERVIEW',
-        interviewScheduledAt: new Date(scheduleForm.datetime).toISOString(),
-        interviewMeetingLink: scheduleForm.link.trim() || null,
+        ...(moveForward && { status: stage }),
+        [`${kind}InterviewScheduledAt`]: new Date(scheduleForm.datetime).toISOString(),
+        [`${kind}InterviewMeetingLink`]: scheduleForm.link.trim() || null,
+        [`${kind}InterviewResult`]: scheduleForm.result || null,
+        [`${kind}InterviewNotes`]: scheduleForm.notes,
       }),
     })
     setScheduleSaving(false)
@@ -265,7 +313,7 @@ export default function TalentPoolPage() {
   async function doDelete(c: Candidate) {
     const ok = await confirm({
       title: 'Remove Candidate?',
-      description: <><span className="font-medium text-foreground">{c.fullName}</span> will be removed from the talent pool permanently.</>,
+      description: <><span className="font-medium text-foreground">{c.fullName}</span> will be removed from the candidates list permanently.</>,
       confirmLabel: 'Remove',
       destructive: true,
     })
@@ -286,14 +334,18 @@ export default function TalentPoolPage() {
   const filtered = candidates
     .filter(c => statusFilter === 'All' || c.status === statusFilter)
     .filter(c => roleFilter === 'All' || c.appliedRole?.id === roleFilter)
+    .filter(c => requestFilter === 'All' || (requestFilter === 'None' ? !c.recruitmentRequest : c.recruitmentRequest?.id === requestFilter))
   const activeCount = candidates.filter(c => c.status !== 'HIRED' && c.status !== 'REJECTED').length
   const detailCandidate = candidates.find(c => c.id === detailId) ?? null
+  // Only approved requests take new candidates; keep the one already linked selectable when editing.
+  const linkableRequests = requests.filter(r => r.status === 'APPROVED' || r.id === form.recruitmentRequestId)
+  const requestLabel = (r: RecruitmentRequestLite) => `${r.role.title} ×${r.headcount} — ${r.requestedBy.name ?? 'Unknown'}`
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight">Talent Pool</h2>
+          <h2 className="text-2xl font-bold tracking-tight">Candidates</h2>
           <p className="text-muted-foreground text-sm mt-1">{activeCount} candidate{activeCount !== 1 ? 's' : ''} in the active pipeline</p>
         </div>
         <Button onClick={openAdd}>
@@ -320,10 +372,17 @@ export default function TalentPoolPage() {
             )
           })}
         </div>
-        <NativeSelect aria-label="Filter by applied role" value={roleFilter} onChange={e => setRoleFilter(e.target.value)} className="w-auto shrink-0">
-          <option value="All">All applied roles</option>
-          {roles.map(r => <option key={r.id} value={r.id}>{r.title}</option>)}
-        </NativeSelect>
+        <div className="flex gap-2 flex-wrap">
+          <NativeSelect aria-label="Filter by recruitment request" value={requestFilter} onChange={e => setRequestFilter(e.target.value)} className="w-auto shrink-0">
+            <option value="All">All recruitment requests</option>
+            {requests.filter(r => r.status === 'APPROVED' || r.status === 'CLOSED').map(r => <option key={r.id} value={r.id}>{requestLabel(r)}</option>)}
+            <option value="None">Not linked to a request</option>
+          </NativeSelect>
+          <NativeSelect aria-label="Filter by applied role" value={roleFilter} onChange={e => setRoleFilter(e.target.value)} className="w-auto shrink-0">
+            <option value="All">All applied roles</option>
+            {roles.map(r => <option key={r.id} value={r.id}>{r.title}</option>)}
+          </NativeSelect>
+        </div>
       </div>
 
       {convertError && (
@@ -352,12 +411,19 @@ export default function TalentPoolPage() {
               {filtered.length === 0 ? (
                 <tr><td colSpan={6} className="text-center py-12 text-muted-foreground text-sm">
                   <Sparkles className="h-8 w-8 mx-auto mb-2 opacity-20" />
-                  No candidates {statusFilter !== 'All' || roleFilter !== 'All' ? 'match this filter' : 'yet'}.
+                  No candidates {statusFilter !== 'All' || roleFilter !== 'All' || requestFilter !== 'All' ? 'match this filter' : 'yet'}.
                 </td></tr>
               ) : filtered.map(c => (
                 <tr key={c.id} onClick={() => setDetailId(c.id)} className="hover:bg-muted/30 transition-colors cursor-pointer">
                   <td className="px-4 py-3 font-medium">{c.fullName}</td>
-                  <td className="px-4 py-3 text-muted-foreground text-xs">{c.appliedRole?.title ?? '—'}</td>
+                  <td className="px-4 py-3 text-muted-foreground text-xs">
+                    {c.appliedRole?.title ?? '—'}
+                    {c.recruitmentRequest && (
+                      <span className="mt-0.5 flex items-center gap-1 text-[11px] text-primary-strong" title="Linked recruitment request">
+                        <Briefcase className="h-3 w-3" /> Request by {c.recruitmentRequest.requestedBy.name ?? 'Unknown'}
+                      </span>
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-muted-foreground text-xs">
                     <div className="flex flex-col gap-0.5">
                       {c.phone && <span className="flex items-center gap-1"><Phone className="h-3 w-3" />{c.phone}</span>}
@@ -425,8 +491,21 @@ export default function TalentPoolPage() {
                 value={form.fullName} onChange={e => setForm(f => ({ ...f, fullName: e.target.value }))} />
             </div>
             <div className="space-y-1.5">
+              <Label htmlFor="cand-recruitment-request" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Recruitment Request</Label>
+              <NativeSelect id="cand-recruitment-request"
+                value={form.recruitmentRequestId}
+                onChange={e => {
+                  const req = requests.find(r => r.id === e.target.value)
+                  setForm(f => ({ ...f, recruitmentRequestId: e.target.value, ...(req && { appliedRoleId: req.role.id }) }))
+                }}>
+                <option value="">— Not linked —</option>
+                {linkableRequests.map(r => <option key={r.id} value={r.id}>{requestLabel(r)}</option>)}
+              </NativeSelect>
+              <p className="text-[11px] text-muted-foreground">Optional — the requester runs the User Interview for linked candidates.</p>
+            </div>
+            <div className="space-y-1.5">
               <Label htmlFor="cand-applied-role" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Applied Role</Label>
-              <NativeSelect id="cand-applied-role"
+              <NativeSelect id="cand-applied-role" disabled={!!form.recruitmentRequestId}
                 value={form.appliedRoleId} onChange={e => setForm(f => ({ ...f, appliedRoleId: e.target.value }))}>
                 <option value="">—</option>
                 {roles.map(r => <option key={r.id} value={r.id}>{r.title}</option>)}
@@ -545,6 +624,7 @@ export default function TalentPoolPage() {
                 <DialogTitle className="font-bold text-base leading-normal truncate">{detailCandidate.fullName}</DialogTitle>
                 <p className="text-xs text-muted-foreground mt-0.5 truncate">
                   {detailCandidate.appliedRole?.title ?? 'No role specified'}{detailCandidate.location ? ` · ${detailCandidate.location}` : ''}
+                  {detailCandidate.recruitmentRequest && ` · Requested by ${detailCandidate.recruitmentRequest.requestedBy.name ?? 'Unknown'}`}
                 </p>
               </div>
             </DialogHeader>
@@ -636,26 +716,40 @@ export default function TalentPoolPage() {
                 </div>
               )}
 
-              {detailCandidate.interviewScheduledAt && (
-                <div className="rounded-lg border border-primary/30 bg-primary/10 px-4 py-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <div>
-                      <p className="text-xs font-semibold text-primary-strong uppercase tracking-wide">Interview Scheduled</p>
-                      <p className="text-sm font-medium mt-0.5">
-                        {formatDate(detailCandidate.interviewScheduledAt, 'datetime')}
-                      </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                {(['hr', 'user'] as const).map(kind => {
+                  const iv = interviewOf(detailCandidate, kind)
+                  return (
+                    <div key={kind} className={`rounded-lg border px-4 py-3 ${iv.scheduledAt ? 'border-primary/30 bg-primary/10' : ''}`}>
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-xs font-semibold text-primary-strong uppercase tracking-wide">{INTERVIEW_TITLE[kind]}</p>
+                        <Button variant="link" size="sm" onClick={() => openSchedule(detailCandidate, kind)}
+                          className="h-auto p-0 has-[>svg]:px-0 text-xs text-primary-strong shrink-0">{iv.scheduledAt ? 'Edit' : 'Schedule'}</Button>
+                      </div>
+                      {iv.scheduledAt ? (
+                        <p className="text-sm font-medium mt-0.5">{formatDate(iv.scheduledAt, 'datetime')}</p>
+                      ) : (
+                        <p className="text-sm text-muted-foreground mt-0.5">Not scheduled</p>
+                      )}
+                      {iv.link && (
+                        <a href={iv.link} target="_blank" rel="noreferrer"
+                          className="inline-flex items-center gap-1 text-xs font-medium text-primary-strong hover:underline mt-1">
+                          Join Meeting Link →
+                        </a>
+                      )}
+                      {iv.result && (
+                        <p className="mt-2"><span className={`text-xs font-medium rounded-full px-2 py-0.5 ${RESULT_COLOR[iv.result]}`}>{RESULT_LABEL[iv.result]}</span></p>
+                      )}
+                      {iv.notes && <p className="text-xs text-muted-foreground mt-1.5 whitespace-pre-wrap">{iv.notes}</p>}
+                      {kind === 'user' && detailCandidate.userInterviewRecordedBy && detailCandidate.userInterviewRecordedAt && (
+                        <p className="text-[11px] text-muted-foreground mt-1.5">
+                          Recorded by {detailCandidate.userInterviewRecordedBy.name ?? 'Unknown'} · {formatDate(detailCandidate.userInterviewRecordedAt)}
+                        </p>
+                      )}
                     </div>
-                    <Button variant="link" size="sm" onClick={() => openSchedule(detailCandidate)}
-                      className="h-auto p-0 has-[>svg]:px-0 text-xs text-primary-strong shrink-0">Edit</Button>
-                  </div>
-                  {detailCandidate.interviewMeetingLink && (
-                    <a href={detailCandidate.interviewMeetingLink} target="_blank" rel="noreferrer"
-                      className="inline-flex items-center gap-1 text-xs font-medium text-primary-strong hover:underline mt-2">
-                      Join Meeting Link →
-                    </a>
-                  )}
-                </div>
-              )}
+                  )
+                })}
+              </div>
 
               <div>
                 <h4 id="cand-move-label" className="text-sm font-semibold mb-2">Move candidate</h4>
@@ -680,9 +774,13 @@ export default function TalentPoolPage() {
                   <FileDown /> Generate Offering Letter
                 </Button>
               ) : (
-                <Button onClick={() => openSchedule(detailCandidate)}>
-                  {detailCandidate.interviewScheduledAt ? 'Reschedule Interview' : 'Schedule Interview'}
-                </Button>
+                // Offer the next round that hasn't been scheduled yet; once both are, the
+                // per-round "Edit" links in the cards above take over.
+                !detailCandidate.hrInterviewScheduledAt ? (
+                  <Button onClick={() => openSchedule(detailCandidate, 'hr')}>Schedule HR Interview</Button>
+                ) : !detailCandidate.userInterviewScheduledAt ? (
+                  <Button onClick={() => openSchedule(detailCandidate, 'user')}>Schedule User Interview</Button>
+                ) : null
               )}
             </DialogFooter>
           </DialogContent>
@@ -693,7 +791,7 @@ export default function TalentPoolPage() {
       <Dialog open={!!scheduleTarget} onOpenChange={o => { if (!o) setScheduleTarget(null) }}>
         <DialogContent className="sm:max-w-sm p-0 gap-0 overflow-hidden" aria-describedby={undefined} onInteractOutside={e => e.preventDefault()}>
           <DialogHeader className="px-6 py-4 pr-12 border-b text-left">
-            <DialogTitle className="text-sm font-bold">Schedule Interview</DialogTitle>
+            <DialogTitle className="text-sm font-bold">{scheduleTarget ? INTERVIEW_TITLE[scheduleTarget.kind] : 'Interview'}</DialogTitle>
           </DialogHeader>
           <div className="px-6 py-5 space-y-4">
             {scheduleError && <p className="text-xs text-destructive bg-destructive/10 border border-destructive/30 rounded-lg px-3 py-2">{scheduleError}</p>}
@@ -711,11 +809,32 @@ export default function TalentPoolPage() {
                 value={scheduleForm.link} onChange={e => setScheduleForm(f => ({ ...f, link: e.target.value }))}
               />
             </div>
+            {scheduleTarget?.kind === 'user' && scheduleTarget.candidate.recruitmentRequest && (
+              <p className="text-[11px] text-muted-foreground">
+                {scheduleTarget.candidate.recruitmentRequest.requestedBy.name ?? 'The requester'} gets notified and records the result from their Recruitment Request menu.
+              </p>
+            )}
+            <div className="space-y-1.5">
+              <Label htmlFor="cand-interview-result" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Result</Label>
+              <NativeSelect id="cand-interview-result"
+                value={scheduleForm.result} onChange={e => setScheduleForm(f => ({ ...f, result: e.target.value as InterviewResult | '' }))}>
+                <option value="">— Not yet —</option>
+                {(Object.keys(RESULT_LABEL) as InterviewResult[]).map(r => <option key={r} value={r}>{RESULT_LABEL[r]}</option>)}
+              </NativeSelect>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="cand-interview-notes" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Interview Notes</Label>
+              <Textarea id="cand-interview-notes" rows={3} className="resize-none"
+                value={scheduleForm.notes} onChange={e => setScheduleForm(f => ({ ...f, notes: e.target.value }))} />
+            </div>
           </div>
           <DialogFooter className="px-6 py-4 border-t bg-muted/50">
             <Button variant="outline" onClick={() => setScheduleTarget(null)}>Cancel</Button>
             <Button onClick={saveSchedule} loading={scheduleSaving}>
-              {scheduleSaving ? 'Saving…' : 'Save & Move to Interview'}
+              {scheduleSaving ? 'Saving…'
+                : scheduleTarget && STATUSES.indexOf(scheduleTarget.candidate.status) < STATUSES.indexOf(INTERVIEW_STAGE[scheduleTarget.kind])
+                  ? `Save & Move to ${INTERVIEW_TITLE[scheduleTarget.kind]}`
+                  : 'Save'}
             </Button>
           </DialogFooter>
         </DialogContent>

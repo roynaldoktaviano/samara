@@ -82,9 +82,11 @@ import MyLeaveRequestsPage from '@/components/hr/MyLeaveRequestsPage'
 import MyWorksPage from '@/components/my-works/MyWorksPage'
 import BusinessTripsPage from '@/components/hr/BusinessTripsPage'
 import MyBusinessTripsPage from '@/components/hr/MyBusinessTripsPage'
+import RecruitmentRequestsPage from '@/components/hr/RecruitmentRequestsPage'
+import MyRecruitmentRequestsPage from '@/components/hr/MyRecruitmentRequestsPage'
 import OvertimeRequestsPage from '@/components/hr/OvertimeRequestsPage'
 import MyOvertimePage from '@/components/hr/MyOvertimePage'
-import TalentPoolPage from '@/components/hr/TalentPoolPage'
+import CandidatesPage from '@/components/hr/CandidatesPage'
 import EntitiesAssignmentsPage from '@/components/hr/EntitiesAssignmentsPage'
 import CompensationPage from '@/components/hr/CompensationPage'
 import PerformanceReviewsPage from '@/components/hr/PerformanceReviewsPage'
@@ -394,6 +396,11 @@ export default function Home() {
   const [pendingHrLeaveRequests, setPendingHrLeaveRequests] = useState(0)
   const [pendingHrBusinessTrips, setPendingHrBusinessTrips] = useState(0)
   const [pendingHrOvertime, setPendingHrOvertime] = useState(0)
+  const [pendingHrRecruitment, setPendingHrRecruitment] = useState(0)
+  // Recruitment Request menu is identity-gated (employees with direct reports, or anyone
+  // who already raised one) — hidden until /mine?summary=1 says otherwise.
+  const [showMyRecruitment, setShowMyRecruitment] = useState(false)
+  const [pendingMyUserInterviews, setPendingMyUserInterviews] = useState(0)
   const [pendingPOPayments, setPendingPOPayments] = useState(0)
   const [pendingPOReimbursements, setPendingPOReimbursements] = useState(0)
   const [pendingDeliveryFeePayments, setPendingDeliveryFeePayments] = useState(0)
@@ -503,6 +510,29 @@ export default function Home() {
     } catch { /* silent */ }
   }, [session])
 
+  const fetchPendingHrRecruitment = useCallback(async () => {
+    try {
+      const role = (session?.user as { role?: string })?.role ?? ''
+      if (!['ADMIN', 'SUPER_ADMIN', 'HR'].includes(role)) return
+      const res = await fetch('/api/hr/recruitment-requests')
+      if (res.ok) {
+        const data = await res.json()
+        setPendingHrRecruitment(Array.isArray(data) ? data.filter((r: { status: string }) => r.status === 'PENDING').length : 0)
+      }
+    } catch { /* silent */ }
+  }, [session])
+
+  const fetchMyRecruitmentSummary = useCallback(async () => {
+    try {
+      const res = await fetch('/api/hr/recruitment-requests/mine?summary=1')
+      if (res.ok) {
+        const data = await res.json()
+        setShowMyRecruitment(!!data.canRequest || !!data.hasRequests)
+        setPendingMyUserInterviews(Number(data.pendingUserInterviews) || 0)
+      }
+    } catch { /* silent */ }
+  }, [])
+
   const fetchPendingHrOvertime = useCallback(async () => {
     try {
       const role = (session?.user as { role?: string })?.role ?? ''
@@ -610,13 +640,13 @@ export default function Home() {
 
   useEffect(() => {
     if (!session) return
-    const refresh = () => { fetchNotifications(); fetchPendingPayments(); fetchPendingRefunds(); fetchPendingRequestOrders(); fetchPendingTransfers(); fetchPendingDraftPOs(); fetchPendingMyApprovals(); fetchPendingPurchasingFinance(); fetchPendingHrLeaveRequests(); fetchPendingHrBusinessTrips(); fetchPendingHrOvertime(); fetchUnreadWhatsapp(); fetchUnreadInstagram(); fetchUnreadEmailInbox(); fetchAssignedWorks() }
+    const refresh = () => { fetchNotifications(); fetchPendingPayments(); fetchPendingRefunds(); fetchPendingRequestOrders(); fetchPendingTransfers(); fetchPendingDraftPOs(); fetchPendingMyApprovals(); fetchPendingPurchasingFinance(); fetchPendingHrLeaveRequests(); fetchPendingHrBusinessTrips(); fetchPendingHrOvertime(); fetchPendingHrRecruitment(); fetchMyRecruitmentSummary(); fetchUnreadWhatsapp(); fetchUnreadInstagram(); fetchUnreadEmailInbox(); fetchAssignedWorks() }
     // SSE (below) delivers near-instant updates on data changes; this poll is just a
     // slow fallback net for a missed event (reconnect gap, a proxy blocking SSE, etc).
     const interval = setInterval(refresh, 120000)
     refresh()
     return () => clearInterval(interval)
-  }, [session, fetchNotifications, fetchPendingPayments, fetchPendingRefunds, fetchPendingRequestOrders, fetchPendingTransfers, fetchPendingDraftPOs, fetchPendingMyApprovals, fetchPendingPurchasingFinance, fetchPendingHrLeaveRequests, fetchPendingHrBusinessTrips, fetchPendingHrOvertime, fetchUnreadWhatsapp, fetchUnreadInstagram, fetchUnreadEmailInbox, fetchAssignedWorks])
+  }, [session, fetchNotifications, fetchPendingPayments, fetchPendingRefunds, fetchPendingRequestOrders, fetchPendingTransfers, fetchPendingDraftPOs, fetchPendingMyApprovals, fetchPendingPurchasingFinance, fetchPendingHrLeaveRequests, fetchPendingHrBusinessTrips, fetchPendingHrOvertime, fetchPendingHrRecruitment, fetchMyRecruitmentSummary, fetchUnreadWhatsapp, fetchUnreadInstagram, fetchUnreadEmailInbox, fetchAssignedWorks])
 
   // Realtime push: server emits a topic name whenever another user's action changes one
   // of these counts (see src/lib/realtime-bus.ts + src/app/api/realtime/events/route.ts),
@@ -637,6 +667,8 @@ export default function Home() {
       // Also refetch the notification bell so a new WhatsApp chat shows up as a toast+chime
       // within ~1-2s, instead of waiting for its own 120s poll.
       // Shared My Works task changed — refresh the badge, any open board, and the bell (new assignment).
+      // 'hr-recruitment-changed' lets an open Recruitment / Candidates screen refresh too.
+      'hr-recruitment': () => { fetchPendingHrRecruitment(); fetchMyRecruitmentSummary(); fetchNotifications(); window.dispatchEvent(new Event('hr-recruitment-changed')) },
       'my-works': () => { fetchAssignedWorks(); fetchNotifications(); window.dispatchEvent(new Event('my-works-changed')) },
       // 'chat-changed' lets an open inbox/thread refresh instantly too (see UnifiedInbox / WhatsAppThread).
       'chat': () => { fetchUnreadWhatsapp(); fetchUnreadInstagram(); fetchUnreadEmailInbox(); fetchNotifications(); window.dispatchEvent(new Event('chat-changed')) },
@@ -644,7 +676,7 @@ export default function Home() {
     const es = new EventSource('/api/realtime/events')
     es.onmessage = (e) => { topicHandlers[e.data]?.() }
     return () => es.close()
-  }, [session, fetchPendingRequestOrders, fetchPendingTransfers, fetchPendingDraftPOs, fetchPendingMyApprovals, fetchPendingPayments, fetchPendingRefunds, fetchPendingPurchasingFinance, fetchPendingHrLeaveRequests, fetchPendingHrBusinessTrips, fetchPendingHrOvertime, fetchUnreadWhatsapp, fetchUnreadInstagram, fetchUnreadEmailInbox, fetchNotifications, fetchAssignedWorks])
+  }, [session, fetchPendingRequestOrders, fetchPendingTransfers, fetchPendingDraftPOs, fetchPendingMyApprovals, fetchPendingPayments, fetchPendingRefunds, fetchPendingPurchasingFinance, fetchPendingHrLeaveRequests, fetchPendingHrBusinessTrips, fetchPendingHrOvertime, fetchPendingHrRecruitment, fetchMyRecruitmentSummary, fetchUnreadWhatsapp, fetchUnreadInstagram, fetchUnreadEmailInbox, fetchNotifications, fetchAssignedWorks])
 
   // Generate deposit-due reminders on mount, then every 5 minutes
   // fetchNotifications is called inside the async fn (not synchronously in effect body)
@@ -730,6 +762,10 @@ export default function Home() {
     setNotifOpen(false)
     if (n.type.startsWith('TASK_')) {
       setCurrentView('my-works')
+    } else if (n.type === 'RECRUITMENT_REQUESTED' || n.type === 'RECRUITMENT_USER_INTERVIEW_RESULT') {
+      setCurrentView('hr-recruitment')
+    } else if (n.type === 'RECRUITMENT_REQUEST_DECIDED' || n.type === 'RECRUITMENT_USER_INTERVIEW') {
+      setCurrentView('my-recruitment')
     } else if ((n.type === 'PO_PAYMENT_REQUESTED' || n.type === 'PO_PAID_BY_PURCHASING') && isFinance) {
       setCurrentView('finance-po-payments')
       if (n.orderId) setDeepLink({ view: 'finance-po-payments', id: n.orderId })
@@ -807,7 +843,8 @@ export default function Home() {
   const tenantFeatures = (session.user as { tenantFeatures?: Record<string, boolean> }).tenantFeatures ?? {}
   const visibleNavItems = navigationItems.filter((item) =>
     (allowedModules ? allowedModules.includes(item.id) : roleMatches(userRole, item.roles)) &&
-    (!item.feature || tenantFeatures[item.feature] === true)
+    (!item.feature || tenantFeatures[item.feature] === true) &&
+    (item.id !== 'my-recruitment' || showMyRecruitment)
   )
 
   const invoiceReadyCount = !isFinance
@@ -876,6 +913,7 @@ export default function Home() {
       case 'my-approvals':   return <MyApprovalsPage />
       case 'my-leave-requests': return <MyLeaveRequestsPage />
       case 'my-business-trips': return <MyBusinessTripsPage />
+      case 'my-recruitment': return <MyRecruitmentRequestsPage />
       case 'my-overtime':    return <MyOvertimePage />
       case 'activity-log':   return <ActivityLog />
       case 'document-version-control': return <DocumentVersionControlProto />
@@ -915,7 +953,8 @@ export default function Home() {
       case 'hr-leave-requests': return <LeaveRequestsPage />
       case 'hr-business-trips': return <BusinessTripsPage />
       case 'hr-overtime':    return <OvertimeRequestsPage />
-      case 'hr-candidates': return <TalentPoolPage />
+      case 'hr-candidates': return <CandidatesPage />
+      case 'hr-recruitment': return <RecruitmentRequestsPage />
       case 'hr-entities-assignments': return <EntitiesAssignmentsPage deepLinkId={deepLink?.view === 'hr-entities-assignments' ? deepLink.id : null} onDeepLinkHandled={() => setDeepLink(null)} />
       case 'hr-compensation': return <CompensationPage />
       case 'hr-performance-reviews':  return <PerformanceReviewsPage />
@@ -971,6 +1010,8 @@ export default function Home() {
                   (item.id === 'hr-leave-requests' && pendingHrLeaveRequests > 0) ||
                   (item.id === 'hr-business-trips' && pendingHrBusinessTrips > 0) ||
                   (item.id === 'hr-overtime' && pendingHrOvertime > 0) ||
+                  (item.id === 'hr-recruitment' && pendingHrRecruitment > 0) ||
+                  (item.id === 'my-recruitment' && pendingMyUserInterviews > 0) ||
                   (item.id === 'finance-po-payments' && pendingPOPayments > 0) ||
                   (item.id === 'finance-po-reimbursements' && pendingPOReimbursements > 0) ||
                   (item.id === 'finance-delivery-fee-payments' && pendingDeliveryFeePayments > 0) ||
@@ -989,6 +1030,8 @@ export default function Home() {
                   item.id === 'hr-leave-requests' ? pendingHrLeaveRequests :
                   item.id === 'hr-business-trips' ? pendingHrBusinessTrips :
                   item.id === 'hr-overtime' ? pendingHrOvertime :
+                  item.id === 'hr-recruitment' ? pendingHrRecruitment :
+                  item.id === 'my-recruitment' ? pendingMyUserInterviews :
                   item.id === 'finance-po-payments' ? pendingPOPayments :
                   item.id === 'finance-po-reimbursements' ? pendingPOReimbursements :
                   item.id === 'finance-delivery-fee-payments' ? pendingDeliveryFeePayments :

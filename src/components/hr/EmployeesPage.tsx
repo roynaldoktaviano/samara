@@ -655,6 +655,7 @@ export default function EmployeesPage() {
   const [locationFilter, setLocationFilter] = useState('All')
   const [roleFilter, setRoleFilter] = useState('All')
   const [statusFilter, setStatusFilter] = useState<'All' | 'Active' | 'Inactive'>('All')
+  const [employmentStatusFilter, setEmploymentStatusFilter] = useState('All')
   const [page, setPage] = useState(0)
   const [pageSize, setPageSize] = useState(10)
 
@@ -843,13 +844,17 @@ export default function EmployeesPage() {
     const matchLocation = locationFilter === 'All' || e.location?.id === locationFilter
     const matchRole = roleFilter === 'All' || e.role?.id === roleFilter
     const matchStatus = statusFilter === 'All' || (statusFilter === 'Active' ? e.isActive : !e.isActive)
-    return matchSearch && matchEntity && matchBusinessUnit && matchLocation && matchRole && matchStatus
+    const matchEmploymentStatus = employmentStatusFilter === 'All' || (employmentStatusFilter === 'None' ? !e.employmentStatus : e.employmentStatus === employmentStatusFilter)
+    return matchSearch && matchEntity && matchBusinessUnit && matchLocation && matchRole && matchStatus && matchEmploymentStatus
   })
 
-  const hasActiveFilters = search || entityFilter !== 'All' || businessUnitFilter !== 'All' || locationFilter !== 'All' || roleFilter !== 'All' || statusFilter !== 'All'
-  function resetFilters() { setSearch(''); setEntityFilter('All'); setBusinessUnitFilter('All'); setLocationFilter('All'); setRoleFilter('All'); setStatusFilter('All') }
+  // Free-text column, so legacy values outside EMPLOYMENT_STATUSES still get an option.
+  const employmentStatusOptions = [...new Set([...EMPLOYMENT_STATUSES, ...employees.map(e => e.employmentStatus).filter((s): s is string => !!s)])]
 
-  useEffect(() => { setPage(0) }, [search, entityFilter, businessUnitFilter, locationFilter, roleFilter, statusFilter])
+  const hasActiveFilters = search || entityFilter !== 'All' || businessUnitFilter !== 'All' || locationFilter !== 'All' || roleFilter !== 'All' || statusFilter !== 'All' || employmentStatusFilter !== 'All'
+  function resetFilters() { setSearch(''); setEntityFilter('All'); setBusinessUnitFilter('All'); setLocationFilter('All'); setRoleFilter('All'); setStatusFilter('All'); setEmploymentStatusFilter('All') }
+
+  useEffect(() => { setPage(0) }, [search, entityFilter, businessUnitFilter, locationFilter, roleFilter, statusFilter, employmentStatusFilter])
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize))
   const safePage = Math.min(page, totalPages - 1)
@@ -977,6 +982,16 @@ export default function EmployeesPage() {
         >
           <option value="All">All Roles</option>
           {roles.map(r => <option key={r.id} value={r.id}>{r.title}</option>)}
+        </NativeSelect>
+
+        <NativeSelect
+          className="w-auto bg-background"
+          aria-label="Filter by employment status"
+          value={employmentStatusFilter} onChange={e => setEmploymentStatusFilter(e.target.value)}
+        >
+          <option value="All">All Employment Statuses</option>
+          {employmentStatusOptions.map(s => <option key={s} value={s}>{s}</option>)}
+          <option value="None">Not set</option>
         </NativeSelect>
 
         <NativeSelect

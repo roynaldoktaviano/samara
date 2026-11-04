@@ -174,7 +174,7 @@ export default function HROverview({ onNavigate }: { onNavigate?: (view: 'hr-lea
           icon={Landmark}
         />
         <KPICard
-          label="Talent Pool"
+          label="Candidates"
           value={String(talentPoolCount)}
           note="Active candidates in the pipeline"
           icon={Sparkles}

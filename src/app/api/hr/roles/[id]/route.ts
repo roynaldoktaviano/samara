@@ -13,7 +13,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   const role = (session?.user as { role?: string })?.role ?? ''
   if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
-  const { title, locationId, isActive } = await req.json()
+  const { title, locationId, isActive, jobDescription } = await req.json()
 
   if (title !== undefined) {
     if (!title?.trim()) return NextResponse.json({ error: 'Title is required' }, { status: 400 })
@@ -27,6 +27,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       ...(title !== undefined && { title: title.trim() }),
       ...(locationId !== undefined && { locationId: locationId || null }),
       ...(isActive !== undefined && { isActive: Boolean(isActive) }),
+      ...(jobDescription !== undefined && { jobDescription: jobDescription?.trim() || null }),
     },
     include: { location: { select: { id: true, name: true } } },
   })
@@ -42,12 +43,13 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
 
-  const [employeeCount, candidateCount] = await Promise.all([
+  const [employeeCount, candidateCount, requestCount] = await Promise.all([
     db.employee.count({ where: { roleId: id } }),
     db.candidate.count({ where: { appliedRoleId: id } }),
+    db.recruitmentRequest.count({ where: { roleId: id } }),
   ])
-  if (employeeCount > 0 || candidateCount > 0) {
-    return NextResponse.json({ error: `Cannot delete — still assigned to ${employeeCount} employee(s) and ${candidateCount} candidate(s). Deactivate it instead.` }, { status: 409 })
+  if (employeeCount > 0 || candidateCount > 0 || requestCount > 0) {
+    return NextResponse.json({ error: `Cannot delete — still used by ${employeeCount} employee(s), ${candidateCount} candidate(s) and ${requestCount} recruitment request(s). Deactivate it instead.` }, { status: 409 })
   }
 
   await db.compensationBand.deleteMany({ where: { roleId: id } })

@@ -156,6 +156,9 @@ model User {
   employeeSeparationsCleared             EmployeeSeparation[]              @relation("SeparationClearedBy")
   employeeSeparationsPaklaringIssued     EmployeeSeparation[]              @relation("SeparationPaklaringIssuedBy")
   candidateOfferLettersIssued            Candidate[]                       @relation("CandidateOfferLetterIssuedBy")
+  candidateUserInterviewsRecorded        Candidate[]                       @relation("CandidateUserInterviewBy")
+  recruitmentRequestsRequested           RecruitmentRequest[]              @relation("RecruitmentRequestedBy")
+  recruitmentRequestsDecided             RecruitmentRequest[]              @relation("RecruitmentDecidedBy")
   purchaseRequestsVerified               PurchaseRequest[]                 @relation("PRVerifiedBy")
   purchaseRequestsConverted              PurchaseRequest[]                 @relation("PRConvertedBy")
   purchaseRequestsRejected               PurchaseRequest[]                 @relation("PRRejectedBy")
@@ -3636,8 +3639,9 @@ model EmployeeWorkLocation {
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
 
-  employees Employee[]
-  roles     EmployeeRole[]
+  employees           Employee[]
+  roles               EmployeeRole[]
+  recruitmentRequests RecruitmentRequest[]
 }
 
 model EmployeeRole {
@@ -3651,9 +3655,14 @@ model EmployeeRole {
   locationId String?
   location   EmployeeWorkLocation? @relation(fields: [locationId], references: [id], onDelete: SetNull)
 
-  employees         Employee[]
-  candidates        Candidate[]
-  compensationBands CompensationBand[]
+  // Plain text, shown on the Roles screen and copied into every Recruitment Request
+  // raised for this role (the request keeps its own editable snapshot).
+  jobDescription String?
+
+  employees           Employee[]
+  candidates          Candidate[]
+  compensationBands   CompensationBand[]
+  recruitmentRequests RecruitmentRequest[]
 
   @@index([title])
   @@index([locationId])
@@ -3810,7 +3819,7 @@ model Employee {
   candidateSource Candidate?
 
   purchaseRequests          PurchaseRequest[]
-  purchaseRequestsToApprove PurchaseRequest[]   @relation("PRApproverEmployee")
+  purchaseRequestsToApprove PurchaseRequest[]    @relation("PRApproverEmployee")
   purchaseOrdersRequested   PurchaseOrder[]
   stockTransferItemsOrdered StockTransferItem[]
   goodsReceipts             GoodsReceipt[]
@@ -3825,6 +3834,7 @@ model Employee {
   loanInstallments          LoanInstallment[]
   assets                    EmployeeAsset[]
   separation                EmployeeSeparation?
+  recruitmentRequests       RecruitmentRequest[]
 
   @@index([legalEntityId])
   @@index([businessUnitId])
@@ -4507,7 +4517,8 @@ enum CandidateStatus {
   TALENT_POOL
   SHORTLISTED
   ASSESSMENT
-  INTERVIEW
+  HR_INTERVIEW // was INTERVIEW — renamed in place (ALTER TYPE ... RENAME VALUE) so existing rows kept their stage
+  USER_INTERVIEW // the hiring manager (Recruitment Request requester) interviews the candidate
   OFFER
   HIRED
   REJECTED
@@ -4516,36 +4527,53 @@ enum CandidateStatus {
 // Talent pool — a lightweight recruitment pipeline, not a full ATS. HIRED/REJECTED are
 // terminal states excluded from the "active pipeline" count shown on HR Overview.
 model Candidate {
-  id                    String          @id @default(cuid())
-  fullName              String
-  appliedRoleId         String?
-  appliedRole           EmployeeRole?   @relation(fields: [appliedRoleId], references: [id], onDelete: SetNull)
-  phone                 String?
-  email                 String?
-  source                String?
-  resumeFiles           String[]        @default([])
-  expectedSalary        Float?
-  location              String?
-  readyJoinDate         DateTime?
-  additionalDocuments   Json            @default("[]") // named extra docs — array of { id, name, description, fileKey }
-  notes                 String?
-  status                CandidateStatus @default(TALENT_POOL)
-  assessmentScore       Int? // 0-100, set once an assessment/interview has actually happened
-  skills                String[]        @default([])
-  languages             String[]        @default([])
+  id                        String           @id @default(cuid())
+  fullName                  String
+  appliedRoleId             String?
+  appliedRole               EmployeeRole?    @relation(fields: [appliedRoleId], references: [id], onDelete: SetNull)
+  phone                     String?
+  email                     String?
+  source                    String?
+  resumeFiles               String[]         @default([])
+  expectedSalary            Float?
+  location                  String?
+  readyJoinDate             DateTime?
+  additionalDocuments       Json             @default("[]") // named extra docs — array of { id, name, description, fileKey }
+  notes                     String?
+  status                    CandidateStatus  @default(TALENT_POOL)
+  assessmentScore           Int? // 0-100, set once an assessment/interview has actually happened
+  skills                    String[]         @default([])
+  languages                 String[]         @default([])
   // Assigned once (first "Generate Offering Letter" click) and reused on every reprint —
   // same pattern as EmployeeSeparation.paklaringNumber. Only ever set once status has
   // reached OFFER; see src/app/api/hr/candidates/[id]/offer-letter/route.ts.
-  offerLetterNumber     String?
-  offerLetterIssuedAt   DateTime?
-  offerLetterIssuedById String?
-  offerLetterIssuedBy   User?           @relation("CandidateOfferLetterIssuedBy", fields: [offerLetterIssuedById], references: [id], onDelete: SetNull)
-  // Set via the "Schedule Interview" action in Talent Pool — a real date/time plus the
-  // meeting link the candidate joins with, not just a status flip.
-  interviewScheduledAt  DateTime?
-  interviewMeetingLink  String?
-  createdAt             DateTime        @default(now())
-  updatedAt             DateTime        @updatedAt
+  offerLetterNumber         String?
+  offerLetterIssuedAt       DateTime?
+  offerLetterIssuedById     String?
+  offerLetterIssuedBy       User?            @relation("CandidateOfferLetterIssuedBy", fields: [offerLetterIssuedById], references: [id], onDelete: SetNull)
+  // Two interview rounds, each with a real date/time + meeting link and a recorded
+  // outcome. HR Interview reuses the original single-interview columns (@map) so
+  // schedules set before the split carried over.
+  hrInterviewScheduledAt    DateTime?        @map("interviewScheduledAt")
+  hrInterviewMeetingLink    String?          @map("interviewMeetingLink")
+  hrInterviewResult         InterviewResult?
+  hrInterviewNotes          String?
+  // User Interview — scheduled by HR, result recorded by the Recruitment Request's
+  // requester from their own "Recruitment Request" menu (or by HR when there's no request).
+  userInterviewScheduledAt  DateTime?
+  userInterviewMeetingLink  String?
+  userInterviewResult       InterviewResult?
+  userInterviewNotes        String?
+  userInterviewRecordedAt   DateTime?
+  userInterviewRecordedById String?
+  userInterviewRecordedBy   User?            @relation("CandidateUserInterviewBy", fields: [userInterviewRecordedById], references: [id], onDelete: SetNull)
+
+  // Which open Recruitment Request this candidate is being considered for, if any.
+  recruitmentRequestId String?
+  recruitmentRequest   RecruitmentRequest? @relation(fields: [recruitmentRequestId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Set once this candidate is converted into a real Employee (on probation) from
   // the Talent Pool — prevents converting the same hire twice and links back to
@@ -4555,6 +4583,63 @@ model Candidate {
 
   @@index([status])
   @@index([appliedRoleId])
+  @@index([recruitmentRequestId])
+}
+
+enum InterviewResult {
+  PASSED
+  ON_HOLD
+  FAILED
+}
+
+enum RecruitmentRequestStatus {
+  PENDING // waiting on HR
+  APPROVED // HR is recruiting for it
+  REJECTED
+  CLOSED // HR finished recruiting (filled or no longer needed)
+  CANCELLED // withdrawn by the requester while still PENDING
+}
+
+// A supervisor/head (any employee with direct reports — identity-based via
+// Employee.managerId, same as Performance Review requests) asks HR to hire for one of
+// the Roles. Goes straight to HR for approval; candidates are then linked to it via
+// Candidate.recruitmentRequestId and the requester runs the User Interview round.
+model RecruitmentRequest {
+  id               String                   @id @default(cuid())
+  roleId           String
+  role             EmployeeRole             @relation(fields: [roleId], references: [id])
+  headcount        Int                      @default(1)
+  locationId       String?
+  location         EmployeeWorkLocation?    @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  employmentStatus String? // same free-text values as Employee.employmentStatus
+  reason           String // "New Position" | "Replacement" — free text like other HR classifiers
+  replacementFor   String? // who is being replaced, when reason is Replacement
+  targetJoinDate   DateTime?
+  // Snapshot of EmployeeRole.jobDescription at request time, editable by the requester —
+  // later edits on the Role don't rewrite what was asked for.
+  jobDescription   String?
+  notes            String?
+  status           RecruitmentRequestStatus @default(PENDING)
+
+  requestedById       String
+  requestedBy         User      @relation("RecruitmentRequestedBy", fields: [requestedById], references: [id])
+  requesterEmployeeId String?
+  requesterEmployee   Employee? @relation(fields: [requesterEmployeeId], references: [id], onDelete: SetNull)
+
+  decidedById  String?
+  decidedBy    User?     @relation("RecruitmentDecidedBy", fields: [decidedById], references: [id], onDelete: SetNull)
+  decidedAt    DateTime?
+  decisionNote String?
+  closedAt     DateTime?
+
+  candidates Candidate[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([requestedById])
+  @@index([roleId])
 }
 
 // ─── WhatsApp Chat (admin-only inbox, Freshchat-style) ─────────────────────────

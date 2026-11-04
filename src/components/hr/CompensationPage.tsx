@@ -7,13 +7,14 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { useConfirm } from '@/components/ui/confirm-dialog'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { NativeSelect } from '@/components/ui/native-select'
 import { Label } from '@/components/ui/label'
 
 interface LocationLite { id: string; name: string }
-interface RoleLite { id: string; title: string; isActive: boolean; location: LocationLite | null }
+interface RoleLite { id: string; title: string; isActive: boolean; location: LocationLite | null; jobDescription: string | null }
 
-const ROLE_BLANK = { title: '', locationId: '' }
+const ROLE_BLANK = { title: '', locationId: '', jobDescription: '' }
 
 export default function CompensationPage() {
   const [roles, setRoles] = useState<RoleLite[]>([])
@@ -38,7 +39,7 @@ export default function CompensationPage() {
   useEffect(() => { load() }, [load])
 
   function openAddRole() { setRoleForm({ ...ROLE_BLANK }); setRoleFormError(''); setRoleModal({ role: null }) }
-  function openEditRole(role: RoleLite) { setRoleForm({ title: role.title, locationId: role.location?.id ?? '' }); setRoleFormError(''); setRoleModal({ role }) }
+  function openEditRole(role: RoleLite) { setRoleForm({ title: role.title, locationId: role.location?.id ?? '', jobDescription: role.jobDescription ?? '' }); setRoleFormError(''); setRoleModal({ role }) }
 
   async function saveRole() {
     if (!roleForm.title.trim()) { setRoleFormError('Title is required'); return }
@@ -46,7 +47,7 @@ export default function CompensationPage() {
     const url = roleModal?.role ? `/api/hr/roles/${roleModal.role.id}` : '/api/hr/roles'
     const res = await fetch(url, {
       method: roleModal?.role ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: roleForm.title, locationId: roleForm.locationId || null }),
+      body: JSON.stringify({ title: roleForm.title, locationId: roleForm.locationId || null, jobDescription: roleForm.jobDescription }),
     })
     const data = await res.json()
     if (!res.ok) { setRoleFormError(data.error ?? 'An error occurred'); setRoleSaving(false); return }
@@ -97,17 +98,23 @@ export default function CompensationPage() {
               <tr>
                 <th className="text-left px-4 py-3 font-medium">Role</th>
                 <th className="text-left px-4 py-3 font-medium">Location</th>
+                <th className="text-left px-4 py-3 font-medium">Job Description</th>
                 <th className="text-left px-4 py-3 font-medium">Status</th>
                 <th className="px-4 py-3" />
               </tr>
             </thead>
             <tbody className="divide-y">
               {roles.length === 0 ? (
-                <tr><td colSpan={4} className="text-center py-10 text-muted-foreground text-sm">No roles defined yet.</td></tr>
+                <tr><td colSpan={5} className="text-center py-10 text-muted-foreground text-sm">No roles defined yet.</td></tr>
               ) : roles.map(role => (
                 <tr key={role.id} className={`hover:bg-muted/20 ${!role.isActive ? 'opacity-50' : ''}`}>
                   <td className="px-4 py-3 font-medium">{role.title}</td>
                   <td className="px-4 py-3 text-muted-foreground text-xs">{role.location?.name ?? 'All locations'}</td>
+                  <td className="px-4 py-3 text-xs max-w-80">
+                    {role.jobDescription
+                      ? <button type="button" onClick={() => openEditRole(role)} className="block w-full text-left truncate text-muted-foreground hover:text-foreground" title={role.jobDescription}>{role.jobDescription}</button>
+                      : <span className="text-muted-foreground/60">Not set</span>}
+                  </td>
                   <td className="px-4 py-3 text-xs text-muted-foreground">{role.isActive ? 'Active' : 'Inactive'}</td>
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-end gap-1">
@@ -134,11 +141,11 @@ export default function CompensationPage() {
 
       {/* ── Add/Edit Role Modal ── */}
       <Dialog open={!!roleModal} onOpenChange={o => { if (!o) setRoleModal(null) }}>
-        <DialogContent aria-describedby={undefined} className="sm:max-w-sm p-0 gap-0 overflow-hidden" onInteractOutside={e => e.preventDefault()}>
+        <DialogContent aria-describedby={undefined} className="sm:max-w-lg p-0 gap-0 overflow-hidden" onInteractOutside={e => e.preventDefault()}>
           <DialogHeader className="px-6 py-4 border-b">
             <DialogTitle className="font-bold text-sm pr-6">{roleModal?.role ? 'Edit Role' : 'Add Role'}</DialogTitle>
           </DialogHeader>
-          <div className="px-6 py-5 space-y-4">
+          <div className="px-6 py-5 space-y-4 max-h-[70vh] overflow-y-auto">
             {roleFormError && <p className="text-xs text-destructive bg-destructive/10 border border-destructive/30 rounded-lg px-3 py-2">{roleFormError}</p>}
             <div className="space-y-1.5">
               <Label htmlFor="comp-role-title" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Title</Label>
@@ -153,6 +160,13 @@ export default function CompensationPage() {
                 {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
               </NativeSelect>
               <p className="text-[11px] text-muted-foreground">Optional — set this if the role only exists at one location (e.g. a role specific to one vessel).</p>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="comp-role-job-description" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Job Description</Label>
+              <Textarea id="comp-role-job-description" rows={8} className="resize-y text-sm"
+                placeholder={'Responsibilities, requirements, qualifications…'}
+                value={roleForm.jobDescription} onChange={e => setRoleForm(f => ({ ...f, jobDescription: e.target.value }))} />
+              <p className="text-[11px] text-muted-foreground">Filled in automatically when a supervisor requests recruitment for this role.</p>
             </div>
           </div>
           <DialogFooter className="px-6 py-4 border-t bg-muted/50">
