@@ -47,7 +47,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
       masterFormExpiresAt: true,
       travelingWith: true,
       yacht:    { select: { name: true, canDiving: true, canSurfing: true, capacity: true } },
-      openTrip: { select: { title: true, destination: true, startDate: true, endDate: true, yacht: { select: { name: true } } } },
+      openTrip: { select: { title: true, destination: true, startDate: true, endDate: true, yacht: { select: { name: true, canDiving: true } } } },
       guests: {
         select: {
           id: true,
@@ -80,7 +80,10 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
   }
 
   const isOpenTrip = booking.tripType === 'OPEN_TRIP'
-  const hasDiving  = (booking.hasDiving ?? false) && (booking.yacht?.canDiving ?? false) && !isOpenTrip
+  // Open Trip: diving is offered whenever the vessel supports it — the booking's own hasDiving
+  // flag is a Private Charter add-on. Surfing stays Private Charter only.
+  const canDiving  = (booking.yacht ?? booking.openTrip?.yacht)?.canDiving ?? false
+  const hasDiving  = isOpenTrip ? canDiving : (booking.hasDiving ?? false) && canDiving
   const hasSurfing = (booking.hasSurfing ?? false) && (booking.yacht?.canSurfing ?? false) && !isOpenTrip
 
   let capacity: number | null = null

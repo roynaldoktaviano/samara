@@ -186,10 +186,24 @@ export default async function CrewSheetPage({ params }: { params: Promise<{ id: 
     </div>
   )
 
-  // Open Trip guests never fill in diving (see guest-form's showDiving = hasDiving && !isOpenTrip),
-  // so the only document to attach here is the passport photo.
-  const guestAttachments = (g: GuestRow): { label: string; value: string }[] =>
-    g.passportImage ? [{ label: 'Passport / ID', value: g.passportImage }] : []
+  // Open Trip guests fill in diving whenever the vessel supports it (mirrors the guest form).
+  const showDiving = trip.yacht.canDiving === true
+
+  // Documents a guest uploaded via the guest form — attached right after that guest's
+  // own data page, in this order: passport, then diving certifications.
+  const guestAttachments = (g: GuestRow): { label: string; value: string }[] => {
+    const atts: { label: string; value: string }[] = []
+    if (g.passportImage) atts.push({ label: 'Passport / ID', value: g.passportImage })
+    if (!showDiving) return atts
+    const div = g.divingData ?? {}
+    const pushAll = (label: string, arr: unknown) => {
+      const files = Array.isArray(arr) ? arr : []
+      files.forEach((v, i) => atts.push({ label: files.length > 1 ? `${label} (${i + 1})` : label, value: v }))
+    }
+    pushAll('Nitrox Certificate', div.nitroxCertImages)
+    pushAll('Diving Certification', div.certImages)
+    return atts
+  }
 
   return (
     <div style={{ fontFamily: 'Arial, Helvetica, sans-serif', fontSize: 13, color: DARK, background: 'white' }}>
@@ -428,7 +442,7 @@ export default async function CrewSheetPage({ params }: { params: Promise<{ id: 
             </Sec>
 
             {/* Drinks */}
-            <Sec title="Drink Preferences" last>
+            <Sec title="Drink Preferences" last={!showDiving}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
                 <Field label="Drinks Alcohol" value={v(g.drinksData,'drinksAlcohol')} />
                 <Field label="Wine"           value={v(g.drinksData,'winePreference')} />
@@ -442,6 +456,51 @@ export default async function CrewSheetPage({ params }: { params: Promise<{ id: 
                 <Field label="Drink Notes"    value={v(g.drinksData,'drinkNotes')} />
               </div>
             </Sec>
+
+            {/* Diving — only when the vessel supports diving */}
+            {showDiving && (
+              <Sec title="Diving" last>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
+                  <Field label="Is Diver"         value={g.divingData?.isDiver || undefined} />
+                  <Field label="Dive Level"       value={g.divingData?.diveLevel || undefined} />
+                  <Field label="Cert. Agency"     value={g.divingData?.certAgency || undefined} />
+                  <Field label="No. of Dives"     value={g.divingData?.diveCount || undefined} />
+                  <Field label="Last Dive Date"   value={g.divingData?.lastDiveDate || undefined} />
+                  <Field label="Nitrox Request"   value={g.divingData?.nitroxRequest || undefined} />
+                  {g.divingData?.nitroxRequest === 'yes' && (
+                    <Field label="Nitrox Certificate" value={Array.isArray(g.divingData?.nitroxCertImages) && g.divingData.nitroxCertImages.length > 0 ? 'Attached' : 'Not attached'} />
+                  )}
+                  <Field label="Strong Current Experience" value={g.divingData?.strongCurrentExperience || undefined} />
+                  <Field label="Diving Insurance" value={Array.isArray(g.divingData?.divingInsuranceImages) && g.divingData.divingInsuranceImages.length > 0 ? 'Attached' : 'Not attached'} />
+                  <Field label="Medical Condition" value={g.divingData?.diveMedicalConditions || undefined} />
+                  <Field label="Additional Equipment Required" value={g.divingData?.diveRentalRequired || undefined} />
+                  <Field label="Diving Notes"     value={g.divingData?.divingNotes || undefined} />
+                </div>
+                {g.divingData?.diveRentalRequired === 'yes' && Array.isArray(g.divingData?.equipmentList) && g.divingData.equipmentList.length > 0 && (
+                  <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px dashed #eee' }}>
+                    <p style={{ fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.7px', color: '#999', fontWeight: 700, margin: '0 0 4px' }}>Additional Equipment</p>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+                      <thead>
+                        <tr>
+                          <th style={{ textAlign: 'left', fontSize: 9, color: '#999', fontWeight: 700, padding: '2px 0' }}>Equipment</th>
+                          <th style={{ textAlign: 'left', fontSize: 9, color: '#999', fontWeight: 700, padding: '2px 0' }}>Size</th>
+                          <th style={{ textAlign: 'left', fontSize: 9, color: '#999', fontWeight: 700, padding: '2px 0' }}>Qty</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {g.divingData.equipmentList.map((row: any, i: number) => (
+                          <tr key={i}>
+                            <td style={{ padding: '2px 0' }}>{row.item || '—'}</td>
+                            <td style={{ padding: '2px 0' }}>{row.size || '—'}</td>
+                            <td style={{ padding: '2px 0' }}>{row.qty || '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </Sec>
+            )}
 
           </div>
         </div>,

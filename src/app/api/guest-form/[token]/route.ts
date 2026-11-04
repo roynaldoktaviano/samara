@@ -46,16 +46,18 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
             hasDiving: true, hasSurfing: true, tripType: true, bookingCode: true,
             startDate: true, endDate: true, destination: true,
             yacht: { select: { name: true, canDiving: true, canSurfing: true } },
-            openTrip: { select: { title: true, destination: true, startDate: true, endDate: true, yacht: { select: { name: true } } } },
+            openTrip: { select: { title: true, destination: true, startDate: true, endDate: true, yacht: { select: { name: true, canDiving: true } } } },
           },
         },
       },
     })
     if (bg?.booking) {
       const b = bg.booking
-      hasDiving  = (b.hasDiving ?? false) && (b.yacht?.canDiving ?? false)
-      hasSurfing = (b.hasSurfing ?? false) && (b.yacht?.canSurfing ?? false)
       isOpenTrip = b.tripType === 'OPEN_TRIP'
+      // Open Trip: diving is offered whenever the vessel supports it (see booking-form route).
+      const canDiving = (b.yacht ?? b.openTrip?.yacht)?.canDiving ?? false
+      hasDiving  = isOpenTrip ? canDiving : (b.hasDiving ?? false) && canDiving
+      hasSurfing = (b.hasSurfing ?? false) && (b.yacht?.canSurfing ?? false)
       tripInfo = {
         bookingCode: b.bookingCode,
         startDate:   isOpenTrip ? b.openTrip?.startDate : b.startDate,

@@ -585,7 +585,7 @@ function GuestFormInner() {
       .finally(() => setLoading(false))
   }, [token, bgId])
 
-  const showDiving  = guest?.hasDiving  && !guest?.isOpenTrip
+  const showDiving  = guest?.hasDiving
   const showSurfing = guest?.hasSurfing && !guest?.isOpenTrip
   const STEPS = ALL_STEPS.filter(s =>
     (s.id !== 'diving'  || showDiving) &&

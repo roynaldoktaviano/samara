@@ -117,7 +117,10 @@ export default async function GuestSheetPage({ params }: { params: Promise<{ id:
   const drk  = (c as any).drinksData   as Record<string,string> | null
   const div   = (c as any).divingData   as Record<string,string> | null
   const surf  = (c as any).surfingData  as Record<string,string> | null
-  const showDiving  = (b as any).hasDiving  && b.tripType === 'PRIVATE_CHARTER'
+  // Open Trip: diving is asked whenever the vessel supports it (mirrors the guest form).
+  const showDiving  = b.tripType === 'OPEN_TRIP'
+    ? (b.yacht ?? b.openTrip?.yacht)?.canDiving === true
+    : (b as any).hasDiving && b.tripType === 'PRIVATE_CHARTER'
   const showSurfing = (b as any).hasSurfing && b.tripType === 'PRIVATE_CHARTER'
   const v = (obj: Record<string,string> | null | undefined, key: string) => obj?.[key] ? String(obj[key]) : undefined
 
@@ -245,7 +248,7 @@ export default async function GuestSheetPage({ params }: { params: Promise<{ id:
           </div>
         </Sec>
 
-        {/* Diving — only for Private Charter with hasDiving */}
+        {/* Diving — Private Charter with hasDiving, or Open Trip on a diving vessel */}
         {showDiving && (
           <Sec title="Diving" last={!showSurfing}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
