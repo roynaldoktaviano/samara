@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 
 import { roleMatches } from '@/lib/role-utils'
+import { getVesselLocationIds } from '@/lib/hr/vessel-locations'
 
 const ALLOWED = ['ADMIN', 'SUPER_ADMIN', 'HR']
 const VALID_STATUSES = ['HADIR', 'IZIN', 'SAKIT', 'CUTI', 'ALPHA', 'LIBUR', 'WFH']
@@ -29,29 +30,21 @@ export async function GET(request: NextRequest) {
   const startDate = new Date(start)
   const endDate = new Date(`${end}T23:59:59.999Z`)
 
-  // Crew (employees stationed on a yacht, matched by location name — same convention as
-  // matchEmployeesToYachts in lib/payroll.ts) work every day including weekends; only
-  // shore/office staff get weekends off. locationId="office" filters to everyone else.
-  const [yachts, allLocations] = await Promise.all([
-    db.yacht.findMany({ where: { deletedAt: null }, select: { name: true } }),
-    db.employeeWorkLocation.findMany({ select: { id: true, name: true } }),
-  ])
-  const yachtNames = new Set(yachts.map(y => y.name.trim().toLowerCase()))
-  const crewLocationIds = allLocations.filter(l => yachtNames.has(l.name.trim().toLowerCase())).map(l => l.id)
-
-  const employees = await db.employee.findMany({
+  // Office staff only: vessel crew work to the trip schedule, so they have no attendance
+  // recap at all (see lib/hr/vessel-locations.ts). An employee with no work location set
+  // counts as office. locationId narrows further to one office location ("office" = all of them).
+  const vesselLocationIds = [...await getVesselLocationIds(db)]
+  const employeesOut = await db.employee.findMany({
     where: {
       isActive: true,
-      ...(locationId === 'office' ? { locationId: { notIn: crewLocationIds } }
-        : locationId ? { locationId } : {}),
+      AND: [
+        { OR: [{ locationId: null }, { locationId: { notIn: vesselLocationIds } }] },
+        ...(locationId && locationId !== 'office' ? [{ locationId }] : []),
+      ],
     },
-    select: { id: true, fullName: true, employeeNumber: true, department: true, locationId: true, location: { select: { name: true } } },
+    select: { id: true, fullName: true, employeeNumber: true, department: true, locationId: true },
     orderBy: { fullName: 'asc' },
   })
-  const employeesOut = employees.map(({ location, ...e }) => ({
-    ...e,
-    isCrew: !!location && yachtNames.has(location.name.trim().toLowerCase()),
-  }))
 
   const days: string[] = []
   for (const d = new Date(startDate); d <= endDate; d.setUTCDate(d.getUTCDate() + 1)) days.push(ymd(d))

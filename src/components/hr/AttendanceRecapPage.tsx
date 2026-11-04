@@ -10,7 +10,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { NativeSelect } from '@/components/ui/native-select'
 import { Label } from '@/components/ui/label'
 
-interface EmployeeLite { id: string; fullName: string; employeeNumber: string; department: string | null; isCrew: boolean; locationId: string | null }
+interface EmployeeLite { id: string; fullName: string; employeeNumber: string; department: string | null; locationId: string | null }
 interface CellRecord { status: string; note: string | null; leaveRequestId: string | null }
 interface HolidayInfo { name: string; excludedLocationIds: string[] }
 interface AttendanceData {
@@ -45,7 +45,7 @@ function toYmd(d: Date) { return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${
 
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 
-interface LocationLite { id: string; name: string }
+interface LocationLite { id: string; name: string; isVessel: boolean }
 
 export default function AttendanceRecapPage() {
   const now = useMemo(() => new Date(), [])
@@ -59,9 +59,9 @@ export default function AttendanceRecapPage() {
   const startDate = toYmd(new Date(year, month - 1, 1))
   const endDate = toYmd(new Date(year, month, 0))
 
-  // Defaults to Office — boat crew work every day (including weekends) so the shore
-  // staff recap is the more useful landing view; "All locations" is one click away.
-  const [locationId, setLocationId] = useState('office')
+  // Office staff only — vessel crew follow the trip schedule and have no attendance recap
+  // (the API leaves them out), so the picker lists office locations only.
+  const [locationId, setLocationId] = useState('')
   const [locations, setLocations] = useState<LocationLite[]>([])
 
   const [data, setData] = useState<AttendanceData | null>(null)
@@ -71,7 +71,7 @@ export default function AttendanceRecapPage() {
   const [cellNote, setCellNote] = useState('')
   const [saving, setSaving] = useState(false)
 
-  const [bulkTarget, setBulkTarget] = useState<{ employeeId: string; fullName: string; isCrew: boolean } | null>(null)
+  const [bulkTarget, setBulkTarget] = useState<{ employeeId: string; fullName: string } | null>(null)
   const [bulkStatus, setBulkStatus] = useState<string>('IZIN')
   const [bulkStart, setBulkStart] = useState('')
   const [bulkEnd, setBulkEnd] = useState('')
@@ -90,7 +90,7 @@ export default function AttendanceRecapPage() {
   useEffect(() => { load() }, [load])
 
   useEffect(() => {
-    fetch('/api/hr/work-locations').then(r => r.ok ? r.json() : []).then((locs: LocationLite[]) => setLocations(locs)).catch(() => {})
+    fetch('/api/hr/work-locations').then(r => r.ok ? r.json() : []).then((locs: LocationLite[]) => setLocations(locs.filter(l => !l.isVessel))).catch(() => {})
   }, [])
 
   function statusFor(employeeId: string, date: string): CellRecord {
@@ -126,8 +126,8 @@ export default function AttendanceRecapPage() {
     if (ok) { setCellPopover(null); load() }
   }
 
-  function openBulk(employeeId: string, fullName: string, isCrew: boolean) {
-    setBulkTarget({ employeeId, fullName, isCrew })
+  function openBulk(employeeId: string, fullName: string) {
+    setBulkTarget({ employeeId, fullName })
     setBulkStatus('IZIN')
     setBulkStart(startDate)
     setBulkEnd(endDate)
@@ -137,7 +137,7 @@ export default function AttendanceRecapPage() {
   async function saveBulk() {
     if (!bulkTarget || !data) return
     setBulkSaving(true)
-    const dates = data.days.filter(d => d >= bulkStart && d <= bulkEnd && (bulkTarget.isCrew || !dayInfo(d).isWeekend))
+    const dates = data.days.filter(d => d >= bulkStart && d <= bulkEnd && !dayInfo(d).isWeekend)
     const ok = await setCell(bulkTarget.employeeId, dates, bulkStatus, bulkNote)
     setBulkSaving(false)
     if (ok) { setBulkTarget(null); load() }
@@ -148,7 +148,7 @@ export default function AttendanceRecapPage() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h2 className="text-2xl font-bold tracking-tight">Attendance Recap</h2>
-          <p className="text-muted-foreground text-sm mt-1">Everyone is Present by default — mark exceptions below. Approved leave requests fill in Leave automatically.</p>
+          <p className="text-muted-foreground text-sm mt-1">Office staff only — vessel crew follow the trip schedule. Everyone is Present by default — mark exceptions below. Approved leave requests fill in Leave automatically.</p>
         </div>
       </div>
 
@@ -168,8 +168,7 @@ export default function AttendanceRecapPage() {
         <div className="flex items-center gap-2">
           <Label htmlFor="attendance-location" className="text-xs font-medium text-muted-foreground">Location</Label>
           <NativeSelect id="attendance-location" value={locationId} onChange={e => setLocationId(e.target.value)} className="w-auto">
-            <option value="office">Office</option>
-            <option value="">All locations</option>
+            <option value="">All office locations</option>
             {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
           </NativeSelect>
         </div>
@@ -215,7 +214,7 @@ export default function AttendanceRecapPage() {
                 {data.employees.map(emp => (
                   <tr key={emp.id} className="hover:bg-muted/10">
                     <td className="sticky left-0 bg-card px-4 py-2 z-10">
-                      <button onClick={() => openBulk(emp.id, emp.fullName, emp.isCrew)} className="text-left hover:text-primary-strong transition-colors" title="Bulk edit this employee">
+                      <button onClick={() => openBulk(emp.id, emp.fullName)} className="text-left hover:text-primary-strong transition-colors" title="Bulk edit this employee">
                         <p className="font-medium">{emp.fullName}</p>
                         <p className="text-xs text-muted-foreground font-mono">{emp.employeeNumber}</p>
                       </button>
@@ -223,7 +222,7 @@ export default function AttendanceRecapPage() {
                     {data.days.map(d => {
                       const info = dayInfo(d)
                       const rec = statusFor(emp.id, d)
-                      if (info.isWeekend && rec.status === 'HADIR' && !emp.isCrew) {
+                      if (info.isWeekend && rec.status === 'HADIR') {
                         return <td key={d} className="px-1.5 py-2 text-center bg-muted/20">
                           <span className="inline-block h-2.5 w-2.5 rounded-full border border-dashed border-muted-foreground/30" title="Weekend — not a working day" />
                         </td>
@@ -297,7 +296,7 @@ export default function AttendanceRecapPage() {
               <Label htmlFor="attendance-bulk-note" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Note (optional)</Label>
               <Textarea id="attendance-bulk-note" rows={2} value={bulkNote} onChange={e => setBulkNote(e.target.value)} className="resize-none" />
             </div>
-            {bulkTarget && !bulkTarget.isCrew && (
+            {bulkTarget && (
               <p className="text-[11px] text-muted-foreground">Weekends in this range are skipped automatically — they're never working days.</p>
             )}
           </div>

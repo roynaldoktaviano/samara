@@ -16,7 +16,7 @@ interface Holiday {
   excludedLocationIds: string[]
   createdBy: { id: string; name: string | null } | null
 }
-interface LocationLite { id: string; name: string }
+interface LocationLite { id: string; name: string; isVessel: boolean }
 
 export default function NationalHolidaysPage() {
   const [holidays, setHolidays] = useState<Holiday[]>([])
@@ -45,6 +45,8 @@ export default function NationalHolidaysPage() {
     fetch('/api/hr/work-locations').then(r => r.ok ? r.json() : []).then((locs: LocationLite[]) => setLocations(locs)).catch(() => {})
   }, [])
 
+  // Vessels follow the trip schedule — holidays never apply to them, so there's nothing to exclude.
+  const officeLocations = locations.filter(l => !l.isVessel)
   function locationName(id: string) { return locations.find(l => l.id === id)?.name.trim() ?? id }
 
   function toggleExcludedLocation(id: string) {
@@ -90,7 +92,7 @@ export default function NationalHolidaysPage() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold tracking-tight">National Holidays</h2>
-          <p className="text-muted-foreground text-sm mt-1">Marked automatically as Day Off in Attendance Recap, excluded from Payroll&apos;s Meal Allowance working-days count, and opens up Overtime — for every work location, unless you exclude some below.</p>
+          <p className="text-muted-foreground text-sm mt-1">Office only — vessel crew follow the trip schedule, so holidays never apply to them. Marked automatically as Day Off in Attendance Recap, excluded from Payroll&apos;s Meal Allowance working-days count, and opens up Overtime — for every office location, unless you exclude some below.</p>
         </div>
         <Button onClick={openAdd}>
           <Plus /> Add Holiday
@@ -119,26 +121,29 @@ export default function NationalHolidaysPage() {
               </tr>
             </thead>
             <tbody className="divide-y">
-              {holidays.map(h => (
-                <tr key={h.id} className="hover:bg-muted/20 transition-colors">
-                  <td className="px-5 py-3 font-medium">{formatDate(h.date, 'long')}</td>
-                  <td className="px-5 py-3">
-                    {h.name}
-                    {h.excludedLocationIds.length > 0 && (
-                      <div className="text-[11px] text-warning mt-0.5">
-                        Working as usual: {h.excludedLocationIds.map(locationName).join(', ')}
-                      </div>
-                    )}
-                  </td>
-                  <td className="px-5 py-3 text-muted-foreground">{h.createdBy?.name ?? '—'}</td>
-                  <td className="px-5 py-3 text-right">
-                    <Button variant="ghost" size="icon" onClick={() => removeHoliday(h)} title="Remove" aria-label={`Remove ${h.name}`}
-                      className="size-7 text-destructive hover:bg-destructive/10 hover:text-destructive">
-                      <Trash2 className="size-3.5" />
-                    </Button>
-                  </td>
-                </tr>
-              ))}
+              {holidays.map(h => {
+                const workingOffices = h.excludedLocationIds.filter(id => !locations.find(l => l.id === id)?.isVessel)
+                return (
+                  <tr key={h.id} className="hover:bg-muted/20 transition-colors">
+                    <td className="px-5 py-3 font-medium">{formatDate(h.date, 'long')}</td>
+                    <td className="px-5 py-3">
+                      {h.name}
+                      {workingOffices.length > 0 && (
+                        <div className="text-[11px] text-warning mt-0.5">
+                          Working as usual: {workingOffices.map(locationName).join(', ')}
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-5 py-3 text-muted-foreground">{h.createdBy?.name ?? '—'}</td>
+                    <td className="px-5 py-3 text-right">
+                      <Button variant="ghost" size="icon" onClick={() => removeHoliday(h)} title="Remove" aria-label={`Remove ${h.name}`}
+                        className="size-7 text-destructive hover:bg-destructive/10 hover:text-destructive">
+                        <Trash2 className="size-3.5" />
+                      </Button>
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>
@@ -187,12 +192,12 @@ export default function NationalHolidaysPage() {
             </div>
             <div role="group" aria-labelledby="holiday-working-label" className="space-y-1.5">
               <p id="holiday-working-label" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide leading-none">Working as usual (optional)</p>
-              <p className="text-[11px] text-muted-foreground">Pick any work locations that stay on a normal working day through this holiday — everyone else gets the day off.</p>
-              {locations.length === 0 ? (
-                <p className="text-xs text-muted-foreground">No work locations set up yet.</p>
+              <p className="text-[11px] text-muted-foreground">Pick any office locations that stay on a normal working day through this holiday — every other office gets the day off. Vessels are never affected.</p>
+              {officeLocations.length === 0 ? (
+                <p className="text-xs text-muted-foreground">No office locations set up yet.</p>
               ) : (
                 <div className="flex flex-wrap gap-1.5">
-                  {locations.map(l => {
+                  {officeLocations.map(l => {
                     const active = form.excludedLocationIds.includes(l.id)
                     return (
                       <button key={l.id} type="button" onClick={() => toggleExcludedLocation(l.id)} aria-pressed={active}

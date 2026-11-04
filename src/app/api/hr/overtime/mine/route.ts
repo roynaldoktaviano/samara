@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
+import { getVesselLocationIds } from '@/lib/hr/vessel-locations'
 
 import { sendPushToUsers } from '@/lib/push'
 import { emitTenantEvent } from '@/lib/realtime-bus'
@@ -54,14 +55,15 @@ export async function POST(req: NextRequest) {
   if (Number.isNaN(day.getTime())) return NextResponse.json({ error: 'Invalid date' }, { status: 400 })
 
   // The core rule: overtime is only payable on a weekend or a gazetted national holiday —
-  // for this employee's own work location. A holiday that excludes their location (e.g. a
-  // yacht still on a trip, see NationalHoliday.excludedLocationIds) doesn't count; that's
-  // just a normal working day for them.
+  // for this employee's own work location. National holidays are office-only, so they never
+  // count for vessel crew (see lib/hr/vessel-locations.ts), and a holiday that excludes an
+  // office location (NationalHoliday.excludedLocationIds) is a normal working day there.
   const dow = day.getUTCDay()
   const isWeekend = dow === 0 || dow === 6
   if (!isWeekend) {
     const holiday = await db.nationalHoliday.findUnique({ where: { date: day } })
-    const appliesToEmployee = !!holiday && !holiday.excludedLocationIds.includes(employee.locationId ?? '')
+    const isVessel = !!employee.locationId && (await getVesselLocationIds(db)).has(employee.locationId)
+    const appliesToEmployee = !!holiday && !isVessel && !holiday.excludedLocationIds.includes(employee.locationId ?? '')
     if (!appliesToEmployee) return NextResponse.json({ error: 'Overtime can only be requested for a weekend (Sat/Sun) or a national holiday date' }, { status: 400 })
   }
 

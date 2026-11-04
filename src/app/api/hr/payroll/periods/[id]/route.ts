@@ -8,6 +8,7 @@ import { roleMatches } from '@/lib/role-utils'
 import { requirePayrollUnlock } from '@/lib/payroll-unlock'
 import { sendPushToUsers } from '@/lib/push'
 import { buildPayslipEntryDraft, computeTotals, countWeekdaysInMonth, countTripDaysInPeriod, matchEmployeesToYachts, TRIP_BOOKING_STATUSES } from '@/lib/payroll'
+import { getVesselLocationIds } from '@/lib/hr/vessel-locations'
 
 const ALLOWED = ['ADMIN', 'SUPER_ADMIN', 'HR', 'FINANCE']
 // "Head of Finance" has no dedicated role/seniority field in this app — FINANCE_DIRECTOR
@@ -108,17 +109,19 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     for (const yachtId of neededYachtIds) {
       tripDaysByYachtId.set(yachtId, countTripDaysInPeriod(bookingRangesByYachtId.get(yachtId) ?? [], monthStart, monthEnd))
     }
-    // Meal Allowance working-days baseline is per work-location: a holiday that excludes
-    // an employee's location (e.g. a yacht still on a trip) doesn't reduce their count,
-    // since that day was a normal working day for them (see NationalHoliday.excludedLocationIds).
+    // Meal Allowance working-days baseline is per work-location: national holidays are
+    // office-only, so they never reduce vessel crew's count (see lib/hr/vessel-locations.ts),
+    // and a holiday that excludes an office location doesn't reduce theirs either, since that
+    // day was a normal working day for them (see NationalHoliday.excludedLocationIds).
     const baseWorkingDays = countWeekdaysInMonth(period.year, period.month)
     const weekdayHolidays = holidays.filter(h => { const dow = h.date.getDay(); return dow !== 0 && dow !== 6 })
+    const vesselLocationIds = await getVesselLocationIds(db)
     const workingDaysByLocationId = new Map<string, number>()
     function workingDaysFor(locationId: string | null): number {
       const key = locationId ?? ''
       const cached = workingDaysByLocationId.get(key)
       if (cached !== undefined) return cached
-      const applicable = weekdayHolidays.filter(h => !h.excludedLocationIds.includes(key)).length
+      const applicable = vesselLocationIds.has(key) ? 0 : weekdayHolidays.filter(h => !h.excludedLocationIds.includes(key)).length
       const value = baseWorkingDays - applicable
       workingDaysByLocationId.set(key, value)
       return value
