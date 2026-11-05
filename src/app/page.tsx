@@ -477,7 +477,8 @@ export default function Home() {
         const quotationCount = Array.isArray(data?.quotationApprovals) ? data.quotationApprovals.length : 0
         const crewLeaveCount = Array.isArray(data?.crewLeaveApprovals) ? data.crewLeaveApprovals.length : 0
         const businessTripCount = Array.isArray(data?.businessTripApprovals) ? data.businessTripApprovals.length : 0
-        setPendingMyApprovals(prCount + quotationCount + crewLeaveCount + businessTripCount)
+        const recruitmentCount = Array.isArray(data?.recruitmentApprovals) ? data.recruitmentApprovals.length : 0
+        setPendingMyApprovals(prCount + quotationCount + crewLeaveCount + businessTripCount + recruitmentCount)
       }
     } catch { /* silent */ }
   }, [])
@@ -842,9 +843,12 @@ export default function Home() {
   const isFinance = userRole === 'FINANCE' || userRole === 'ADMIN'
   const tenantFeatures = (session.user as { tenantFeatures?: Record<string, boolean> }).tenantFeatures ?? {}
   const visibleNavItems = navigationItems.filter((item) =>
-    (allowedModules ? allowedModules.includes(item.id) : roleMatches(userRole, item.roles)) &&
+    ((allowedModules ? allowedModules.includes(item.id) : roleMatches(userRole, item.roles)) &&
     (!item.feature || tenantFeatures[item.feature] === true) &&
-    (item.id !== 'my-recruitment' || showMyRecruitment)
+    (item.id !== 'my-recruitment' || showMyRecruitment)) ||
+    // Approvers can be any login (e.g. Recruitment Request approvers) — surface My Approvals
+    // whenever something is actually waiting on them, even if their role doesn't list it.
+    (item.id === 'my-approvals' && pendingMyApprovals > 0)
   )
 
   const invoiceReadyCount = !isFinance

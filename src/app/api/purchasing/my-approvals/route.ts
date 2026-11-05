@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { matchEmployeesToYachts } from '@/lib/payroll'
 import { resolveCrewLeaveApprover } from '@/lib/leave-request'
+import { RECRUITMENT_REQUEST_INCLUDE } from '@/lib/hr/recruitment'
 
 // Three independent things a logged-in user might be waiting to act on — despite the
 // purchasing/ path (this page/endpoint predates HR's crew-approval addition and is the
@@ -16,6 +17,8 @@ import { resolveCrewLeaveApprover } from '@/lib/leave-request'
 //  - Crew leave requests: resolved via User.role CRUISE_DIRECTOR/BOAT_CAPTAIN +
 //    assignedYachtId matching the requester's yacht (Employee.location.name === Yacht.name)
 //    — see src/lib/leave-request.ts's resolveCrewLeaveApprover.
+//  - Recruitment requests: resolved via RecruitmentRequestApproval.approverId (the approver
+//    chain set in HR › Recruitment › Approvers), still undecided while AWAITING_APPROVAL.
 export async function GET() {
   const session = await getServerSession(authOptions)
   if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -80,6 +83,12 @@ export async function GET() {
     }
   }
 
+  const recruitmentApprovals = await db.recruitmentRequest.findMany({
+    where: { status: 'AWAITING_APPROVAL', approvals: { some: { approverId: session.user.id, decision: null } } },
+    orderBy: { createdAt: 'asc' },
+    include: RECRUITMENT_REQUEST_INCLUDE,
+  })
+
   return NextResponse.json({
     prApprovals: prRequests.map(r => ({
       ...r,
@@ -95,5 +104,6 @@ export async function GET() {
     quotationApprovals: quotationItems,
     crewLeaveApprovals: crewLeaveRequests,
     businessTripApprovals,
+    recruitmentApprovals,
   })
 }

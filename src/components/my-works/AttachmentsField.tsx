@@ -5,6 +5,7 @@ import { Paperclip, X, FileText, FileSpreadsheet, FileArchive, File as FileIcon,
 import { useFileDrop } from '@/hooks/useFileDrop'
 import { uploadToR2WithProgress } from '@/lib/r2-client'
 import { fmtSize, type Attachment } from './shared'
+import { ImageLightbox } from './ImageLightbox'
 import { Button } from '@/components/ui/button'
 
 const MAX_SIZE = 25 * 1024 * 1024 // keep in sync with TODO_ATTACHMENT_MAX_SIZE (src/lib/todo.ts)
@@ -30,6 +31,8 @@ export default function AttachmentsField({ value, onChange, uploadPrefix, onBusy
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState<Uploading[]>([])
+  const images = value.filter(a => a.contentType.startsWith('image/'))
+  const [preview, setPreview] = useState<number | null>(null)
   // Uploads finish out of order — keep the latest list in a ref so each completion
   // appends to what's there now, not to the stale `value` it was started with.
   const latest = useRef(value)
@@ -75,6 +78,7 @@ export default function AttachmentsField({ value, onChange, uploadPrefix, onBusy
       <input ref={inputRef} type="file" multiple className="hidden"
         onChange={e => { if (e.target.files) handleFiles(Array.from(e.target.files)); e.target.value = '' }} />
 
+      {preview !== null && images[preview] && <ImageLightbox images={images} index={preview} onIndexChange={setPreview} onClose={() => setPreview(null)} />}
       {(value.length > 0 || uploading.length > 0) && (
         <div className="space-y-1.5">
           {value.map(a => {
@@ -83,10 +87,16 @@ export default function AttachmentsField({ value, onChange, uploadPrefix, onBusy
             return (
               <div key={a.url} className="flex items-center gap-3 rounded-lg border px-2.5 py-2">
                 {isImage
-                  ? <img src={a.url} alt="" className="h-9 w-9 rounded object-cover border shrink-0" /> // eslint-disable-line @next/next/no-img-element
+                  ? (
+                    <button type="button" onClick={() => setPreview(images.indexOf(a))} aria-label={`Preview ${a.name}`} className="shrink-0 cursor-zoom-in">
+                      <img src={a.url} alt="" className="h-9 w-9 rounded object-cover border" /> {/* eslint-disable-line @next/next/no-img-element */}
+                    </button>
+                  )
                   : <div className="h-9 w-9 rounded bg-muted flex items-center justify-center shrink-0"><Icon className="h-4 w-4 text-muted-foreground" /></div>}
                 <div className="flex-1 min-w-0">
-                  <a href={a.url} target="_blank" rel="noopener noreferrer" className="text-sm font-medium truncate block hover:text-primary-strong hover:underline">{a.name}</a>
+                  {isImage
+                    ? <button type="button" onClick={() => setPreview(images.indexOf(a))} className="text-sm font-medium truncate block max-w-full text-left hover:text-primary-strong hover:underline">{a.name}</button>
+                    : <a href={a.url} target="_blank" rel="noopener noreferrer" className="text-sm font-medium truncate block hover:text-primary-strong hover:underline">{a.name}</a>}
                   <p className="text-xs text-muted-foreground">{fmtSize(a.size)}</p>
                 </div>
                 <a href={a.url} target="_blank" rel="noopener noreferrer" download={a.name} className="p-1.5 rounded hover:bg-muted text-muted-foreground" title="Open / download" aria-label={`Open / download ${a.name}`}><Download className="h-4 w-4" /></a>

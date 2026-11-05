@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { X, Check, ThumbsUp, ThumbsDown, ClipboardList, ArrowLeft, CheckCircle2, RotateCcw, Users, Bell } from 'lucide-react'
+import { X, Check, ThumbsUp, ThumbsDown, ClipboardList, ArrowLeft, CheckCircle2, RotateCcw, Users, Bell, UserCheck, Hourglass } from 'lucide-react'
 import { toast } from 'sonner'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { Button } from '@/components/ui/button'
@@ -25,12 +25,17 @@ interface LinkedCandidate {
 }
 interface RecruitmentRequest extends RecruitmentRequestBase { candidates: LinkedCandidate[] }
 
-const FILTERS = ['All', 'PENDING', 'APPROVED', 'CLOSED', 'REJECTED', 'CANCELLED'] as const
+const FILTERS = ['All', 'AWAITING_APPROVAL', 'PENDING', 'APPROVED', 'CLOSED', 'REJECTED', 'CANCELLED'] as const
 
 interface UserOption { id: string; name: string | null; email: string; role: string }
 
-// Extra people (besides HR) notified of every new request — e.g. management.
-function NotifyRecipientsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+// Picker for a list of users stored in a SystemSetting — used for both "Notification
+// Recipients" (extra people told about every new request) and "Approvers" (all must approve
+// a new request before it reaches HR).
+function UserListDialog({ open, onClose, endpoint, title, icon: Icon, description, savedMessage }: {
+  open: boolean; onClose: () => void; endpoint: string; title: string
+  icon: React.ComponentType<{ className?: string }>; description: string; savedMessage: string
+}) {
   const [users, setUsers] = useState<UserOption[]>([])
   const [picked, setPicked] = useState<Set<string>>(new Set())
   const [query, setQuery] = useState('')
@@ -40,7 +45,7 @@ function NotifyRecipientsDialog({ open, onClose }: { open: boolean; onClose: () 
   useEffect(() => {
     if (!open) return
     let cancelled = false
-    fetch('/api/hr/recruitment-requests/notify-recipients')
+    fetch(endpoint)
       .then(r => r.ok ? r.json() : Promise.reject())
       .then((d: { userIds: string[]; users: UserOption[] }) => {
         if (cancelled) return
@@ -48,7 +53,7 @@ function NotifyRecipientsDialog({ open, onClose }: { open: boolean; onClose: () 
       })
       .catch(() => { if (!cancelled) { toast.error('Failed to load users'); setLoading(false) } })
     return () => { cancelled = true }
-  }, [open])
+  }, [open, endpoint])
 
   function toggle(id: string, on: boolean) {
     setPicked(p => { const n = new Set(p); if (on) n.add(id); else n.delete(id); return n })
@@ -56,12 +61,12 @@ function NotifyRecipientsDialog({ open, onClose }: { open: boolean; onClose: () 
 
   async function save() {
     setSaving(true)
-    const res = await fetch('/api/hr/recruitment-requests/notify-recipients', {
+    const res = await fetch(endpoint, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userIds: [...picked] }),
     })
     setSaving(false)
     if (!res.ok) { toast.error('Failed to save'); return }
-    toast.success('Notification recipients saved')
+    toast.success(savedMessage)
     onClose()
   }
 
@@ -75,10 +80,8 @@ function NotifyRecipientsDialog({ open, onClose }: { open: boolean; onClose: () 
     <Dialog open={open} onOpenChange={o => { if (!o) onClose() }}>
       <DialogContent className="sm:max-w-md p-0 gap-0 overflow-hidden" onInteractOutside={e => e.preventDefault()}>
         <DialogHeader className="gap-0.5 px-6 py-4 pr-12 border-b text-left">
-          <DialogTitle className="text-sm font-bold flex items-center gap-2"><Bell className="h-4 w-4 text-primary-strong" /> Notification Recipients</DialogTitle>
-          <DialogDescription className="text-xs">
-            HR is always notified of new recruitment requests. Also notify:
-          </DialogDescription>
+          <DialogTitle className="text-sm font-bold flex items-center gap-2"><Icon className="h-4 w-4 text-primary-strong" /> {title}</DialogTitle>
+          <DialogDescription className="text-xs">{description}</DialogDescription>
         </DialogHeader>
         <div className="px-6 py-4 space-y-3">
           <Input placeholder="Search users…" aria-label="Search users" value={query} onChange={e => setQuery(e.target.value)} />
@@ -118,6 +121,7 @@ export default function RecruitmentRequestsPage() {
   const [decisionNote, setDecisionNote] = useState('')
   const [saving, setSaving] = useState(false)
   const [notifyOpen, setNotifyOpen] = useState(false)
+  const [approversOpen, setApproversOpen] = useState(false)
 
   const load = useCallback(async () => {
     const res = await fetch('/api/hr/recruitment-requests')
@@ -204,6 +208,11 @@ export default function RecruitmentRequestsPage() {
               )}
             </div>
 
+            {selected.status === 'AWAITING_APPROVAL' && (
+              <div className="flex items-center gap-2 px-5 py-4 border-t text-xs text-muted-foreground">
+                <Hourglass className="size-3.5 shrink-0" /> Waiting for all approvers — HR can approve or reject once they have all approved.
+              </div>
+            )}
             {selected.status === 'PENDING' && (
               <div className="flex justify-end gap-2 px-5 py-4 border-t">
                 <Button variant="outline" onClick={() => setDecision('reject')}
@@ -240,9 +249,14 @@ export default function RecruitmentRequestsPage() {
               <h2 className="text-2xl font-bold tracking-tight">Recruitment</h2>
               <p className="text-muted-foreground text-sm mt-1">Hiring requests from supervisors and heads</p>
             </div>
-            <Button variant="outline" onClick={() => setNotifyOpen(true)} className="shrink-0">
-              <Bell /> Notification Recipients
-            </Button>
+            <div className="flex flex-wrap justify-end gap-2 shrink-0">
+              <Button variant="outline" onClick={() => setApproversOpen(true)}>
+                <UserCheck /> Approvers
+              </Button>
+              <Button variant="outline" onClick={() => setNotifyOpen(true)}>
+                <Bell /> Notification Recipients
+              </Button>
+            </div>
           </div>
 
           <div className="flex gap-1 border-b overflow-x-auto">
@@ -312,7 +326,13 @@ export default function RecruitmentRequestsPage() {
         </>
       )}
 
-      <NotifyRecipientsDialog open={notifyOpen} onClose={() => setNotifyOpen(false)} />
+      <UserListDialog open={notifyOpen} onClose={() => setNotifyOpen(false)}
+        endpoint="/api/hr/recruitment-requests/notify-recipients" title="Notification Recipients" icon={Bell}
+        description="HR is always notified of new recruitment requests. Also notify:" savedMessage="Notification recipients saved" />
+      <UserListDialog open={approversOpen} onClose={() => setApproversOpen(false)}
+        endpoint="/api/hr/recruitment-requests/approvers" title="Approvers" icon={UserCheck}
+        description="Every approver picked here must approve a new request (from their My Approvals) before it reaches HR. Leave empty to send requests straight to HR. Changes apply to new requests only."
+        savedMessage="Approvers saved" />
 
       {/* ── Approve/Reject Modal ── */}
       <Dialog open={!!decision} onOpenChange={o => { if (!o) { setDecision(null); setDecisionNote('') } }}>

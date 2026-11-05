@@ -1,4 +1,6 @@
 import type { Prisma, PrismaClient } from '@prisma/client'
+import { roleMatches } from '@/lib/role-utils'
+import { sendPushToUsers } from '@/lib/push'
 
 export const RECRUITMENT_REASONS = ['New Position', 'Replacement'] as const
 export const RECRUITMENT_PRIORITIES = ['LOW', 'MEDIUM', 'HIGH'] as const
@@ -13,9 +15,11 @@ const RECRUITMENT_EXTRA_REQUESTER_EMAILS = [
   'roy@samarayachting.com',
 ]
 
-/** Supervisors/heads (anyone with direct reports) — plus the owner/developer logins above. */
-export function canRaiseRecruitmentRequest(email: string | null | undefined, directReports: number): boolean {
+/** Supervisors/heads (anyone with direct reports), the HR role (raises requests on behalf of
+ *  others too), plus the owner/developer logins above. */
+export function canRaiseRecruitmentRequest(email: string | null | undefined, directReports: number, role?: string | null): boolean {
   if (directReports > 0) return true
+  if (roleMatches(role, ['HR'])) return true
   return !!email && RECRUITMENT_EXTRA_REQUESTER_EMAILS.includes(email.trim().toLowerCase())
 }
 
@@ -25,7 +29,18 @@ export function canRaiseRecruitmentRequest(email: string | null | undefined, dir
 export const RECRUITMENT_NOTIFY_KEY = 'recruitment_notify_user_ids'
 
 export async function getRecruitmentNotifyUserIds(db: PrismaClient): Promise<string[]> {
-  const row = await db.systemSetting.findUnique({ where: { key: RECRUITMENT_NOTIFY_KEY } }).catch(() => null)
+  return readUserIdListSetting(db, RECRUITMENT_NOTIFY_KEY)
+}
+
+// SystemSetting row holding the approver chain (JSON array of User ids). When non-empty,
+// a new request starts AWAITING_APPROVAL and must be approved by EVERY one of them (from
+// their My Approvals page) before it reaches HR as PENDING. Edited from HR › Recruitment ›
+// Approvers; snapshotted onto each request at creation, so later edits don't move
+// requests already in flight.
+export const RECRUITMENT_APPROVERS_KEY = 'recruitment_approver_user_ids'
+
+async function readUserIdListSetting(db: PrismaClient, key: string): Promise<string[]> {
+  const row = await db.systemSetting.findUnique({ where: { key } }).catch(() => null)
   if (!row?.textValue) return []
   try {
     const ids = JSON.parse(row.textValue)
@@ -33,6 +48,15 @@ export async function getRecruitmentNotifyUserIds(db: PrismaClient): Promise<str
   } catch {
     return []
   }
+}
+
+/** Configured approvers that still exist as users. */
+export async function getRecruitmentApproverIds(db: PrismaClient): Promise<string[]> {
+  const ids = await readUserIdListSetting(db, RECRUITMENT_APPROVERS_KEY)
+  if (!ids.length) return []
+  const users = await db.user.findMany({ where: { id: { in: ids } }, select: { id: true } })
+  const existing = new Set(users.map(u => u.id))
+  return ids.filter(id => existing.has(id))
 }
 
 // Who hears about a new request: every HR user (they process it) plus the configured
@@ -59,6 +83,10 @@ export const RECRUITMENT_REQUEST_INCLUDE = {
   requesterEmployee: { select: { id: true, fullName: true, employeeNumber: true } },
   replacementEmployee: { select: { id: true, fullName: true, employeeNumber: true, role: { select: { title: true } } } },
   decidedBy: { select: { id: true, name: true } },
+  approvals: {
+    orderBy: { createdAt: 'asc' },
+    select: { id: true, decision: true, decidedAt: true, note: true, approver: { select: { id: true, name: true } } },
+  },
 } satisfies Prisma.RecruitmentRequestInclude
 
 // Candidates the requester gets to see on their own request: only the ones HR has moved
@@ -68,4 +96,48 @@ export const REQUESTER_VISIBLE_CANDIDATE: Prisma.CandidateWhereInput = {
     { status: { in: ['USER_INTERVIEW', 'OFFER', 'HIRED'] } },
     { userInterviewScheduledAt: { not: null } },
   ],
+}
+
+/** One-line summary used in every recruitment notification: "Name (Dept) requested to hire 2× Chef — Replacement." */
+export function recruitmentRequestSummary(r: {
+  headcount: number; reason: string; requesterDepartment: string | null
+  role: { title: string }
+  requesterEmployee: { fullName: string } | null
+  requestedBy: { name: string | null }
+}): string {
+  const name = r.requesterEmployee?.fullName ?? r.requestedBy.name ?? 'Someone'
+  const dept = r.requesterDepartment?.trim() ? ` (${r.requesterDepartment.trim()})` : ''
+  return `${name}${dept} requested to hire ${r.headcount}× ${r.role.title} — ${r.reason}.`
+}
+
+async function notifyUsers(db: PrismaClient, userIds: string[], type: string, title: string, body: string) {
+  if (!userIds.length) return
+  await db.notification.createMany({ data: userIds.map(userId => ({ userId, type, title, body })) }).catch(() => {})
+  sendPushToUsers(db, userIds, { title, body }).catch(() => {})
+}
+
+/** A request just reached HR (PENDING) — tell HR + the configured notification recipients. */
+export async function notifyRecruitmentReachedHr(
+  db: PrismaClient,
+  r: Parameters<typeof recruitmentRequestSummary>[0] & { priority: string },
+  excludeUserId?: string,
+) {
+  const ids = (await getNewRequestRecipientIds(db)).filter(id => id !== excludeUserId)
+  const title = r.priority === 'HIGH' ? 'New recruitment request — High priority' : 'New recruitment request'
+  await notifyUsers(db, ids, 'RECRUITMENT_REQUESTED', title, recruitmentRequestSummary(r))
+}
+
+/** A request is waiting on these approvers — tell them it's in their My Approvals. */
+export async function notifyRecruitmentApprovers(
+  db: PrismaClient,
+  r: Parameters<typeof recruitmentRequestSummary>[0] & { priority: string },
+  approverIds: string[],
+) {
+  const title = r.priority === 'HIGH' ? 'Recruitment request needs your approval — High priority' : 'Recruitment request needs your approval'
+  await notifyUsers(db, approverIds, 'RECRUITMENT_APPROVAL_NEEDED', title, `${recruitmentRequestSummary(r)} Review it in My Approvals.`)
+}
+
+/** Tell the requester about an approval-chain or HR decision. */
+export async function notifyRecruitmentRequester(db: PrismaClient, requesterId: string, title: string, body: string) {
+  await notifyUsers(db, [requesterId], 'RECRUITMENT_REQUEST_DECIDED', title, body)
 }

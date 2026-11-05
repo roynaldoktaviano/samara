@@ -8,7 +8,20 @@ export function ServiceWorkerRegister() {
     // production's content-hashed filenames do, so the SW's cache-first strategy
     // would permanently pin whatever JS was cached on first load — silently
     // defeating Fast Refresh for any browser that's ever registered it in dev.
-    if (process.env.NODE_ENV !== 'production' || !('serviceWorker' in navigator)) return
+    if (!('serviceWorker' in navigator)) return
+    if (process.env.NODE_ENV !== 'production') {
+      // Not registering isn't enough: a worker left over from an earlier production run on
+      // this origin (e.g. `next start` on localhost) stays installed and keeps serving stale
+      // dev chunks — the page then hydrates old JS against fresh server HTML (hydration
+      // mismatch). Evict it and its caches, then reload once so the fresh JS is used.
+      navigator.serviceWorker.getRegistrations().then(async (regs) => {
+        if (!regs.length) return
+        await Promise.all(regs.map((r) => r.unregister()))
+        if ('caches' in window) await Promise.all((await caches.keys()).map((k) => caches.delete(k)))
+        window.location.reload()
+      }).catch(() => {})
+      return
+    }
 
     // The cashier subdomain gets its own offline-capable worker (the vessel bar loses signal at sea).
     if (window.location.hostname.startsWith('cashier.')) {

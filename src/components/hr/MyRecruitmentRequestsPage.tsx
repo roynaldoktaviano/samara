@@ -216,9 +216,11 @@ export default function MyRecruitmentRequestsPage() {
             <RecruitmentRequestDetails request={selected} />
           </div>
 
-          {selected.status === 'PENDING' && (
+          {(selected.status === 'PENDING' || selected.status === 'AWAITING_APPROVAL') && (
             <div className="flex items-center justify-between gap-2 px-5 py-4 border-t">
-              <p className="text-xs text-muted-foreground">Waiting on HR to approve.</p>
+              <p className="text-xs text-muted-foreground">
+                {selected.status === 'AWAITING_APPROVAL' ? 'Waiting on the approvers — it goes to HR once they have all approved.' : 'Waiting on HR to approve.'}
+              </p>
               <Button variant="outline" onClick={cancelRequest}
                 className="shrink-0 hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30">
                 <XCircle className="size-3.5" /> Cancel Request
@@ -363,7 +365,7 @@ export default function MyRecruitmentRequestsPage() {
 
       {!canRequest && (
         <p className="text-xs text-muted-foreground bg-muted/40 border rounded-lg px-3 py-2">
-          New requests can only be raised by supervisors and heads who have team members reporting to them.
+          New requests can only be raised by HR, or by supervisors and heads who have team members reporting to them.
         </p>
       )}
 

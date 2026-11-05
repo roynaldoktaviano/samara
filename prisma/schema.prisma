@@ -159,6 +159,7 @@ model User {
   candidateUserInterviewsRecorded        Candidate[]                       @relation("CandidateUserInterviewBy")
   recruitmentRequestsRequested           RecruitmentRequest[]              @relation("RecruitmentRequestedBy")
   recruitmentRequestsDecided             RecruitmentRequest[]              @relation("RecruitmentDecidedBy")
+  recruitmentApprovals                   RecruitmentRequestApproval[]      @relation("RecruitmentApprover")
   purchaseRequestsVerified               PurchaseRequest[]                 @relation("PRVerifiedBy")
   purchaseRequestsConverted              PurchaseRequest[]                 @relation("PRConvertedBy")
   purchaseRequestsRejected               PurchaseRequest[]                 @relation("PRRejectedBy")
@@ -4607,6 +4608,7 @@ enum RecruitmentPriority {
 }
 
 enum RecruitmentRequestStatus {
+  AWAITING_APPROVAL // waiting on the configured approvers (all must approve) before it reaches HR
   PENDING // waiting on HR
   APPROVED // HR is recruiting for it
   REJECTED
@@ -4654,6 +4656,9 @@ model RecruitmentRequest {
   closedAt     DateTime?
 
   candidates Candidate[]
+  // Approver chain snapshotted at request time from HR › Recruitment › Approvers — every
+  // one must approve (AWAITING_APPROVAL → PENDING); any single reject rejects the request.
+  approvals  RecruitmentRequestApproval[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -4662,6 +4667,26 @@ model RecruitmentRequest {
   @@index([requestedById])
   @@index([roleId])
   @@index([replacementEmployeeId])
+}
+
+enum RecruitmentApprovalDecision {
+  APPROVED
+  REJECTED
+}
+
+model RecruitmentRequestApproval {
+  id         String                       @id @default(cuid())
+  requestId  String
+  request    RecruitmentRequest           @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  approverId String
+  approver   User                         @relation("RecruitmentApprover", fields: [approverId], references: [id], onDelete: Cascade)
+  decision   RecruitmentApprovalDecision? // null = still waiting on this approver
+  decidedAt  DateTime?
+  note       String?
+  createdAt  DateTime                     @default(now())
+
+  @@unique([requestId, approverId])
+  @@index([approverId, decision])
 }
 
 // ─── WhatsApp Chat (admin-only inbox, Freshchat-style) ─────────────────────────

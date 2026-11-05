@@ -9,6 +9,7 @@ import { formatDate } from '@/lib/format'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { useConfirm } from '@/components/ui/confirm-dialog'
+import { ImageLightbox } from './ImageLightbox'
 
 interface Activity {
   id: string; kind: 'COMMENT' | 'ESTIMATION'; body: string; createdAt: string
@@ -28,18 +29,20 @@ function fmtWhen(iso: string) {
 function CommentFiles({ files }: { files: Attachment[] }) {
   const images = files.filter(f => f.contentType.startsWith('image/'))
   const others = files.filter(f => !f.contentType.startsWith('image/'))
+  const [preview, setPreview] = useState<number | null>(null)
   return (
     <div className="mt-2 space-y-1.5">
       {images.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
-          {images.map(f => (
-            <a key={f.url} href={f.url} target="_blank" rel="noopener noreferrer" title={f.name}>
+          {images.map((f, i) => (
+            <button key={f.url} type="button" onClick={() => setPreview(i)} title={f.name} aria-label={`Preview ${f.name}`} className="cursor-zoom-in">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={f.url} alt={f.name} className="h-28 max-w-[220px] rounded-md border object-cover hover:opacity-90" />
-            </a>
+            </button>
           ))}
         </div>
       )}
+      {preview !== null && <ImageLightbox images={images} index={preview} onIndexChange={setPreview} onClose={() => setPreview(null)} />}
       {others.map(f => (
         <a key={f.url} href={f.url} target="_blank" rel="noopener noreferrer" download={f.name}
           className="flex items-center gap-2 rounded-md border bg-background px-2 py-1.5 text-xs hover:bg-muted">

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { CheckCircle2, XCircle, AlertTriangle, MapPin, FileText, ClipboardCheck, X, Download, CalendarDays, Plane, Send, Package, ChevronRight } from 'lucide-react'
+import { CheckCircle2, XCircle, AlertTriangle, MapPin, FileText, ClipboardCheck, X, Download, CalendarDays, Plane, Send, Package, ChevronRight, UserSearch } from 'lucide-react'
 import { FilePreview } from '@/components/ui/file-preview'
 import { isPdfDataUrl, downloadDataUrl, extFromDataUrl } from '@/lib/fileUpload'
 import { FreelanceRecommendationsField, type FreelanceRecommendation } from '@/components/hr/FreelanceRecommendationsField'
@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
+import { type RecruitmentRequestBase, PriorityBadge, RecruitmentRequestDetails } from '@/components/hr/recruitment-shared'
 
 interface ApprovalRequest {
   id: string
@@ -152,6 +153,10 @@ export default function MyApprovalsPage() {
   const [tripRejectModal, setTripRejectModal] = useState<BusinessTripApproval | null>(null)
   const [tripRejectNote, setTripRejectNote] = useState('')
 
+  const [recruitmentApprovals, setRecruitmentApprovals] = useState<RecruitmentRequestBase[]>([])
+  const [recruitmentModal, setRecruitmentModal] = useState<RecruitmentRequestBase | null>(null)
+  const [recruitmentNote, setRecruitmentNote] = useState('')
+
   const [teamReports, setTeamReports] = useState<TeamMember[]>([])
   const [teamReviews, setTeamReviews] = useState<TeamPerformanceReview[]>([])
   const [requestReviewModal, setRequestReviewModal] = useState<TeamMember | null>(null)
@@ -172,6 +177,7 @@ export default function MyApprovalsPage() {
       setCrewLeaveRequests(crewLeave)
       setCrewLeaveDrafts(Object.fromEntries(crewLeave.map(r => [r.id, { needsFreelance: r.needsFreelance, freelanceRecommendations: r.freelanceRecommendations }])))
       setBusinessTripApprovals(data.businessTripApprovals ?? [])
+      setRecruitmentApprovals(data.recruitmentApprovals ?? [])
     }
     if (teamRes.ok) {
       const teamData = await teamRes.json()
@@ -261,6 +267,22 @@ export default function MyApprovalsPage() {
     setBusinessTripApprovals(prev => prev.filter(x => x.id !== t.id))
   }
 
+  async function actOnRecruitment(r: RecruitmentRequestBase, action: 'approve' | 'reject', note?: string) {
+    setActingId(r.id)
+    const res = await fetch(`/api/hr/recruitment-requests/${r.id}/approver-decision`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, note }),
+    })
+    const data = await res.json().catch(() => ({}))
+    setActingId(null)
+    if (!res.ok) { toast.error(data.error ?? 'Failed to update'); return }
+    toast.success(action === 'approve' ? 'Recruitment request approved' : 'Recruitment request rejected')
+    setRecruitmentModal(null)
+    setRecruitmentNote('')
+    setRecruitmentApprovals(prev => prev.filter(x => x.id !== r.id))
+  }
+
   async function submitReviewRequest() {
     if (!requestReviewModal) return
     setRequestingReview(true)
@@ -281,7 +303,7 @@ export default function MyApprovalsPage() {
     <div className="space-y-4">
       <div>
         <h2 className="text-2xl font-bold tracking-tight">My Approvals</h2>
-        <p className="text-muted-foreground text-sm mt-1">Purchase requests and supplier selections awaiting your approval</p>
+        <p className="text-muted-foreground text-sm mt-1">Requests awaiting your approval</p>
       </div>
 
       {teamReports.length > 0 && (
@@ -380,6 +402,33 @@ export default function MyApprovalsPage() {
             </button>
           ))}
         </div>
+      )}
+
+      {recruitmentApprovals.length > 0 && (
+        <>
+          <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide pt-2">Recruitment Requests</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+            {recruitmentApprovals.map(r => {
+              const done = r.approvals.filter(a => a.decision === 'APPROVED').length
+              return (
+                <button key={r.id} onClick={() => { setRecruitmentModal(r); setRecruitmentNote('') }}
+                  className="text-left rounded-lg border p-4 space-y-2 hover:bg-muted/30 hover:border-warning/30 transition-colors">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="font-semibold text-sm truncate">{r.headcount}× {r.role.title}</p>
+                      <p className="text-xs text-muted-foreground truncate">{r.location?.name ?? 'Any location'} · {r.reason}</p>
+                    </div>
+                    <PriorityBadge priority={r.priority} />
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {r.requesterEmployee?.fullName ?? r.requestedBy.name ?? 'Unknown'}{r.requesterDepartment ? ` · ${r.requesterDepartment}` : ''} · {formatDate(r.createdAt)}
+                  </p>
+                  <p className="text-xs text-muted-foreground flex items-center gap-1"><UserSearch className="h-3 w-3" /> {done}/{r.approvals.length} approved</p>
+                </button>
+              )
+            })}
+          </div>
+        </>
       )}
 
       <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide pt-2">Purchase Requests</h3>
@@ -655,6 +704,35 @@ export default function MyApprovalsPage() {
                 disabled={actingId === tripRejectModal.id}
                 onClick={() => actOnBusinessTrip(tripRejectModal, 'reject', tripRejectNote)}>
                 Yes, Reject
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        )}
+      </Dialog>
+
+      <Dialog open={!!recruitmentModal} onOpenChange={o => { if (!o) { setRecruitmentModal(null); setRecruitmentNote('') } }}>
+        {recruitmentModal && (
+          <DialogContent className="sm:max-w-2xl p-0 gap-0 overflow-hidden max-h-[90vh] flex flex-col" onInteractOutside={e => e.preventDefault()}>
+            <DialogHeader className="px-6 py-4 pr-12 border-b text-left gap-0">
+              <DialogTitle className="font-semibold text-base leading-snug">Recruitment request — {recruitmentModal.role.title}</DialogTitle>
+              <DialogDescription className="text-xs">All approvers must approve before it goes to HR. A single rejection rejects the request.</DialogDescription>
+            </DialogHeader>
+            <div className="px-6 py-4 space-y-4 overflow-y-auto">
+              <RecruitmentRequestDetails request={recruitmentModal} />
+              <div className="space-y-1.5">
+                <Label htmlFor="approval-recruitment-note" className="text-xs font-medium text-muted-foreground">Note (optional — shown to the requester and HR)</Label>
+                <Textarea id="approval-recruitment-note" rows={2} value={recruitmentNote} onChange={e => setRecruitmentNote(e.target.value)} className="resize-none" />
+              </div>
+            </div>
+            <DialogFooter className="px-6 py-4 border-t">
+              <Button variant="outline" disabled={actingId === recruitmentModal.id}
+                onClick={() => actOnRecruitment(recruitmentModal, 'reject', recruitmentNote)}
+                className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30 dark:hover:bg-destructive/10">
+                <XCircle className="size-3.5" /> Reject
+              </Button>
+              <Button variant="success" disabled={actingId === recruitmentModal.id}
+                onClick={() => actOnRecruitment(recruitmentModal, 'approve', recruitmentNote)} className="font-semibold">
+                <CheckCircle2 className="size-3.5" /> Approve
               </Button>
             </DialogFooter>
           </DialogContent>

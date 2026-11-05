@@ -4,7 +4,7 @@ import { formatDate, formatMoney } from '@/lib/format'
 
 // Shared between the HR "Recruitment" screen and the requester's "Recruitment Request" screen.
 
-export type RecruitmentStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'CLOSED' | 'CANCELLED'
+export type RecruitmentStatus = 'AWAITING_APPROVAL' | 'PENDING' | 'APPROVED' | 'REJECTED' | 'CLOSED' | 'CANCELLED'
 export type InterviewResult = 'PASSED' | 'ON_HOLD' | 'FAILED'
 export type RecruitmentPriority = 'LOW' | 'MEDIUM' | 'HIGH'
 
@@ -30,13 +30,22 @@ export interface RecruitmentRequestBase {
   decisionNote: string | null
   closedAt: string | null
   createdAt: string
+  approvals: RecruitmentApprovalStep[]
+}
+
+export interface RecruitmentApprovalStep {
+  id: string
+  decision: 'APPROVED' | 'REJECTED' | null
+  decidedAt: string | null
+  note: string | null
+  approver: { id: string; name: string | null }
 }
 
 export const REQUEST_STATUS_LABEL: Record<RecruitmentStatus, string> = {
-  PENDING: 'Pending', APPROVED: 'Approved', REJECTED: 'Rejected', CLOSED: 'Closed', CANCELLED: 'Cancelled',
+  AWAITING_APPROVAL: 'Awaiting Approval', PENDING: 'Pending HR', APPROVED: 'Approved', REJECTED: 'Rejected', CLOSED: 'Closed', CANCELLED: 'Cancelled',
 }
 export const REQUEST_STATUS_TONE: Record<RecruitmentStatus, StatusTone> = {
-  PENDING: 'warning', APPROVED: 'success', REJECTED: 'destructive', CLOSED: 'neutral', CANCELLED: 'neutral',
+  AWAITING_APPROVAL: 'info', PENDING: 'warning', APPROVED: 'success', REJECTED: 'destructive', CLOSED: 'neutral', CANCELLED: 'neutral',
 }
 
 export const RECRUITMENT_PRIORITIES: RecruitmentPriority[] = ['LOW', 'MEDIUM', 'HIGH']
@@ -62,6 +71,35 @@ export const RESULT_LABEL: Record<InterviewResult, string> = { PASSED: 'Passed',
 export const RESULT_TONE: Record<InterviewResult, StatusTone> = { PASSED: 'success', ON_HOLD: 'warning', FAILED: 'destructive' }
 
 export const RECRUITMENT_REASONS = ['New Position', 'Replacement'] as const
+
+/** The approver chain (all must approve before HR) — shown whenever a request has one. */
+export function RecruitmentApprovalChain({ approvals }: { approvals: RecruitmentApprovalStep[] }) {
+  if (!approvals?.length) return null
+  const done = approvals.filter(a => a.decision === 'APPROVED').length
+  return (
+    <div>
+      <p className="text-xs text-muted-foreground uppercase tracking-wide font-semibold mb-1.5">
+        Approvals ({done}/{approvals.length})
+      </p>
+      <div className="rounded-lg border divide-y">
+        {approvals.map(a => (
+          <div key={a.id} className="px-3 py-2 text-sm">
+            <div className="flex items-center justify-between gap-3">
+              <span className="font-medium truncate">{a.approver.name ?? 'Unknown'}</span>
+              <span className="flex items-center gap-2 shrink-0">
+                {a.decidedAt && <span className="text-xs text-muted-foreground">{formatDate(a.decidedAt)}</span>}
+                <StatusBadge tone={a.decision === 'APPROVED' ? 'success' : a.decision === 'REJECTED' ? 'destructive' : 'neutral'}>
+                  {a.decision === 'APPROVED' ? 'Approved' : a.decision === 'REJECTED' ? 'Rejected' : 'Waiting'}
+                </StatusBadge>
+              </span>
+            </div>
+            {a.note && <p className="mt-1 text-xs text-muted-foreground whitespace-pre-wrap">{a.note}</p>}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -110,6 +148,8 @@ export function RecruitmentRequestDetails({ request: r }: { request: Recruitment
           <p className="text-sm whitespace-pre-wrap">{r.notes}</p>
         </div>
       )}
+
+      <RecruitmentApprovalChain approvals={r.approvals} />
 
       <div className="text-xs text-muted-foreground border-t pt-3">
         Requested {formatDate(r.createdAt)} by {requesterLabel(r)}

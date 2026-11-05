@@ -2,12 +2,12 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
+import { roleMatches } from '@/lib/role-utils'
 
-import { sendPushToUsers } from '@/lib/push'
 import { emitTenantEvent } from '@/lib/realtime-bus'
 import {
   RECRUITMENT_PRIORITIES, RECRUITMENT_REASONS, RECRUITMENT_REQUEST_INCLUDE, REQUESTER_VISIBLE_CANDIDATE,
-  canRaiseRecruitmentRequest, getNewRequestRecipientIds,
+  canRaiseRecruitmentRequest, getRecruitmentApproverIds, notifyRecruitmentApprovers, notifyRecruitmentReachedHr,
 } from '@/lib/hr/recruitment'
 
 // Self-service side for supervisors/heads — identity-based like performance-reviews/mine:
@@ -23,7 +23,10 @@ export async function GET(req: NextRequest) {
     where: { userId: session.user.id },
     select: { id: true, fullName: true, department: true, _count: { select: { directReports: true } } },
   })
-  const canRequest = !!me && canRaiseRecruitmentRequest(session.user.email, me._count.directReports)
+  // HR logins may raise requests even without a linked Employee profile (they often aren't
+  // in the Employee tree themselves); everyone else needs one.
+  const isHr = roleMatches(session.user.role, ['HR'])
+  const canRequest = isHr || (!!me && canRaiseRecruitmentRequest(session.user.email, me._count.directReports, session.user.role))
   const pendingUserInterviews = await db.candidate.count({
     where: { recruitmentRequest: { requestedById: session.user.id }, status: 'USER_INTERVIEW', userInterviewResult: null },
   })
@@ -71,13 +74,16 @@ export async function GET(req: NextRequest) {
       : [],
   ])
 
-  // Requestor block on the form — read-only, straight from the employee record.
-  const requester = me ? { fullName: me.fullName, department: me.department } : null
+  // Requestor block on the form — read-only, straight from the employee record (HR without a
+  // linked profile falls back to their login name).
+  const requester = me
+    ? { fullName: me.fullName, department: me.department }
+    : isHr ? { fullName: session.user.name ?? session.user.email ?? 'HR', department: 'HR' } : null
 
   // Flag the requester's own direct reports so the picker can list them first.
   const replaceable = employees.map(({ managerId, ...e }) => ({ ...e, inMyTeam: !!me && managerId === me.id }))
 
-  return NextResponse.json({ linked: !!me, canRequest, pendingUserInterviews, requester, requests, roles, locations, employees: replaceable })
+  return NextResponse.json({ linked: !!me || isHr, canRequest, pendingUserInterviews, requester, requests, roles, locations, employees: replaceable })
 }
 
 export async function POST(req: NextRequest) {
@@ -94,7 +100,8 @@ export async function POST(req: NextRequest) {
     where: { userId: session.user.id },
     select: { id: true, fullName: true, department: true, _count: { select: { directReports: true } } },
   })
-  if (!me || !canRaiseRecruitmentRequest(session.user.email, me._count.directReports)) {
+  const isHr = roleMatches(session.user.role, ['HR'])
+  if (!isHr && (!me || !canRaiseRecruitmentRequest(session.user.email, me._count.directReports, session.user.role))) {
     return NextResponse.json({ error: 'Only supervisors and heads with team members can request recruitment' }, { status: 403 })
   }
 
@@ -123,6 +130,9 @@ export async function POST(req: NextRequest) {
     if (!Number.isFinite(salary) || salary < 0) return NextResponse.json({ error: 'Salary must be a positive number' }, { status: 400 })
   }
 
+  const approverIds = await getRecruitmentApproverIds(db)
+  const awaitingApproval = approverIds.some(id => id !== session.user.id)
+
   const request = await db.recruitmentRequest.create({
     data: {
       roleId: role.id,
@@ -139,22 +149,28 @@ export async function POST(req: NextRequest) {
       jobDescription: role.jobDescription?.trim() || null,
       notes: body.notes?.trim() || null,
       requestedById: session.user.id,
-      requesterEmployeeId: me.id,
-      requesterDepartment: me.department?.trim() || null,
+      requesterEmployeeId: me?.id ?? null,
+      requesterDepartment: me?.department?.trim() || (isHr ? 'HR' : null),
+      // Approver chain from HR › Recruitment › Approvers — every one must approve before HR
+      // sees it. A requester who is on the list counts as having approved their own request.
+      status: awaitingApproval ? 'AWAITING_APPROVAL' : 'PENDING',
+      approvals: approverIds.length
+        ? { create: approverIds.map(approverId => approverId === session.user.id
+            ? { approverId, decision: 'APPROVED' as const, decidedAt: new Date() }
+            : { approverId }) }
+        : undefined,
     },
     include: RECRUITMENT_REQUEST_INCLUDE,
   })
 
-  const recipientIds = (await getNewRequestRecipientIds(db)).filter(id => id !== session.user.id)
-  if (recipientIds.length) {
-    const title = priority === 'HIGH' ? 'New recruitment request — High priority' : 'New recruitment request'
-    const dept = me.department?.trim() ? ` (${me.department.trim()})` : ''
-    const notifBody = `${me.fullName}${dept} requested to hire ${headcount}× ${role.title} — ${reason}.`
-    await db.notification.createMany({ data: recipientIds.map(userId => ({ userId, type: 'RECRUITMENT_REQUESTED', title, body: notifBody })) }).catch(() => {})
-    sendPushToUsers(db, recipientIds, { title, body: notifBody }).catch(() => {})
+  if (awaitingApproval) {
+    await notifyRecruitmentApprovers(db, request, approverIds.filter(id => id !== session.user.id))
+  } else {
+    await notifyRecruitmentReachedHr(db, request, session.user.id)
   }
 
   emitTenantEvent(session.user.tenantId, 'hr-recruitment')
+  if (awaitingApproval) emitTenantEvent(session.user.tenantId, 'my-approvals')
 
   return NextResponse.json(request, { status: 201 })
 }
