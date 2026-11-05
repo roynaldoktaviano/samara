@@ -19,9 +19,11 @@ const nextConfig: NextConfig = {
   images: {
     // Lets next/image resize/compress media-kit photos on the fly instead of shipping
     // the original upload to every grid thumbnail — the stored file itself is untouched.
-    // *.r2.dev covers Cloudflare R2 (current storage); the vercel-storage.com pattern is
-    // kept for any file a tenant hasn't been migrated off Vercel Blob yet.
+    // files.samarayachting.com is Cloudflare R2 served via our Worker (cloudflare/r2-files-worker.js);
+    // *.r2.dev is the old R2 public host (ISP-blocked in Indonesia, kept for any un-migrated URL);
+    // the vercel-storage.com pattern is kept for any file a tenant hasn't been migrated off Vercel Blob yet.
     remotePatterns: [
+      { protocol: 'https', hostname: 'files.samarayachting.com' },
       { protocol: 'https', hostname: '*.r2.dev' },
       { protocol: 'https', hostname: '*.public.blob.vercel-storage.com' },
     ],

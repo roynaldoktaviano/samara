@@ -46,10 +46,21 @@ export async function deleteFromR2(key: string): Promise<void> {
 }
 
 /** Reverses r2PublicUrl — needed to delete an object given only the URL stored in the DB. */
+// The bucket's old public host (pub-xxx.r2.dev) — DNS-blocked by Indonesian ISPs, so
+// R2_PUBLIC_URL now points at our Worker (cloudflare/r2-files-worker.js). URLs still
+// stored with the old host map to the same object keys.
+const LEGACY_R2_DEV = /^https:\/\/pub-[a-f0-9]+\.r2\.dev\//
+
 export function keyFromR2Url(url: string): string | null {
-  if (!PUBLIC_URL || !url.startsWith(`${PUBLIC_URL}/`)) return null
-  const encoded = url.slice(PUBLIC_URL.length + 1)
-  return encoded.split('/').map(decodeURIComponent).join('/')
+  let encoded: string
+  if (PUBLIC_URL && url.startsWith(`${PUBLIC_URL}/`)) encoded = url.slice(PUBLIC_URL.length + 1)
+  else if (LEGACY_R2_DEV.test(url)) encoded = url.replace(LEGACY_R2_DEV, '')
+  else return null
+  try {
+    return encoded.split('/').map(decodeURIComponent).join('/')
+  } catch {
+    return null
+  }
 }
 
 /**
