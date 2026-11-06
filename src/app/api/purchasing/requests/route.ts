@@ -53,6 +53,12 @@ export async function GET() {
         ...(isOwnOnly
           ? [{ OR: [{ requestedById: session.user.id }, ...(yachtScope ? [yachtScope] : [])] }]
           : []),
+        // A DRAFT PR is entirely Warehouse's (every line still waits for its stock check — see
+        // initialPrStatus), so it isn't a purchase request for Purchasing yet. It shows up once
+        // Warehouse processes it to ON_PROCESS. Admin still sees it (Force Verify); own ones stay.
+        ...(roleMatches(role, ['PURCHASING']) && !roleMatches(role, ['ADMIN', 'SUPER_ADMIN', 'WAREHOUSE'])
+          ? [{ OR: [{ status: { not: 'DRAFT' as const } }, { requestedById: session.user.id }] }]
+          : []),
         // Warehouse only deals with PRs headed to a ship (see routePrLines) — PRs for a warehouse
         // or an office/site go straight to Purchasing and stay out of its list (own ones aside).
         ...(roleMatches(role, ['WAREHOUSE'])
