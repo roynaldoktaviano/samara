@@ -3575,8 +3575,9 @@ model LegalEntity {
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
 
-  employees Employee[]
-  documents LegalDocument[]
+  employees       Employee[]
+  documents       LegalDocument[]
+  onboardingForms OnboardingForm[]
 }
 
 // One row per tracked legal/compliance document, grouped into free-text `section`s
@@ -3626,7 +3627,8 @@ model BusinessUnit {
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
 
-  employees Employee[]
+  employees       Employee[]
+  onboardingForms OnboardingForm[]
 }
 
 // HR's own "where is this person based" taxonomy (Bali / Bajo / Kapal / Hotel) —
@@ -3643,6 +3645,7 @@ model EmployeeWorkLocation {
   employees           Employee[]
   roles               EmployeeRole[]
   recruitmentRequests RecruitmentRequest[]
+  onboardingForms     OnboardingForm[]
 }
 
 model EmployeeRole {
@@ -3664,6 +3667,7 @@ model EmployeeRole {
   candidates          Candidate[]
   compensationBands   CompensationBand[]
   recruitmentRequests RecruitmentRequest[]
+  onboardingForms     OnboardingForm[]
 
   @@index([title])
   @@index([locationId])
@@ -3777,6 +3781,12 @@ model Employee {
   // Employment contract document(s) — expiry is contractEndDate above, already surfaced
   // on the HR Overview "Contracts Expiring Soon" widget.
   contractFiles       String[] @default([])
+  // Identity documents — collected by the new-joiner Onboarding Form (OnboardingForm),
+  // copied over on Start Probation. Same data-URL storage as the documents above.
+  ktpFiles            String[] @default([])
+  kkFiles             String[] @default([])
+  npwpFiles           String[] @default([])
+  photoFiles          String[] @default([])
 
   isActive     Boolean   @default(true)
   resignedAt   DateTime?
@@ -3837,6 +3847,8 @@ model Employee {
   separation                EmployeeSeparation?
   recruitmentRequests       RecruitmentRequest[] @relation("RecruitmentRequester")
   recruitmentReplacements   RecruitmentRequest[] @relation("RecruitmentReplacement")
+  onboardingForm            OnboardingForm?      @relation("OnboardingEmployee")
+  onboardingFormsManaged    OnboardingForm[]     @relation("OnboardingManager")
 
   @@index([legalEntityId])
   @@index([businessUnitId])
@@ -4590,6 +4602,8 @@ model Candidate {
   convertedEmployeeId String?   @unique
   convertedEmployee   Employee? @relation(fields: [convertedEmployeeId], references: [id], onDelete: SetNull)
 
+  onboardingForms OnboardingForm[]
+
   @@index([status])
   @@index([appliedRoleId])
   @@index([recruitmentRequestId])
@@ -5253,4 +5267,119 @@ model FreshsalesSyncState {
   startedAt  DateTime?
   finishedAt DateTime?
   updatedAt  DateTime  @updatedAt
+}
+
+// ─── New-joiner Onboarding Form ──────────────────────────────────────────────
+// HR raises one per new joiner (from a Candidate at Offer/Hired, or standalone for crew /
+// freelance hired outside the recruitment pipeline). The joiner fills their own personal
+// data + documents on a no-login page (/onboarding/[token]) unlocked by a 6-digit PIN HR
+// hands over separately. Nothing reaches Employee until HR reviews, approves and clicks
+// "Start Probation" — that step creates the Employee from this row (see
+// src/app/api/hr/onboarding/[id]/start-probation/route.ts).
+enum OnboardingStatus {
+  INVITED // link + PIN issued; joiner may still be filling it in (draft)
+  SUBMITTED // joiner submitted — waiting on HR review
+  REVISION_REQUESTED // HR sent it back with revisionNote; joiner can edit + resubmit
+  APPROVED // HR accepted the data; HR-only fields can still be adjusted
+  PROBATION_STARTED // Employee created (employeeId) — terminal, link locked
+  CANCELLED // withdrawn by HR — terminal, link locked
+}
+
+enum OnboardingFormType {
+  STANDARD
+  FREELANCE // shorter form: no BPJS / KK / NPWP / family data
+}
+
+model OnboardingForm {
+  id       String             @id @default(cuid())
+  status   OnboardingStatus   @default(INVITED)
+  formType OnboardingFormType @default(STANDARD)
+
+  // Public link access — token in the URL + a PIN given out by HR over a separate channel.
+  // pinHash is bcrypt; the plain PIN is only ever shown to HR once (create / Reset PIN).
+  // pinSetAt is baked into the joiner's session cookie so a PIN reset ends open sessions.
+  token             String    @unique
+  expiresAt         DateTime
+  pinHash           String
+  pinSetAt          DateTime  @default(now())
+  pinFailedAttempts Int       @default(0)
+  pinLockedUntil    DateTime?
+
+  candidateId String?
+  candidate   Candidate? @relation(fields: [candidateId], references: [id], onDelete: SetNull)
+  // Set by Start Probation — the Employee created from this form.
+  employeeId  String?    @unique
+  employee    Employee?  @relation("OnboardingEmployee", fields: [employeeId], references: [id], onDelete: SetNull)
+
+  // ── HR-set (shown read-only on the public form) ──
+  inviteEmail      String? // where the link email goes
+  roleId           String?
+  role             EmployeeRole?         @relation(fields: [roleId], references: [id], onDelete: SetNull)
+  department       String?
+  locationId       String?
+  location         EmployeeWorkLocation? @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  legalEntityId    String?
+  legalEntity      LegalEntity?          @relation(fields: [legalEntityId], references: [id], onDelete: SetNull)
+  businessUnitId   String?
+  businessUnit     BusinessUnit?         @relation(fields: [businessUnitId], references: [id], onDelete: SetNull)
+  managerId        String?
+  manager          Employee?             @relation("OnboardingManager", fields: [managerId], references: [id], onDelete: SetNull)
+  joinDate         DateTime?
+  probationEndDate DateTime? // defaults to joinDate + 3 months; becomes Employee.contractEndDate
+  // Asks for Seaman Book / BST / Medical Check Up on the public form.
+  isCrew           Boolean               @default(false)
+  basicSalary      Float?
+  allowance        Float?
+  freelanceFee     Float?
+  freelanceFeeType String? // 'Per Day' | 'Per Month' — same values as Employee.freelanceFeeType
+
+  // ── Joiner-filled (same meaning as the Employee columns of the same name) ──
+  fullName                 String
+  nickName                 String?
+  gender                   String?
+  birthDate                DateTime?
+  placeOfBirth             String?
+  nationality              String?
+  religion                 String?
+  nikPassport              String?
+  motherName               String?
+  maritalStatus            String?
+  phone                    String?
+  personalEmail            String?
+  address                  String?
+  addressCurrent           String?
+  emergencyContactName     String?
+  emergencyContactPhone    String?
+  emergencyContactRelation String?
+  npwp                     String?
+  kkNumber                 String?
+  bankName                 String?
+  bankAccountNumber        String?
+  bankAccountName          String?
+  bpjsKesehatanNumber      String?
+  bpjsTkNumber             String?
+
+  ktpFiles            String[] @default([])
+  kkFiles             String[] @default([])
+  npwpFiles           String[] @default([])
+  photoFiles          String[] @default([])
+  ijazahFiles         String[] @default([])
+  certificateFiles    String[] @default([])
+  seamanBookFiles     String[] @default([])
+  bstFiles            String[] @default([])
+  medicalCheckupFiles String[] @default([])
+
+  revisionNote       String?
+  lastSavedAt        DateTime?
+  submittedAt        DateTime?
+  approvedAt         DateTime?
+  approvedById       String?
+  probationStartedAt DateTime?
+  createdById        String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([candidateId])
 }

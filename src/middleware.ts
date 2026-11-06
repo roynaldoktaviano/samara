@@ -54,6 +54,10 @@ const PUBLIC_PATHS = [
   // Crew-facing PO goods-receipt confirmation — access controlled by its own per-PO token, not staff login
   '/po-receive',
   '/api/po-receive',
+  // New-joiner Onboarding Form — access controlled by its own per-form token + PIN (see
+  // src/lib/onboarding-access.ts), not staff login
+  '/onboarding',
+  '/api/onboarding',
   // Cashier — no ERP login; each vessel terminal is unlocked by its own PIN (cashier-access
   // cookie, see src/lib/cashier-access.ts), checked by every /api/cashier route itself
   '/cashier',

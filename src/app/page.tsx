@@ -87,6 +87,7 @@ import MyRecruitmentRequestsPage from '@/components/hr/MyRecruitmentRequestsPage
 import OvertimeRequestsPage from '@/components/hr/OvertimeRequestsPage'
 import MyOvertimePage from '@/components/hr/MyOvertimePage'
 import CandidatesPage from '@/components/hr/CandidatesPage'
+import OnboardingPage from '@/components/hr/OnboardingPage'
 import EntitiesAssignmentsPage from '@/components/hr/EntitiesAssignmentsPage'
 import CompensationPage from '@/components/hr/CompensationPage'
 import PerformanceReviewsPage from '@/components/hr/PerformanceReviewsPage'
@@ -958,6 +959,7 @@ export default function Home() {
       case 'hr-business-trips': return <BusinessTripsPage />
       case 'hr-overtime':    return <OvertimeRequestsPage />
       case 'hr-candidates': return <CandidatesPage />
+      case 'hr-onboarding': return <OnboardingPage />
       case 'hr-recruitment': return <RecruitmentRequestsPage />
       case 'hr-entities-assignments': return <EntitiesAssignmentsPage deepLinkId={deepLink?.view === 'hr-entities-assignments' ? deepLink.id : null} onDeepLinkHandled={() => setDeepLink(null)} />
       case 'hr-compensation': return <CompensationPage />

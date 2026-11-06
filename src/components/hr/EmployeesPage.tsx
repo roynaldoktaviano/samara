@@ -41,6 +41,7 @@ interface Employee {
   basicSalary: number | null; allowance: number | null; uangLayar: number | null; uangMakan: number | null; thr: number | null
   otherIncome: OtherIncomeItem[]
   seamanBookFiles: string[]; bstFiles: string[]; medicalCheckupFiles: string[]; ijazahFiles: string[]; certificateFiles: string[]; contractFiles: string[]
+  ktpFiles: string[]; kkFiles: string[]; npwpFiles: string[]; photoFiles: string[]
   legalEntity: LegalEntity | null; businessUnit: BusinessUnit | null; location: Location | null; role: EmployeeRole | null
   managerId: string | null; manager: { id: string; fullName: string } | null
   userId: string | null; user: { id: string; name: string | null; email: string } | null
@@ -78,11 +79,12 @@ const BLANK = {
   basicSalary: '', allowance: '', uangLayar: '', uangMakan: '', thr: '',
   otherIncome: [] as OtherIncomeItem[],
   seamanBookFiles: [] as string[], bstFiles: [] as string[], medicalCheckupFiles: [] as string[], ijazahFiles: [] as string[], certificateFiles: [] as string[], contractFiles: [] as string[],
+  ktpFiles: [] as string[], kkFiles: [] as string[], npwpFiles: [] as string[], photoFiles: [] as string[],
 }
 
 const GENDERS = ['Male', 'Female']
 const EMPLOYMENT_STATUSES = ['Probation', 'Internship', 'Freelance', 'Contract (PKWT)', 'Permanent (PKWTT)']
-const DEPARTMENTS = ['Management', 'Finance', 'Human Resources', 'Sales', 'Marketing', 'Kitchen', 'Bar', 'Housekeeping', 'Engineering', 'Deckhand']
+export const DEPARTMENTS = ['Management', 'Finance', 'Human Resources', 'Sales', 'Marketing', 'Kitchen', 'Bar', 'Housekeeping', 'Engineering', 'Deckhand']
 const MARITAL_STATUSES = ['TK', 'K0', 'K1', 'K2', 'K3']
 const LEAVE_ENTITLEMENT_POLICIES = ['12 hari', '20 hari', '2 bulan']
 // Display-only labels; the stored values above stay as-is.
@@ -274,7 +276,12 @@ const REVIEW_CRITERIA: { key: keyof PerformanceReviewRow; label: string }[] = [
   { key: 'adaptabilityLearning', label: 'Adaptability & Learning' },
 ]
 
-const DOC_FIELDS: { key: 'seamanBookFiles' | 'bstFiles' | 'medicalCheckupFiles' | 'ijazahFiles' | 'certificateFiles'; label: string }[] = [
+type EmployeeDocKey = 'ktpFiles' | 'kkFiles' | 'npwpFiles' | 'photoFiles' | 'seamanBookFiles' | 'bstFiles' | 'medicalCheckupFiles' | 'ijazahFiles' | 'certificateFiles'
+const DOC_FIELDS: { key: EmployeeDocKey; label: string }[] = [
+  { key: 'ktpFiles', label: 'ID Card (KTP) / Passport' },
+  { key: 'kkFiles', label: 'Family Card (KK)' },
+  { key: 'npwpFiles', label: 'NPWP Card' },
+  { key: 'photoFiles', label: 'Passport Photo' },
   { key: 'seamanBookFiles', label: 'Seaman Book' },
   { key: 'bstFiles', label: 'BST (Basic Safety Training)' },
   { key: 'medicalCheckupFiles', label: 'Medical Check Up' },
@@ -745,6 +752,7 @@ export default function EmployeesPage() {
       otherIncome: emp.otherIncome ?? [],
       seamanBookFiles: emp.seamanBookFiles ?? [], bstFiles: emp.bstFiles ?? [], medicalCheckupFiles: emp.medicalCheckupFiles ?? [],
       ijazahFiles: emp.ijazahFiles ?? [], certificateFiles: emp.certificateFiles ?? [], contractFiles: emp.contractFiles ?? [],
+      ktpFiles: emp.ktpFiles ?? [], kkFiles: emp.kkFiles ?? [], npwpFiles: emp.npwpFiles ?? [], photoFiles: emp.photoFiles ?? [],
     })
     setEditing(emp); setFormError(''); setModalTab('details'); setModal(true); privateGate.hide()
   }
@@ -1766,6 +1774,17 @@ export default function EmployeesPage() {
                 </div>
               ) : (
               <>
+              {([
+                ['ktpFiles', 'ID Card (KTP) / Passport'],
+                ['kkFiles', 'Family Card (KK)'],
+                ['npwpFiles', 'NPWP Card'],
+                ['photoFiles', 'Passport Photo'],
+              ] as const).map(([key, label]) => (
+                <div key={key} className="space-y-1.5" role="group" aria-labelledby={`emp-${key}-label`}>
+                  <p id={`emp-${key}-label`} className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{label}</p>
+                  <MultiFilePicker files={form[key]} onChange={files => setForm(f => ({ ...f, [key]: files }))} />
+                </div>
+              ))}
               <div className="space-y-1.5" role="group" aria-labelledby="emp-seaman-book-files-label">
                 <p id="emp-seaman-book-files-label" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Seaman Book</p>
                 <MultiFilePicker files={form.seamanBookFiles} onChange={files => setForm(f => ({ ...f, seamanBookFiles: files }))} />

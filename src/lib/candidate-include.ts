@@ -12,6 +12,8 @@ export const CANDIDATE_INCLUDE = {
     },
   },
   userInterviewRecordedBy: { select: { id: true, name: true } },
+  // The live (non-cancelled) Onboarding Form, if HR already sent one — drives the row badge.
+  onboardingForms: { where: { status: { not: 'CANCELLED' } }, select: { id: true, status: true }, orderBy: { createdAt: 'desc' }, take: 1 },
 } satisfies Prisma.CandidateInclude
 
 // Pipeline order — same order as the CandidateStatus enum. TALENT_POOL is labelled "New" in the UI.

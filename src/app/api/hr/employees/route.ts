@@ -65,6 +65,7 @@ export async function POST(req: NextRequest) {
     npwp, kkNumber, bankName, bankAccountNumber, bankAccountName, bpjsKesehatanNumber, bpjsTkNumber,
     basicSalary, allowance, uangLayar, uangMakan, thr, otherIncome,
     seamanBookFiles, bstFiles, medicalCheckupFiles, ijazahFiles, certificateFiles, contractFiles,
+    ktpFiles, kkFiles, npwpFiles, photoFiles,
     freelanceFee, freelanceFeeType, replacingEmployeeId, tripBookingIds,
   } = await req.json()
   if (!fullName?.trim()) return NextResponse.json({ error: 'Full name is required' }, { status: 400 })
@@ -128,6 +129,10 @@ export async function POST(req: NextRequest) {
         ijazahFiles: Array.isArray(ijazahFiles) ? ijazahFiles : [],
         certificateFiles: Array.isArray(certificateFiles) ? certificateFiles : [],
         contractFiles: Array.isArray(contractFiles) ? contractFiles : [],
+        ktpFiles: Array.isArray(ktpFiles) ? ktpFiles : [],
+        kkFiles: Array.isArray(kkFiles) ? kkFiles : [],
+        npwpFiles: Array.isArray(npwpFiles) ? npwpFiles : [],
+        photoFiles: Array.isArray(photoFiles) ? photoFiles : [],
         freelanceFee: toFloatOrNull(freelanceFee),
         freelanceFeeType: freelanceFeeType?.trim() || null,
         replacingEmployeeId: replacingEmployeeId || null,

@@ -27,6 +27,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     npwp, kkNumber, bankName, bankAccountNumber, bankAccountName, bpjsKesehatanNumber, bpjsTkNumber,
     basicSalary, allowance, uangLayar, uangMakan, thr, otherIncome,
     seamanBookFiles, bstFiles, medicalCheckupFiles, ijazahFiles, certificateFiles, contractFiles,
+    ktpFiles, kkFiles, npwpFiles, photoFiles,
     freelanceFee, freelanceFeeType, replacingEmployeeId, tripBookingIds,
   } = await req.json()
 
@@ -102,6 +103,10 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         ...(ijazahFiles !== undefined && { ijazahFiles: Array.isArray(ijazahFiles) ? ijazahFiles : [] }),
         ...(certificateFiles !== undefined && { certificateFiles: Array.isArray(certificateFiles) ? certificateFiles : [] }),
         ...(contractFiles !== undefined && { contractFiles: Array.isArray(contractFiles) ? contractFiles : [] }),
+        ...(ktpFiles !== undefined && { ktpFiles: Array.isArray(ktpFiles) ? ktpFiles : [] }),
+        ...(kkFiles !== undefined && { kkFiles: Array.isArray(kkFiles) ? kkFiles : [] }),
+        ...(npwpFiles !== undefined && { npwpFiles: Array.isArray(npwpFiles) ? npwpFiles : [] }),
+        ...(photoFiles !== undefined && { photoFiles: Array.isArray(photoFiles) ? photoFiles : [] }),
         ...(freelanceFee !== undefined && { freelanceFee: toFloatOrNull(freelanceFee) }),
         ...(freelanceFeeType !== undefined && { freelanceFeeType: freelanceFeeType?.trim() || null }),
         ...(replacingEmployeeId !== undefined && { replacingEmployeeId: replacingEmployeeId || null }),

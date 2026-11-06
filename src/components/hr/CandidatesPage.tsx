@@ -15,6 +15,9 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { SearchableSelect } from '@/components/ui/searchable-select'
 import { readUploadFile, isPdfDataUrl, downloadDataUrl, extFromDataUrl } from '@/lib/fileUpload'
 import { formatDate, formatMoney } from '@/lib/format'
+import { CreateOnboardingDialog, ShareDialog, STATUS_TONE as ONBOARDING_TONE, type CandidatePrefill, type ShareInfo } from './OnboardingPage'
+import { StatusBadge } from '@/components/ui/status-badge'
+import { ONBOARDING_STATUS_LABEL, type OnboardingStatus } from '@/lib/onboarding-fields'
 
 interface EmployeeRole { id: string; title: string; isActive?: boolean }
 type InterviewResult = 'PASSED' | 'ON_HOLD' | 'FAILED'
@@ -53,6 +56,7 @@ interface Candidate {
   appliedRole: EmployeeRole | null
   recruitmentRequest: RecruitmentRequestLite | null
   convertedEmployeeId: string | null
+  onboardingForms: { id: string; status: OnboardingStatus }[]
   createdAt: string
 }
 
@@ -173,8 +177,10 @@ export default function CandidatesPage() {
   const [form, setForm] = useState({ ...BLANK })
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState('')
-  const [convertingId, setConvertingId] = useState<string | null>(null)
-  const [convertError, setConvertError] = useState('')
+  // Offer/Hired candidates move on through an Onboarding Form (HR › Onboarding), which
+  // creates the Employee on Start Probation — replaces the old one-click Convert to Employee.
+  const [onboardingFor, setOnboardingFor] = useState<CandidatePrefill | null>(null)
+  const [onboardingShare, setOnboardingShare] = useState<ShareInfo | null>(null)
 
   const [docModal, setDocModal] = useState(false)
   const [docEditId, setDocEditId] = useState<string | null>(null)
@@ -347,15 +353,6 @@ export default function CandidatesPage() {
     load()
   }
 
-  async function convertToEmployee(c: Candidate) {
-    setConvertingId(c.id); setConvertError('')
-    const res = await fetch(`/api/hr/candidates/${c.id}/convert`, { method: 'POST' })
-    const data = await res.json()
-    setConvertingId(null)
-    if (!res.ok) { setConvertError(data.error ?? 'Failed to convert candidate to employee'); return }
-    load()
-  }
-
   async function bulkLink() {
     if (!linkRequestId) { setLinkError('Please select a recruitment request'); return }
     setLinkSaving(true); setLinkError('')
@@ -439,10 +436,6 @@ export default function CandidatesPage() {
         </div>
       </div>
 
-      {convertError && (
-        <p className="text-xs text-destructive bg-destructive/10 border border-destructive/30 rounded-lg px-3 py-2">{convertError}</p>
-      )}
-
       {selectedCandidates.length > 0 && (
         <div className="flex items-center justify-between gap-3 flex-wrap rounded-lg border border-primary/30 bg-primary/10 px-4 py-2.5">
           <p className="text-sm font-medium">{selectedCandidates.length} candidate{selectedCandidates.length !== 1 ? 's' : ''} selected</p>
@@ -518,17 +511,19 @@ export default function CandidatesPage() {
                   </td>
                   <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                     <div className="flex items-center justify-end gap-1">
-                      {c.status === 'HIRED' && (
-                        c.convertedEmployeeId ? (
-                          <span className="flex items-center gap-1 text-xs font-medium text-success bg-success/10 border border-success/30 rounded-full px-2 py-1">
-                            <UserPlus className="h-3 w-3" /> Employee
-                          </span>
-                        ) : (
-                          <button onClick={() => convertToEmployee(c)} disabled={convertingId === c.id}
-                            className="flex items-center gap-1 text-xs font-medium text-primary-strong bg-primary/10 hover:bg-primary/15 border border-primary/30 rounded-full px-2 py-1 disabled:opacity-50 transition-colors">
-                            <UserPlus className="h-3 w-3" /> {convertingId === c.id ? 'Converting…' : 'Convert to Employee'}
-                          </button>
-                        )
+                      {c.convertedEmployeeId ? (
+                        <span className="flex items-center gap-1 text-xs font-medium text-success bg-success/10 border border-success/30 rounded-full px-2 py-1">
+                          <UserPlus className="h-3 w-3" /> Employee
+                        </span>
+                      ) : c.onboardingForms[0] ? (
+                        <StatusBadge tone={ONBOARDING_TONE[c.onboardingForms[0].status]} title="Onboarding form — open HR › Onboarding">
+                          Onboarding: {ONBOARDING_STATUS_LABEL[c.onboardingForms[0].status]}
+                        </StatusBadge>
+                      ) : (c.status === 'OFFER' || c.status === 'HIRED') && (
+                        <button onClick={() => setOnboardingFor({ id: c.id, fullName: c.fullName, email: c.email, phone: c.phone, appliedRoleId: c.appliedRole?.id ?? null, readyJoinDate: c.readyJoinDate })}
+                          className="flex items-center gap-1 text-xs font-medium text-primary-strong bg-primary/10 hover:bg-primary/15 border border-primary/30 rounded-full px-2 py-1 transition-colors">
+                          <UserPlus className="h-3 w-3" /> Send Onboarding Form
+                        </button>
                       )}
                       <Button variant="ghost" size="icon" onClick={() => openEdit(c)} aria-label={`Edit ${c.fullName}`}
                         className="size-8 text-muted-foreground hover:text-primary-strong hover:bg-primary/10">
@@ -1026,6 +1021,9 @@ export default function CandidatesPage() {
       </Dialog>
 
       {docPreview && <PhotoLightbox photoKey={docPreview} onClose={() => setDocPreview(null)} zIndexClass="z-70" />}
+      <CreateOnboardingDialog open={!!onboardingFor} candidate={onboardingFor} onClose={() => setOnboardingFor(null)}
+        onCreated={share => { setOnboardingFor(null); setOnboardingShare(share); load() }} />
+      <ShareDialog info={onboardingShare} onClose={() => setOnboardingShare(null)} />
     </div>
   )
 }
