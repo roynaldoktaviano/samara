@@ -953,7 +953,7 @@ export default function Home() {
       case 'purchasing-items':     return <PurchasingItemsPage />
       case 'purchasing-item-types': return <PurchasingItemTypesPage />
       case 'purchasing-locations': return <PurchasingLocationsPage />
-      case 'purchasing-stock':     return <PurchasingStockPage onOpenPo={(id: string) => { setPendingPoId(id); setCurrentView('purchasing-orders') }} />
+      case 'purchasing-stock':     return <PurchasingStockPage onOpenPo={(id: string) => { setPendingPoId(id); setCurrentView('purchasing-orders') }} onOpenRequest={(id: string) => { setDeepLink({ view: 'purchasing-requests', id }); setCurrentView('purchasing-requests') }} />
       case 'purchasing-transfers':    return <PurchasingTransfersPage deepLinkId={deepLink?.view === 'purchasing-transfers' ? deepLink.id : null} onDeepLinkHandled={() => setDeepLink(null)} onOpenRequest={(id: string) => { setDeepLink({ view: 'purchasing-requests', id }); setCurrentView('purchasing-requests') }} onOpenPo={(id: string) => { setPendingPoId(id); setCurrentView('purchasing-orders') }} />
       case 'purchasing-stock-counts': return <PurchasingStockCountsPage />
       case 'purchasing-initial-stock-opname': return <PurchasingInitialStockOpnamePage />

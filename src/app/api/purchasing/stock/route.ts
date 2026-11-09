@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 
 import { roleMatches } from '@/lib/role-utils'
+import { toBaseQty } from '@/lib/purchasing/transferActions'
 
 const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE']
 
@@ -24,6 +25,46 @@ export async function GET(req: Request) {
 
   const itemMap = new Map(items.map(i => [i.id, i]))
   const locMap  = new Map(locations.map(l => [l.id, l]))
+  const warehouseIds = locations.filter(l => l.type === 'WAREHOUSE').map(l => l.id)
+
+  // Replenishment pipeline per item+warehouse (base units), same sources as stockCheck's On Order:
+  //   Pending = sent to Purchasing, not yet on a PO (open PR lines headed to that warehouse —
+  //             a PR delivered to it, or a restock line for it)
+  //   PO      = on an open PO delivered to it, not yet received
+  //   To Be Order = Min. Stock − Stock − Pending − PO (≥ 0), so the number moves
+  //             To Be Order → Pending → PO → Stock as the restock progresses.
+  const [openPrLines, openPoLines, emptyLots] = warehouseIds.length ? await Promise.all([
+    db.purchaseRequestItem.findMany({
+      where: {
+        itemId: { not: null }, convertedAt: null, verifyRejectedAt: null,
+        request: { status: { in: ['DRAFT', 'PENDING_APPROVAL', 'ON_PROCESS'] } },
+        OR: [{ restockLocationId: { in: warehouseIds } }, { restockLocationId: null, request: { deliveryLocationId: { in: warehouseIds } } }],
+      },
+      select: { itemId: true, quantity: true, unit: true, restockLocationId: true, request: { select: { deliveryLocationId: true } } },
+    }),
+    db.purchaseOrderItem.findMany({
+      where: { itemId: { not: null }, order: { status: { in: ['DRAFT', 'ORDERED', 'IN_TRANSIT', 'PARTIALLY_RECEIVED'] }, deliveryLocationId: { in: warehouseIds } } },
+      select: { itemId: true, orderedQty: true, receivedQty: true, order: { select: { deliveryLocationId: true } } },
+    }),
+    // Items that ran out at a warehouse still need a row (that's exactly when they need ordering).
+    db.stockLot.findMany({
+      where: { quantity: { lte: 0 }, itemId: { not: null }, locationId: { in: locationId ? [locationId] : warehouseIds } },
+      select: { itemId: true, locationId: true }, distinct: ['itemId', 'locationId'],
+    }),
+  ]) : [[], [], []]
+  const pendingMap = new Map<string, number>()
+  const poMap = new Map<string, number>()
+  const addTo = (map: Map<string, number>, key: string, qty: number) => map.set(key, (map.get(key) ?? 0) + qty)
+  for (const l of openPrLines) {
+    const to = l.restockLocationId ?? l.request.deliveryLocationId
+    if (!l.itemId || !to) continue
+    addTo(pendingMap, `${l.itemId}:${to}`, toBaseQty(l.quantity, l.unit, itemMap.get(l.itemId)))
+  }
+  for (const l of openPoLines) {
+    if (!l.itemId || !l.order.deliveryLocationId) continue
+    // PO lines are in purchase units — receiveGoods() multiplies by conversionFactor too.
+    addTo(poMap, `${l.itemId}:${l.order.deliveryLocationId}`, Math.max(0, l.orderedQty - l.receivedQty) * (itemMap.get(l.itemId)?.conversionFactor || 1))
+  }
 
   const sourcePoIds = [...new Set(lots.map(l => l.sourcePoId).filter((id): id is string => id !== null))]
   const sourcePos = sourcePoIds.length
@@ -47,6 +88,7 @@ export async function GET(req: Request) {
     costPerUnit: number
     lotsCount: number
     nearestExpiry: Date | null
+    replenish: { toBeOrder: number; pending: number; po: number } | null
   }
   type NonStockRow = {
     kind: 'non-stock'
@@ -86,7 +128,7 @@ export async function GET(req: Request) {
     const item = itemMap.get(lot.itemId)
     if (!item) continue
     if (!locEntry.rows.has(lot.itemId)) {
-      locEntry.rows.set(lot.itemId, { kind: 'stock', item, qty: 0, costPerUnit: lot.costPerUnit, lotsCount: 0, nearestExpiry: null })
+      locEntry.rows.set(lot.itemId, { kind: 'stock', item, qty: 0, costPerUnit: lot.costPerUnit, lotsCount: 0, nearestExpiry: null, replenish: null })
     }
     const row = locEntry.rows.get(lot.itemId)!
     row.qty += lot.quantity
@@ -96,6 +138,33 @@ export async function GET(req: Request) {
     // Nearest expiry
     if (lot.expiresAt) {
       if (!row.nearestExpiry || lot.expiresAt < row.nearestExpiry) row.nearestExpiry = lot.expiresAt
+    }
+  }
+
+  // Zero-stock rows at warehouses: item ran out there, or is already pending / on a PO to it.
+  const zeroKeys = new Set<string>([
+    ...emptyLots.map(l => `${l.itemId}:${l.locationId}`),
+    ...pendingMap.keys(), ...poMap.keys(),
+  ])
+  for (const key of zeroKeys) {
+    const [itemId, locId] = key.split(':')
+    if (locationId && locId !== locationId) continue
+    const item = itemMap.get(itemId)
+    const loc = locMap.get(locId)
+    if (!item || !loc) continue
+    if (!byLocation.has(locId)) byLocation.set(locId, { location: loc, rows: new Map(), nonStockRows: [] })
+    const locEntry = byLocation.get(locId)!
+    if (!locEntry.rows.has(itemId)) locEntry.rows.set(itemId, { kind: 'stock', item, qty: 0, costPerUnit: 0, lotsCount: 0, nearestExpiry: null, replenish: null })
+  }
+
+  // Replenishment numbers only make sense where Min. Stock is kept — the warehouses.
+  for (const { location, rows } of byLocation.values()) {
+    if (location.type !== 'WAREHOUSE') continue
+    for (const row of rows.values()) {
+      const key = `${row.item.id}:${location.id}`
+      const pending = pendingMap.get(key) ?? 0
+      const po = poMap.get(key) ?? 0
+      row.replenish = { pending, po, toBeOrder: Math.max(0, row.item.minStock - row.qty - pending - po) }
     }
   }
 

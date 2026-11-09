@@ -1,9 +1,10 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
-import { Warehouse, Ship, AlertTriangle, Search, X, Layers, FileText } from 'lucide-react'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { Warehouse, Ship, AlertTriangle, Search, X, Layers, FileText, ShoppingCart, Trash2, Loader2 } from 'lucide-react'
+import { toast } from 'sonner'
 import { formatMoney, formatNumber, formatDate } from '@/lib/format'
-import { displayQty, displayUnitCost } from '@/lib/purchasing/units'
+import { displayQty, displayUnitCost, hasPurchaseUnit } from '@/lib/purchasing/units'
 import { StockQty } from '@/components/purchasing/StockQty'
 
 interface StockRow {
@@ -13,6 +14,8 @@ interface StockRow {
   costPerUnit: number
   lotsCount: number
   nearestExpiry: string | null
+  /** Warehouses only (null elsewhere), base units. */
+  replenish: { toBeOrder: number; pending: number; po: number } | null
 }
 interface NonStockRow {
   kind: 'non-stock'
@@ -32,8 +35,11 @@ interface StockLot { id: string; quantity: number; costPerUnit: number; batch: s
 
 type ItemKindFilter = 'all' | 'stock' | 'non-stock'
 
-const METHOD_LABEL: Record<string, string> = { FIFO: 'FIFO', LIFO: 'LIFO', WEIGHTED_AVERAGE: 'WA', STANDARD: 'STD' }
-const METHOD_COLOR: Record<string, string> = { FIFO: 'bg-info/10 text-info', LIFO: 'bg-purple-50 text-purple-700 dark:bg-purple-500/10 dark:text-purple-300', WEIGHTED_AVERAGE: 'bg-warning/10 text-warning', STANDARD: 'bg-success/10 text-success' }
+// Base-unit qty in the item's display unit, or a faint dash for 0 / not applicable.
+function QtyCell({ item, qty, className = '' }: { item: StockRow['item']; qty: number | null | undefined; className?: string }) {
+  if (!qty) return <span className="text-muted-foreground/40">—</span>
+  return <StockQty item={item} qty={qty} className={className} />
+}
 
 const expiryLabel = (s: string) => {
   const d = new Date(s)
@@ -48,48 +54,128 @@ const expiryLabel = (s: string) => {
 // section) — table stays for desktop (lg+), where 8 columns actually fit.
 const ITEM_CARD_PAGE_SIZE = 10
 
-function StockTable({ rows, locationId, locationName, onOpenLots }: {
+function MinCell({ item, isLow }: { item: StockRow['item']; isLow: boolean }) {
+  if (!(item.minStock > 0)) return <span className="text-muted-foreground/40">—</span>
+  const m = displayQty(item, item.minStock)
+  return <span className={isLow ? 'text-destructive font-semibold' : 'text-muted-foreground'}>{formatNumber(m.qty, { decimals: 3 })} {m.unit}</span>
+}
+
+function StockTable({ rows, locationId, locationName, onOpenLots, onRestock }: {
   rows: StockRow[]; locationId: string; locationName: string
   onOpenLots: (item: StockRow['item'], locationId: string, locationName: string) => void
+  /** Opens the Create Purchase Request modal; resolves true once the PR was created. */
+  onRestock: (rows: StockRow[], locationId: string, locationName: string) => Promise<boolean>
 }) {
   const [cardPage, setCardPage] = useState(1)
-  const totalPages = Math.max(1, Math.ceil(rows.length / ITEM_CARD_PAGE_SIZE))
+  const [q, setQ] = useState('')
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  // To Be Order / Pending / PO + ordering are warehouse-only (where Min. Stock is kept).
+  const isWarehouse = rows.some(r => r.replenish)
+
+  const shown = q.trim()
+    ? rows.filter(r => { const t = q.trim().toLowerCase(); return r.item.name.toLowerCase().includes(t) || r.item.sku.toLowerCase().includes(t) })
+    : rows
+  const totalPages = Math.max(1, Math.ceil(shown.length / ITEM_CARD_PAGE_SIZE))
   const currentPage = Math.min(cardPage, totalPages)
-  const pageRows = rows.slice((currentPage - 1) * ITEM_CARD_PAGE_SIZE, currentPage * ITEM_CARD_PAGE_SIZE)
+  const pageRows = shown.slice((currentPage - 1) * ITEM_CARD_PAGE_SIZE, currentPage * ITEM_CARD_PAGE_SIZE)
+
+  const selectedRows = rows.filter(r => selected.has(r.item.id))
+  const allShownSelected = shown.length > 0 && shown.every(r => selected.has(r.item.id))
+  const toggle = (id: string) => setSelected(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n })
+  const toggleAllShown = () => setSelected(prev => {
+    const n = new Set(prev)
+    if (allShownSelected) shown.forEach(r => n.delete(r.item.id)); else shown.forEach(r => n.add(r.item.id))
+    return n
+  })
+  const selectToBeOrder = () => setSelected(new Set(rows.filter(r => (r.replenish?.toBeOrder ?? 0) > 0).map(r => r.item.id)))
+  const toBeOrderCount = rows.filter(r => (r.replenish?.toBeOrder ?? 0) > 0).length
+  const restock = async (list: StockRow[]) => {
+    if (await onRestock(list, locationId, locationName)) setSelected(new Set())
+  }
+  const orderButton = (row: StockRow, size: 'sm' | 'xs' = 'sm') => (row.replenish?.toBeOrder ?? 0) > 0 && (
+    <button
+      onClick={e => { e.stopPropagation(); restock([row]) }}
+      className={`inline-flex items-center gap-1 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 font-medium whitespace-nowrap transition-colors ${size === 'sm' ? 'h-7 px-2.5 text-xs' : 'h-6 px-2 text-[11px]'}`}
+    >
+      <ShoppingCart className="h-3 w-3" /> Order
+    </button>
+  )
 
   return (
     <>
-      <div className="hidden desktop:block overflow-x-auto">
+      {/* Toolbar: search this location + bulk Create Purchase Request */}
+      <div className="flex items-center gap-2 flex-wrap px-4 desktop:px-5 py-2.5 border-b bg-muted/10">
+        <div className="relative flex-1 min-w-[180px] max-w-xs">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+          <input
+            className="w-full pl-8 pr-7 h-8 text-sm border rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring/50 focus:border-ring"
+            placeholder="Search item name or SKU…" value={q} onChange={e => { setQ(e.target.value); setCardPage(1) }}
+          />
+          {q && <button onClick={() => setQ('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"><X className="h-3.5 w-3.5" /></button>}
+        </div>
+        {isWarehouse && (
+          <div className="flex items-center gap-2 ml-auto">
+            {toBeOrderCount > 0 && (
+              <button onClick={selectToBeOrder} className="h-8 px-3 text-xs border rounded-md text-muted-foreground hover:bg-muted transition-colors whitespace-nowrap">
+                Select all low stock ({toBeOrderCount})
+              </button>
+            )}
+            {selected.size > 0 && (
+              <button onClick={() => setSelected(new Set())} className="h-8 px-2 text-xs text-muted-foreground hover:text-foreground">Clear</button>
+            )}
+            <button
+              onClick={() => restock(selectedRows)} disabled={selectedRows.length === 0}
+              className="inline-flex items-center gap-1.5 h-8 px-3 text-xs font-medium rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
+            >
+              <ShoppingCart className="h-3.5 w-3.5" /> Create Purchase Request{selectedRows.length > 0 && ` (${selectedRows.length})`}
+            </button>
+          </div>
+        )}
+      </div>
+
+      {shown.length === 0 && <p className="text-sm text-muted-foreground text-center py-8">No items match “{q}”.</p>}
+
+      {shown.length > 0 && <div className="hidden desktop:block overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-muted/50 text-xs text-muted-foreground">
             <tr>
+              {isWarehouse && (
+                <th className="pl-5 pr-1 py-2.5 w-8">
+                  <input type="checkbox" className="h-4 w-4 accent-primary cursor-pointer align-middle" checked={allShownSelected} onChange={toggleAllShown} aria-label="Select all" />
+                </th>
+              )}
               <th className="text-left px-5 py-2.5 font-medium">SKU</th>
               <th className="text-left px-5 py-2.5 font-medium">Name</th>
-              <th className="text-left px-5 py-2.5 font-medium">Method</th>
               <th className="text-right px-5 py-2.5 font-medium">Lots</th>
               <th className="text-right px-5 py-2.5 font-medium">Stock</th>
               <th className="text-right px-5 py-2.5 font-medium">Min</th>
+              {isWarehouse && <>
+                <th className="text-right px-5 py-2.5 font-medium">To Be Order</th>
+                <th className="text-right px-5 py-2.5 font-medium">Pending</th>
+                <th className="text-right px-5 py-2.5 font-medium">PO</th>
+              </>}
               <th className="text-left px-5 py-2.5 font-medium">Nearest Expiry</th>
-              <th className="text-right px-5 py-2.5 font-medium">Value</th>
+              {isWarehouse && <th className="px-5 py-2.5" />}
             </tr>
           </thead>
           <tbody className="divide-y">
-            {rows.map(({ item, qty, costPerUnit, lotsCount, nearestExpiry }) => {
+            {shown.map(row => {
+              const { item, qty, lotsCount, nearestExpiry, replenish } = row
               const isLow = item.minStock > 0 && qty < item.minStock
-              const method = item.valuationMethod ?? 'FIFO'
+              const isSel = selected.has(item.id)
               return (
                 <tr key={item.id}
-                  className={`hover:bg-primary/5 cursor-pointer transition-colors ${isLow ? 'bg-destructive/5' : ''}`}
+                  className={`hover:bg-primary/5 cursor-pointer transition-colors ${isSel ? 'bg-primary/5' : isLow ? 'bg-destructive/5' : ''}`}
                   onClick={() => onOpenLots(item, locationId, locationName)}>
+                  {isWarehouse && (
+                    <td className="pl-5 pr-1 py-3" onClick={e => e.stopPropagation()}>
+                      <input type="checkbox" className="h-4 w-4 accent-primary cursor-pointer align-middle" checked={isSel} onChange={() => toggle(item.id)} aria-label={`Select ${item.name}`} />
+                    </td>
+                  )}
                   <td className="px-5 py-3 font-mono text-xs text-muted-foreground">{item.sku}</td>
                   <td className="px-5 py-3">
                     <p className="font-medium">{item.name}</p>
                     <p className="text-xs text-muted-foreground">{item.category}</p>
-                  </td>
-                  <td className="px-5 py-3">
-                    <span className={`inline-flex px-2 py-0.5 rounded text-xs font-semibold ${METHOD_COLOR[method] ?? 'bg-muted text-muted-foreground'}`}>
-                      {METHOD_LABEL[method] ?? method}
-                    </span>
                   </td>
                   <td className="px-5 py-3 text-right tabular-nums text-muted-foreground text-xs">
                     <span className="inline-flex items-center gap-1">
@@ -97,38 +183,65 @@ function StockTable({ rows, locationId, locationName, onOpenLots }: {
                       {lotsCount > 1 && <Layers className="h-3 w-3 text-muted-foreground/50" />}
                     </span>
                   </td>
-                  <td className={`px-5 py-3 text-right font-semibold tabular-nums ${isLow ? 'text-destructive' : ''}`}>
+                  <td className="px-5 py-3 text-right font-semibold tabular-nums">
                     <StockQty item={item} qty={qty} />
                   </td>
-                  <td className="px-5 py-3 text-right text-muted-foreground text-xs tabular-nums">
-                    {item.minStock > 0 ? (() => { const m = displayQty(item, item.minStock); return `${formatNumber(m.qty, { decimals: 3 })} ${m.unit}` })() : '—'}
-                  </td>
+                  <td className="px-5 py-3 text-right text-xs tabular-nums"><MinCell item={item} isLow={isLow} /></td>
+                  {isWarehouse && <>
+                    <td className="px-5 py-3 text-right tabular-nums">
+                      <QtyCell item={item} qty={replenish?.toBeOrder} className="font-semibold text-destructive" />
+                    </td>
+                    <td className="px-5 py-3 text-right tabular-nums">
+                      <QtyCell item={item} qty={replenish?.pending} className="font-medium text-warning" />
+                    </td>
+                    <td className="px-5 py-3 text-right tabular-nums">
+                      <QtyCell item={item} qty={replenish?.po} className="font-medium text-info" />
+                    </td>
+                  </>}
                   <td className="px-5 py-3 text-sm">
                     {nearestExpiry ? expiryLabel(nearestExpiry) : <span className="text-muted-foreground/40">—</span>}
                   </td>
-                  <td className="px-5 py-3 text-right text-muted-foreground tabular-nums">{formatMoney(qty * costPerUnit)}</td>
+                  {isWarehouse && <td className="px-5 py-3 text-right">{orderButton(row)}</td>}
                 </tr>
               )
             })}
           </tbody>
         </table>
-      </div>
+      </div>}
 
       <div className="desktop:hidden divide-y">
-        {pageRows.map(({ item, qty, costPerUnit, lotsCount, nearestExpiry }) => {
+        {pageRows.map(row => {
+          const { item, qty, nearestExpiry, replenish } = row
           const isLow = item.minStock > 0 && qty < item.minStock
+          const isSel = selected.has(item.id)
           return (
-            <button key={item.id} onClick={() => onOpenLots(item, locationId, locationName)}
-              className={`w-full text-left px-4 py-3 hover:bg-muted/30 active:bg-muted/50 transition-colors ${isLow ? 'bg-destructive/5' : ''}`}>
-              <div className="flex items-center justify-between gap-2">
-                <span className="font-medium text-sm truncate min-w-0">{item.name}</span>
-                <StockQty item={item} qty={qty} className={`text-sm font-semibold tabular-nums shrink-0 text-right ${isLow ? 'text-destructive' : ''}`} />
+            <div key={item.id} role="button" tabIndex={0}
+              onClick={() => onOpenLots(item, locationId, locationName)}
+              onKeyDown={e => { if (e.key === 'Enter') onOpenLots(item, locationId, locationName) }}
+              className={`flex gap-3 px-4 py-3 cursor-pointer hover:bg-muted/30 active:bg-muted/50 transition-colors ${isSel ? 'bg-primary/5' : isLow ? 'bg-destructive/5' : ''}`}>
+              {isWarehouse && (
+                <input type="checkbox" className="h-4 w-4 mt-0.5 shrink-0 accent-primary cursor-pointer" checked={isSel}
+                  onClick={e => e.stopPropagation()} onChange={() => toggle(item.id)} aria-label={`Select ${item.name}`} />
+              )}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-medium text-sm truncate min-w-0">{item.name}</span>
+                  <StockQty item={item} qty={qty} className="text-sm font-semibold tabular-nums shrink-0 text-right" />
+                </div>
+                <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground mt-0.5">
+                  <span className="truncate min-w-0 font-mono">{item.sku}{nearestExpiry && <> · {expiryLabel(nearestExpiry)}</>}</span>
+                  {item.minStock > 0 && <span className="tabular-nums shrink-0">Min <MinCell item={item} isLow={isLow} /></span>}
+                </div>
+                {replenish && (replenish.toBeOrder > 0 || replenish.pending > 0 || replenish.po > 0) && (
+                  <div className="flex items-center gap-3 text-xs text-muted-foreground mt-1">
+                    {replenish.toBeOrder > 0 && <span>To Be Order <QtyCell item={item} qty={replenish.toBeOrder} className="font-semibold text-destructive" /></span>}
+                    {replenish.pending > 0 && <span>Pending <QtyCell item={item} qty={replenish.pending} className="font-medium text-warning" /></span>}
+                    {replenish.po > 0 && <span>PO <QtyCell item={item} qty={replenish.po} className="font-medium text-info" /></span>}
+                    <span className="ml-auto">{orderButton(row, 'xs')}</span>
+                  </div>
+                )}
               </div>
-              <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground mt-0.5">
-                <span className="truncate min-w-0 font-mono">{item.sku}{nearestExpiry && <> · {expiryLabel(nearestExpiry)}</>}</span>
-                <span className="tabular-nums shrink-0">{formatMoney(qty * costPerUnit)}</span>
-              </div>
-            </button>
+            </div>
           )
         })}
       </div>
@@ -163,7 +276,6 @@ function NonStockTable({ rows, onOpenPo }: { rows: NonStockRow[]; onOpenPo?: (po
               <th className="text-right px-5 py-2.5 font-medium">Stock</th>
               <th className="text-left px-5 py-2.5 font-medium">PO No.</th>
               <th className="text-left px-5 py-2.5 font-medium">Arrived</th>
-              <th className="text-right px-5 py-2.5 font-medium">Value</th>
             </tr>
           </thead>
           <tbody className="divide-y">
@@ -187,7 +299,6 @@ function NonStockTable({ rows, onOpenPo }: { rows: NonStockRow[]; onOpenPo?: (po
                   ) : <span className="text-muted-foreground/40 text-xs">—</span>}
                 </td>
                 <td className="px-5 py-3 text-muted-foreground text-xs">{formatDate(r.receivedAt)}</td>
-                <td className="px-5 py-3 text-right text-muted-foreground tabular-nums">{formatMoney(r.qty * r.costPerUnit)}</td>
               </tr>
             ))}
           </tbody>
@@ -210,7 +321,6 @@ function NonStockTable({ rows, onOpenPo }: { rows: NonStockRow[]; onOpenPo?: (po
                 ) : '—'}
                 {' · '}{formatDate(r.receivedAt)}
               </span>
-              <span className="tabular-nums shrink-0">{formatMoney(r.qty * r.costPerUnit)}</span>
             </div>
           </div>
         ))}
@@ -230,7 +340,21 @@ function NonStockTable({ rows, onOpenPo }: { rows: NonStockRow[]; onOpenPo?: (po
   )
 }
 
-export default function StockPage({ onOpenPo }: { onOpenPo?: (poId: string) => void } = {}) {
+interface RestockLine { row: StockRow; qty: string; unit: string }
+interface RestockDraft { locationId: string; locationName: string; lines: RestockLine[]; notes: string }
+
+// Default order qty = To Be Order, rounded UP to whole purchase units (what Purchasing buys in).
+function defaultRestockLine(row: StockRow): RestockLine {
+  const { item } = row
+  const need = row.replenish?.toBeOrder ?? 0
+  if (hasPurchaseUnit(item)) {
+    const conv = item.conversionFactor || 1
+    return { row, unit: item.purchaseUnit, qty: String(need > 0 ? Math.ceil(need / conv - 1e-9) : 1) }
+  }
+  return { row, unit: item.baseUnit, qty: String(need > 0 ? Math.ceil(need * 100 - 1e-9) / 100 : 1) }
+}
+
+export default function StockPage({ onOpenPo, onOpenRequest }: { onOpenPo?: (poId: string) => void; onOpenRequest?: (requestId: string) => void } = {}) {
   const [data, setData] = useState<StockData | null>(null)
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -245,15 +369,58 @@ export default function StockPage({ onOpenPo }: { onOpenPo?: (poId: string) => v
   const [lots, setLots] = useState<StockLot[]>([])
   const [lotsLoading, setLotsLoading] = useState(false)
 
-  const load = useCallback(async () => {
-    setLoading(true)
+  const load = useCallback(async (opts: { silent?: boolean } = {}) => {
+    if (!opts.silent) setLoading(true)
     const res = await fetch('/api/purchasing/stock')
     if (res.ok) {
       const d: StockData = await res.json()
       setData(d)
     }
-    setLoading(false)
+    if (!opts.silent) setLoading(false)
   }, [])
+
+  // Create Purchase Request (restock) modal — opened from a table's bulk button or a row's
+  // "Order" button; the promise tells the table whether to clear its selection.
+  const [restock, setRestock] = useState<RestockDraft | null>(null)
+  const [restockSaving, setRestockSaving] = useState(false)
+  const restockResolver = useRef<((ok: boolean) => void) | null>(null)
+  const openRestock = (rows: StockRow[], locationId: string, locationName: string) => new Promise<boolean>(resolve => {
+    restockResolver.current?.(false)
+    restockResolver.current = resolve
+    setRestock({ locationId, locationName, lines: rows.map(defaultRestockLine), notes: '' })
+  })
+  const closeRestock = (ok: boolean) => {
+    restockResolver.current?.(ok)
+    restockResolver.current = null
+    setRestock(null)
+  }
+  const updateRestockLine = (itemId: string, patch: Partial<RestockLine>) =>
+    setRestock(r => r && { ...r, lines: r.lines.map(l => l.row.item.id === itemId ? { ...l, ...patch } : l) })
+  async function submitRestock() {
+    if (!restock || restockSaving) return
+    const lines = restock.lines
+    if (!lines.length) return
+    const bad = lines.find(l => !(Number(l.qty) > 0))
+    if (bad) { toast.error(`Quantity for "${bad.row.item.name}" must be greater than 0`); return }
+    setRestockSaving(true)
+    try {
+      const res = await fetch('/api/purchasing/stock/restock-request', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          locationId: restock.locationId,
+          notes: restock.notes,
+          items: lines.map(l => ({ itemId: l.row.item.id, quantity: Number(l.qty), unit: l.unit })),
+        }),
+      })
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok) { toast.error(d.error ?? 'Failed to create purchase request'); return }
+      toast.success(`${d.prNumber} sent to Purchasing`, onOpenRequest ? { action: { label: 'Open', onClick: () => onOpenRequest(d.id) } } : undefined)
+      closeRestock(true)
+      load({ silent: true })
+    } finally {
+      setRestockSaving(false)
+    }
+  }
 
   useEffect(() => { load() }, [load])
 
@@ -296,7 +463,7 @@ export default function StockPage({ onOpenPo }: { onOpenPo?: (poId: string) => v
           <h2 className="text-2xl font-bold tracking-tight">Item by Location</h2>
           <p className="text-muted-foreground text-sm mt-1">Real-time item balance per location. Click a stock item to see lot detail.</p>
         </div>
-        <button onClick={load} className="text-sm border rounded-md px-3 py-2 text-muted-foreground hover:bg-muted transition-colors">Refresh</button>
+        <button onClick={() => load()} className="text-sm border rounded-md px-3 py-2 text-muted-foreground hover:bg-muted transition-colors">Refresh</button>
       </div>
 
       {/* Summary cards */}
@@ -363,7 +530,7 @@ export default function StockPage({ onOpenPo }: { onOpenPo?: (poId: string) => v
           if (filteredRows.length === 0) return <p className="text-sm text-muted-foreground text-center py-10">No items match.</p>
           return (
             <>
-              {stockRows.length > 0 && <StockTable rows={stockRows} locationId={loc.location.id} locationName={loc.location.name} onOpenLots={openLots} />}
+              {stockRows.length > 0 && <StockTable rows={stockRows} locationId={loc.location.id} locationName={loc.location.name} onOpenLots={openLots} onRestock={openRestock} />}
               {stockRows.length > 0 && nonStockRows.length > 0 && (
                 <div className="px-5 py-2 bg-muted/30 border-y flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
                   <FileText className="h-3.5 w-3.5" /> Non-Stock Items
@@ -377,7 +544,6 @@ export default function StockPage({ onOpenPo }: { onOpenPo?: (poId: string) => v
         if (filterLoc !== 'all') {
           const loc = visibleLocations[0]
           if (!loc) return null
-          const totalValue = loc.rows.reduce((s, r) => s + r.qty * r.costPerUnit, 0)
           const lowStockCount = loc.rows.filter((r): r is StockRow => r.kind === 'stock' && r.item.minStock > 0 && r.qty < r.item.minStock).length
           const Icon = loc.location.type === 'VESSEL' ? Ship : Warehouse
           return (
@@ -387,7 +553,7 @@ export default function StockPage({ onOpenPo }: { onOpenPo?: (poId: string) => v
                   <Icon className="h-4 w-4 text-muted-foreground" />
                   <div>
                     <p className="font-semibold text-sm">{loc.location.name}</p>
-                    <p className="text-xs text-muted-foreground">{loc.rows.length} item{loc.rows.length !== 1 ? 's' : ''} · Value: {formatMoney(totalValue)}</p>
+                    <p className="text-xs text-muted-foreground">{loc.rows.length} item{loc.rows.length !== 1 ? 's' : ''}</p>
                   </div>
                 </div>
                 {lowStockCount > 0 && (
@@ -408,7 +574,6 @@ export default function StockPage({ onOpenPo }: { onOpenPo?: (poId: string) => v
               const filteredRows = filtered(rows)
               if (filteredRows.length === 0 && (search || itemKind !== 'all')) return null
               const isOpen = openLoc === location.id
-              const totalValue = rows.reduce((s, r) => s + r.qty * r.costPerUnit, 0)
               const lowStockCount = rows.filter((r): r is StockRow => r.kind === 'stock' && r.item.minStock > 0 && r.qty < r.item.minStock).length
               const Icon = location.type === 'VESSEL' ? Ship : Warehouse
               return (
@@ -421,7 +586,7 @@ export default function StockPage({ onOpenPo }: { onOpenPo?: (poId: string) => v
                       <Icon className="h-4 w-4 text-muted-foreground" />
                       <div>
                         <p className="font-semibold text-sm">{location.name}</p>
-                        <p className="text-xs text-muted-foreground">{rows.length} item{rows.length !== 1 ? 's' : ''} · Value: {formatMoney(totalValue)}</p>
+                        <p className="text-xs text-muted-foreground">{rows.length} item{rows.length !== 1 ? 's' : ''}</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-3">
@@ -444,6 +609,76 @@ export default function StockPage({ onOpenPo }: { onOpenPo?: (poId: string) => v
           </div>
         )
       })()}
+
+      {/* Create Purchase Request (restock) modal */}
+      {restock && (
+        <>
+          <div className="fixed inset-0 bg-black/40 z-40" onClick={() => !restockSaving && closeRestock(false)} />
+          <div className="fixed inset-x-0 top-[5vh] mx-auto w-[calc(100%-2rem)] max-w-3xl max-h-[90vh] bg-card rounded-xl shadow-2xl z-50 flex flex-col">
+            <div className="flex items-start justify-between px-5 py-4 border-b shrink-0">
+              <div>
+                <h3 className="font-semibold text-base">Create Purchase Request</h3>
+                <p className="text-xs text-muted-foreground mt-0.5">Restock for <span className="font-medium text-foreground">{restock.locationName}</span> · goes straight to Purchasing, no approval needed</p>
+              </div>
+              <button onClick={() => closeRestock(false)} disabled={restockSaving} className="text-muted-foreground hover:text-foreground"><X className="h-5 w-5" /></button>
+            </div>
+            <div className="flex-1 overflow-y-auto">
+              {restock.lines.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-10">No items left.</p>
+              ) : (
+                <div className="divide-y">
+                  {restock.lines.map(l => {
+                    const { item } = l.row
+                    return (
+                      <div key={item.id} className="px-5 py-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+                        <div className="flex-1 min-w-[180px]">
+                          <p className="font-medium text-sm">{item.name}</p>
+                          <p className="text-xs text-muted-foreground">
+                            <span className="font-mono">{item.sku}</span>
+                            {' · '}Stock <StockQty item={item} qty={l.row.qty} />
+                            {item.minStock > 0 && <> · Min <MinCell item={item} isLow={l.row.qty < item.minStock} /></>}
+                            {(l.row.replenish?.toBeOrder ?? 0) > 0 && <> · To Be Order <StockQty item={item} qty={l.row.replenish!.toBeOrder} className="text-destructive font-semibold" /></>}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <input type="number" min={0} step="any" value={l.qty}
+                            onChange={e => updateRestockLine(item.id, { qty: e.target.value })}
+                            className="w-24 h-8 px-2 text-sm text-right tabular-nums border rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring/50 focus:border-ring" />
+                          {hasPurchaseUnit(item) ? (
+                            <select value={l.unit} onChange={e => updateRestockLine(item.id, { unit: e.target.value })}
+                              className="h-8 px-2 text-sm border rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring/50">
+                              <option value={item.purchaseUnit}>{item.purchaseUnit}</option>
+                              <option value={item.baseUnit}>{item.baseUnit}</option>
+                            </select>
+                          ) : <span className="text-sm text-muted-foreground w-12">{item.baseUnit}</span>}
+                          <button onClick={() => setRestock(r => r && { ...r, lines: r.lines.filter(x => x.row.item.id !== item.id) })}
+                            className="h-8 w-8 inline-flex items-center justify-center text-muted-foreground hover:text-destructive" aria-label={`Remove ${item.name}`}>
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+              <div className="px-5 py-3 border-t">
+                <label className="text-xs text-muted-foreground">Notes (optional)</label>
+                <textarea rows={2} value={restock.notes} onChange={e => setRestock(r => r && { ...r, notes: e.target.value })}
+                  placeholder={`Restock ${restock.locationName}`}
+                  className="mt-1 w-full px-3 py-2 text-sm border rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring/50 focus:border-ring" />
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-2 px-5 py-3 border-t shrink-0">
+              <button onClick={() => closeRestock(false)} disabled={restockSaving} className="h-9 px-4 text-sm border rounded-md hover:bg-muted transition-colors">Cancel</button>
+              <button onClick={submitRestock} disabled={restockSaving || restock.lines.length === 0}
+                className="inline-flex items-center gap-1.5 h-9 px-4 text-sm font-medium rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50">
+                {restockSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShoppingCart className="h-4 w-4" />}
+                Send to Purchasing ({restock.lines.length})
+              </button>
+            </div>
+          </div>
+        </>
+      )}
 
       {/* Lot Register Panel */}
       {lotPanel && (
