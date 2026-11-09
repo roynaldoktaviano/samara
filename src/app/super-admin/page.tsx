@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useSession, signOut } from 'next-auth/react'
+import { useSession, signOut, signIn } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { TENANT_FEATURE_DEFINITIONS, type TenantFeatures } from '@/lib/tenant-features'
 import { groupedTenantSecretDefinitions, type TenantSecretKey } from '@/lib/tenant-secrets-definitions'
@@ -422,6 +422,29 @@ export default function SuperAdminPage() {
     fetchUsers(t.id)
   }
 
+  // Opens this tenant's ERP as its SUPER_ADMIN user (same access as ADMIN) — see
+  // src/lib/super-admin-enter.ts. "Back to Super Admin" in the ERP user menu returns here.
+  const [enteringErp, setEnteringErp] = useState(false)
+  async function openErp(t: Tenant) {
+    setEnteringErp(true)
+    try {
+      const res = await fetch('/api/super-admin/enter', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tenantId: t.id }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || !data.ticket) { toast.error(data.error || `Could not open the ERP (${res.status})`); return }
+      const result = await signIn('super-admin-ticket', { ticket: data.ticket, redirect: false })
+      if (!result?.ok) { toast.error('Could not open the ERP — try again'); return }
+      window.location.href = '/'
+    } catch {
+      toast.error('Could not open the ERP — network error')
+    } finally {
+      setEnteringErp(false)
+    }
+  }
+
   async function addTenant() {
     if (!tenantForm.name || !tenantForm.slug || !tenantForm.databaseUrl) return
     setSavingTenant(true)
@@ -563,6 +586,14 @@ export default function SuperAdminPage() {
                     <StatusBadge tone={selectedTenant.isActive ? 'success' : 'neutral'} className="py-1">
                       {selectedTenant.isActive ? 'Active' : 'Inactive'}
                     </StatusBadge>
+                    <button
+                      onClick={() => openErp(selectedTenant)}
+                      disabled={enteringErp || !selectedTenant.isActive}
+                      title={selectedTenant.isActive ? 'Open this ERP as Super Admin (same access as Admin)' : 'Tenant is inactive'}
+                      className="text-xs bg-[#1e3a5f] text-white px-3 py-1.5 rounded hover:bg-[#162d4a] transition-colors disabled:opacity-50"
+                    >
+                      {enteringErp ? 'Opening…' : 'Open ERP as Super Admin'}
+                    </button>
                     <LogoUrlEditor tenant={selectedTenant} onUpdate={fetchTenants} />
                   </div>
                 </div>

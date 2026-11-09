@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useCallback, useRef } from 'react'
-import { useSession, signOut } from 'next-auth/react'
+import { useSession, signOut, signIn } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { ThemeToggle } from '@/components/ThemeToggle'
 import { TenantTheme } from '@/components/TenantTheme'
@@ -152,6 +152,7 @@ function FinanceTabView() {
 }
 
 const roleBadgeColor: Record<string, string> = {
+  SUPER_ADMIN: 'bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300',
   ADMIN:      'bg-purple-100 text-purple-700 dark:bg-purple-500/15 dark:text-purple-300',
   SALES:      'bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300',
   FINANCE:    'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300',
@@ -162,6 +163,7 @@ const roleBadgeColor: Record<string, string> = {
 }
 
 const roleLabel: Record<string, string> = {
+  SUPER_ADMIN: 'Super Admin',
   ADMIN:      'Admin',
   SALES:      'Sales',
   FINANCE:    'Finance',
@@ -722,6 +724,21 @@ export default function Home() {
     setNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n))
   }
 
+  // Only for a super admin who came in via Super Admin → "Open ERP" (src/lib/super-admin-enter.ts).
+  const backToSuperAdmin = async () => {
+    setShowUserMenu(false)
+    try {
+      const res = await fetch('/api/super-admin/return', { method: 'POST' })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || !data.ticket) { toast.error(data.error || 'Could not return to Super Admin — sign in again'); return }
+      const result = await signIn('super-admin-ticket', { ticket: data.ticket, redirect: false })
+      if (!result?.ok) { toast.error('Could not return to Super Admin — sign in again'); return }
+      window.location.href = '/super-admin'
+    } catch {
+      toast.error('Could not return to Super Admin — network error')
+    }
+  }
+
   const openProfileDialog = () => {
     setProfileName(session?.user?.name ?? '')
     setProfileCurPw('')
@@ -840,6 +857,8 @@ export default function Home() {
   const branding = getTenantBranding(session.user.tenantSlug)
 
   const userRole = session.user.role
+  // What the badge shows: a super admin acts as ADMIN (session.user.role) but is labelled as such.
+  const badgeRole = session.user.accountRole ?? userRole
   const isAdmin   = userRole === 'ADMIN' || userRole === 'SUPER_ADMIN'
   const isFinance = userRole === 'FINANCE' || userRole === 'ADMIN'
   const tenantFeatures = (session.user as { tenantFeatures?: Record<string, boolean> }).tenantFeatures ?? {}
@@ -1447,8 +1466,8 @@ export default function Home() {
                     {session.user.name?.charAt(0) ?? session.user.email?.charAt(0) ?? 'U'}
                   </div>
                   <div className="text-left hidden sm:block min-w-18">
-                    <span className={`inline-block rounded-md px-2 py-0.5 text-[10px] font-semibold leading-none mb-1 ${roleBadgeColor[userRole] ?? 'bg-muted text-muted-foreground'}`}>
-                      {roleLabel[userRole] ?? userRole}
+                    <span className={`inline-block rounded-md px-2 py-0.5 text-[10px] font-semibold leading-none mb-1 ${roleBadgeColor[badgeRole] ?? 'bg-muted text-muted-foreground'}`}>
+                      {roleLabel[badgeRole] ?? badgeRole}
                     </span>
                     <p className="text-sm font-medium text-foreground leading-none">
                       {session.user.name ?? session.user.email}
@@ -1485,6 +1504,15 @@ export default function Home() {
                         Email Signature
                       </button>
                       <div className="border-t mx-2" />
+                      {session.user.enteredBySuperAdminId && (
+                        <button
+                          onClick={backToSuperAdmin}
+                          className="flex w-full items-center gap-2 px-3 py-2.5 text-sm text-foreground hover:bg-muted transition-colors"
+                        >
+                          <Shield className="h-4 w-4 text-muted-foreground" />
+                          Back to Super Admin
+                        </button>
+                      )}
                       <button
                         onClick={() => triggerTransition(() => signOut({ callbackUrl: '/login' }), 900, branding)}
                         className="flex w-full items-center gap-2 px-3 py-2.5 text-sm text-destructive hover:bg-destructive/10 transition-colors"

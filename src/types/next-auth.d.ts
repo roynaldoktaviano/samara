@@ -10,6 +10,10 @@ declare module 'next-auth' {
       tenantSlug?: string
       tenantLogoUrl?: string
       tenantFeatures?: Record<string, boolean>
+      // The account's own role when `role` was mapped for access (tenant SUPER_ADMIN → ADMIN).
+      accountRole?: string
+      // Set when a super admin opened this tenant's ERP from the Super Admin dashboard.
+      enteredBySuperAdminId?: string
     } & DefaultSession['user']
   }
 
@@ -20,6 +24,7 @@ declare module 'next-auth' {
     tenantSlug?: string
     tenantLogoUrl?: string
     tenantFeatures?: Record<string, boolean>
+    enteredBySuperAdminId?: string
   }
 }
 
@@ -35,5 +40,6 @@ declare module 'next-auth/jwt' {
     // BOT accounts only: ms timestamp of the password login — middleware expires a BOT
     // session a fixed time after it, regardless of the 30-day sliding cookie.
     loginAt?: number
+    enteredBySuperAdminId?: string
   }
 }

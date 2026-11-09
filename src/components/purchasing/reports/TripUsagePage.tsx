@@ -3,6 +3,7 @@
 import { Fragment, useState, useEffect, useCallback, useMemo } from 'react'
 import { RefreshCw, Search, ChevronRight, ChevronDown, Download } from 'lucide-react'
 import { formatDate, formatDateRange, formatMoney, formatNumber } from '@/lib/format'
+import { displayQty } from '@/lib/purchasing/units'
 
 // Purchasing › Trip Usage — what each trip took as usage (pemakaian), per yacht & year.
 // Same ledger and trip-matching rule as Finance › Trip Stats (see api/purchasing/reports/trip-usage).
@@ -15,13 +16,16 @@ interface Line {
   itemType: string | null
   category: string | null
   unit: string
+  purchaseUnit: string | null
+  conversionFactor: number | null
   qty: number
   cost: number
   usageType: UsageKey
   ref: { kind: 'TR' | 'GR' | 'COUNT' | 'POS' | 'OTHER'; number: string | null; id: string | null; poNumber?: string | null }
   byDate: boolean
+  yachtName: string
 }
-interface Trip { id: string; kind: 'OPEN_TRIP' | 'PRIVATE_CHARTER'; label: string; tripNumber: number | null; startDate: string; endDate: string; pax: number; days: number; lines: Line[]; total: number }
+interface Trip { id: string; yachtId: string; yachtName: string; kind: 'OPEN_TRIP' | 'PRIVATE_CHARTER'; label: string; tripNumber: number | null; startDate: string; endDate: string; pax: number; days: number; lines: Line[]; total: number }
 interface Data {
   year: number
   yachtId: string | null
@@ -41,17 +45,24 @@ const refLabel = (r: Line['ref']) =>
   : r.kind === 'POS' ? 'POS sales'
   : '—'
 
-interface ItemRow { key: string; itemName: string; category: string | null; usageType: UsageKey; unit: string; qty: number; cost: number }
+interface ItemRow { key: string; itemName: string; category: string | null; usageType: UsageKey; unit: string; purchaseUnit: string | null; conversionFactor: number | null; qty: number; cost: number }
 function byItem(lines: Line[]): ItemRow[] {
   const map = new Map<string, ItemRow>()
   for (const l of lines) {
     const key = `${l.usageType}|${l.itemId ?? l.itemName}`
-    const r = map.get(key) ?? { key, itemName: l.itemName, category: l.category, usageType: l.usageType, unit: l.unit, qty: 0, cost: 0 }
+    const r = map.get(key) ?? { key, itemName: l.itemName, category: l.category, usageType: l.usageType, unit: l.unit, purchaseUnit: l.purchaseUnit, conversionFactor: l.conversionFactor, qty: 0, cost: 0 }
     r.qty += l.qty
     r.cost += l.cost
     map.set(key, r)
   }
   return [...map.values()].sort((a, b) => b.cost - a.cost)
+}
+
+// Base-unit qty & cost → what the tables show: qty in the purchase unit (bottle/carton) where the
+// item has one, and price = average cost per that unit.
+function qtyPrice(r: { unit: string; purchaseUnit: string | null; conversionFactor: number | null; qty: number; cost: number }) {
+  const d = displayQty({ baseUnit: r.unit, purchaseUnit: r.purchaseUnit, conversionFactor: r.conversionFactor }, r.qty)
+  return { qty: d.qty, unit: d.unit, price: Math.abs(d.qty) > 1e-9 ? r.cost / d.qty : null }
 }
 
 function Stat({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: 'amber' }) {
@@ -94,19 +105,21 @@ function LinesTable({ lines, mode }: { lines: Line[]; mode: 'item' | 'detail' })
             <th className={`${th} text-left`}>Category</th>
             <th className={`${th} text-left`}>Type</th>
             <th className={`${th} text-right`}>Qty</th>
-            <th className={`${th} text-right pr-5`}>Cost</th>
+            <th className={`${th} text-right`}>Price</th>
+            <th className={`${th} text-right pr-5`}>Total</th>
           </tr>
         </thead>
         <tbody className="divide-y">
-          {rows.map(r => (
+          {rows.map(r => { const d = qtyPrice(r); return (
             <tr key={r.key} className="hover:bg-muted/20">
               <td className={`${td} pl-5 font-medium`}>{r.itemName}</td>
               <td className={`${td} text-muted-foreground`}>{r.category ?? '—'}</td>
               <td className={`${td} text-muted-foreground text-xs`}>{USAGE_LABEL[r.usageType]}</td>
-              <td className={`${td} text-right tabular-nums whitespace-nowrap ${r.qty < 0 ? 'text-destructive' : ''}`}>{formatNumber(r.qty, { decimals: 2 })} <span className="text-xs text-muted-foreground">{r.unit}</span></td>
+              <td className={`${td} text-right tabular-nums whitespace-nowrap ${d.qty < 0 ? 'text-destructive' : ''}`}>{formatNumber(d.qty, { decimals: 2 })} <span className="text-xs text-muted-foreground">{d.unit}</span></td>
+              <td className={`${td} text-right tabular-nums whitespace-nowrap`}>{d.price === null ? '—' : formatMoney(d.price)}</td>
               <td className={`${td} text-right tabular-nums whitespace-nowrap pr-5 ${r.cost < 0 ? 'text-destructive' : ''}`}>{formatMoney(r.cost)}</td>
             </tr>
-          ))}
+          ) })}
         </tbody>
       </table>
     )
@@ -120,11 +133,12 @@ function LinesTable({ lines, mode }: { lines: Line[]; mode: 'item' | 'detail' })
           <th className={`${th} text-left`}>Item</th>
           <th className={`${th} text-left`}>Type</th>
           <th className={`${th} text-right`}>Qty</th>
-          <th className={`${th} text-right pr-5`}>Cost</th>
+          <th className={`${th} text-right`}>Price</th>
+          <th className={`${th} text-right pr-5`}>Total</th>
         </tr>
       </thead>
       <tbody className="divide-y">
-        {lines.map((l, i) => (
+        {lines.map((l, i) => { const d = qtyPrice(l); return (
           <tr key={i} className="hover:bg-muted/20">
             <td className={`${td} pl-5 whitespace-nowrap text-muted-foreground`}>{formatDate(l.date, 'short')}</td>
             <td className={`${td} whitespace-nowrap`}>
@@ -133,10 +147,11 @@ function LinesTable({ lines, mode }: { lines: Line[]; mode: 'item' | 'detail' })
             </td>
             <td className={`${td} font-medium`}>{l.itemName}</td>
             <td className={`${td} text-muted-foreground text-xs`}>{l.qty < 0 ? 'Returned' : USAGE_LABEL[l.usageType]}</td>
-            <td className={`${td} text-right tabular-nums whitespace-nowrap ${l.qty < 0 ? 'text-destructive' : ''}`}>{formatNumber(l.qty, { decimals: 2 })} <span className="text-xs text-muted-foreground">{l.unit}</span></td>
+            <td className={`${td} text-right tabular-nums whitespace-nowrap ${d.qty < 0 ? 'text-destructive' : ''}`}>{formatNumber(d.qty, { decimals: 2 })} <span className="text-xs text-muted-foreground">{d.unit}</span></td>
+            <td className={`${td} text-right tabular-nums whitespace-nowrap`}>{d.price === null ? '—' : formatMoney(d.price)}</td>
             <td className={`${td} text-right tabular-nums whitespace-nowrap pr-5 ${l.cost < 0 ? 'text-destructive' : ''}`}>{formatMoney(l.cost)}</td>
           </tr>
-        ))}
+        ) })}
       </tbody>
     </table>
   )
@@ -234,6 +249,131 @@ function OrderPattern({ trips }: { trips: Trip[] }) {
   )
 }
 
+// Usage Detail: one flat sheet — Ship · Trip No · Item · Qty · Price · Total — every item each
+// trip used, summed per item. Price = average cost per unit (total ÷ qty), i.e. the moving-average
+// purchase price the goods carried when they reached the ship. Qty & price are in the purchase
+// unit (bottle/carton) where the item has one, like the rest of purchasing.
+interface DetailRow {
+  key: string; yachtName: string; tripNumber: number | null; tripLabel: string | null; startDate: string | null; endDate: string | null
+  itemName: string; unit: string; qty: number; price: number | null; total: number
+}
+function buildDetail(trips: Trip[], unassigned: Line[]): DetailRow[] {
+  const rows: DetailRow[] = []
+  const add = (lines: Line[], trip: Trip | null) => {
+    const map = new Map<string, { l: Line; baseQty: number; cost: number }>()
+    for (const l of lines) {
+      const key = `${l.yachtName}|${l.itemId ?? l.itemName}`
+      const r = map.get(key) ?? { l, baseQty: 0, cost: 0 }
+      r.baseQty += l.qty
+      r.cost += l.cost
+      map.set(key, r)
+    }
+    for (const [key, r] of map) {
+      const d = displayQty({ baseUnit: r.l.unit, purchaseUnit: r.l.purchaseUnit, conversionFactor: r.l.conversionFactor }, r.baseQty)
+      rows.push({
+        key: `${trip?.id ?? 'unassigned'}|${key}`, yachtName: r.l.yachtName,
+        tripNumber: trip?.tripNumber ?? null, tripLabel: trip?.label ?? null, startDate: trip?.startDate ?? null, endDate: trip?.endDate ?? null,
+        itemName: r.l.itemName, unit: d.unit, qty: d.qty,
+        price: Math.abs(d.qty) > 1e-9 ? r.cost / d.qty : null, total: r.cost,
+      })
+    }
+  }
+  for (const t of trips) add(t.lines, t)
+  add(unassigned, null)
+  return rows.sort((a, b) =>
+    a.yachtName.localeCompare(b.yachtName)
+    || (a.tripNumber === null ? 1 : 0) - (b.tripNumber === null ? 1 : 0)
+    || (a.tripNumber ?? 0) - (b.tripNumber ?? 0)
+    || (a.startDate ?? '').localeCompare(b.startDate ?? '')
+    || a.itemName.localeCompare(b.itemName))
+}
+
+function UsageDetail({ rows }: { rows: DetailRow[] }) {
+  if (!rows.length) return <p className="px-5 py-10 text-center text-sm text-muted-foreground">No usage recorded.</p>
+  const th = 'px-3 py-2.5 font-medium whitespace-nowrap'
+  const td = 'px-3 py-2.5'
+  const total = rows.reduce((s, r) => s + r.total, 0)
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead className="text-xs text-muted-foreground border-b bg-muted/20">
+          <tr>
+            <th className={`${th} text-right pl-5 w-12`}>No</th>
+            <th className={`${th} text-left`}>Ship</th>
+            <th className={`${th} text-left`}>Trip No</th>
+            <th className={`${th} text-left`}>Item</th>
+            <th className={`${th} text-right`}>Qty</th>
+            <th className={`${th} text-right`}>Price</th>
+            <th className={`${th} text-right pr-5`}>Total</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y">
+          {rows.map((r, i) => (
+            <tr key={r.key} className="hover:bg-muted/20">
+              <td className={`${td} pl-5 text-right tabular-nums text-muted-foreground`}>{i + 1}</td>
+              <td className={`${td} whitespace-nowrap`}>{r.yachtName}</td>
+              <td className={`${td} whitespace-nowrap`}>
+                {r.tripLabel
+                  ? <span title={`${r.tripLabel} · ${formatDateRange(r.startDate!, r.endDate!)}`}>
+                      <span className="font-semibold tabular-nums">#{r.tripNumber ?? '—'}</span>
+                      <span className="ml-1.5 text-xs text-muted-foreground">{formatDate(r.startDate!, 'short')}</span>
+                    </span>
+                  : <span className="text-xs font-medium text-warning">Unassigned</span>}
+              </td>
+              <td className={`${td} font-medium`}>{r.itemName}</td>
+              <td className={`${td} text-right tabular-nums whitespace-nowrap ${r.qty < 0 ? 'text-destructive' : ''}`}>
+                {formatNumber(r.qty, { decimals: 2 })} <span className="text-xs text-muted-foreground">{r.unit}</span>
+              </td>
+              <td className={`${td} text-right tabular-nums whitespace-nowrap`}>{r.price === null ? '—' : formatMoney(r.price)}</td>
+              <td className={`${td} text-right tabular-nums whitespace-nowrap pr-5 font-medium ${r.total < 0 ? 'text-destructive' : ''}`}>{formatMoney(r.total)}</td>
+            </tr>
+          ))}
+        </tbody>
+        <tfoot className="border-t-2">
+          <tr>
+            <td colSpan={6} className="px-3 py-3 text-right font-semibold">Total</td>
+            <td className="px-3 py-3 pr-5 text-right tabular-nums font-bold whitespace-nowrap">{formatMoney(total)}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  )
+}
+
+async function exportDetailXlsx(rows: DetailRow[], fileLabel: string) {
+  const { default: ExcelJS } = await import('exceljs')
+  const wb = new ExcelJS.Workbook()
+  const ws = wb.addWorksheet('Usage Detail')
+  ws.columns = [
+    { header: 'No', key: 'no', width: 6 },
+    { header: 'Ship', key: 'ship', width: 18 },
+    { header: 'Trip No', key: 'trip', width: 9 },
+    { header: 'Trip', key: 'tripLabel', width: 34 },
+    { header: 'Item', key: 'item', width: 34 },
+    { header: 'Qty', key: 'qty', width: 10, style: { numFmt: '#,##0.##' } },
+    { header: 'Unit', key: 'unit', width: 8 },
+    { header: 'Price (IDR)', key: 'price', width: 14, style: { numFmt: '#,##0' } },
+    { header: 'Total (IDR)', key: 'total', width: 16, style: { numFmt: '#,##0' } },
+  ]
+  rows.forEach((r, i) => ws.addRow({
+    no: i + 1, ship: r.yachtName, trip: r.tripNumber ?? '', tripLabel: r.tripLabel ?? 'Unassigned', item: r.itemName,
+    qty: r.qty, unit: r.unit, price: r.price === null ? '' : Math.round(r.price), total: Math.round(r.total),
+  }))
+  const totalRow = ws.addRow({ price: 'Total', total: Math.round(rows.reduce((s, r) => s + r.total, 0)) })
+  totalRow.font = { bold: true }
+  const head = ws.getRow(1)
+  head.font = { bold: true }
+  head.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1EDE3' } }
+  ws.views = [{ state: 'frozen', ySplit: 1 }]
+  const buf = await wb.xlsx.writeBuffer()
+  const url = URL.createObjectURL(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }))
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `Usage Detail ${fileLabel}.xlsx`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 async function exportXlsx(data: Data, trips: Trip[], unassigned: Line[]) {
   const { default: ExcelJS } = await import('exceljs')
   const wb = new ExcelJS.Workbook()
@@ -263,10 +403,12 @@ async function exportXlsx(data: Data, trips: Trip[], unassigned: Line[]) {
     { header: 'Type', key: 'type', width: 14 },
     { header: 'Qty', key: 'qty', width: 10, style: { numFmt: '#,##0.##' } },
     { header: 'Unit', key: 'unit', width: 8 },
-    { header: 'Cost (IDR)', key: 'cost', width: 14, style: { numFmt: '#,##0' } },
+    { header: 'Price (IDR)', key: 'price', width: 14, style: { numFmt: '#,##0' } },
+    { header: 'Total (IDR)', key: 'cost', width: 14, style: { numFmt: '#,##0' } },
   ]
   for (const g of groups) for (const r of byItem(g.lines)) {
-    ws1.addRow({ ...tripCells(g.trip), item: r.itemName, category: r.category ?? '', type: USAGE_LABEL[r.usageType], qty: r.qty, unit: r.unit, cost: Math.round(r.cost) })
+    const d = qtyPrice(r)
+    ws1.addRow({ ...tripCells(g.trip), item: r.itemName, category: r.category ?? '', type: USAGE_LABEL[r.usageType], qty: d.qty, unit: d.unit, price: d.price === null ? '' : Math.round(d.price), cost: Math.round(r.cost) })
   }
   styleHeader(ws1)
 
@@ -280,13 +422,15 @@ async function exportXlsx(data: Data, trips: Trip[], unassigned: Line[]) {
     { header: 'Type', key: 'type', width: 14 },
     { header: 'Qty', key: 'qty', width: 10, style: { numFmt: '#,##0.##' } },
     { header: 'Unit', key: 'unit', width: 8 },
-    { header: 'Cost (IDR)', key: 'cost', width: 14, style: { numFmt: '#,##0' } },
+    { header: 'Price (IDR)', key: 'price', width: 14, style: { numFmt: '#,##0' } },
+    { header: 'Total (IDR)', key: 'cost', width: 14, style: { numFmt: '#,##0' } },
     { header: 'By date', key: 'byDate', width: 9 },
   ]
   for (const g of groups) for (const l of g.lines) {
+    const d = qtyPrice(l)
     ws2.addRow({
       ...tripCells(g.trip), date: new Date(l.date), doc: refLabel(l.ref), item: l.itemName, category: l.category ?? '',
-      type: l.qty < 0 ? 'Returned' : USAGE_LABEL[l.usageType], qty: l.qty, unit: l.unit, cost: Math.round(l.cost), byDate: l.byDate ? 'Yes' : '',
+      type: l.qty < 0 ? 'Returned' : USAGE_LABEL[l.usageType], qty: d.qty, unit: d.unit, price: d.price === null ? '' : Math.round(d.price), cost: Math.round(l.cost), byDate: l.byDate ? 'Yes' : '',
     })
   }
   styleHeader(ws2)
@@ -303,12 +447,12 @@ async function exportXlsx(data: Data, trips: Trip[], unassigned: Line[]) {
 export default function TripUsagePage() {
   const thisYear = new Date().getFullYear()
   const [year, setYear] = useState(thisYear)
-  const [yachtId, setYachtId] = useState('')
+  const [yachtId, setYachtId] = useState('all')
   const [itemType, setItemType] = useState('')
   const [search, setSearch] = useState('')
   const [hideEmpty, setHideEmpty] = useState(true)
   const [mode, setMode] = useState<'item' | 'detail'>('item')
-  const [view, setView] = useState<'trips' | 'pattern' | 'maintenance'>('trips')
+  const [view, setView] = useState<'detail' | 'trips' | 'pattern' | 'maintenance'>('detail')
   const [open, setOpen] = useState<Set<string>>(new Set())
   const [data, setData] = useState<Data | null>(null)
   const [loading, setLoading] = useState(true)
@@ -346,6 +490,12 @@ export default function TripUsagePage() {
   const toggle = (id: string) => setOpen(s => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n })
 
   const yachtName = data?.yachts.find(y => y.id === yachtId)?.name
+  const detailRows = useMemo(() => buildDetail(trips, unassigned), [trips, unassigned])
+  // "All yachts" only makes sense on Usage Detail — the other tabs are one ship's trip sheet.
+  const switchView = (v: typeof view) => {
+    setView(v)
+    if (v !== 'detail' && yachtId === 'all' && data?.yachts[0]) { setYachtId(data.yachts[0].id); setOpen(new Set()) }
+  }
 
   return (
     <div className="space-y-6">
@@ -360,7 +510,14 @@ export default function TripUsagePage() {
             <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
           </button>
           <button
-            onClick={async () => { if (!data) return; setExporting(true); try { await exportXlsx(data, trips, unassigned) } finally { setExporting(false) } }}
+            onClick={async () => {
+              if (!data) return
+              setExporting(true)
+              try {
+                if (view === 'detail') await exportDetailXlsx(detailRows, `${yachtName ?? 'All yachts'} ${data.year}`)
+                else await exportXlsx(data, trips, unassigned)
+              } finally { setExporting(false) }
+            }}
             disabled={!data || exporting}
             className="h-8 px-3 inline-flex items-center gap-1.5 rounded-md text-sm font-medium border hover:bg-muted transition-colors disabled:opacity-50">
             <Download className="h-3.5 w-3.5" /> {exporting ? 'Exporting…' : 'Export'}
@@ -369,8 +526,8 @@ export default function TripUsagePage() {
       </div>
 
       <div className="flex gap-6 border-b -mt-2">
-        {([['trips', 'Per Trip'], ['pattern', 'Order Pattern'], ['maintenance', 'Maintenance']] as const).map(([v, label]) => (
-          <button key={v} onClick={() => setView(v)}
+        {([['detail', 'Usage Detail'], ['trips', 'Per Trip'], ['pattern', 'Order Pattern'], ['maintenance', 'Maintenance']] as const).map(([v, label]) => (
+          <button key={v} onClick={() => switchView(v)}
             className={`-mb-px pb-2.5 text-sm font-medium border-b-2 transition-colors ${view === v ? 'border-foreground text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}>
             {label}
           </button>
@@ -380,7 +537,7 @@ export default function TripUsagePage() {
       {/* Filters — one quiet row of chips; search pushed right. */}
       <div className="flex flex-wrap items-center gap-2">
         <FilterChip label="Yacht" value={yachtId} onChange={v => { setYachtId(v); setOpen(new Set()) }}
-          options={(data?.yachts ?? []).map(y => ({ value: y.id, label: y.name }))} />
+          options={[...(view === 'detail' ? [{ value: 'all', label: 'All yachts' }] : []), ...(data?.yachts ?? []).map(y => ({ value: y.id, label: y.name }))]} />
         <FilterChip label="Year" value={String(year)} onChange={v => { setYear(Number(v)); setOpen(new Set()) }}
           options={Array.from({ length: 4 }, (_, i) => String(thisYear + 1 - i)).map(y => ({ value: y, label: y }))} />
         <FilterChip label="Type" value={itemType} onChange={setItemType}
@@ -400,7 +557,18 @@ export default function TripUsagePage() {
         <Stat label="Unassigned" value={formatMoney(unassignedTotal)} sub={unassigned.length ? `${unassigned.length} lines` : undefined} tone={unassigned.length ? 'amber' : undefined} />
       </div>
 
-      {view === 'maintenance' ? (
+      {view === 'detail' ? (
+        <div className="rounded-lg border overflow-hidden">
+          <div className="px-4 py-2.5 border-b">
+            <p className="text-sm font-medium">
+              {yachtName ?? 'All yachts'} <span className="text-muted-foreground font-normal">· items used per trip in {year}, valued at average purchase cost</span>
+            </p>
+          </div>
+          {loading && !data
+            ? <p className="px-5 py-10 text-center text-sm text-muted-foreground">Loading…</p>
+            : <UsageDetail rows={detailRows} />}
+        </div>
+      ) : view === 'maintenance' ? (
         <div className="rounded-lg border overflow-hidden">
           <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 border-b">
             <p className="text-sm font-medium">
@@ -468,7 +636,7 @@ export default function TripUsagePage() {
                   <th className="text-left px-3 py-2.5 font-medium">Trip</th>
                   <th className="text-left px-3 py-2.5 font-medium whitespace-nowrap">Dates</th>
                   <th className="text-right px-3 py-2.5 font-medium">Items</th>
-                  <th className="text-right px-5 py-2.5 font-medium">Cost</th>
+                  <th className="text-right px-5 py-2.5 font-medium">Total</th>
                 </tr>
               </thead>
               <tbody className="divide-y">
@@ -520,6 +688,7 @@ export default function TripUsagePage() {
       <p className="text-[11px] text-muted-foreground">
         Usage is charged to the trip picked on the Transfer / PO; without one (marked BY DATE), to the trip running that day on this yacht, else the next one to depart.
         Returns from the ship to stock show as negative. Same numbers as Finance › Trip Stats.
+        {view === 'detail' && ' Price = average purchase cost per unit (moving average of PO prices) at the time the goods reached the ship; PO payments are cash flow and are not added here.'}
         {view === 'pattern' && ' Order Pattern: food & supplies are counted as used on arrival, so "Lasts" is estimated from the gap between orders; Per guest/day = qty of completed order cycles ÷ (pax × days). Bar stock (POS sales) is not shown here.'}
       </p>
     </div>

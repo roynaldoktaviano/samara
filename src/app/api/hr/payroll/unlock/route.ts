@@ -23,9 +23,12 @@ export async function POST(req: NextRequest) {
   const { password } = await req.json().catch(() => ({}))
   if (!password || typeof password !== 'string') return NextResponse.json({ error: 'Password is required' }, { status: 400 })
 
-  // Super admins live in the central DB, everyone else in their tenant DB.
-  const hash = session.user.isSuperAdmin
-    ? (await centralDb.centralUser.findUnique({ where: { id: session.user.id }, select: { password: true } }))?.password
+  // Super admins live in the central DB, everyone else in their tenant DB. A super admin who
+  // opened this ERP from the dashboard has a tenant row with an unusable password, so they
+  // confirm with their own super admin password instead.
+  const centralId = session.user.isSuperAdmin ? session.user.id : session.user.enteredBySuperAdminId
+  const hash = centralId
+    ? (await centralDb.centralUser.findUnique({ where: { id: centralId }, select: { password: true } }))?.password
     : (await (await getDb(session)).user.findUnique({ where: { id: session.user.id }, select: { password: true } }))?.password
 
   if (!hash || !(await bcrypt.compare(password, hash))) {

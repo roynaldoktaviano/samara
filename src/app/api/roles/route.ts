@@ -15,7 +15,9 @@ export async function GET() {
   const overrides = await db.roleModuleAccess.findMany()
   const overrideMap = new Map(overrides.map(o => [o.role, o.modules]))
 
-  const roles = ALL_ROLES.map(role => ({
+  // SUPER_ADMIN isn't listed: inside the ERP it always acts as ADMIN (effectiveSessionRole in
+  // src/lib/role-utils.ts), so ADMIN's row is what governs it. A row of its own would do nothing.
+  const roles = ALL_ROLES.filter(role => role !== 'SUPER_ADMIN').map(role => ({
     role,
     modules: effectiveModulesFromOverride(role, overrideMap.get(role) ?? null),
     isCustomized: overrideMap.has(role),

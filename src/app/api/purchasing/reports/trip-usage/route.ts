@@ -26,11 +26,15 @@ export interface TripUsageLine {
   itemType: string | null
   category: string | null
   unit: string
+  // Purchase unit (bottle/carton) so the report can show qty & price the way purchasing counts.
+  purchaseUnit: string | null
+  conversionFactor: number | null
   qty: number
   cost: number
   usageType: UsageKey
   ref: { kind: 'TR' | 'GR' | 'COUNT' | 'POS' | 'OTHER'; number: string | null; id: string | null; poNumber?: string | null }
   byDate: boolean
+  yachtName: string
 }
 
 export async function GET(req: NextRequest) {
@@ -48,9 +52,29 @@ export async function GET(req: NextRequest) {
     db.yacht.findMany({ select: { id: true, name: true }, orderBy: { name: 'asc' } }),
     db.purchaseItemTypeConfig.findMany({ where: { isActive: true }, select: { code: true, label: true }, orderBy: { label: 'asc' } }),
   ]))
-  const yachtId = searchParams.get('yachtId') || yachts[0]?.id
-  if (!yachtId) return NextResponse.json({ year, yachtId: null, yachts, itemTypes, trips: [], unassigned: [] })
+  const requested = searchParams.get('yachtId') || yachts[0]?.id
+  if (!requested) return NextResponse.json({ year, yachtId: null, yachts, itemTypes, trips: [], unassigned: [], maintenance: [] })
 
+  // 'all' (Usage Detail tab) = every yacht's report stitched together. Trip matching stays per
+  // yacht — a movement is only ever charged to a trip on its own ship.
+  const targets = requested === 'all' ? yachts : yachts.filter(y => y.id === requested)
+  const trips: Awaited<ReturnType<typeof buildYachtReport>>['trips'] = []
+  const unassigned: TripUsageLine[] = []
+  const maintenance: TripUsageLine[] = []
+  for (const y of targets) {
+    const r = await buildYachtReport(db, y, year, itemType)
+    trips.push(...r.trips)
+    unassigned.push(...r.unassigned)
+    maintenance.push(...r.maintenance)
+  }
+  return NextResponse.json({ year, yachtId: requested, yachts, itemTypes, trips, unassigned, maintenance })
+}
+
+type Db = Awaited<ReturnType<typeof getDb>>
+
+async function buildYachtReport(db: Db, yacht: { id: string; name: string }, year: number, itemType: string) {
+  const yachtId = yacht.id
+  const yachtName = yacht.name
   const start = new Date(Date.UTC(year, 0, 1))
   const end = new Date(Date.UTC(year + 1, 0, 1))
 
@@ -72,7 +96,7 @@ export async function GET(req: NextRequest) {
   const movementSelect = {
     usageType: true, totalCost: true, quantity: true, createdAt: true, openTripId: true, tripBookingId: true,
     referenceId: true, referenceType: true, itemId: true, itemName: true,
-    item: { select: { name: true, baseUnit: true, type: true, category: true } },
+    item: { select: { name: true, baseUnit: true, purchaseUnit: true, conversionFactor: true, type: true, category: true } },
   } as const
   // Spare parts that reached this ship this year — its maintenance cost, not any trip's.
   const maintenanceMovements = await withRetry(db, () => db.stockMovement.findMany({
@@ -131,6 +155,9 @@ export async function GET(req: NextRequest) {
       itemType: m.item?.type ?? null,
       category: m.item?.category ?? null,
       unit: m.item?.baseUnit ?? '',
+      purchaseUnit: m.item?.purchaseUnit ?? null,
+      conversionFactor: m.item?.conversionFactor ?? null,
+      yachtName,
       // Reversals carry a negative totalCost but a positive quantity.
       qty: cost < 0 ? -m.quantity : m.quantity,
       cost,
@@ -171,9 +198,9 @@ export async function GET(req: NextRequest) {
     .sort((a, b) => (a.tripNumber ?? 1e9) - (b.tripNumber ?? 1e9) || a.startDate.getTime() - b.startDate.getTime())
     .map(t => {
       const lines = linesByTrip.get(t.id) ?? []
-      return { ...t, lines, total: lines.reduce((s, l) => s + l.cost, 0) }
+      return { ...t, yachtId, yachtName, lines, total: lines.reduce((s, l) => s + l.cost, 0) }
     })
 
   const maintenance = maintenanceMovements.map(m => toLine(m, false))
-  return NextResponse.json({ year, yachtId, yachts, itemTypes, trips, unassigned, maintenance })
+  return { trips, unassigned, maintenance }
 }

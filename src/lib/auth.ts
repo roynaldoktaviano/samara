@@ -6,6 +6,9 @@ import { centralDb } from '@/lib/central-db'
 import { getTenantDb } from '@/lib/tenant-db'
 import { resolveTenantDbUrl } from '@/lib/tenant-db-url'
 import { logActivity } from '@/lib/activity'
+import { activeSuperAdmin, consumeSuperAdminTicket, ensureTenantSuperAdminUser } from '@/lib/super-admin-enter'
+import { logSuperAdmin } from '@/lib/super-admin-log'
+import { effectiveSessionRole } from '@/lib/role-utils'
 
 // In-memory rate limiter for authorize(): max 10 attempts per email per 2 minutes
 const authRateMap = new Map<string, { count: number; resetAt: number }>()
@@ -140,6 +143,49 @@ export const authOptions: NextAuthOptions = {
         }
       },
     }),
+    // Super Admin dashboard → "Open ERP" / ERP → "Back to Super Admin". No password, just a
+    // single-use 60-second ticket the server signed for the logged-in super admin
+    // (src/lib/super-admin-enter.ts).
+    CredentialsProvider({
+      id: 'super-admin-ticket',
+      name: 'super-admin-ticket',
+      credentials: { ticket: { label: 'Ticket', type: 'text' } },
+      async authorize(credentials) {
+        const ticket = consumeSuperAdminTicket(credentials?.ticket)
+        if (!ticket) return null
+        const superAdmin = await activeSuperAdmin(ticket.superAdminId).catch(() => null)
+        if (!superAdmin) return null
+
+        if (ticket.mode === 'return') {
+          return { id: superAdmin.id, email: superAdmin.email, name: superAdmin.name ?? 'Super Admin', role: 'SUPER_ADMIN', isSuperAdmin: true }
+        }
+
+        const tenant = await centralDb.tenant.findUnique({
+          where: { id: ticket.tenantId },
+          select: { id: true, slug: true, logoUrl: true, features: true, isActive: true },
+        }).catch(() => null)
+        if (!tenant?.isActive) return null
+        let tenantUser
+        try {
+          tenantUser = await ensureTenantSuperAdminUser(await resolveTenantDbUrl(tenant.id), superAdmin)
+        } catch (e) {
+          console.error('[auth] super admin enter failed:', (e as Error).message)
+          return null
+        }
+        logSuperAdmin({ adminEmail: superAdmin.email, action: 'ENTER_ERP', targetType: 'tenant', targetId: tenant.id, detail: `Opened ${tenant.slug} ERP as SUPER_ADMIN` })
+        return {
+          id: tenantUser.id,
+          email: tenantUser.email,
+          name: tenantUser.name ?? null,
+          role: tenantUser.role,
+          tenantId: tenant.id,
+          tenantSlug: tenant.slug,
+          tenantLogoUrl: tenant.logoUrl ?? undefined,
+          tenantFeatures: (tenant.features ?? {}) as Record<string, boolean>,
+          enteredBySuperAdminId: superAdmin.id,
+        }
+      },
+    }),
   ],
   callbacks: {
     async signIn({ user, account }) {
@@ -163,6 +209,7 @@ export const authOptions: NextAuthOptions = {
           id: string; role: string; isSuperAdmin?: boolean
           tenantId?: string; tenantSlug?: string; tenantLogoUrl?: string
           tenantFeatures?: Record<string, boolean>
+          enteredBySuperAdminId?: string
         }
         token.id = u.id
         token.role = u.role
@@ -171,6 +218,7 @@ export const authOptions: NextAuthOptions = {
         token.tenantSlug = u.tenantSlug
         token.tenantLogoUrl = u.tenantLogoUrl
         token.tenantFeatures = u.tenantFeatures
+        token.enteredBySuperAdminId = u.enteredBySuperAdminId
         // Fixed (non-sliding) lifetime for BOT sessions is enforced in middleware from this.
         if (u.role === 'BOT') token.loginAt = Date.now()
         return token
@@ -201,7 +249,11 @@ export const authOptions: NextAuthOptions = {
     async session({ session, token }) {
       if (token) {
         session.user.id          = token.id
-        session.user.role        = token.role
+        // A super admin inside a tenant ERP gets exactly ADMIN's access (see effectiveSessionRole);
+        // the real role stays on accountRole for display.
+        session.user.role        = effectiveSessionRole(token.role, token.isSuperAdmin)
+        session.user.accountRole = token.role
+        session.user.enteredBySuperAdminId = token.enteredBySuperAdminId
         session.user.isSuperAdmin = token.isSuperAdmin ?? false
         session.user.tenantId    = token.tenantId
         session.user.tenantSlug  = token.tenantSlug

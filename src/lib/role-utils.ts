@@ -18,3 +18,14 @@ export function roleMatches(userRole: string | null | undefined, allowed: readon
   if (allowed.includes(userRole)) return true
   return (ROLE_ALIASES[userRole] ?? []).some(r => allowed.includes(r))
 }
+
+/**
+ * The role a session acts with. SUPER_ADMIN inside a tenant ERP (a super admin who came in via
+ * Super Admin → "Open ERP", see src/lib/super-admin-enter.ts) has exactly ADMIN's access: same
+ * sidebar modules (ADMIN's Roles & Permissions row), same API and button gates. Mapping it here,
+ * once, covers every check in the app instead of adding SUPER_ADMIN to each list. The central
+ * super admin session (isSuperAdmin, no tenant) keeps SUPER_ADMIN for the dashboard.
+ */
+export function effectiveSessionRole(role: string, isCentralSuperAdmin?: boolean): string {
+  return role === 'SUPER_ADMIN' && !isCentralSuperAdmin ? 'ADMIN' : role
+}

@@ -111,11 +111,22 @@ export async function igLoginAuthorizeUrl(tenantId: string, brand: WhatsappBrand
 
 // ── Token exchange ──────────────────────────────────────────────────────────────
 
-type GraphError = { error?: { message?: string; code?: number } | string; error_message?: string; error_type?: string }
+type GraphError = {
+  error?: { message?: string; code?: number; type?: string; error_subcode?: number; fbtrace_id?: string } | string
+  error_message?: string; error_type?: string; code?: number
+}
 
+// Keeps Meta's code/type/subcode/trace id on the message: "Invalid OAuth access token" alone
+// doesn't say which of the half-dozen causes it was, the code does.
 function graphError(data: GraphError, status: number) {
-  if (typeof data.error === 'object' && data.error?.message) return data.error.message
-  return data.error_message || (typeof data.error === 'string' ? data.error : null) || `Instagram returned ${status}`
+  if (typeof data.error === 'object' && data.error?.message) {
+    const e = data.error
+    const meta = [e.type, e.code != null && `code ${e.code}`, e.error_subcode != null && `subcode ${e.error_subcode}`, e.fbtrace_id && `trace ${e.fbtrace_id}`].filter(Boolean).join(', ')
+    return meta ? `${e.message} (${meta})` : e.message
+  }
+  const msg = data.error_message || (typeof data.error === 'string' ? data.error : null)
+  if (msg) return [msg, data.error_type, data.code != null && `code ${data.code}`].filter(Boolean).join(' · ')
+  return `Instagram returned ${status}`
 }
 
 // `step` prefixes the message so a failed connect says which call Instagram rejected.
@@ -123,6 +134,7 @@ async function igJson<T>(res: Response, step?: string): Promise<T> {
   const data = await res.json().catch(() => ({})) as T & GraphError
   if (!res.ok || (typeof data.error === 'object' && data.error)) {
     const message = graphError(data, res.status)
+    console.error(`[instagram-login] ${step ?? 'request'} failed (${res.status}):`, JSON.stringify(data))
     throw new Error(step ? `${step}: ${message}` : message)
   }
   return data
