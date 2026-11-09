@@ -520,7 +520,7 @@ export default function SuperAdminPage() {
 
       <div className="flex flex-col md:flex-row md:h-[calc(100vh-60px)]">
         {/* Sidebar — Tenant list */}
-        <aside className="w-full md:w-72 shrink-0 max-h-72 md:max-h-none bg-white border-b md:border-b-0 md:border-r border-gray-200 flex flex-col">
+        <aside className="relative w-full md:w-72 shrink-0 max-h-72 md:max-h-none bg-white border-b md:border-b-0 md:border-r border-gray-200 flex flex-col">
           <div className="p-4 border-b border-gray-100 flex items-center justify-between">
             <h2 className="text-sm font-bold text-[#1e3a5f] uppercase tracking-wider">Tenants</h2>
             <button
@@ -562,7 +562,9 @@ export default function SuperAdminPage() {
         </aside>
 
         {/* Main content */}
-        <main className="flex-1 min-w-0 overflow-y-auto p-4 md:p-6">
+        {/* relative: absolutely positioned bits inside (e.g. the sr-only "Actions" header) must be
+            clipped by this scroll area — without it they overflow the window and stretch the page. */}
+        <main className="relative flex-1 min-w-0 overflow-y-auto p-4 md:p-6">
           {!selectedTenant ? (
             <div className="flex items-center justify-center h-full text-gray-400 text-sm">
               Select a tenant to manage users
