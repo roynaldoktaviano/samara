@@ -29,6 +29,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (existing.requiresCrewApproval && existing.status === 'PENDING') {
     return NextResponse.json({ error: 'Waiting on the Cruise Director/Captain to approve first' }, { status: 409 })
   }
+  if (existing.requiresManagerApproval && existing.status === 'PENDING') {
+    return NextResponse.json({ error: "Waiting on the employee's manager to approve first" }, { status: 409 })
+  }
   if (existing.status !== 'PENDING' && existing.status !== 'PENDING_HR_APPROVAL') {
     return NextResponse.json({ error: 'This request has already been decided' }, { status: 409 })
   }

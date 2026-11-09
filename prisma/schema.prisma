@@ -143,6 +143,8 @@ model User {
   leaveRequestsSubmitted                 LeaveRequest[]                    @relation("LeaveRequestedBy")
   leaveRequestsDecided                   LeaveRequest[]                    @relation("LeaveDecidedBy")
   leaveRequestsCrewApproved              LeaveRequest[]                    @relation("LeaveCrewApprovedBy")
+  leaveRequestsCaptainApproved           LeaveRequest[]                    @relation("LeaveCaptainApprovedBy")
+  leaveRequestsManagerApproved           LeaveRequest[]                    @relation("LeaveManagerApprovedBy")
   businessTripsSubmitted                 BusinessTrip[]                    @relation("BusinessTripRequestedBy")
   businessTripsDecided                   BusinessTrip[]                    @relation("BusinessTripDecidedBy")
   businessTripsManagerApproved           BusinessTrip[]                    @relation("BusinessTripManagerApprovedBy")
@@ -4139,8 +4141,9 @@ model PayrollSettings {
 
 enum LeaveRequestStatus {
   PENDING
-  // Crew-only intermediate stage: the Cruise Director/Captain of the employee's yacht
-  // already approved (see requiresCrewApproval below); waiting on HR's final sign-off.
+  // Intermediate stage: the stage-1 approver (yacht Cruise Director/Captain via
+  // requiresCrewApproval, or the employee's manager via requiresManagerApproval) already
+  // approved; waiting on HR's final sign-off.
   PENDING_HR_APPROVAL
   APPROVED
   REJECTED
@@ -4150,9 +4153,9 @@ enum LeaveRequestStatus {
 // Director/Captain user assigned) go straight to HR/Admin, same routing idea as
 // PurchaseRequest (goes to the employee's manager via Employee.managerId if that manager
 // has an ERP login, otherwise falls back to notifying HR/Admin directly). Crew whose
-// Work Location matches a Yacht with a CRUISE_DIRECTOR or BOAT_CAPTAIN User assigned
-// (User.assignedYachtId) go through that person first (requiresCrewApproval = true,
-// crewApproved* fields), then to HR for final approval — HR can never skip ahead of an
+// Work Location matches a Yacht with a BOAT_CAPTAIN and/or CRUISE_DIRECTOR User assigned
+// (User.assignedYachtId) go Captain → Cruise Director (whichever exist) first
+// (requiresCrewApproval = true), then to HR for final approval — HR can never skip ahead of an
 // unresolved crew stage. Approving (the final decision) debits Employee.leaveBalance by
 // `days` (not enforced as a hard floor — HR can still approve into a negative balance,
 // e.g. advance leave, but sees the resulting balance).
@@ -4169,14 +4172,36 @@ model LeaveRequest {
   // neither deduction nor balance check, and syncs WFH instead.
   type       LeaveRequestType   @default(LEAVE)
 
-  // See the model comment above — true when a Cruise Director/Captain was resolved for
-  // this employee's yacht at request time, meaning it must clear that stage
-  // (crewApproved* below) before HR's PATCH endpoint will accept a final decision.
-  requiresCrewApproval Boolean   @default(false)
-  crewApprovedById     String?
-  crewApprovedBy       User?     @relation("LeaveCrewApprovedBy", fields: [crewApprovedById], references: [id], onDelete: SetNull)
-  crewApprovedAt       DateTime?
-  crewDecisionNote     String?
+  // See the model comment above — true when the employee's yacht had a Captain and/or
+  // Cruise Director at request time, meaning the crew stage(s) must clear before HR's
+  // PATCH endpoint will accept a final decision. Since 2026-11-09 the crew stage is two
+  // steps: Captain first (requiresCaptainApproval, captainApproved*), then Cruise
+  // Director (requiresCdApproval, crewApproved*) — only Otium/Mischief have a CD, so on
+  // the other yachts it's Captain → HR. Legacy rows (requiresCrewApproval but neither
+  // sub-flag) were a single step by "CD, else Captain" — see crewLeaveStage().
+  requiresCrewApproval    Boolean   @default(false)
+  requiresCaptainApproval Boolean   @default(false)
+  captainApprovedById     String?
+  captainApprovedBy       User?     @relation("LeaveCaptainApprovedBy", fields: [captainApprovedById], references: [id], onDelete: SetNull)
+  captainApprovedAt       DateTime?
+  captainDecisionNote     String?
+  requiresCdApproval      Boolean   @default(false)
+  // Cruise Director stage (or, on legacy rows, whichever single CD/Captain approved).
+  crewApprovedById        String?
+  crewApprovedBy          User?     @relation("LeaveCrewApprovedBy", fields: [crewApprovedById], references: [id], onDelete: SetNull)
+  crewApprovedAt          DateTime?
+  crewDecisionNote        String?
+
+  // Non-crew stage 1 (or crew whose yacht has no CD/Captain): true when the employee's
+  // manager (Employee.managerId) had an ERP login at request time — that manager must
+  // approve first (managerApproved* below, via ./[id]/manager-approval), then HR. Same
+  // pattern as BusinessTrip.requiresManagerApproval. Never true together with
+  // requiresCrewApproval.
+  requiresManagerApproval Boolean   @default(false)
+  managerApprovedById     String?
+  managerApprovedBy       User?     @relation("LeaveManagerApprovedBy", fields: [managerApprovedById], references: [id], onDelete: SetNull)
+  managerApprovedAt       DateTime?
+  managerDecisionNote     String?
 
   // Checked by the requester when the trips they'd miss need a freelance replacement —
   // gates whether freelanceRecommendations was even offered as a field, and kept as its

@@ -55,6 +55,10 @@ interface LeaveRequestRow {
   startDate: string; endDate: string; days: number; reason: string | null
   status: 'PENDING' | 'PENDING_HR_APPROVAL' | 'APPROVED' | 'REJECTED'
   requiresCrewApproval: boolean
+  requiresManagerApproval?: boolean
+  requiresCaptainApproval?: boolean
+  captainApprovedAt?: string | null
+  requiresCdApproval?: boolean
 }
 
 interface PerformanceReviewRow {
@@ -258,7 +262,12 @@ const DETAIL_TABS = [
 type DetailTab = typeof DETAIL_TABS[number]['value']
 
 function detailLeaveStatusLabel(r: LeaveRequestRow): string {
-  if (r.status === 'PENDING') return r.requiresCrewApproval ? 'Awaiting Cruise Director/Captain' : 'Pending'
+  if (r.status === 'PENDING' && r.requiresCrewApproval) {
+    if (r.requiresCaptainApproval && !r.captainApprovedAt) return 'Awaiting Captain'
+    if (r.requiresCdApproval) return 'Awaiting Cruise Director'
+    return 'Awaiting Cruise Director/Captain'
+  }
+  if (r.status === 'PENDING') return r.requiresManagerApproval ? 'Awaiting Manager' : 'Pending'
   if (r.status === 'PENDING_HR_APPROVAL') return 'Awaiting HR'
   return r.status.charAt(0) + r.status.slice(1).toLowerCase()
 }

@@ -32,13 +32,27 @@ interface LeaveRequest {
   needsFreelance: boolean
   freelanceRecommendations: FreelanceRecommendation[]
   // Crew-only first stage — true when a Cruise Director/Captain was resolved for this
-  // employee's yacht at request time (see resolveCrewLeaveApprover). Once they approve,
+  // employee's yacht at request time (see resolveYachtCrewApprovers). Once they approve,
   // status moves PENDING → PENDING_HR_APPROVAL and these fields fill in; HR can't decide
   // while this is true and status is still PENDING.
   requiresCrewApproval: boolean
   crewApprovedBy: { id: string; name: string | null } | null
   crewApprovedAt: string | null
   crewDecisionNote: string | null
+  // Crew two-step (since 2026-11-09): Captain first, then Cruise Director if the yacht
+  // has one (crewApproved* above = the CD step). Both false on legacy single-step rows.
+  requiresCaptainApproval: boolean
+  captainApprovedBy: { id: string; name: string | null } | null
+  captainApprovedAt: string | null
+  captainDecisionNote: string | null
+  requiresCdApproval: boolean
+  // Manager stage 1 (non-crew, manager has an ERP login) — see LeaveRequest.requiresManagerApproval.
+  requiresManagerApproval: boolean
+  managerApprovedBy: { id: string; name: string | null } | null
+  managerApprovedAt: string | null
+  managerDecisionNote: string | null
+  // Who the request is still waiting on (pending only) — see resolveLeaveWaitingOn.
+  waitingOn: string | null
 }
 
 const STATUS_TONE: Record<string, StatusTone> = {
@@ -49,7 +63,12 @@ const STATUS_TONE: Record<string, StatusTone> = {
 }
 
 function statusLabel(r: LeaveRequest): string {
-  if (r.status === 'PENDING') return r.requiresCrewApproval ? 'Awaiting Cruise Director/Captain' : 'Pending'
+  if (r.status === 'PENDING' && r.requiresCrewApproval) {
+    if (r.requiresCaptainApproval && !r.captainApprovedAt) return 'Awaiting Captain'
+    if (r.requiresCdApproval) return 'Awaiting Cruise Director'
+    return 'Awaiting Cruise Director/Captain'
+  }
+  if (r.status === 'PENDING') return r.requiresManagerApproval ? 'Awaiting Manager' : 'Pending'
   if (r.status === 'PENDING_HR_APPROVAL') return 'Awaiting HR'
   return r.status.charAt(0) + r.status.slice(1).toLowerCase()
 }
@@ -203,7 +222,10 @@ export default function LeaveRequestsPage() {
                 <h2 className="text-xl font-bold tracking-tight">{selected.employee.fullName}</h2>
                 <p className="text-sm text-muted-foreground mt-0.5 font-mono">{selected.employee.employeeNumber} · <span className="font-sans font-medium">{selected.type === 'WFH' ? 'Work From Home' : 'Leave'}</span></p>
               </div>
-              <StatusBadge tone={STATUS_TONE[selected.status]} className="px-2.5 py-1">{statusLabel(selected)}</StatusBadge>
+              <div className="flex flex-col items-end gap-1 text-right">
+                <StatusBadge tone={STATUS_TONE[selected.status]} className="px-2.5 py-1">{statusLabel(selected)}</StatusBadge>
+                {selected.waitingOn && <p className="text-xs text-muted-foreground">Waiting approval: <span className="font-medium text-foreground">{selected.waitingOn}</span></p>}
+              </div>
             </div>
 
             <div className="p-5 space-y-4">
@@ -253,18 +275,44 @@ export default function LeaveRequestsPage() {
                 </div>
               )}
 
-              {selected.requiresCrewApproval && (
+              {selected.requiresCrewApproval && (() => {
+                const legacy = !selected.requiresCaptainApproval && !selected.requiresCdApproval
+                const steps = [
+                  ...(selected.requiresCaptainApproval ? [{ key: 'captain', label: 'Captain', at: selected.captainApprovedAt, by: selected.captainApprovedBy, note: selected.captainDecisionNote }] : []),
+                  ...(selected.requiresCdApproval || legacy ? [{ key: 'cd', label: legacy ? 'Cruise Director/Captain' : 'Cruise Director', at: selected.crewApprovedAt, by: selected.crewApprovedBy, note: selected.crewDecisionNote }] : []),
+                ]
+                const currentKey = steps.find(st => !st.at)?.key
+                return steps.map(st => (
+                  <div key={st.key} className="text-xs">
+                    <p className="text-muted-foreground uppercase tracking-wide font-semibold mb-1">{st.label} Approval</p>
+                    {st.at ? (
+                      <div className="text-muted-foreground">
+                        Approved {formatDate(st.at)}{st.by?.name && ` by ${st.by.name}`}
+                        {st.note && <p className="mt-1.5 rounded-lg bg-muted/40 px-3 py-2 text-foreground">{st.note}</p>}
+                      </div>
+                    ) : selected.status === 'REJECTED' ? (
+                      <p className="text-muted-foreground">{st.key === currentKey ? `Rejected${selected.decidedBy?.name ? ` by ${selected.decidedBy.name}` : ''} before reaching HR.` : 'Not reached.'}</p>
+                    ) : st.key === currentKey ? (
+                      <p className="text-warning">Waiting on the {st.label} to approve.</p>
+                    ) : (
+                      <p className="text-muted-foreground">Next, after the {steps[0].label}.</p>
+                    )}
+                  </div>
+                ))
+              })()}
+
+              {selected.requiresManagerApproval && (
                 <div className="text-xs">
-                  <p className="text-muted-foreground uppercase tracking-wide font-semibold mb-1">Cruise Director/Captain Approval</p>
-                  {selected.crewApprovedAt ? (
+                  <p className="text-muted-foreground uppercase tracking-wide font-semibold mb-1">Manager Approval</p>
+                  {selected.managerApprovedAt ? (
                     <div className="text-muted-foreground">
-                      Approved {formatDate(selected.crewApprovedAt)}{selected.crewApprovedBy?.name && ` by ${selected.crewApprovedBy.name}`}
-                      {selected.crewDecisionNote && <p className="mt-1.5 rounded-lg bg-muted/40 px-3 py-2 text-foreground">{selected.crewDecisionNote}</p>}
+                      {selected.status === 'REJECTED' && selected.decidedAt === selected.managerApprovedAt ? 'Rejected' : 'Approved'} {formatDate(selected.managerApprovedAt)}{selected.managerApprovedBy?.name && ` by ${selected.managerApprovedBy.name}`}
+                      {selected.managerDecisionNote && <p className="mt-1.5 rounded-lg bg-muted/40 px-3 py-2 text-foreground">{selected.managerDecisionNote}</p>}
                     </div>
                   ) : selected.status === 'REJECTED' ? (
                     <p className="text-muted-foreground">Rejected before reaching HR.</p>
                   ) : (
-                    <p className="text-warning">Waiting on the Cruise Director/Captain to approve first.</p>
+                    <p className="text-warning">Waiting on the employee&apos;s manager to approve first.</p>
                   )}
                 </div>
               )}
@@ -281,7 +329,7 @@ export default function LeaveRequestsPage() {
               )}
             </div>
 
-            {(selected.status === 'PENDING_HR_APPROVAL' || (selected.status === 'PENDING' && !selected.requiresCrewApproval)) && (
+            {(selected.status === 'PENDING_HR_APPROVAL' || (selected.status === 'PENDING' && !selected.requiresCrewApproval && !selected.requiresManagerApproval)) && (
               <div className="flex justify-end gap-2 px-5 py-4 border-t">
                 <Button variant="outline" onClick={() => setDecision({ req: selected, action: 'reject' })}
                   className="hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30 dark:hover:bg-destructive/10">
@@ -369,6 +417,7 @@ export default function LeaveRequestsPage() {
                       <td className="px-4 py-3 text-muted-foreground text-xs max-w-48 truncate" title={r.reason ?? undefined}>{r.reason ?? '—'}</td>
                       <td className="px-4 py-3 text-center">
                         <StatusBadge tone={STATUS_TONE[r.status]}>{statusLabel(r)}</StatusBadge>
+                  {r.waitingOn && <p className="text-[11px] text-muted-foreground mt-1 leading-tight">Waiting: {r.waitingOn}</p>}
                       </td>
                       <td className="px-4 py-3 text-muted-foreground text-xs">{r.requestedBy?.name ?? '—'}</td>
                     </tr>

@@ -7,18 +7,16 @@ import { getDb } from '@/lib/get-db'
 import { sendPushToUsers } from '@/lib/push'
 import { emitTenantEvent } from '@/lib/realtime-bus'
 import { matchEmployeesToYachts } from '@/lib/payroll'
-import { sanitizeFreelanceRecommendations, resolveCrewLeaveApprover } from '@/lib/leave-request'
+import { sanitizeFreelanceRecommendations, crewLeaveStage, resolveCrewStageApprover, resolveYachtCrewApprovers, notifyLeaveReachedHr } from '@/lib/leave-request'
 
-const HR_FALLBACK = ['ADMIN', 'SUPER_ADMIN', 'HR']
-
-// Stage-1 approval for a crew LeaveRequest (LeaveRequest.requiresCrewApproval) — distinct
-// from the HR final decision in ../route.ts. Authorization here is identity-based (must
-// be the specific Cruise Director, or Captain if there's no CD, resolved for the
-// employee's yacht via resolveCrewLeaveApprover), not role-based — mirrors
-// src/app/api/purchasing/requests/[id]/approval/route.ts's manager-approval pattern.
-// Approving here doesn't finalize the request — it moves to PENDING_HR_APPROVAL so HR
-// still signs off (and debits leaveBalance / syncs Attendance) at ../route.ts. Rejecting
-// here is final, same as an HR rejection, since there's nothing left to approve.
+// Crew-stage approval for a LeaveRequest (requiresCrewApproval) — distinct from the HR
+// final decision in ../route.ts. Two steps since 2026-11-09: Captain first, then the
+// Cruise Director (only Otium/Mischief have one); see crewLeaveStage. Authorization is
+// identity-based — the caller must be the specific Captain/CD assigned to the employee's
+// yacht for the *current* step (resolveCrewStageApprover), not just anyone with the role.
+// Captain approving with a CD step left → stays PENDING and the CD is notified; the last
+// crew step approving → PENDING_HR_APPROVAL, HR notified + FYI to Purchasing/Accounting
+// (notifyLeaveReachedHr). Rejecting at any crew step is final.
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const session = await getServerSession(authOptions)
@@ -36,62 +34,70 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     include: { employee: { select: { id: true, fullName: true, userId: true, location: { select: { name: true } } } } },
   })
   if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-  if (!existing.requiresCrewApproval) return NextResponse.json({ error: "This request doesn't need Cruise Director/Captain approval" }, { status: 409 })
-  if (existing.status !== 'PENDING') return NextResponse.json({ error: 'This request has already moved past the crew approval stage' }, { status: 409 })
+  if (!existing.requiresCrewApproval) return NextResponse.json({ error: "This request doesn't need Captain/Cruise Director approval" }, { status: 409 })
+  const stage = crewLeaveStage(existing)
+  if (!stage) return NextResponse.json({ error: 'This request has already moved past the crew approval stage' }, { status: 409 })
 
   const yachts = await db.yacht.findMany({ select: { id: true, name: true } })
   const yachtId = matchEmployeesToYachts(
     [{ id: existing.employee.id, locationName: existing.employee.location?.name ?? null }],
     yachts,
   ).get(existing.employee.id)
-  const approver = yachtId ? await resolveCrewLeaveApprover(db, yachtId) : null
+  const approver = await resolveCrewStageApprover(db, existing, yachtId)
   if (!approver || approver.id !== session.user.id) {
     return NextResponse.json({ error: "This leave request isn't yours to approve" }, { status: 403 })
   }
 
-  const updated = await db.leaveRequest.update({
-    where: { id },
-    data: action === 'approve'
+  const note = decisionNote?.trim() || null
+  const now = new Date()
+  // The Captain/CD knows the yacht's crew needs best — let them set or correct the
+  // freelance flag/recommendations the requester filled in, same shape as the
+  // requester's own form (src/lib/leave-request.ts).
+  const freelancePatch = needsFreelance !== undefined ? {
+    needsFreelance: !!needsFreelance,
+    freelanceRecommendations: sanitizeFreelanceRecommendations(freelanceRecommendations) as unknown as Prisma.InputJsonValue,
+  } : {}
+  const goesToCd = stage === 'captain' && existing.requiresCdApproval
+
+  const data: Prisma.LeaveRequestUncheckedUpdateManyInput = action === 'reject'
+    ? { status: 'REJECTED', decidedById: session.user.id, decidedAt: now, decisionNote: note }
+    : stage === 'captain'
       ? {
-          status: 'PENDING_HR_APPROVAL',
-          crewApprovedById: session.user.id,
-          crewApprovedAt: new Date(),
-          crewDecisionNote: decisionNote?.trim() || null,
-          // The Cruise Director/Captain knows the yacht's crew needs best — let them set
-          // or correct the freelance flag/recommendations the requester filled in, same
-          // shape as the requester's own form (src/lib/leave-request.ts).
-          ...(needsFreelance !== undefined ? {
-            needsFreelance: !!needsFreelance,
-            freelanceRecommendations: sanitizeFreelanceRecommendations(freelanceRecommendations) as unknown as Prisma.InputJsonValue,
-          } : {}),
+          ...freelancePatch,
+          status: goesToCd ? 'PENDING' : 'PENDING_HR_APPROVAL',
+          captainApprovedById: session.user.id, captainApprovedAt: now, captainDecisionNote: note,
         }
       : {
-          status: 'REJECTED',
-          decidedById: session.user.id,
-          decidedAt: new Date(),
-          decisionNote: decisionNote?.trim() || null,
-        },
-    include: {
-      employee: { select: { id: true, fullName: true, employeeNumber: true, leaveBalance: true } },
-      requestedBy: { select: { id: true, name: true } },
-      crewApprovedBy: { select: { id: true, name: true } },
-    },
-  })
+          ...freelancePatch,
+          status: 'PENDING_HR_APPROVAL',
+          crewApprovedById: session.user.id, crewApprovedAt: now, crewDecisionNote: note,
+        }
 
+  // Conditional on still being PENDING so two approvers clicking at once can't both act.
+  const res = await db.leaveRequest.updateMany({ where: { id, status: 'PENDING' }, data })
+  if (res.count === 0) return NextResponse.json({ error: 'This request was already updated — refresh and try again' }, { status: 409 })
+  const updated = await db.leaveRequest.findUnique({ where: { id } })
+
+  const kind = existing.type === 'WFH' ? 'WFH' : 'leave'
   if (action === 'approve') {
-    const hrUsers = await db.user.findMany({ where: { role: { in: HR_FALLBACK as never[] } }, select: { id: true } })
-    if (hrUsers.length) {
-      const title = existing.type === 'WFH' ? 'WFH request needs your final approval' : 'Leave request needs your final approval'
-      const body = `${existing.employee.fullName}'s ${existing.type === 'WFH' ? 'WFH' : 'leave'} request was approved by the Cruise Director/Captain and now needs HR sign-off.`
-      await db.notification.createMany({
-        data: hrUsers.map(u => ({ id: crypto.randomUUID(), userId: u.id, type: 'LEAVE_APPROVAL_NEEDED', title, body })),
-        skipDuplicates: true,
-      }).catch(() => {})
-      sendPushToUsers(db, hrUsers.map(u => u.id), { title, body }).catch(() => {})
+    if (goesToCd) {
+      const { cd } = yachtId ? await resolveYachtCrewApprovers(db, yachtId) : { cd: null }
+      if (cd) {
+        const title = existing.type === 'WFH' ? 'Crew WFH request needs your approval' : 'Crew leave request needs your approval'
+        const body = `${existing.employee.fullName} requested ${existing.days} day${existing.days !== 1 ? 's' : ''} ${kind}; approved by ${approver.name ? `Captain ${approver.name}` : 'the Captain'}, now waiting on you.`
+        await db.notification.create({ data: { userId: cd.id, type: 'LEAVE_APPROVAL_NEEDED', title, body } }).catch(() => {})
+        sendPushToUsers(db, [cd.id], { title, body }).catch(() => {})
+      }
+    } else {
+      await notifyLeaveReachedHr(db, {
+        employeeName: existing.employee.fullName, type: existing.type, days: existing.days,
+        startDate: existing.startDate, endDate: existing.endDate,
+        approvedByLabel: `${approver.label} ${approver.name ?? ''}`.trim(), isCrew: true,
+      })
     }
   } else if (existing.employee.userId) {
     const title = existing.type === 'WFH' ? 'WFH request rejected' : 'Leave request rejected'
-    const body = `Your ${existing.type === 'WFH' ? 'WFH' : 'leave'} request (${existing.days} day${existing.days !== 1 ? 's' : ''}) was rejected.`
+    const body = `Your ${kind} request (${existing.days} day${existing.days !== 1 ? 's' : ''}) was rejected by the ${approver.label}.`
     await db.notification.create({ data: { userId: existing.employee.userId, type: 'LEAVE_DECIDED', title, body } }).catch(() => {})
     sendPushToUsers(db, [existing.employee.userId], { title, body }).catch(() => {})
   }

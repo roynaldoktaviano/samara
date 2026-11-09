@@ -68,6 +68,14 @@ interface CrewLeaveApproval {
   freelanceRecommendations: FreelanceRecommendation[]
   requestedAt: string
   employee: { id: string; fullName: string; employeeNumber: string; leaveBalance: number | null }
+  // Set when this is the Cruise Director's step — the Captain already approved.
+  captainApprovedBy?: { id: string; name: string | null } | null
+  captainApprovedAt?: string | null
+  captainDecisionNote?: string | null
+  // Which stage-1 approval this user holds: 'crew' = yacht Cruise Director/Captain
+  // (…/crew-approval, can edit the freelance fields), 'manager' = employee's manager
+  // (…/manager-approval). Set client-side from which API list it came in.
+  stage: 'crew' | 'manager'
 }
 
 interface BusinessTripApproval {
@@ -173,7 +181,10 @@ export default function MyApprovalsPage() {
       const data = await res.json()
       setRequests(data.prApprovals ?? [])
       setQuotationItems(data.quotationApprovals ?? [])
-      const crewLeave: CrewLeaveApproval[] = data.crewLeaveApprovals ?? []
+      const crewLeave: CrewLeaveApproval[] = [
+        ...(data.crewLeaveApprovals ?? []).map((r: Omit<CrewLeaveApproval, 'stage'>) => ({ ...r, stage: 'crew' as const })),
+        ...(data.managerLeaveApprovals ?? []).map((r: Omit<CrewLeaveApproval, 'stage'>) => ({ ...r, stage: 'manager' as const })),
+      ]
       setCrewLeaveRequests(crewLeave)
       setCrewLeaveDrafts(Object.fromEntries(crewLeave.map(r => [r.id, { needsFreelance: r.needsFreelance, freelanceRecommendations: r.freelanceRecommendations }])))
       setBusinessTripApprovals(data.businessTripApprovals ?? [])
@@ -232,12 +243,12 @@ export default function MyApprovalsPage() {
   async function actOnCrewLeave(r: CrewLeaveApproval, action: 'approve' | 'reject', decisionNote?: string) {
     setActingId(r.id)
     const draft = crewLeaveDrafts[r.id]
-    const res = await fetch(`/api/hr/leave-requests/${r.id}/crew-approval`, {
+    const res = await fetch(`/api/hr/leave-requests/${r.id}/${r.stage === 'manager' ? 'manager-approval' : 'crew-approval'}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         action, decisionNote,
-        ...(action === 'approve' ? {
+        ...(action === 'approve' && r.stage === 'crew' ? {
           needsFreelance: draft?.needsFreelance ?? r.needsFreelance,
           freelanceRecommendations: draft?.freelanceRecommendations ?? r.freelanceRecommendations,
         } : {}),
@@ -335,11 +346,11 @@ export default function MyApprovalsPage() {
         </>
       )}
 
-      <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Crew Leave Requests</h3>
+      <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Leave Requests</h3>
       {crewLeaveRequests.length === 0 ? (
         <div className="rounded-lg border py-10 text-center text-sm text-muted-foreground">
           <CalendarDays className="h-8 w-8 mx-auto mb-2 opacity-30" />
-          No crew leave requests waiting for your approval.
+          No leave requests waiting for your approval.
         </div>
       ) : (
         <div className="space-y-3">
@@ -355,13 +366,19 @@ export default function MyApprovalsPage() {
                   <span className="text-xs text-muted-foreground shrink-0 text-right">{formatDate(r.startDate)} – {formatDate(r.endDate)}<br />{r.days} day{r.days !== 1 ? 's' : ''}</span>
                 </div>
                 {r.reason && <p className="text-sm text-muted-foreground">{r.reason}</p>}
+                {r.captainApprovedAt && (
+                  <p className="text-xs text-success">
+                    Approved by Captain{r.captainApprovedBy?.name ? ` ${r.captainApprovedBy.name}` : ''} · {formatDate(r.captainApprovedAt)}
+                    {r.captainDecisionNote && <span className="block text-muted-foreground mt-0.5">&ldquo;{r.captainDecisionNote}&rdquo;</span>}
+                  </p>
+                )}
 
-                {r.type !== 'WFH' && <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+                {r.stage === 'crew' && r.type !== 'WFH' && <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
                   <input type="checkbox" className="h-4 w-4 accent-primary" checked={draft.needsFreelance}
                     onChange={e => setCrewLeaveDrafts(prev => ({ ...prev, [r.id]: { needsFreelance: e.target.checked, freelanceRecommendations: e.target.checked ? draft.freelanceRecommendations : [] } }))} />
                   Needs a freelance replacement for the trips missed?
                 </label>}
-                {draft.needsFreelance && (
+                {r.stage === 'crew' && draft.needsFreelance && (
                   <FreelanceRecommendationsField value={draft.freelanceRecommendations}
                     onChange={v => setCrewLeaveDrafts(prev => ({ ...prev, [r.id]: { needsFreelance: true, freelanceRecommendations: v } }))} />
                 )}

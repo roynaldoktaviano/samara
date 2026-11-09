@@ -3,7 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { matchEmployeesToYachts } from '@/lib/payroll'
-import { resolveCrewLeaveApprover } from '@/lib/leave-request'
+import { resolveCrewStageApprover } from '@/lib/leave-request'
 import { RECRUITMENT_REQUEST_INCLUDE } from '@/lib/hr/recruitment'
 
 // Three independent things a logged-in user might be waiting to act on — despite the
@@ -14,9 +14,9 @@ import { RECRUITMENT_REQUEST_INCLUDE } from '@/lib/hr/recruitment'
 //    (a PR's manager can hold any Role).
 //  - Quotation/supplier-selection approvals: resolved via PurchaseRequestItem.quotationApproverId,
 //    set directly to a User.id by resolveQuotationApproverId at submission time.
-//  - Crew leave requests: resolved via User.role CRUISE_DIRECTOR/BOAT_CAPTAIN +
-//    assignedYachtId matching the requester's yacht (Employee.location.name === Yacht.name)
-//    — see src/lib/leave-request.ts's resolveCrewLeaveApprover.
+//  - Crew leave requests: resolved via User.role BOAT_CAPTAIN (step 1) / CRUISE_DIRECTOR
+//    (step 2) + assignedYachtId matching the requester's yacht (Employee.location.name ===
+//    Yacht.name) — see src/lib/leave-request.ts's crewLeaveStage/resolveCrewStageApprover.
 //  - Recruitment requests: resolved via RecruitmentRequestApproval.approverId (the approver
 //    chain set in HR › Recruitment › Approvers), still undecided while AWAITING_APPROVAL.
 export async function GET() {
@@ -62,26 +62,40 @@ export async function GET() {
     }),
   ])
 
-  // Crew leave requests waiting on this user specifically — only if they're the one
-  // resolved yacht approver (Cruise Director takes priority over Captain, never both;
-  // see resolveCrewLeaveApprover), never every CD/Captain-role user in the company.
-  let crewLeaveRequests: Awaited<ReturnType<typeof db.leaveRequest.findMany>> = []
+  // Crew leave requests waiting on this user specifically — only those whose *current*
+  // crew step (Captain, then Cruise Director — see crewLeaveStage) resolves to this user
+  // for their assigned yacht, never every CD/Captain-role user in the company.
+  const crewLeaveRequests: Awaited<ReturnType<typeof db.leaveRequest.findMany>> = []
   if (user?.assignedYachtId && (user.role === 'CRUISE_DIRECTOR' || user.role === 'BOAT_CAPTAIN')) {
-    const approver = await resolveCrewLeaveApprover(db, user.assignedYachtId)
-    if (approver?.id === session.user.id) {
-      const pending = await db.leaveRequest.findMany({
-        where: { status: 'PENDING', requiresCrewApproval: true },
-        orderBy: { requestedAt: 'asc' },
-        include: { employee: { select: { id: true, fullName: true, employeeNumber: true, leaveBalance: true, location: { select: { name: true } } } } },
-      })
-      const yachts = await db.yacht.findMany({ select: { id: true, name: true } })
-      const yachtIdByEmployeeId = matchEmployeesToYachts(
-        pending.map(r => ({ id: r.employee.id, locationName: r.employee.location?.name ?? null })),
-        yachts,
-      )
-      crewLeaveRequests = pending.filter(r => yachtIdByEmployeeId.get(r.employee.id) === user.assignedYachtId)
+    const pending = await db.leaveRequest.findMany({
+      where: { status: 'PENDING', requiresCrewApproval: true },
+      orderBy: { requestedAt: 'asc' },
+      include: {
+        employee: { select: { id: true, fullName: true, employeeNumber: true, leaveBalance: true, location: { select: { name: true } } } },
+        captainApprovedBy: { select: { id: true, name: true } },
+      },
+    })
+    const yachts = await db.yacht.findMany({ select: { id: true, name: true } })
+    const yachtIdByEmployeeId = matchEmployeesToYachts(
+      pending.map(r => ({ id: r.employee.id, locationName: r.employee.location?.name ?? null })),
+      yachts,
+    )
+    const mine = pending.filter(r => yachtIdByEmployeeId.get(r.employee.id) === user.assignedYachtId)
+    for (const r of mine) {
+      const approver = await resolveCrewStageApprover(db, r, user.assignedYachtId)
+      if (approver?.id === session.user.id) crewLeaveRequests.push(r)
     }
   }
+
+  // Leave requests waiting on this user as the employee's manager (non-crew stage 1 —
+  // LeaveRequest.requiresManagerApproval), identity-based like business trips above.
+  const managerLeaveApprovals = employee
+    ? await db.leaveRequest.findMany({
+        where: { status: 'PENDING', requiresManagerApproval: true, employee: { managerId: employee.id } },
+        orderBy: { requestedAt: 'asc' },
+        include: { employee: { select: { id: true, fullName: true, employeeNumber: true, leaveBalance: true } } },
+      })
+    : []
 
   const recruitmentApprovals = await db.recruitmentRequest.findMany({
     where: { status: 'AWAITING_APPROVAL', approvals: { some: { approverId: session.user.id, decision: null } } },
@@ -103,6 +117,7 @@ export async function GET() {
     })),
     quotationApprovals: quotationItems,
     crewLeaveApprovals: crewLeaveRequests,
+    managerLeaveApprovals,
     businessTripApprovals,
     recruitmentApprovals,
   })

@@ -33,6 +33,20 @@ interface LeaveRequest {
   crewApprovedBy: { id: string; name: string | null } | null
   crewApprovedAt: string | null
   crewDecisionNote: string | null
+  // Crew two-step (since 2026-11-09): Captain first, then Cruise Director if the yacht
+  // has one (crewApproved* above = the CD step). Both false on legacy single-step rows.
+  requiresCaptainApproval: boolean
+  captainApprovedBy: { id: string; name: string | null } | null
+  captainApprovedAt: string | null
+  captainDecisionNote: string | null
+  requiresCdApproval: boolean
+  // Manager stage 1 (non-crew, manager has an ERP login) — see LeaveRequest.requiresManagerApproval.
+  requiresManagerApproval: boolean
+  managerApprovedBy: { id: string; name: string | null } | null
+  managerApprovedAt: string | null
+  managerDecisionNote: string | null
+  // Who the request is still waiting on (pending only) — see resolveLeaveWaitingOn.
+  waitingOn: string | null
 }
 
 const STATUS_TONE: Record<string, StatusTone> = {
@@ -43,7 +57,12 @@ const STATUS_TONE: Record<string, StatusTone> = {
 }
 
 function statusLabel(r: LeaveRequest): string {
-  if (r.status === 'PENDING') return r.requiresCrewApproval ? 'Awaiting Cruise Director/Captain' : 'Pending'
+  if (r.status === 'PENDING' && r.requiresCrewApproval) {
+    if (r.requiresCaptainApproval && !r.captainApprovedAt) return 'Awaiting Captain'
+    if (r.requiresCdApproval) return 'Awaiting Cruise Director'
+    return 'Awaiting Cruise Director/Captain'
+  }
+  if (r.status === 'PENDING') return r.requiresManagerApproval ? 'Awaiting Manager' : 'Pending'
   if (r.status === 'PENDING_HR_APPROVAL') return 'Awaiting HR'
   return r.status.charAt(0) + r.status.slice(1).toLowerCase()
 }
@@ -228,9 +247,10 @@ export default function MyLeaveRequestsPage() {
                 </td>
                 <td className="px-4 py-3 text-center">
                   <StatusBadge tone={STATUS_TONE[r.status]}>{statusLabel(r)}</StatusBadge>
+                  {r.waitingOn && <p className="text-[11px] text-muted-foreground mt-1 leading-tight">Waiting: {r.waitingOn}</p>}
                 </td>
-                <td className="px-4 py-3 text-muted-foreground text-xs max-w-48 truncate" title={r.decisionNote ?? r.crewDecisionNote ?? undefined}>
-                  {r.decisionNote ?? r.crewDecisionNote ?? '—'}
+                <td className="px-4 py-3 text-muted-foreground text-xs max-w-48 truncate" title={r.decisionNote ?? r.managerDecisionNote ?? r.crewDecisionNote ?? undefined}>
+                  {r.decisionNote ?? r.managerDecisionNote ?? r.crewDecisionNote ?? '—'}
                 </td>
               </tr>
             ))}
