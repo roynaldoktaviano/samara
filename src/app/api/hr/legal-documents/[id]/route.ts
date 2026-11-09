@@ -1,21 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
-import { getDb } from '@/lib/get-db'
-
-import { roleMatches } from '@/lib/role-utils'
+import { requireModuleAccess } from '@/lib/module-access'
 
 const ALLOWED = ['ADMIN', 'SUPER_ADMIN', 'HR']
+// Legal docs are managed from Entities & Assignments, Boat Documents and Yachts — any role
+// granted one of those menus in Roles & Permissions gets full access to the documents too.
+const LEGAL_DOC_MODULES = ['hr-entities-assignments', 'hr-boat-documents', 'yachts']
 
 // Only fields needed to resolve a LEGAL_DOC_EXPIRING notification's legalDocumentId back
 // to whichever parent (legal entity or yacht) its detail lives under — there's no
 // per-document modal to open.
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const session = await getServerSession(authOptions)
-  const role = (session?.user as { role?: string })?.role ?? ''
-  if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  const db = await getDb(session)
+  const access = await requireModuleAccess(LEGAL_DOC_MODULES, ALLOWED)
+  if ('error' in access) return access.error
+  const { db } = access
   const doc = await db.legalDocument.findUnique({ where: { id }, select: { id: true, legalEntityId: true, yachtId: true } })
   if (!doc) return NextResponse.json({ error: 'Not found' }, { status: 404 })
   return NextResponse.json(doc)
@@ -23,10 +21,9 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const session = await getServerSession(authOptions)
-  const role = (session?.user as { role?: string })?.role ?? ''
-  if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  const db = await getDb(session)
+  const access = await requireModuleAccess(LEGAL_DOC_MODULES, ALLOWED)
+  if ('error' in access) return access.error
+  const { db } = access
   const {
     section, name, category, period, subDetail, fileKey,
     establishDate, expiryDate, issuer, vendor, notes,
@@ -53,10 +50,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const session = await getServerSession(authOptions)
-  const role = (session?.user as { role?: string })?.role ?? ''
-  if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  const db = await getDb(session)
+  const access = await requireModuleAccess(LEGAL_DOC_MODULES, ALLOWED)
+  if ('error' in access) return access.error
+  const { db } = access
   await db.legalDocument.delete({ where: { id } })
   return NextResponse.json({ ok: true })
 }

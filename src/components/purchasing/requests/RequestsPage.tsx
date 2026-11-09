@@ -1206,8 +1206,9 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
     if (ok) setRejectItemModal(null)
   }
 
-  // Warehouse's per-line "Approve" — saves the source warehouse + Reserve (base units); nothing
-  // moves until "Process Purchase Request". See PATCH .../items/[itemId]/warehouse-check.
+  // Warehouse's per-line "Approve" — saves the source warehouse + Reserve (base units); the
+  // Reserve is held off everyone's free stock from then on (approvedHolds.ts), the TR comes on
+  // "Process Purchase Request". See PATCH .../items/[itemId]/warehouse-check.
   async function warehouseApproveItem(item: RequestLine, reserveQty: number) {
     if (!detail || !item.id) return
     // Same fallback the dropdown displays — the preselected warehouse counts as a choice
@@ -2278,7 +2279,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                           ) : (
                             <p className="text-xs text-muted-foreground">
                               {reserveBase > 0
-                                ? <>On Process: send <span className="font-semibold text-foreground">{lineQtyLabel(item, reserveBase)}</span>{reserveBase < requestedBase && <> · backorder <span className="font-semibold text-destructive">{lineQtyLabel(item, requestedBase - reserveBase)}</span></>}</>
+                                ? <>Approve takes <span className="font-semibold text-foreground">{lineQtyLabel(item, reserveBase)}</span> off the stock right away · On Process: send it{reserveBase < requestedBase && <> · backorder <span className="font-semibold text-destructive">{lineQtyLabel(item, requestedBase - reserveBase)}</span></>}</>
                                 : <span className="font-medium text-warning">On Process: nothing from stock → backorder <span className="font-semibold text-destructive">{lineQtyLabel(item, requestedBase)}</span>, shipped from the warehouse after restock</span>}
                             </p>
                           )}

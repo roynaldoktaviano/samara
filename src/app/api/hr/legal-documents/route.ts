@@ -1,17 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
-import { getDb } from '@/lib/get-db'
-
-import { roleMatches } from '@/lib/role-utils'
+import { requireModuleAccess } from '@/lib/module-access'
 
 const ALLOWED = ['ADMIN', 'SUPER_ADMIN', 'HR']
+// Legal docs are managed from Entities & Assignments, Boat Documents and Yachts — any role
+// granted one of those menus in Roles & Permissions gets full access to the documents too.
+const LEGAL_DOC_MODULES = ['hr-entities-assignments', 'hr-boat-documents', 'yachts']
 
 export async function GET(req: NextRequest) {
-  const session = await getServerSession(authOptions)
-  const role = (session?.user as { role?: string })?.role ?? ''
-  if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  const db = await getDb(session)
+  const access = await requireModuleAccess(LEGAL_DOC_MODULES, ALLOWED)
+  if ('error' in access) return access.error
+  const { db } = access
   const legalEntityId = req.nextUrl.searchParams.get('legalEntityId')
   const yachtId = req.nextUrl.searchParams.get('yachtId')
   const documents = await db.legalDocument.findMany({
@@ -22,10 +20,9 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const session = await getServerSession(authOptions)
-  const role = (session?.user as { role?: string })?.role ?? ''
-  if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  const db = await getDb(session)
+  const access = await requireModuleAccess(LEGAL_DOC_MODULES, ALLOWED)
+  if ('error' in access) return access.error
+  const { db } = access
   const {
     legalEntityId, yachtId, section, name, category, period, subDetail, fileKey,
     establishDate, expiryDate, issuer, vendor, notes,

@@ -1,12 +1,14 @@
 import type { getDb } from '@/lib/get-db'
 import { toBaseQty } from '@/lib/purchasing/transferActions'
+import { approvedHolds } from '@/lib/purchasing/approvedHolds'
 
 type Db = Awaited<ReturnType<typeof getDb>>
 
 // Warehouse's stock breakdown for a PR line, all in BASE units, against the source warehouse
 // (where the line waits on backorder / was transferred from, else the warehouse — not the PR's
 // destination — holding the most of it). Mirrors the Warehouse's own order sheet:
-//   Availability = stock there − what OTHER requests already reserved (PENDING transfers out)
+//   Availability = stock there − what OTHER requests already reserved (PENDING transfers out,
+//                  and Reserves Warehouse approved but hasn't processed yet — approvedHolds.ts)
 //   Reserve      = this order's share of it: what it was given (its own PENDING transfer), the
 //                  Reserve Warehouse approved, or while still undecided min(Requested, Availability)
 //   Ending       = Availability − Reserve (never negative)
@@ -57,7 +59,7 @@ export async function computeStockChecks(db: Db, request: StockCheckRequest, opt
   const reservedMap = new Map<string, number>() // ALL pending reservations, key `${itemId}:${locationId}`
   if (!itemIds.length) return { checks, reservedMap }
 
-  const [masters, warehouses, lots, pendingOut, openPrLines, openPoLines, otherBackorders] = await Promise.all([
+  const [masters, warehouses, lots, pendingOut, openPrLines, openPoLines, otherBackorders, { byRequest: holds }] = await Promise.all([
     db.purchaseItem.findMany({ where: { id: { in: itemIds } }, select: { id: true, minStock: true, baseUnit: true, purchaseUnit: true, conversionFactor: true } }),
     db.stockLocation.findMany({ where: { type: 'WAREHOUSE', isActive: true }, select: { id: true, name: true } }),
     db.stockLot.findMany({ where: { itemId: { in: itemIds }, quantity: { gt: 0 } }, select: { itemId: true, locationId: true, quantity: true } }),
@@ -96,6 +98,8 @@ export async function computeStockChecks(db: Db, request: StockCheckRequest, opt
       where: { itemId: { in: itemIds }, backorderQty: { gt: 0 }, backorderLocationId: { not: null }, requestId: { not: request.id }, request: { status: { notIn: ['CANCELLED', 'REJECTED'] } } },
       select: { itemId: true, backorderQty: true, backorderLocationId: true },
     }),
+    // Warehouse-approved Reserves not processed yet — held from the moment of Approve.
+    approvedHolds(db, { itemIds }),
   ])
 
   const masterMap = new Map(masters.map(m => [m.id, m]))
@@ -110,6 +114,10 @@ export async function computeStockChecks(db: Db, request: StockCheckRequest, opt
     const key = `${r.itemId}:${r.transfer.fromLocationId}`
     add(reservedMap, key, r.requestedQty)
     if (r.transfer.purchaseRequestId !== request.id) add(othersReserved, key, r.requestedQty)
+  }
+  for (const h of holds) {
+    add(reservedMap, h.key, h.qty)
+    if (h.requestId !== request.id) add(othersReserved, h.key, h.qty)
   }
   const onOrderMap = new Map<string, number>()
   for (const l of openPrLines) {

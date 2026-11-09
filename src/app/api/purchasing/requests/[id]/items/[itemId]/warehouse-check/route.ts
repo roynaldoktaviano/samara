@@ -10,8 +10,10 @@ import { warehouseHomeLocationId } from '@/lib/purchasing/warehouseHome'
 
 // Warehouse's "Approve" on a single Warehouse-routed PR line — kept separate from the
 // Purchasing-only .../items/[itemId] route so Warehouse never gains access to that route's
-// other fields (price, supplier, verifyRejected). Approving only saves the source warehouse and
-// the Reserve (base units, at most the free stock there) — nothing moves yet. "Process Purchase
+// other fields (price, supplier, verifyRejected). Approving saves the source warehouse and the
+// Reserve (base units, at most the free stock there) and from then on that Reserve is HELD — it
+// comes off everyone's free stock right away (approvedHolds.ts), no TR needed yet; Unapprove
+// releases it. Nothing physically moves until the TR is dispatched. "Process Purchase
 // Request" (PATCH .../warehouse-forward) then decides every approved line at once:
 //   reserve > 0   → TRANSFER: a TR for the reserve, the rest backordered at that warehouse
 //   reserve 0     → the whole line backordered there — shipped once restock arrives
@@ -74,7 +76,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (typeof reserveQty !== 'number' || !Number.isFinite(reserveQty) || reserveQty < 0) {
     return NextResponse.json({ error: 'Enter a reserve quantity (0 or more)' }, { status: 400 })
   }
-  const free = (await freeStock(db, [{ itemId: existingItem.itemId, locationId: fromLocationId }])).get(`${existingItem.itemId}:${fromLocationId}`) ?? 0
+  // Other lines' approved Reserves already hold their stock; this line's own (re-approve) doesn't count.
+  const free = (await freeStock(db, [{ itemId: existingItem.itemId, locationId: fromLocationId }], { requestItemId: itemId })).get(`${existingItem.itemId}:${fromLocationId}`) ?? 0
   if (reserveQty > free + 1e-6) {
     const master = await db.purchaseItem.findUnique({ where: { id: existingItem.itemId }, select: { baseUnit: true } })
     return NextResponse.json({ error: `Reserve can't exceed the current stock (${Math.round(free * 100) / 100} ${master?.baseUnit ?? ''})`.trim() }, { status: 400 })

@@ -50,7 +50,8 @@ export async function PATCH(_req: NextRequest, { params }: { params: Promise<{ i
     const key = `${l.itemId}:${l.warehouseFromLocationId}`
     need.set(key, (need.get(key) ?? 0) + l.warehouseReserveQty!)
   }
-  const free = await freeStock(db, [...need.keys()].map(k => { const [itemId, locationId] = k.split(':'); return { itemId, locationId } }))
+  // This PR's own approved Reserves are the ones being checked — leave them out of "taken".
+  const free = await freeStock(db, [...need.keys()].map(k => { const [itemId, locationId] = k.split(':'); return { itemId, locationId } }), { requestId: id })
   const short = undecided.filter(l => (l.warehouseReserveQty ?? 0) > 0 && need.get(`${l.itemId}:${l.warehouseFromLocationId}`)! > (free.get(`${l.itemId}:${l.warehouseFromLocationId}`) ?? 0) + 1e-6)
   if (short.length > 0) {
     return NextResponse.json({ error: `Stock changed since approval — re-approve with a lower reserve: ${[...new Set(short.map(l => l.itemName))].join(', ')}` }, { status: 409 })

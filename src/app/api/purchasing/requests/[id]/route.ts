@@ -642,11 +642,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       const master = masterMap.get(item.itemId)
       const baseQty = toBaseQty(item.quantity, item.unit, master)
       // Free stock only: what PENDING transfers out of there already reserved isn't available.
-      const [lots, reserved] = await Promise.all([
-        db.stockLot.aggregate({ where: { itemId: item.itemId, locationId: tf.fromLocationId }, _sum: { quantity: true } }),
-        db.stockTransferItem.aggregate({ where: { itemId: item.itemId, transfer: { status: 'PENDING', fromLocationId: tf.fromLocationId } }, _sum: { requestedQty: true } }),
-      ])
-      const available = Math.max(0, (lots._sum.quantity ?? 0) - (reserved._sum.requestedQty ?? 0))
+      // (and Reserves Warehouse approved on a PR but hasn't processed yet — they hold it too).
+      const available = (await freeStock(db, [{ itemId: item.itemId, locationId: tf.fromLocationId }])).get(`${item.itemId}:${tf.fromLocationId}`) ?? 0
       if (available < baseQty) {
         return NextResponse.json({ error: `Not enough stock for "${item.itemName}" (available: ${available})` }, { status: 409 })
       }

@@ -2,6 +2,7 @@ import type { getDb } from '@/lib/get-db'
 import { createOrAppendTransfer } from '@/lib/purchasing/transferActions'
 import { notifyByRoleForRequest, notifyRequester } from '@/lib/notify-purchasing'
 import { recordReservation } from '@/lib/purchasing/reservations'
+import { approvedHolds } from '@/lib/purchasing/approvedHolds'
 
 type Db = Awaited<ReturnType<typeof getDb>>
 
@@ -37,11 +38,13 @@ export async function allocateBackorders(db: Db, locationId: string, itemIds: (s
     for (const itemId of new Set(waiting.map(w => w.itemId!))) {
       for (const line of waiting.filter(w => w.itemId === itemId)) {
         const done = await db.$transaction(async tx => {
-          const [lots, reserved] = await Promise.all([
+          const [lots, reserved, { holds }] = await Promise.all([
             tx.stockLot.aggregate({ where: { itemId, locationId }, _sum: { quantity: true } }),
             tx.stockTransferItem.aggregate({ where: { itemId, transfer: { status: 'PENDING', fromLocationId: locationId } }, _sum: { requestedQty: true } }),
+            // A Reserve Warehouse already approved on another PR holds its stock too.
+            approvedHolds(tx, { itemIds: [itemId], locationId }),
           ])
-          const free = (lots._sum.quantity ?? 0) - (reserved._sum.requestedQty ?? 0)
+          const free = (lots._sum.quantity ?? 0) - (reserved._sum.requestedQty ?? 0) - (holds.get(`${itemId}:${locationId}`) ?? 0)
           const qty = Math.min(free, line.backorderQty)
           if (qty <= 0) return null
           // Guard against a concurrent receipt already serving this line.

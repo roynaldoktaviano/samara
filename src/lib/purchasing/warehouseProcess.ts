@@ -2,6 +2,7 @@ import type { getDb } from '@/lib/get-db'
 import { notifyPurchasingForRequest, notifyRequester } from '@/lib/notify-purchasing'
 import { computeStockChecks, type StockCheckRequest } from '@/lib/purchasing/stockCheck'
 import { recordReservation } from '@/lib/purchasing/reservations'
+import { approvedHolds } from '@/lib/purchasing/approvedHolds'
 import { createOrAppendTransfer, toBaseQty } from '@/lib/purchasing/transferActions'
 
 type Db = Awaited<ReturnType<typeof getDb>>
@@ -36,17 +37,26 @@ export function undecidedLines(request: Pick<WarehouseRequest, 'items'>) {
   return request.items.filter(i => i.viaWarehouse && !i.convertedAt && !i.verifyRejectedAt && !i.warehouseDecision)
 }
 
-/** Free stock (on hand − PENDING transfers out, base units) per `${itemId}:${locationId}`. */
-export async function freeStock(db: Pick<Db, 'stockLot' | 'stockTransferItem'>, keys: { itemId: string; locationId: string }[]) {
+/**
+ * Free stock (on hand − PENDING transfers out − Warehouse-approved Reserves not yet processed,
+ * base units) per `${itemId}:${locationId}`. `exclude` leaves a line's / a PR's own approved
+ * Reserve out — re-approving a line, or processing the PR that holds it.
+ */
+export async function freeStock(
+  db: Pick<Db, 'stockLot' | 'stockTransferItem' | 'purchaseRequestItem'>,
+  keys: { itemId: string; locationId: string }[],
+  exclude: { requestId?: string; requestItemId?: string } = {},
+) {
   const free = new Map<string, number>()
   for (const { itemId, locationId } of keys) {
     const key = `${itemId}:${locationId}`
     if (free.has(key)) continue
-    const [lots, reserved] = await Promise.all([
+    const [lots, reserved, { holds }] = await Promise.all([
       db.stockLot.findMany({ where: { itemId, locationId }, select: { quantity: true } }),
       db.stockTransferItem.aggregate({ where: { itemId, transfer: { status: 'PENDING', fromLocationId: locationId } }, _sum: { requestedQty: true } }),
+      approvedHolds(db, { itemIds: [itemId], locationId, excludeRequestId: exclude.requestId, excludeRequestItemId: exclude.requestItemId }),
     ])
-    free.set(key, Math.max(0, lots.reduce((s, l) => s + l.quantity, 0) - (reserved._sum.requestedQty ?? 0)))
+    free.set(key, Math.max(0, lots.reduce((s, l) => s + l.quantity, 0) - (reserved._sum.requestedQty ?? 0) - (holds.get(key) ?? 0)))
   }
   return free
 }
@@ -66,7 +76,8 @@ export async function processWarehouseLine(db: Db, request: Pick<WarehouseReques
   const baseQty = toBaseQty(line.quantity, line.unit, master)
 
   return db.$transaction(async tx => {
-    const free = (await freeStock(tx, [{ itemId: catalogItemId, locationId: fromLocationId }])).get(`${catalogItemId}:${fromLocationId}`) ?? 0
+    // This PR's own approved Reserves are what's being processed — not someone else's hold.
+    const free = (await freeStock(tx, [{ itemId: catalogItemId, locationId: fromLocationId }], { requestId: request.id })).get(`${catalogItemId}:${fromLocationId}`) ?? 0
     if (reserveQty > free + 1e-6) return { overFree: free }
     const now = new Date()
     const sendQty = Math.max(0, reserveQty)
