@@ -1,7 +1,6 @@
 import type { getDb } from '@/lib/get-db'
 import { toBaseQty } from '@/lib/purchasing/transferActions'
 import { approvedHolds } from '@/lib/purchasing/approvedHolds'
-import { computeWarehousePositions } from '@/lib/purchasing/warehousePosition'
 
 type Db = Awaited<ReturnType<typeof getDb>>
 
@@ -15,13 +14,17 @@ type Db = Awaited<ReturnType<typeof getDb>>
 //                  Reserve Warehouse approved, or while still undecided min(Requested, Availability)
 //   Ending       = Availability − Reserve (never negative)
 //   Shortage     = the part stock can't cover → backordered, shipped once restock lands
-//   To Be Order / Pending / PO = the WAREHOUSE-level position (warehousePosition.ts), identical
-//                  to Item by Location: Min + Demand (every ship's claim on that warehouse,
-//                  this line included) − Stock − Pending − PO. It doesn't depend on how much
-//                  this line reserves — a smaller Reserve only turns stock into backorder.
-//   On Order     = Pending + PO (kept for older callers)
-//   restockQty   = what Process puts on this PR's restock line = To Be Order at that moment.
-// PURCHASE (legacy — lines bought straight to the ship) isn't warehouse demand at all.
+//   On Order     = incoming to that warehouse (open PR lines / POs to it) not already promised
+//                  to another PR's backorder
+//   To Be Order  = (Requested − Availability) + Min. Stock − On Order, written as Shortage +
+//                  Min. Stock − Ending − On Order so it keeps using the stock as it was when the
+//                  line was decided (Availability drops once its transfer is dispatched). Never
+//                  below Shortage − On Order: the backorder must be covered by what's coming in.
+// Per THIS request on purpose — the warehouse-wide position (every PR combined) lives only on
+// Item by Location (warehousePosition.ts).
+// PURCHASE (legacy — lines from before every shortfall went through the warehouse) takes nothing
+// from stock: its Requested was bought on its own line, so only the Min. Stock top-up goes on the
+// Restock PR (restockQty). New lines are always TRANSFER: Reserve 0 is a full backorder.
 export interface StockCheck {
   locationId: string
   locationName: string
@@ -31,8 +34,6 @@ export interface StockCheck {
   availability: number
   reserve: number
   onOrder: number
-  pending: number
-  po: number
   ending: number
   shortage: number
   minStock: number
@@ -40,6 +41,8 @@ export interface StockCheck {
   restockQty: number
 }
 
+const OPEN_PR_STATUSES = ['DRAFT', 'PENDING_APPROVAL', 'ON_PROCESS'] as const
+const OPEN_PO_STATUSES = ['DRAFT', 'ORDERED', 'IN_TRANSIT', 'PARTIALLY_RECEIVED'] as const
 
 export interface StockCheckRequest {
   id: string
@@ -61,7 +64,7 @@ export async function computeStockChecks(db: Db, request: StockCheckRequest, opt
   const reservedMap = new Map<string, number>() // ALL pending reservations, key `${itemId}:${locationId}`
   if (!itemIds.length) return { checks, reservedMap }
 
-  const [masters, warehouses, lots, pendingOut, { positions, lineSource }, { byRequest: holds }] = await Promise.all([
+  const [masters, warehouses, lots, pendingOut, openPrLines, openPoLines, otherBackorders, { byRequest: holds }] = await Promise.all([
     db.purchaseItem.findMany({ where: { id: { in: itemIds } }, select: { id: true, minStock: true, baseUnit: true, purchaseUnit: true, conversionFactor: true } }),
     db.stockLocation.findMany({ where: { type: 'WAREHOUSE', isActive: true }, select: { id: true, name: true } }),
     db.stockLot.findMany({ where: { itemId: { in: itemIds }, quantity: { gt: 0 } }, select: { itemId: true, locationId: true, quantity: true } }),
@@ -70,7 +73,36 @@ export async function computeStockChecks(db: Db, request: StockCheckRequest, opt
       where: { itemId: { in: itemIds }, transfer: { status: 'PENDING' } },
       select: { itemId: true, requestedQty: true, transfer: { select: { fromLocationId: true, purchaseRequestId: true } } },
     }),
-    computeWarehousePositions(db, { itemIds }),
+    // On Order, part 1: PR lines headed to a warehouse (a PR to it, or another PR's restock line),
+    // not yet turned into a PO. This PR's own restock lines (and legacy Restock PRs) are left out
+    // so its To Be Order still shows what it triggered.
+    db.purchaseRequestItem.findMany({
+      where: {
+        itemId: { in: itemIds }, convertedAt: null, verifyRejectedAt: null,
+        OR: [{ restockLocationId: { not: null } }, { request: { deliveryLocation: { type: 'WAREHOUSE' } } }],
+        request: {
+          status: { in: [...OPEN_PR_STATUSES] }, id: { not: request.id },
+          OR: [{ restockForRequestId: null }, { restockForRequestId: { not: request.id } }],
+        },
+      },
+      select: { itemId: true, quantity: true, unit: true, restockLocationId: true, request: { select: { deliveryLocationId: true } } },
+    }),
+    // On Order, part 2: open PO lines to a warehouse, minus what's already been received.
+    db.purchaseOrderItem.findMany({
+      where: {
+        itemId: { in: itemIds },
+        order: {
+          status: { in: [...OPEN_PO_STATUSES] }, deliveryLocation: { type: 'WAREHOUSE' },
+          OR: [{ requestId: null }, { requestId: { not: request.id }, request: { OR: [{ restockForRequestId: null }, { restockForRequestId: { not: request.id } }] } }],
+        },
+      },
+      select: { itemId: true, orderedQty: true, receivedQty: true, order: { select: { deliveryLocationId: true } } },
+    }),
+    // Other PRs already waiting on that incoming stock — it isn't free for this one.
+    db.purchaseRequestItem.findMany({
+      where: { itemId: { in: itemIds }, backorderQty: { gt: 0 }, backorderLocationId: { not: null }, requestId: { not: request.id }, request: { status: { notIn: ['CANCELLED', 'REJECTED'] } } },
+      select: { itemId: true, backorderQty: true, backorderLocationId: true },
+    }),
     // Warehouse-approved Reserves not processed yet — held from the moment of Approve.
     approvedHolds(db, { itemIds }),
   ])
@@ -92,6 +124,19 @@ export async function computeStockChecks(db: Db, request: StockCheckRequest, opt
     add(reservedMap, h.key, h.qty)
     if (h.requestId !== request.id) add(othersReserved, h.key, h.qty)
   }
+  const onOrderMap = new Map<string, number>()
+  for (const l of openPrLines) {
+    const to = l.restockLocationId ?? l.request.deliveryLocationId
+    if (!l.itemId || !to) continue
+    add(onOrderMap, `${l.itemId}:${to}`, toBaseQty(l.quantity, l.unit, masterMap.get(l.itemId)))
+  }
+  for (const l of openPoLines) {
+    if (!l.itemId || !l.order.deliveryLocationId) continue
+    // PO lines are always in purchase units — receiveGoods() multiplies by conversionFactor too.
+    add(onOrderMap, `${l.itemId}:${l.order.deliveryLocationId}`, Math.max(0, l.orderedQty - l.receivedQty) * (masterMap.get(l.itemId)?.conversionFactor || 1))
+  }
+  for (const b of otherBackorders) if (b.itemId) add(onOrderMap, `${b.itemId}:${b.backorderLocationId}`, -b.backorderQty)
+
   const candidates = warehouses.map(w => w.id).filter(id => id !== request.deliveryLocationId)
   // Free stock = on hand minus what other requests already reserved there — the default source
   // is where the most of it is FREE, not merely on the shelf (that can all be promised already).
@@ -133,25 +178,20 @@ export async function computeStockChecks(db: Db, request: StockCheckRequest, opt
     }
     else { reserve = Math.min(requested, availability); shortage = requested - reserve }
     const ending = Math.max(0, availability - reserve)
-    // Warehouse-level position — the same numbers Item by Location shows. An undecided line's
-    // demand is counted at its default source; if this check runs against another warehouse
-    // (Admin picked it), move the line's claim there.
-    const position = positions.get(key)
-    const undecided = item.viaWarehouse && !item.warehouseDecision && !item.convertedAt
-    const ownMoved = undecided && lineSource.get(item.id) !== sourceId ? requested : 0
-    const net = (position?.net ?? master.minStock - (stockMap.get(key) ?? 0)) + ownMoved
-    const toBeOrder = Math.max(0, Math.round(net * 1000) / 1000)
-    const pendingIn = position?.pending ?? 0
-    const poIn = position?.po ?? 0
-    const onOrder = pendingIn + poIn
+    const onOrder = Math.max(0, onOrderMap.get(key) ?? 0)
+    // Restock already on its way counts — two ships short on the same item must not each buy the
+    // Min. Stock top-up again. Still never less than the Shortage it can't cover: a backorder
+    // only ships once restock lands, so Warehouse holding stock back (Reserve below what's free)
+    // must not leave it with nothing to buy.
+    const toBeOrder = Math.max(0, shortage - onOrder, shortage + master.minStock - ending - onOrder)
 
     checks.set(item.id, {
       locationId: sourceId,
       locationName: whName.get(sourceId) ?? '—',
-      requested, onHand: stockMap.get(key) ?? 0, availability, reserve, onOrder, pending: pendingIn, po: poIn, ending, shortage,
+      requested, onHand: stockMap.get(key) ?? 0, availability, reserve, onOrder, ending, shortage,
       minStock: master.minStock,
       toBeOrder,
-      restockQty: toBeOrder,
+      restockQty: Math.max(0, toBeOrder - (item.warehouseDecision === 'PURCHASE' ? requested : 0)),
     })
   }
   return { checks, reservedMap }

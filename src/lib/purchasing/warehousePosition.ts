@@ -4,10 +4,9 @@ import { warehouseHomeLocationId } from '@/lib/purchasing/warehouseHome'
 
 type Db = Awaited<ReturnType<typeof getDb>>
 
-// ONE replenishment position per item + warehouse, all BASE units. Item by Location
-// (GET /api/purchasing/stock) and the PR stock check (stockCheck.ts → the PR item modal, and the
-// restock qty Process puts on the PR) both read it, so the two screens always show the same
-// To Be Order / Pending / PO:
+// ONE replenishment position per item + warehouse, all BASE units — every PR / PO / TR combined.
+// Only Item by Location (GET /api/purchasing/stock) shows it; PR screens deliberately stay per
+// request (stockCheck.ts):
 //
 //   Demand      = what ships are still owed from this warehouse:
 //                   PENDING transfers out (on the shelf, not dispatched yet)
@@ -20,8 +19,7 @@ type Db = Awaited<ReturnType<typeof getDb>>
 //   To Be Order = Min. Stock + Demand − Stock − Pending − PO   (≥ 0)
 //
 // So the number moves To Be Order → Pending (restock line / Create Purchase Request) → PO
-// (Purchasing converts) → Stock (received), and two ships short on the same item never make
-// the warehouse buy twice: the second sees the first one's restock already Pending.
+// (Purchasing converts) → Stock (received).
 
 export type PositionSourceKind = 'PR' | 'PO' | 'TR' | 'BACKORDER' | 'REQUEST'
 export interface PositionSource { kind: PositionSourceKind; id: string; number: string; status: string; createdAt: Date; qty: number }
