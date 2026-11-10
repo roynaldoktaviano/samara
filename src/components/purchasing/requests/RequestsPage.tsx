@@ -52,7 +52,7 @@ interface InventoryItemOption {
   id: string; itemNumber: string; name: string; quantity: number; unitPrice: number; photoKeys?: string[]
   category: { id: string; name: string }; room: { id: string; name: string }
 }
-interface RequestLine { id?: string; key?: string; itemId: string; itemName: string; baseUnit: string; purchaseUnit: string; itemUnit: string; unit?: string; quantity: number; estimatedCost: number; supplierId: string; supplierName: string; supplierSearch: string; supplierOpen: boolean; notes: string; search: string; open: boolean; currentStock?: number | null; onHandStock?: number | null; itemTreatment?: Treatment | null; reservedStock?: number; minStock?: number | null; stockCheck?: { locationId: string; locationName: string; requested: number; availability: number; reserve: number; onOrder: number; pending?: number; po?: number; ending: number; shortage: number; minStock: number; toBeOrder: number; restockQty: number } | null; conversionFactor?: number | null; imageKeys?: string[]; isCustom?: boolean; isStockItem?: boolean; sourceInventoryItemId?: string | null; sourceInventoryItem?: { id: string; itemNumber: string; name: string; room: { name: string } | null; category: { name: string } | null } | null; warehouseStock?: { locationId: string; locationName: string; qty: number }[]; transferEligible?: boolean; quotations?: Quotation[]; exemptionReason?: string | null; selectionJustification?: string | null; requestedByEmployeeId?: string; quotationApproverId?: string | null; quotationApprover?: { id: string; name: string | null } | null; quotationSubmittedAt?: string | null; quotationApprovedById?: string | null; quotationApprovedBy?: { id: string; name: string | null } | null; quotationApprovedAt?: string | null; quotationRejectedBy?: { id: string; name: string | null } | null; quotationRejectedAt?: string | null; quotationRejectionReason?: string | null; convertedAt?: string | null; convertedPoId?: string | null; verifyRejectedById?: string | null; verifyRejectedBy?: { id: string; name: string | null } | null; verifyRejectedAt?: string | null; verifyRejectionReason?: string | null; warehouseDecision?: 'TRANSFER' | 'PURCHASE' | null; backorderQty?: number; backorderLocationId?: string | null; viaWarehouse?: boolean; warehouseCheckedAt?: string | null; warehouseCheckNote?: string | null; requestType?: 'NEW' | 'REPLACEMENT'; damageDetail?: string | null; transfer?: { id: string; transferNumber: string; status: string; fromLocationName: string } | null; sentFromStock?: number | null; toBeOrderSplit?: { po: number; pending: number; received?: number } | null; reservations?: { id: string; stockQty: number; reservedQty: number; source: string; transferId: string | null; transferNumber: string | null; purchaseOrderId: string | null; poNumber: string | null; createdAt: string }[]; requestedBase?: number; backorderFree?: number; backorderIncoming?: { kind: 'PR' | 'PO'; id: string; number: string; status: string; qty: number; expectedAt: string | null }[]; restockLocationId?: string | null; restockLocation?: { id: string; name: string } | null; restockOrders?: { prId: string; prNumber: string; poId: string | null; poNumber: string | null; poStatus: string | null; poExpectedAt?: string | null; qty: number }[]; warehouseApprovedAt?: string | null; warehouseReserveQty?: number | null; warehouseFromLocationId?: string | null }
+interface RequestLine { id?: string; key?: string; itemId: string; itemName: string; baseUnit: string; purchaseUnit: string; itemUnit: string; unit?: string; quantity: number; estimatedCost: number; supplierId: string; supplierName: string; supplierSearch: string; supplierOpen: boolean; notes: string; search: string; open: boolean; currentStock?: number | null; onHandStock?: number | null; itemTreatment?: Treatment | null; reservedStock?: number; minStock?: number | null; stockCheck?: { locationId: string; locationName: string; requested: number; onHand?: number; availability: number; reserve: number; onOrder: number; pending?: number; po?: number; ending: number; shortage: number; minStock: number; toBeOrder: number; restockQty: number } | null; conversionFactor?: number | null; imageKeys?: string[]; isCustom?: boolean; isStockItem?: boolean; sourceInventoryItemId?: string | null; sourceInventoryItem?: { id: string; itemNumber: string; name: string; room: { name: string } | null; category: { name: string } | null } | null; warehouseStock?: { locationId: string; locationName: string; qty: number }[]; transferEligible?: boolean; quotations?: Quotation[]; exemptionReason?: string | null; selectionJustification?: string | null; requestedByEmployeeId?: string; quotationApproverId?: string | null; quotationApprover?: { id: string; name: string | null } | null; quotationSubmittedAt?: string | null; quotationApprovedById?: string | null; quotationApprovedBy?: { id: string; name: string | null } | null; quotationApprovedAt?: string | null; quotationRejectedBy?: { id: string; name: string | null } | null; quotationRejectedAt?: string | null; quotationRejectionReason?: string | null; convertedAt?: string | null; convertedPoId?: string | null; verifyRejectedById?: string | null; verifyRejectedBy?: { id: string; name: string | null } | null; verifyRejectedAt?: string | null; verifyRejectionReason?: string | null; warehouseDecision?: 'TRANSFER' | 'PURCHASE' | null; backorderQty?: number; backorderLocationId?: string | null; viaWarehouse?: boolean; warehouseCheckedAt?: string | null; warehouseCheckNote?: string | null; requestType?: 'NEW' | 'REPLACEMENT'; damageDetail?: string | null; transfer?: { id: string; transferNumber: string; status: string; fromLocationName: string } | null; sentFromStock?: number | null; toBeOrderSplit?: { po: number; pending: number; received?: number } | null; reservations?: { id: string; stockQty: number; reservedQty: number; source: string; transferId: string | null; transferNumber: string | null; purchaseOrderId: string | null; poNumber: string | null; createdAt: string }[]; requestedBase?: number; backorderFree?: number; backorderIncoming?: { kind: 'PR' | 'PO'; id: string; number: string; status: string; qty: number; expectedAt: string | null }[]; restockLocationId?: string | null; restockLocation?: { id: string; name: string } | null; restockOrders?: { prId: string; prNumber: string; poId: string | null; poNumber: string | null; poStatus: string | null; poExpectedAt?: string | null; qty: number }[]; warehouseApprovedAt?: string | null; warehouseReserveQty?: number | null; warehouseFromLocationId?: string | null }
 interface PurchaseRequest {
   id: string
   prNumber: string
@@ -1934,7 +1934,8 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
               const qty = (n: number) => lineQty(item, n)
               const split = item.toBeOrderSplit
               const stats: { label: string; value: number | null; cls: string; sub?: string; title?: string; highlight?: boolean }[] = [
-                { label: 'Current Stock', value: sc.availability, cls: '', sub: stockLocations.length > 1 ? sc.locationName : undefined },
+                { label: 'On Hand', value: sc.onHand ?? null, cls: '', sub: stockLocations.length > 1 ? sc.locationName : undefined, title: 'On the shelf at this warehouse — same as Stock on Item by Location' },
+                { label: 'Available', value: sc.availability, cls: sc.availability === 0 ? 'text-destructive' : '', title: 'On hand − what other requests already reserved (pending transfers, approved Reserves)' },
                 { label: 'Min. Stock', value: sc.minStock, cls: muted(sc.minStock) || 'text-muted-foreground' },
                 { label: 'Requested', value: sc.requested, cls: '' },
                 { label: 'Reserve', value: sc.reserve, cls: sc.reserve > 0 ? 'text-warning' : muted(0) },
@@ -2242,8 +2243,9 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                           )}
                         </div>
 
-                        <div className="grid grid-cols-3 gap-2">
-                          {stat('Current Stock', maxBase, maxBase === 0 ? 'text-destructive' : '', 'Free stock at this warehouse (on hand − reserved by other requests)')}
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                          {stat('On Hand', scHere?.onHand ?? null, '', 'On the shelf at this warehouse — same as Stock on Item by Location')}
+                          {stat('Available', maxBase, maxBase === 0 ? 'text-destructive' : '', 'On hand − what other requests already reserved (pending transfers, approved Reserves). This is the most you can reserve.')}
                           {stat('Min. Stock', scHere?.minStock ?? null, 'text-muted-foreground')}
                           {stat('Requested', requestedBase)}
                         </div>
@@ -2572,6 +2574,8 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
               const min = item.minStock ?? 0
               const stockColor = stock === null ? '' : stock === 0 ? 'text-destructive' : stock < min ? 'text-warning' : 'text-success'
               const split = item.toBeOrderSplit
+              const sc = item.stockCheck ?? null
+              const ownToBeOrder = split ? split.po + split.pending + (split.received ?? 0) : 0
               const withStock = showStockCols && !!item.viaWarehouse && !!item.itemId
               const sectionLabel = 'text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2'
               const stat = (label: string, value: number | null, cls = '', opts: { sub?: string; title?: string; highlight?: boolean } = {}) => (
@@ -2642,16 +2646,34 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                     {(stock !== null || withStock) && (
                       <div>
                         <p className={sectionLabel}>Stock{item.stockCheck?.locationName ? ` at ${item.stockCheck.locationName}` : ''}</p>
-                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                          {stat('Current Stock', stock, stockColor, {
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                          {/* With a stock check these are the WAREHOUSE-level numbers — identical to
+                              Item by Location (warehousePosition.ts). This request's own restock
+                              (toBeOrderSplit) is shown underneath as "this request". */}
+                          {sc ? (
+                            <>
+                              {stat('On Hand', sc.onHand ?? null, '', { title: `On the shelf at ${sc.locationName} — same as Stock on Item by Location` })}
+                              {stat('Available', sc.availability, sc.availability === 0 ? 'text-destructive' : '', { title: 'On hand − what other requests already reserved (pending transfers, approved Reserves)' })}
+                            </>
+                          ) : stat('Current Stock', stock, stockColor, {
                             sub: item.reservedStock ? `${lineQtyLabel(item, item.onHandStock ?? 0)} on hand · ${lineQtyLabel(item, item.reservedStock)} reserved` : undefined,
                             title: 'Free stock = on hand − reserved by pending transfers',
                           })}
-                          {withStock && stat('Min. Stock', item.minStock ?? 0, 'text-muted-foreground')}
+                          {withStock && stat('Min. Stock', sc?.minStock ?? item.minStock ?? 0, 'text-muted-foreground')}
                           {withStock && stat('Reserve', item.sentFromStock ?? null, 'text-warning', { title: 'Sent from warehouse stock' })}
-                          {withStock && stat('To Be Order', split ? split.po + split.pending + (split.received ?? 0) : null, 'text-info', { highlight: true })}
-                          {withStock && stat('PO', split?.po ?? null, 'text-success', { title: 'To Be Order on a Purchase Order, not arrived yet', sub: split?.received ? `${lineQtyLabel(item, split.received)} arrived → Current Stock` : undefined })}
-                          {withStock && stat('Pending', split?.pending ?? null, 'text-warning', { title: 'To Be Order not ordered yet' })}
+                          {withStock && stat('To Be Order', sc ? sc.toBeOrder : null, 'text-info', {
+                            highlight: true,
+                            title: 'Warehouse-level, same as Item by Location: Min. Stock + what ships are owed from this warehouse − Stock − Pending − PO',
+                            sub: ownToBeOrder > 0 ? `This request ordered ${lineQtyLabel(item, ownToBeOrder)}` : undefined,
+                          })}
+                          {withStock && stat('PO', sc ? (sc.po ?? 0) : null, 'text-success', {
+                            title: `On open Purchase Orders to ${sc?.locationName ?? 'the warehouse'}, not received yet (all requests)`,
+                            sub: split && (split.po > 0 || split.received) ? `This request: ${lineQtyLabel(item, split.po)}${split.received ? ` · ${lineQtyLabel(item, split.received)} arrived` : ''}` : undefined,
+                          })}
+                          {withStock && stat('Pending', sc ? (sc.pending ?? 0) : null, 'text-warning', {
+                            title: `Sent to Purchasing for ${sc?.locationName ?? 'the warehouse'}, not on a PO yet (all requests)`,
+                            sub: split && split.pending > 0 ? `This request: ${lineQtyLabel(item, split.pending)}` : undefined,
+                          })}
                         </div>
                       </div>
                     )}

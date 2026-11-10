@@ -8,6 +8,7 @@ type Db = Awaited<ReturnType<typeof getDb>>
 // Warehouse's stock breakdown for a PR line, all in BASE units, against the source warehouse
 // (where the line waits on backorder / was transferred from, else the warehouse — not the PR's
 // destination — holding the most of it). Mirrors the Warehouse's own order sheet:
+//   On Hand      = stock on the shelf there (Item by Location's Stock column)
 //   Availability = stock there − what OTHER requests already reserved (PENDING transfers out,
 //                  and Reserves Warehouse approved but hasn't processed yet — approvedHolds.ts)
 //   Reserve      = this order's share of it: what it was given (its own PENDING transfer), the
@@ -25,6 +26,8 @@ export interface StockCheck {
   locationId: string
   locationName: string
   requested: number
+  /** On the shelf at the source warehouse — the same number as Item by Location's Stock column. */
+  onHand: number
   availability: number
   reserve: number
   onOrder: number
@@ -145,7 +148,7 @@ export async function computeStockChecks(db: Db, request: StockCheckRequest, opt
     checks.set(item.id, {
       locationId: sourceId,
       locationName: whName.get(sourceId) ?? '—',
-      requested, availability, reserve, onOrder, pending: pendingIn, po: poIn, ending, shortage,
+      requested, onHand: stockMap.get(key) ?? 0, availability, reserve, onOrder, pending: pendingIn, po: poIn, ending, shortage,
       minStock: master.minStock,
       toBeOrder,
       restockQty: toBeOrder,
