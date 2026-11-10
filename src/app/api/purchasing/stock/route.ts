@@ -40,11 +40,11 @@ export async function GET(req: Request) {
         request: { status: { in: ['DRAFT', 'PENDING_APPROVAL', 'ON_PROCESS'] } },
         OR: [{ restockLocationId: { in: warehouseIds } }, { restockLocationId: null, request: { deliveryLocationId: { in: warehouseIds } } }],
       },
-      select: { itemId: true, quantity: true, unit: true, restockLocationId: true, request: { select: { deliveryLocationId: true } } },
+      select: { itemId: true, quantity: true, unit: true, restockLocationId: true, request: { select: { id: true, prNumber: true, status: true, createdAt: true, deliveryLocationId: true } } },
     }),
     db.purchaseOrderItem.findMany({
       where: { itemId: { not: null }, order: { status: { in: ['DRAFT', 'ORDERED', 'IN_TRANSIT', 'PARTIALLY_RECEIVED'] }, deliveryLocationId: { in: warehouseIds } } },
-      select: { itemId: true, orderedQty: true, receivedQty: true, order: { select: { deliveryLocationId: true } } },
+      select: { itemId: true, orderedQty: true, receivedQty: true, order: { select: { id: true, poNumber: true, status: true, createdAt: true, deliveryLocationId: true } } },
     }),
     // Items that ran out at a warehouse still need a row (that's exactly when they need ordering).
     db.stockLot.findMany({
@@ -52,18 +52,34 @@ export async function GET(req: Request) {
       select: { itemId: true, locationId: true }, distinct: ['itemId', 'locationId'],
     }),
   ]) : [[], [], []]
+  // Which PR / PO each Pending / PO number comes from, so the stock table can show (and link) it.
+  type Source = { kind: 'PR' | 'PO'; id: string; number: string; status: string; createdAt: Date; qty: number }
   const pendingMap = new Map<string, number>()
   const poMap = new Map<string, number>()
+  const sourcesMap = new Map<string, Source[]>()
   const addTo = (map: Map<string, number>, key: string, qty: number) => map.set(key, (map.get(key) ?? 0) + qty)
+  const addSource = (key: string, src: Source) => {
+    const list = sourcesMap.get(key) ?? []
+    const same = list.find(x => x.kind === src.kind && x.id === src.id)
+    if (same) same.qty += src.qty; else list.push(src)
+    sourcesMap.set(key, list)
+  }
   for (const l of openPrLines) {
     const to = l.restockLocationId ?? l.request.deliveryLocationId
     if (!l.itemId || !to) continue
-    addTo(pendingMap, `${l.itemId}:${to}`, toBaseQty(l.quantity, l.unit, itemMap.get(l.itemId)))
+    const key = `${l.itemId}:${to}`
+    const qty = toBaseQty(l.quantity, l.unit, itemMap.get(l.itemId))
+    addTo(pendingMap, key, qty)
+    addSource(key, { kind: 'PR', id: l.request.id, number: l.request.prNumber, status: l.request.status, createdAt: l.request.createdAt, qty })
   }
   for (const l of openPoLines) {
     if (!l.itemId || !l.order.deliveryLocationId) continue
+    const key = `${l.itemId}:${l.order.deliveryLocationId}`
     // PO lines are in purchase units — receiveGoods() multiplies by conversionFactor too.
-    addTo(poMap, `${l.itemId}:${l.order.deliveryLocationId}`, Math.max(0, l.orderedQty - l.receivedQty) * (itemMap.get(l.itemId)?.conversionFactor || 1))
+    const qty = Math.max(0, l.orderedQty - l.receivedQty) * (itemMap.get(l.itemId)?.conversionFactor || 1)
+    if (qty <= 0) continue
+    addTo(poMap, key, qty)
+    addSource(key, { kind: 'PO', id: l.order.id, number: l.order.poNumber, status: l.order.status, createdAt: l.order.createdAt, qty })
   }
 
   const sourcePoIds = [...new Set(lots.map(l => l.sourcePoId).filter((id): id is string => id !== null))]
@@ -88,7 +104,7 @@ export async function GET(req: Request) {
     costPerUnit: number
     lotsCount: number
     nearestExpiry: Date | null
-    replenish: { toBeOrder: number; pending: number; po: number } | null
+    replenish: { toBeOrder: number; pending: number; po: number; sources: Source[] } | null
   }
   type NonStockRow = {
     kind: 'non-stock'
@@ -164,7 +180,7 @@ export async function GET(req: Request) {
       const key = `${row.item.id}:${location.id}`
       const pending = pendingMap.get(key) ?? 0
       const po = poMap.get(key) ?? 0
-      row.replenish = { pending, po, toBeOrder: Math.max(0, row.item.minStock - row.qty - pending - po) }
+      row.replenish = { pending, po, toBeOrder: Math.max(0, row.item.minStock - row.qty - pending - po), sources: sourcesMap.get(key) ?? [] }
     }
   }
 

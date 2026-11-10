@@ -4,8 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { Warehouse, Ship, AlertTriangle, Search, X, Layers, FileText, ShoppingCart, Trash2, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatMoney, formatNumber, formatDate } from '@/lib/format'
-import { displayQty, displayUnitCost, hasPurchaseUnit } from '@/lib/purchasing/units'
-import { StockQty } from '@/components/purchasing/StockQty'
+import { displayQty, displayUnitCost, hasPurchaseUnit, isMeasureUnit, type UnitInfo } from '@/lib/purchasing/units'
 
 interface StockRow {
   kind: 'stock'
@@ -15,8 +14,9 @@ interface StockRow {
   lotsCount: number
   nearestExpiry: string | null
   /** Warehouses only (null elsewhere), base units. */
-  replenish: { toBeOrder: number; pending: number; po: number } | null
+  replenish: { toBeOrder: number; pending: number; po: number; sources: ReplenishSource[] } | null
 }
+interface ReplenishSource { kind: 'PR' | 'PO'; id: string; number: string; status: string; createdAt: string; qty: number }
 interface NonStockRow {
   kind: 'non-stock'
   id: string
@@ -35,11 +35,37 @@ interface StockLot { id: string; quantity: number; costPerUnit: number; batch: s
 
 type ItemKindFilter = 'all' | 'stock' | 'non-stock'
 
-// Base-unit qty in the item's display unit, or a faint dash for 0 / not applicable.
+// This page counts in the BASE unit (pcs) — only volume/weight base units (ml, g) switch to the
+// purchase unit (bottles), with the ml amount underneath.
+function stockQty(item: UnitInfo, qty: number) {
+  return isMeasureUnit(item.baseUnit) && hasPurchaseUnit(item) ? displayQty(item, qty) : displayQty({ baseUnit: item.baseUnit }, qty)
+}
+function StockQty({ item, qty, className = '' }: { item: UnitInfo; qty: number; className?: string }) {
+  const d = stockQty(item, qty)
+  return (
+    <span className={className}>
+      {formatNumber(d.qty, { decimals: 3 })} <span className="text-xs font-normal text-muted-foreground">{d.unit}</span>
+      {d.baseQty !== null && d.baseQty !== 0 && (
+        <span className="block text-[10px] font-normal text-muted-foreground">{formatNumber(d.baseQty, { decimals: 3 })} {d.baseUnit}</span>
+      )}
+    </span>
+  )
+}
+
+// Qty cell, or a faint dash for 0 / not applicable.
 function QtyCell({ item, qty, className = '' }: { item: StockRow['item']; qty: number | null | undefined; className?: string }) {
   if (!qty) return <span className="text-muted-foreground/40">—</span>
   return <StockQty item={item} qty={qty} className={className} />
 }
+
+const STATUS_LABEL: Record<string, string> = {
+  DRAFT: 'Draft', PENDING_APPROVAL: 'Pending approval', ON_PROCESS: 'On process',
+  ORDERED: 'Ordered', IN_TRANSIT: 'In transit', PARTIALLY_RECEIVED: 'Partly received',
+}
+const qtyText = (item: StockRow['item'], qty: number) => { const d = stockQty(item, qty); return `${formatNumber(d.qty, { decimals: 3 })} ${d.unit}` }
+// Native tooltip on a Pending / PO cell: which documents make up the number.
+const sourcesTitle = (item: StockRow['item'], sources: ReplenishSource[] | undefined, kind: 'PR' | 'PO') =>
+  (sources ?? []).filter(x => x.kind === kind).map(x => `${x.number} · ${qtyText(item, x.qty)} · ${STATUS_LABEL[x.status] ?? x.status}`).join('\n') || undefined
 
 const expiryLabel = (s: string) => {
   const d = new Date(s)
@@ -56,8 +82,7 @@ const ITEM_CARD_PAGE_SIZE = 10
 
 function MinCell({ item, isLow }: { item: StockRow['item']; isLow: boolean }) {
   if (!(item.minStock > 0)) return <span className="text-muted-foreground/40">—</span>
-  const m = displayQty(item, item.minStock)
-  return <span className={isLow ? 'text-destructive font-semibold' : 'text-muted-foreground'}>{formatNumber(m.qty, { decimals: 3 })} {m.unit}</span>
+  return <span className={isLow ? 'text-destructive font-semibold' : 'text-muted-foreground'}>{qtyText(item, item.minStock)}</span>
 }
 
 function StockTable({ rows, locationId, locationName, onOpenLots, onRestock }: {
@@ -191,10 +216,10 @@ function StockTable({ rows, locationId, locationName, onOpenLots, onRestock }: {
                     <td className="px-5 py-3 text-right tabular-nums">
                       <QtyCell item={item} qty={replenish?.toBeOrder} className="font-semibold text-destructive" />
                     </td>
-                    <td className="px-5 py-3 text-right tabular-nums">
+                    <td className="px-5 py-3 text-right tabular-nums" title={sourcesTitle(item, replenish?.sources, 'PR')}>
                       <QtyCell item={item} qty={replenish?.pending} className="font-medium text-warning" />
                     </td>
-                    <td className="px-5 py-3 text-right tabular-nums">
+                    <td className="px-5 py-3 text-right tabular-nums" title={sourcesTitle(item, replenish?.sources, 'PO')}>
                       <QtyCell item={item} qty={replenish?.po} className="font-medium text-info" />
                     </td>
                   </>}
@@ -343,11 +368,12 @@ function NonStockTable({ rows, onOpenPo }: { rows: NonStockRow[]; onOpenPo?: (po
 interface RestockLine { row: StockRow; qty: string; unit: string }
 interface RestockDraft { locationId: string; locationName: string; lines: RestockLine[]; notes: string }
 
-// Default order qty = To Be Order, rounded UP to whole purchase units (what Purchasing buys in).
+// Default order qty = To Be Order, in the same unit the page shows (pcs; bottles for ml items,
+// rounded up to whole bottles). The unit picker still lets them order in boxes.
 function defaultRestockLine(row: StockRow): RestockLine {
   const { item } = row
   const need = row.replenish?.toBeOrder ?? 0
-  if (hasPurchaseUnit(item)) {
+  if (isMeasureUnit(item.baseUnit) && hasPurchaseUnit(item)) {
     const conv = item.conversionFactor || 1
     return { row, unit: item.purchaseUnit, qty: String(need > 0 ? Math.ceil(need / conv - 1e-9) : 1) }
   }
@@ -699,6 +725,32 @@ export default function StockPage({ onOpenPo, onOpenRequest }: { onOpenPo?: (poI
 
             {/* Content */}
             <div className="flex-1 overflow-y-auto">
+              {(() => {
+                // Incoming: the PRs (Pending) / POs behind this item's numbers at this warehouse.
+                const row = data?.locations.find(l => l.location.id === lotPanel.locationId)?.rows
+                  .find((r): r is StockRow => r.kind === 'stock' && r.item.id === lotPanel.item.id)
+                const sources = row?.replenish?.sources ?? []
+                if (!sources.length) return null
+                return (
+                  <div className="m-5 mb-0 rounded-lg border overflow-hidden">
+                    <div className="px-4 py-2 bg-muted/40 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Incoming to {lotPanel.locationName}</div>
+                    <div className="divide-y">
+                      {sources.map(src => (
+                        <div key={`${src.kind}-${src.id}`} className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm">
+                          <div className="min-w-0">
+                            <button
+                              onClick={() => src.kind === 'PR' ? onOpenRequest?.(src.id) : onOpenPo?.(src.id)}
+                              className="font-mono text-xs font-medium hover:underline underline-offset-2 text-primary">{src.number}</button>
+                            <span className={`ml-2 text-[11px] px-1.5 py-0.5 rounded font-medium ${src.kind === 'PR' ? 'bg-warning/10 text-warning' : 'bg-info/10 text-info'}`}>{src.kind === 'PR' ? 'Pending' : 'PO'}</span>
+                            <p className="text-xs text-muted-foreground mt-0.5">{STATUS_LABEL[src.status] ?? src.status} · {formatDate(src.createdAt)}</p>
+                          </div>
+                          <StockQty item={lotPanel.item} qty={src.qty} className="font-semibold tabular-nums shrink-0 text-right" />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )
+              })()}
               {lotsLoading ? (
                 <div className="p-5 space-y-3">
                   {[...Array(3)].map((_, i) => (
@@ -719,7 +771,7 @@ export default function StockPage({ onOpenPo, onOpenRequest }: { onOpenPo?: (poI
                   <div className="grid grid-cols-3 gap-px bg-border m-5 mb-0 rounded-lg overflow-hidden border">
                     <div className="bg-card px-3 py-3">
                       <p className="text-xs text-muted-foreground">Total Qty</p>
-                      {(() => { const t = displayQty(lotPanel.item, lots.reduce((s, l) => s + l.quantity, 0)); return <>
+                      {(() => { const t = stockQty(lotPanel.item, lots.reduce((s, l) => s + l.quantity, 0)); return <>
                         <p className="font-bold text-sm sm:text-lg tabular-nums truncate">{formatNumber(t.qty, { decimals: 3 })}</p>
                         <p className="text-xs text-muted-foreground">{t.unit}{t.baseQty !== null && ` · ${formatNumber(t.baseQty, { decimals: 3 })} ${t.baseUnit}`}</p>
                       </> })()}
