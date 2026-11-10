@@ -14,9 +14,9 @@ interface StockRow {
   lotsCount: number
   nearestExpiry: string | null
   /** Warehouses only (null elsewhere), base units. */
-  replenish: { toBeOrder: number; pending: number; po: number; sources: ReplenishSource[] } | null
+  replenish: { reserved: number; available: number; toBeOrder: number; pending: number; po: number; sources: ReplenishSource[] } | null
 }
-interface ReplenishSource { kind: 'PR' | 'PO'; id: string; number: string; status: string; createdAt: string; qty: number }
+interface ReplenishSource { kind: 'PR' | 'PO' | 'TR' | 'HOLD'; id: string; number: string; status: string; createdAt: string; qty: number }
 interface NonStockRow {
   kind: 'non-stock'
   id: string
@@ -61,11 +61,16 @@ function QtyCell({ item, qty, className = '' }: { item: StockRow['item']; qty: n
 const STATUS_LABEL: Record<string, string> = {
   DRAFT: 'Draft', PENDING_APPROVAL: 'Pending approval', ON_PROCESS: 'On process',
   ORDERED: 'Ordered', IN_TRANSIT: 'In transit', PARTIALLY_RECEIVED: 'Partly received',
+  PENDING: 'Waiting dispatch', APPROVED: 'Reserve approved, not processed yet',
 }
+// At a warehouse, "low" means what's still FREE (on hand minus what's promised to ships) is under
+// Min — the same number the PR stock check shows as Current Stock.
+const availableOf = (r: StockRow) => r.replenish ? r.replenish.available : r.qty
+const isLowRow = (r: StockRow) => r.item.minStock > 0 && availableOf(r) < r.item.minStock
 const qtyText = (item: StockRow['item'], qty: number) => { const d = stockQty(item, qty); return `${formatNumber(d.qty, { decimals: 3 })} ${d.unit}` }
 // Native tooltip on a Pending / PO cell: which documents make up the number.
-const sourcesTitle = (item: StockRow['item'], sources: ReplenishSource[] | undefined, kind: 'PR' | 'PO') =>
-  (sources ?? []).filter(x => x.kind === kind).map(x => `${x.number} · ${qtyText(item, x.qty)} · ${STATUS_LABEL[x.status] ?? x.status}`).join('\n') || undefined
+const sourcesTitle = (item: StockRow['item'], sources: ReplenishSource[] | undefined, kinds: ReplenishSource['kind'][]) =>
+  (sources ?? []).filter(x => kinds.includes(x.kind)).map(x => `${x.number} · ${qtyText(item, x.qty)} · ${STATUS_LABEL[x.status] ?? x.status}`).join('\n') || undefined
 
 const expiryLabel = (s: string) => {
   const d = new Date(s)
@@ -173,6 +178,10 @@ function StockTable({ rows, locationId, locationName, onOpenLots, onRestock }: {
               <th className="text-left px-5 py-2.5 font-medium">Name</th>
               <th className="text-right px-5 py-2.5 font-medium">Lots</th>
               <th className="text-right px-5 py-2.5 font-medium">Stock</th>
+              {isWarehouse && <>
+                <th className="text-right px-5 py-2.5 font-medium" title="Promised to a ship, still on the shelf (pending transfer / approved reserve)">Reserved</th>
+                <th className="text-right px-5 py-2.5 font-medium" title="Stock − Reserved">Available</th>
+              </>}
               <th className="text-right px-5 py-2.5 font-medium">Min</th>
               {isWarehouse && <>
                 <th className="text-right px-5 py-2.5 font-medium">To Be Order</th>
@@ -186,7 +195,7 @@ function StockTable({ rows, locationId, locationName, onOpenLots, onRestock }: {
           <tbody className="divide-y">
             {shown.map(row => {
               const { item, qty, lotsCount, nearestExpiry, replenish } = row
-              const isLow = item.minStock > 0 && qty < item.minStock
+              const isLow = isLowRow(row)
               const isSel = selected.has(item.id)
               return (
                 <tr key={item.id}
@@ -211,15 +220,23 @@ function StockTable({ rows, locationId, locationName, onOpenLots, onRestock }: {
                   <td className="px-5 py-3 text-right font-semibold tabular-nums">
                     <StockQty item={item} qty={qty} />
                   </td>
+                  {isWarehouse && <>
+                    <td className="px-5 py-3 text-right tabular-nums" title={sourcesTitle(item, replenish?.sources, ['TR', 'HOLD'])}>
+                      <QtyCell item={item} qty={replenish?.reserved} className="font-medium text-warning" />
+                    </td>
+                    <td className="px-5 py-3 text-right font-semibold tabular-nums">
+                      <StockQty item={item} qty={replenish?.available ?? qty} />
+                    </td>
+                  </>}
                   <td className="px-5 py-3 text-right text-xs tabular-nums"><MinCell item={item} isLow={isLow} /></td>
                   {isWarehouse && <>
                     <td className="px-5 py-3 text-right tabular-nums">
                       <QtyCell item={item} qty={replenish?.toBeOrder} className="font-semibold text-destructive" />
                     </td>
-                    <td className="px-5 py-3 text-right tabular-nums" title={sourcesTitle(item, replenish?.sources, 'PR')}>
+                    <td className="px-5 py-3 text-right tabular-nums" title={sourcesTitle(item, replenish?.sources, ['PR'])}>
                       <QtyCell item={item} qty={replenish?.pending} className="font-medium text-warning" />
                     </td>
-                    <td className="px-5 py-3 text-right tabular-nums" title={sourcesTitle(item, replenish?.sources, 'PO')}>
+                    <td className="px-5 py-3 text-right tabular-nums" title={sourcesTitle(item, replenish?.sources, ['PO'])}>
                       <QtyCell item={item} qty={replenish?.po} className="font-medium text-info" />
                     </td>
                   </>}
@@ -237,7 +254,7 @@ function StockTable({ rows, locationId, locationName, onOpenLots, onRestock }: {
       <div className="desktop:hidden divide-y">
         {pageRows.map(row => {
           const { item, qty, nearestExpiry, replenish } = row
-          const isLow = item.minStock > 0 && qty < item.minStock
+          const isLow = isLowRow(row)
           const isSel = selected.has(item.id)
           return (
             <div key={item.id} role="button" tabIndex={0}
@@ -257,6 +274,12 @@ function StockTable({ rows, locationId, locationName, onOpenLots, onRestock }: {
                   <span className="truncate min-w-0 font-mono">{item.sku}{nearestExpiry && <> · {expiryLabel(nearestExpiry)}</>}</span>
                   {item.minStock > 0 && <span className="tabular-nums shrink-0">Min <MinCell item={item} isLow={isLow} /></span>}
                 </div>
+                {replenish && replenish.reserved > 0 && (
+                  <div className="flex items-center gap-3 text-xs text-muted-foreground mt-1">
+                    <span>Reserved <QtyCell item={item} qty={replenish.reserved} className="font-medium text-warning" /></span>
+                    <span>Available <StockQty item={item} qty={replenish.available} className="font-semibold text-foreground" /></span>
+                  </div>
+                )}
                 {replenish && (replenish.toBeOrder > 0 || replenish.pending > 0 || replenish.po > 0) && (
                   <div className="flex items-center gap-3 text-xs text-muted-foreground mt-1">
                     {replenish.toBeOrder > 0 && <span>To Be Order <QtyCell item={item} qty={replenish.toBeOrder} className="font-semibold text-destructive" /></span>}
@@ -380,7 +403,7 @@ function defaultRestockLine(row: StockRow): RestockLine {
   return { row, unit: item.baseUnit, qty: String(need > 0 ? Math.ceil(need * 100 - 1e-9) / 100 : 1) }
 }
 
-export default function StockPage({ onOpenPo, onOpenRequest }: { onOpenPo?: (poId: string) => void; onOpenRequest?: (requestId: string) => void } = {}) {
+export default function StockPage({ onOpenPo, onOpenRequest, onOpenTransfer }: { onOpenPo?: (poId: string) => void; onOpenRequest?: (requestId: string) => void; onOpenTransfer?: (transferId: string) => void } = {}) {
   const [data, setData] = useState<StockData | null>(null)
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -570,7 +593,7 @@ export default function StockPage({ onOpenPo, onOpenRequest }: { onOpenPo?: (poI
         if (filterLoc !== 'all') {
           const loc = visibleLocations[0]
           if (!loc) return null
-          const lowStockCount = loc.rows.filter((r): r is StockRow => r.kind === 'stock' && r.item.minStock > 0 && r.qty < r.item.minStock).length
+          const lowStockCount = loc.rows.filter((r): r is StockRow => r.kind === 'stock' && isLowRow(r)).length
           const Icon = loc.location.type === 'VESSEL' ? Ship : Warehouse
           return (
             <div className="rounded-xl border overflow-hidden">
@@ -600,7 +623,7 @@ export default function StockPage({ onOpenPo, onOpenRequest }: { onOpenPo?: (poI
               const filteredRows = filtered(rows)
               if (filteredRows.length === 0 && (search || itemKind !== 'all')) return null
               const isOpen = openLoc === location.id
-              const lowStockCount = rows.filter((r): r is StockRow => r.kind === 'stock' && r.item.minStock > 0 && r.qty < r.item.minStock).length
+              const lowStockCount = rows.filter((r): r is StockRow => r.kind === 'stock' && isLowRow(r)).length
               const Icon = location.type === 'VESSEL' ? Ship : Warehouse
               return (
                 <div key={location.id} className="rounded-xl border overflow-hidden">
@@ -661,8 +684,8 @@ export default function StockPage({ onOpenPo, onOpenRequest }: { onOpenPo?: (poI
                           <p className="font-medium text-sm">{item.name}</p>
                           <p className="text-xs text-muted-foreground">
                             <span className="font-mono">{item.sku}</span>
-                            {' · '}Stock <StockQty item={item} qty={l.row.qty} />
-                            {item.minStock > 0 && <> · Min <MinCell item={item} isLow={l.row.qty < item.minStock} /></>}
+                            {' · '}Available <StockQty item={item} qty={availableOf(l.row)} />
+                            {item.minStock > 0 && <> · Min <MinCell item={item} isLow={isLowRow(l.row)} /></>}
                             {(l.row.replenish?.toBeOrder ?? 0) > 0 && <> · To Be Order <StockQty item={item} qty={l.row.replenish!.toBeOrder} className="text-destructive font-semibold" /></>}
                           </p>
                         </div>
@@ -731,17 +754,24 @@ export default function StockPage({ onOpenPo, onOpenRequest }: { onOpenPo?: (poI
                   .find((r): r is StockRow => r.kind === 'stock' && r.item.id === lotPanel.item.id)
                 const sources = row?.replenish?.sources ?? []
                 if (!sources.length) return null
-                return (
+                const BADGE: Record<ReplenishSource['kind'], { label: string; cls: string }> = {
+                  PR: { label: 'Pending', cls: 'bg-warning/10 text-warning' },
+                  PO: { label: 'PO', cls: 'bg-info/10 text-info' },
+                  TR: { label: 'Transfer', cls: 'bg-orange-500/10 text-orange-600 dark:text-orange-300' },
+                  HOLD: { label: 'Approved reserve', cls: 'bg-orange-500/10 text-orange-600 dark:text-orange-300' },
+                }
+                const open = (src: ReplenishSource) =>
+                  src.kind === 'PO' ? onOpenPo?.(src.id) : src.kind === 'TR' ? onOpenTransfer?.(src.id) : onOpenRequest?.(src.id)
+                const section = (title: string, list: ReplenishSource[]) => list.length > 0 && (
                   <div className="m-5 mb-0 rounded-lg border overflow-hidden">
-                    <div className="px-4 py-2 bg-muted/40 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Incoming to {lotPanel.locationName}</div>
+                    <div className="px-4 py-2 bg-muted/40 text-xs font-semibold text-muted-foreground uppercase tracking-wide">{title}</div>
                     <div className="divide-y">
-                      {sources.map(src => (
+                      {list.map(src => (
                         <div key={`${src.kind}-${src.id}`} className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm">
                           <div className="min-w-0">
-                            <button
-                              onClick={() => src.kind === 'PR' ? onOpenRequest?.(src.id) : onOpenPo?.(src.id)}
+                            <button onClick={() => open(src)}
                               className="font-mono text-xs font-medium hover:underline underline-offset-2 text-primary">{src.number}</button>
-                            <span className={`ml-2 text-[11px] px-1.5 py-0.5 rounded font-medium ${src.kind === 'PR' ? 'bg-warning/10 text-warning' : 'bg-info/10 text-info'}`}>{src.kind === 'PR' ? 'Pending' : 'PO'}</span>
+                            <span className={`ml-2 text-[11px] px-1.5 py-0.5 rounded font-medium ${BADGE[src.kind].cls}`}>{BADGE[src.kind].label}</span>
                             <p className="text-xs text-muted-foreground mt-0.5">{STATUS_LABEL[src.status] ?? src.status} · {formatDate(src.createdAt)}</p>
                           </div>
                           <StockQty item={lotPanel.item} qty={src.qty} className="font-semibold tabular-nums shrink-0 text-right" />
@@ -750,6 +780,10 @@ export default function StockPage({ onOpenPo, onOpenRequest }: { onOpenPo?: (poI
                     </div>
                   </div>
                 )
+                return <>
+                  {section(`Reserved — going out of ${lotPanel.locationName}`, sources.filter(x => x.kind === 'TR' || x.kind === 'HOLD'))}
+                  {section(`Incoming to ${lotPanel.locationName}`, sources.filter(x => x.kind === 'PR' || x.kind === 'PO'))}
+                </>
               })()}
               {lotsLoading ? (
                 <div className="p-5 space-y-3">

@@ -149,7 +149,11 @@ export async function computeStockChecks(db: Db, request: StockCheckRequest, opt
       ?? ownTransfers[0]?.fromLocationId
       ?? item.warehouseFromLocationId
       ?? (opts.preferredSourceId && candidates.includes(opts.preferredSourceId) ? opts.preferredSourceId : null)
-      ?? [...candidates].sort((a, b) => freeAt(item.itemId!, b) - freeAt(item.itemId!, a))[0]
+      // Most FREE stock first; on a tie (typically all 0 because everything on the shelf is
+      // already reserved) the warehouse actually holding it wins — not just the first in the list.
+      ?? [...candidates].sort((a, b) =>
+        (freeAt(item.itemId!, b) - freeAt(item.itemId!, a))
+        || ((stockMap.get(`${item.itemId}:${b}`) ?? 0) - (stockMap.get(`${item.itemId}:${a}`) ?? 0)))[0]
     if (!sourceId) continue
 
     const key = `${item.itemId}:${sourceId}`

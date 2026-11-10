@@ -5,6 +5,7 @@ import { getDb } from '@/lib/get-db'
 
 import { roleMatches } from '@/lib/role-utils'
 import { toBaseQty } from '@/lib/purchasing/transferActions'
+import { approvedHolds } from '@/lib/purchasing/approvedHolds'
 
 const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE']
 
@@ -31,9 +32,12 @@ export async function GET(req: Request) {
   //   Pending = sent to Purchasing, not yet on a PO (open PR lines headed to that warehouse —
   //             a PR delivered to it, or a restock line for it)
   //   PO      = on an open PO delivered to it, not yet received
-  //   To Be Order = Min. Stock − Stock − Pending − PO (≥ 0), so the number moves
+  //   Reserved = already promised to a ship but still on the shelf (PENDING transfers out, and
+  //             Reserves Warehouse approved but hasn't processed) — same as the PR stock check.
+  //   Available = Stock − Reserved — what the PR stock check calls Current Stock.
+  //   To Be Order = Min. Stock − Available − Pending − PO (≥ 0), so the number moves
   //             To Be Order → Pending → PO → Stock as the restock progresses.
-  const [openPrLines, openPoLines, emptyLots] = warehouseIds.length ? await Promise.all([
+  const [openPrLines, openPoLines, emptyLots, pendingOut, { byRequest: holds }] = warehouseIds.length ? await Promise.all([
     db.purchaseRequestItem.findMany({
       where: {
         itemId: { not: null }, convertedAt: null, verifyRejectedAt: null,
@@ -51,11 +55,17 @@ export async function GET(req: Request) {
       where: { quantity: { lte: 0 }, itemId: { not: null }, locationId: { in: locationId ? [locationId] : warehouseIds } },
       select: { itemId: true, locationId: true }, distinct: ['itemId', 'locationId'],
     }),
-  ]) : [[], [], []]
+    db.stockTransferItem.findMany({
+      where: { itemId: { not: null }, transfer: { status: 'PENDING', fromLocationId: { in: warehouseIds } } },
+      select: { itemId: true, requestedQty: true, transfer: { select: { id: true, transferNumber: true, status: true, createdAt: true, fromLocationId: true } } },
+    }),
+    approvedHolds(db),
+  ]) : [[], [], [], [], { byRequest: [] }]
   // Which PR / PO each Pending / PO number comes from, so the stock table can show (and link) it.
-  type Source = { kind: 'PR' | 'PO'; id: string; number: string; status: string; createdAt: Date; qty: number }
+  type Source = { kind: 'PR' | 'PO' | 'TR' | 'HOLD'; id: string; number: string; status: string; createdAt: Date; qty: number }
   const pendingMap = new Map<string, number>()
   const poMap = new Map<string, number>()
+  const reservedMap = new Map<string, number>()
   const sourcesMap = new Map<string, Source[]>()
   const addTo = (map: Map<string, number>, key: string, qty: number) => map.set(key, (map.get(key) ?? 0) + qty)
   const addSource = (key: string, src: Source) => {
@@ -81,6 +91,21 @@ export async function GET(req: Request) {
     addTo(poMap, key, qty)
     addSource(key, { kind: 'PO', id: l.order.id, number: l.order.poNumber, status: l.order.status, createdAt: l.order.createdAt, qty })
   }
+  for (const t of pendingOut) {
+    if (!t.itemId) continue
+    const key = `${t.itemId}:${t.transfer.fromLocationId}`
+    addTo(reservedMap, key, t.requestedQty) // transfer qty is in base units
+    addSource(key, { kind: 'TR', id: t.transfer.id, number: t.transfer.transferNumber, status: t.transfer.status, createdAt: t.transfer.createdAt, qty: t.requestedQty })
+  }
+  const holdPrs = holds.length
+    ? await db.purchaseRequest.findMany({ where: { id: { in: [...new Set(holds.map(h => h.requestId))] } }, select: { id: true, prNumber: true, createdAt: true } })
+    : []
+  const holdPrMap = new Map(holdPrs.map(r => [r.id, r]))
+  for (const h of holds) {
+    const pr = holdPrMap.get(h.requestId)
+    addTo(reservedMap, h.key, h.qty)
+    addSource(h.key, { kind: 'HOLD', id: h.requestId, number: pr?.prNumber ?? 'PR', status: 'APPROVED', createdAt: pr?.createdAt ?? new Date(0), qty: h.qty })
+  }
 
   const sourcePoIds = [...new Set(lots.map(l => l.sourcePoId).filter((id): id is string => id !== null))]
   const sourcePos = sourcePoIds.length
@@ -104,7 +129,7 @@ export async function GET(req: Request) {
     costPerUnit: number
     lotsCount: number
     nearestExpiry: Date | null
-    replenish: { toBeOrder: number; pending: number; po: number; sources: Source[] } | null
+    replenish: { reserved: number; available: number; toBeOrder: number; pending: number; po: number; sources: Source[] } | null
   }
   type NonStockRow = {
     kind: 'non-stock'
@@ -160,7 +185,7 @@ export async function GET(req: Request) {
   // Zero-stock rows at warehouses: item ran out there, or is already pending / on a PO to it.
   const zeroKeys = new Set<string>([
     ...emptyLots.map(l => `${l.itemId}:${l.locationId}`),
-    ...pendingMap.keys(), ...poMap.keys(),
+    ...pendingMap.keys(), ...poMap.keys(), ...reservedMap.keys(),
   ])
   for (const key of zeroKeys) {
     const [itemId, locId] = key.split(':')
@@ -180,7 +205,9 @@ export async function GET(req: Request) {
       const key = `${row.item.id}:${location.id}`
       const pending = pendingMap.get(key) ?? 0
       const po = poMap.get(key) ?? 0
-      row.replenish = { pending, po, toBeOrder: Math.max(0, row.item.minStock - row.qty - pending - po), sources: sourcesMap.get(key) ?? [] }
+      const reserved = Math.min(row.qty, reservedMap.get(key) ?? 0)
+      const available = row.qty - reserved
+      row.replenish = { reserved, available, pending, po, toBeOrder: Math.max(0, row.item.minStock - available - pending - po), sources: sourcesMap.get(key) ?? [] }
     }
   }
 
@@ -197,7 +224,7 @@ export async function GET(req: Request) {
     locations: locationsOut,
     summary: {
       totalItems: allRows.length,
-      lowStock: stockRows.filter(r => r.item.minStock > 0 && r.qty < r.item.minStock).length,
+      lowStock: stockRows.filter(r => r.item.minStock > 0 && (r.replenish ? r.replenish.available : r.qty) < r.item.minStock).length,
     },
   })
 }
