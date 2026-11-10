@@ -16,7 +16,7 @@ interface StockRow {
   /** Warehouses only (null elsewhere), base units. */
   replenish: { reserved: number; available: number; toBeOrder: number; pending: number; po: number; sources: ReplenishSource[] } | null
 }
-interface ReplenishSource { kind: 'PR' | 'PO' | 'TR' | 'HOLD'; id: string; number: string; status: string; createdAt: string; qty: number }
+interface ReplenishSource { kind: 'PR' | 'PO' | 'TR' | 'BACKORDER' | 'REQUEST'; id: string; number: string; status: string; createdAt: string; qty: number }
 interface NonStockRow {
   kind: 'non-stock'
   id: string
@@ -61,8 +61,11 @@ function QtyCell({ item, qty, className = '' }: { item: StockRow['item']; qty: n
 const STATUS_LABEL: Record<string, string> = {
   DRAFT: 'Draft', PENDING_APPROVAL: 'Pending approval', ON_PROCESS: 'On process',
   ORDERED: 'Ordered', IN_TRANSIT: 'In transit', PARTIALLY_RECEIVED: 'Partly received',
-  PENDING: 'Waiting dispatch', APPROVED: 'Reserve approved, not processed yet',
+  PENDING: 'Waiting dispatch',
 }
+const RESERVED_KINDS: ReplenishSource['kind'][] = ['TR', 'BACKORDER', 'REQUEST']
+const sourceStatus = (src: ReplenishSource) =>
+  src.kind === 'REQUEST' ? 'Waiting for warehouse check' : src.kind === 'BACKORDER' ? 'Backorder — ships after restock' : (STATUS_LABEL[src.status] ?? src.status)
 // At a warehouse, "low" means what's still FREE (on hand minus what's promised to ships) is under
 // Min — the same number the PR stock check shows as Current Stock.
 const availableOf = (r: StockRow) => r.replenish ? r.replenish.available : r.qty
@@ -70,7 +73,7 @@ const isLowRow = (r: StockRow) => r.item.minStock > 0 && availableOf(r) < r.item
 const qtyText = (item: StockRow['item'], qty: number) => { const d = stockQty(item, qty); return `${formatNumber(d.qty, { decimals: 3 })} ${d.unit}` }
 // Native tooltip on a Pending / PO cell: which documents make up the number.
 const sourcesTitle = (item: StockRow['item'], sources: ReplenishSource[] | undefined, kinds: ReplenishSource['kind'][]) =>
-  (sources ?? []).filter(x => kinds.includes(x.kind)).map(x => `${x.number} · ${qtyText(item, x.qty)} · ${STATUS_LABEL[x.status] ?? x.status}`).join('\n') || undefined
+  (sources ?? []).filter(x => kinds.includes(x.kind)).map(x => `${x.number} · ${qtyText(item, x.qty)} · ${sourceStatus(x)}`).join('\n') || undefined
 
 const expiryLabel = (s: string) => {
   const d = new Date(s)
@@ -179,7 +182,7 @@ function StockTable({ rows, locationId, locationName, onOpenLots, onRestock }: {
               <th className="text-right px-5 py-2.5 font-medium">Lots</th>
               <th className="text-right px-5 py-2.5 font-medium">Stock</th>
               {isWarehouse && <>
-                <th className="text-right px-5 py-2.5 font-medium" title="Promised to a ship, still on the shelf (pending transfer / approved reserve)">Reserved</th>
+                <th className="text-right px-5 py-2.5 font-medium" title="Owed to ships from this warehouse: pending transfers, backorders, and ship requests waiting for the warehouse check">Reserved</th>
                 <th className="text-right px-5 py-2.5 font-medium" title="Stock − Reserved">Available</th>
               </>}
               <th className="text-right px-5 py-2.5 font-medium">Min</th>
@@ -221,7 +224,7 @@ function StockTable({ rows, locationId, locationName, onOpenLots, onRestock }: {
                     <StockQty item={item} qty={qty} />
                   </td>
                   {isWarehouse && <>
-                    <td className="px-5 py-3 text-right tabular-nums" title={sourcesTitle(item, replenish?.sources, ['TR', 'HOLD'])}>
+                    <td className="px-5 py-3 text-right tabular-nums" title={sourcesTitle(item, replenish?.sources, RESERVED_KINDS)}>
                       <QtyCell item={item} qty={replenish?.reserved} className="font-medium text-warning" />
                     </td>
                     <td className="px-5 py-3 text-right font-semibold tabular-nums">
@@ -758,7 +761,8 @@ export default function StockPage({ onOpenPo, onOpenRequest, onOpenTransfer }: {
                   PR: { label: 'Pending', cls: 'bg-warning/10 text-warning' },
                   PO: { label: 'PO', cls: 'bg-info/10 text-info' },
                   TR: { label: 'Transfer', cls: 'bg-orange-500/10 text-orange-600 dark:text-orange-300' },
-                  HOLD: { label: 'Approved reserve', cls: 'bg-orange-500/10 text-orange-600 dark:text-orange-300' },
+                  BACKORDER: { label: 'Backorder', cls: 'bg-orange-500/10 text-orange-600 dark:text-orange-300' },
+                  REQUEST: { label: 'Ship request', cls: 'bg-orange-500/10 text-orange-600 dark:text-orange-300' },
                 }
                 const open = (src: ReplenishSource) =>
                   src.kind === 'PO' ? onOpenPo?.(src.id) : src.kind === 'TR' ? onOpenTransfer?.(src.id) : onOpenRequest?.(src.id)
@@ -772,7 +776,7 @@ export default function StockPage({ onOpenPo, onOpenRequest, onOpenTransfer }: {
                             <button onClick={() => open(src)}
                               className="font-mono text-xs font-medium hover:underline underline-offset-2 text-primary">{src.number}</button>
                             <span className={`ml-2 text-[11px] px-1.5 py-0.5 rounded font-medium ${BADGE[src.kind].cls}`}>{BADGE[src.kind].label}</span>
-                            <p className="text-xs text-muted-foreground mt-0.5">{STATUS_LABEL[src.status] ?? src.status} · {formatDate(src.createdAt)}</p>
+                            <p className="text-xs text-muted-foreground mt-0.5">{sourceStatus(src)} · {formatDate(src.createdAt)}</p>
                           </div>
                           <StockQty item={lotPanel.item} qty={src.qty} className="font-semibold tabular-nums shrink-0 text-right" />
                         </div>
@@ -781,7 +785,7 @@ export default function StockPage({ onOpenPo, onOpenRequest, onOpenTransfer }: {
                   </div>
                 )
                 return <>
-                  {section(`Reserved — going out of ${lotPanel.locationName}`, sources.filter(x => x.kind === 'TR' || x.kind === 'HOLD'))}
+                  {section(`Reserved — owed to ships from ${lotPanel.locationName}`, sources.filter(x => RESERVED_KINDS.includes(x.kind)))}
                   {section(`Incoming to ${lotPanel.locationName}`, sources.filter(x => x.kind === 'PR' || x.kind === 'PO'))}
                 </>
               })()}

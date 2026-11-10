@@ -109,8 +109,8 @@ export async function processWarehouseLine(db: Db, request: Pick<WarehouseReques
 }
 
 /**
- * Put each given line's To Be Order (its restockQty — Shortage + top-up to Min. Stock, net of
- * On Order) on THIS PR as a restock line (restockLocationId = its source warehouse): Purchasing
+ * Put each given line's To Be Order (its restockQty — the warehouse-level To Be Order from
+ * warehousePosition.ts, same as Item by Location) on THIS PR as a restock line (restockLocationId = its source warehouse): Purchasing
  * buys it from the PR it's already working on, delivered to the warehouse rather than the ship.
  * No separate Restock PR. An item that already has a restock line here is skipped, so calling it
  * again (Process, then Finish) never double-orders. Qty rounds UP to whole purchase units when
@@ -123,11 +123,16 @@ export async function addRestockLines(db: Db, request: WarehouseRequest, lineIds
     select: { itemId: true },
   })
   const restocked = new Set(already.map(a => a.itemId!))
+  // To Be Order is warehouse-level (warehousePosition.ts) — two lines of the same item on this PR
+  // see the same number, so only the first one puts it on a restock line.
   const lines = request.items
     .filter(i => lineIds === 'all' || lineIds.includes(i.id))
     .map(item => ({ item, check: checks.get(item.id) }))
-    .filter((l): l is { item: (typeof request.items)[number]; check: NonNullable<typeof l.check> } =>
-      !!l.check && l.check.restockQty > 0 && !!l.item.itemId && !restocked.has(l.item.itemId))
+    .filter((l): l is { item: (typeof request.items)[number]; check: NonNullable<typeof l.check> } => {
+      if (!l.check || l.check.restockQty <= 0 || !l.item.itemId || restocked.has(l.item.itemId)) return false
+      restocked.add(l.item.itemId)
+      return true
+    })
   if (!lines.length) return []
 
   const masters = await db.purchaseItem.findMany({
@@ -152,7 +157,7 @@ export async function addRestockLines(db: Db, request: WarehouseRequest, lineIds
         viaWarehouse: false,
         warehouseCheckedById: userId,
         warehouseCheckedAt: now,
-        notes: `Restock to ${check.locationName} — Shortage ${check.shortage} · Ending ${check.ending} · Min ${check.minStock} · On order ${check.onOrder} (${m?.baseUnit ?? ''})`,
+        notes: `Restock to ${check.locationName} — To Be Order ${check.toBeOrder} · Min ${check.minStock} · Pending ${check.pending} · PO ${check.po} (${m?.baseUnit ?? ''})`,
       }
     }),
   })
