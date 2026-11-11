@@ -8,6 +8,7 @@ import { pickNextSalesUserId } from '@/lib/whatsapp-distribution'
 import { sendPushToUser } from '@/lib/push'
 import { isViewing } from '@/lib/chat-presence'
 import { ensureLeadForMetaDm, isNewContactSession, recordLeadContact } from '@/lib/lead-contact'
+import { recordLeadInbound, recordLeadOutbound } from '@/lib/lead-stage-auto'
 import { IG_GRAPH, getIgLoginToken } from '@/lib/instagram-login'
 
 // Facebook Messenger + Instagram Direct, both through the Messenger Platform (one Meta
@@ -442,7 +443,12 @@ export async function handleMetaMessagingEvents(db: PrismaClient, tenantId: stri
         }
         changed = true
 
-        if (isEcho) continue
+        if (isEcho) {
+          // Sent from the Instagram app / Meta Business Suite (ERP sends were deduped above) —
+          // still a staff message for the Sales Pipeline's follow-up tracking.
+          if (!stale && conversation.leadId) await recordLeadOutbound(db, conversation.leadId, null, now).catch(e => console.error('[meta-dm] lead outbound stage failed', e))
+          continue
+        }
 
         // Every DM sender is a Lead — linked/created on their first message (also for an older
         // thread that predates this), and each new contact (24h+ after their last message) goes
@@ -453,6 +459,9 @@ export async function handleMetaMessagingEvents(db: PrismaClient, tenantId: stri
           if (leadId && (justLinked || (before && isNewContactSession(before.lastInboundAt, now)))) {
             await recordLeadContact(db, { leadId, channel: platform, brand, instagramConversationId: conversation.id, message: preview, isFirstContact: created })
           }
+          // Customer answered → Sales Pipeline "In Active Communication" (src/lib/lead-stage-auto.ts).
+          // Skipped for old history the Messenger poll back-fills.
+          if (leadId && !stale) await recordLeadInbound(db, leadId, now)
           // Linking to an existing lead may have handed the chat to that lead's owner.
           if (justLinked && !created) {
             conversation = await db.instagramConversation.findUniqueOrThrow({ where: { id: conversation.id } })

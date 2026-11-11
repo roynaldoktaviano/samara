@@ -8,6 +8,7 @@ import { emitTenantEvent } from '@/lib/realtime-bus'
 import { pickNextSalesUserId } from '@/lib/whatsapp-distribution'
 import { autoLinkNewConversation } from '@/lib/whatsapp-lead'
 import { isNewContactSession, recordLeadContact } from '@/lib/lead-contact'
+import { recordLeadInbound } from '@/lib/lead-stage-auto'
 import { sendPushToUser } from '@/lib/push'
 import { isViewing } from '@/lib/chat-presence'
 import { WHATSAPP_BRANDS, WHATSAPP_BRAND_SECRET_KEYS, WHATSAPP_BRAND_WEBHOOK_SECRET_KEYS, WHATSAPP_GRAPH_VERSION, type WhatsappBrand } from '@/lib/whatsapp-brands'
@@ -316,6 +317,8 @@ export function createWhatsappWebhookHandlers(endpointBrand?: WhatsappBrand) {
             if (leadId && (justLinked || (existing && isNewContactSession(existing.lastInboundAt)))) {
               await recordLeadContact(db, { leadId, channel: 'WHATSAPP', brand, whatsappConversationId: conversation.id, message: preview, isFirstContact: created })
             }
+            // Customer answered → Sales Pipeline "In Active Communication" (src/lib/lead-stage-auto.ts)
+            if (leadId) await recordLeadInbound(db, leadId)
           } catch (e) {
             console.error('[whatsapp webhook] lead link/history failed', e)
           }

@@ -1,6 +1,7 @@
 import type { LeadAssignmentReason, Prisma, PrismaClient, WhatsappBrand } from '@prisma/client'
 import { pickNextSalesUserId } from '@/lib/whatsapp-distribution'
 import { sendPushToUser } from '@/lib/push'
+import { recordLeadOutbound } from '@/lib/lead-stage-auto'
 
 // Links WhatsApp chats into the Lead pipeline. The pipeline stage lives on Lead only —
 // a chat just points at its Lead (WhatsappConversation.leadId) and carries a triage
@@ -101,11 +102,11 @@ export async function autoLinkNewConversation(db: PrismaClient, conversationId: 
 
 // Makes sure a SALES chat has a Lead — reusing one with the same number, else creating a
 // new one owned by the chat's holder. If staff already replied, the new Lead starts at
-// CONTACTED rather than NEW. Returns the lead id.
+// INITIAL_MESSAGE_SENT rather than NEW. Returns the lead id.
 export async function ensureLeadForConversation(db: PrismaClient, conversationId: string, actingUserId?: string): Promise<string | null> {
   const conv = await db.whatsappConversation.findUnique({
     where: { id: conversationId },
-    select: { phone: true, contactName: true, brand: true, assignedToId: true, leadId: true, firstResponseAt: true },
+    select: { phone: true, contactName: true, brand: true, assignedToId: true, leadId: true, firstResponseAt: true, lastInboundAt: true, lastOutboundAt: true },
   })
   if (!conv) return null
   if (conv.leadId) return conv.leadId
@@ -123,7 +124,9 @@ export async function ensureLeadForConversation(db: PrismaClient, conversationId
         source: whatsappLeadSource(conv.brand),
         ownerId: conv.assignedToId,
         ownerAssignedAt: conv.assignedToId ? new Date() : null,
-        stage: conv.firstResponseAt ? 'CONTACTED' : 'NEW',
+        stage: conv.firstResponseAt ? 'INITIAL_MESSAGE_SENT' : 'NEW',
+        lastInboundAt: conv.lastInboundAt,
+        lastOutboundAt: conv.lastOutboundAt,
         stageUpdatedAt: new Date(),
         stageUpdatedById: actingUserId ?? null,
       },
@@ -155,8 +158,8 @@ export async function syncLeadOwner(db: PrismaClient, conversationId: string, re
   }
 }
 
-// Called after every successful staff send. Stamps the reply timestamps and, the first
-// time staff answers a SALES chat whose Lead is still NEW, moves it to CONTACTED.
+// Called after every successful staff send. Stamps the reply timestamps and moves the Lead
+// along the pipeline (New Enquiry → Initial Message Sent → Follow-ups, see lead-stage-auto.ts).
 export async function recordStaffReply(db: PrismaClient, conversationId: string, userId: string): Promise<void> {
   const now = new Date()
   const conv = await db.whatsappConversation.findUnique({ where: { id: conversationId }, select: { firstResponseAt: true, leadId: true } })
@@ -165,12 +168,7 @@ export async function recordStaffReply(db: PrismaClient, conversationId: string,
     where: { id: conversationId },
     data: { lastOutboundAt: now, ...(conv.firstResponseAt ? {} : { firstResponseAt: now }) },
   })
-  if (conv.leadId) {
-    await db.lead.updateMany({
-      where: { id: conv.leadId, stage: 'NEW' },
-      data: { stage: 'CONTACTED', stageUpdatedAt: now, stageUpdatedById: userId },
-    })
-  }
+  if (conv.leadId) await recordLeadOutbound(db, conv.leadId, userId, now)
 }
 
 // The other direction of chat owner = lead owner: when a Lead changes hands (claimed or

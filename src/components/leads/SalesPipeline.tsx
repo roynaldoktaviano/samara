@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSession } from 'next-auth/react'
 import { toast } from 'sonner'
-import { Loader2, MessageCircle, Search, Pencil, Clock, Inbox, ChevronDown, ChevronUp, Globe, UserPen, UserPlus } from 'lucide-react'
+import { Loader2, MessageCircle, Search, Pencil, Clock, Inbox, ChevronDown, ChevronUp, Globe, UserPen, UserPlus, Instagram, BellRing, Zap } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -13,8 +13,8 @@ import { cn } from '@/lib/utils'
 import { formatDate } from '@/lib/format'
 import { roleMatches } from '@/lib/role-utils'
 import {
-  LEAD_STAGE_COLOR, LEAD_STAGE_LABEL, LEAD_TRANSITIONS, LEAD_LOST_REASON_LABEL, canTransition,
-  type LeadStage, type LeadLostReason,
+  LEAD_STAGES, LEAD_STAGE_COLOR, LEAD_STAGE_LABEL, LEAD_LOST_REASON_LABEL, CONVERSATION_STAGES, FOLLOW_UP_DUE_DAYS,
+  isFollowUpDue, type LeadStage, type LeadLostReason,
 } from '@/lib/lead-pipeline'
 import { WHATSAPP_BRANDS, WHATSAPP_BRAND_LABELS, type WhatsappBrand } from '@/lib/whatsapp-brands'
 import { WHATSAPP_CHAT_CATEGORY_LABEL, type WhatsappChatCategory } from '@/lib/whatsapp-chat-category'
@@ -22,8 +22,8 @@ import LeadEditSheet from '@/components/leads/LeadEditSheet'
 import LostReasonDialog from '@/components/leads/LostReasonDialog'
 
 const WA_GREEN = '#25D366'
-// Board column order — UNQUALIFIED last since it's a side-track, not a step forward.
-const COLUMNS: LeadStage[] = ['NEW', 'CONTACTED', 'QUALIFIED', 'OPPORTUNITY', 'CLOSED_WON', 'CLOSED_LOST', 'UNQUALIFIED']
+// Same columns, same order as the Freshsales Deals board.
+const COLUMNS: readonly LeadStage[] = LEAD_STAGES
 const TRIAGE_OPTIONS: Exclude<WhatsappChatCategory, 'UNSORTED'>[] = ['SALES', 'GUEST', 'VENDOR', 'SPAM']
 const TRIAGE_SHORT: Record<Exclude<WhatsappChatCategory, 'UNSORTED'>, string> = { SALES: 'Sales', GUEST: 'Guest', VENDOR: 'Vendor', SPAM: 'Spam' }
 const STAGNANT_HOURS = 24
@@ -39,13 +39,20 @@ interface PipelineChat {
 interface PipelineLead {
   id: string; name: string; phone: string | null; email: string | null; stage: LeadStage; stageUpdatedAt: string | null
   leadQuality: 'HOT' | 'WARM' | 'COLD' | null; guestCount: number | null; travelStartDate: string | null
-  travelSeason: string | null; proposalSentAt: string | null; lostReason: LeadLostReason | null; createdAt: string
+  travelEndDate: string | null; travelSeason: string | null; productInterest: string | null
+  budgetMin: number | null; budgetMax: number | null; budgetCurrency: string | null
+  lastInboundAt: string | null; lastOutboundAt: string | null
+  lostReason: LeadLostReason | null; createdAt: string
   source: string | null
+  booking: {
+    id: string; bookingCode: string; status: string; totalPrice: number; depositPaid: number; startDate: string; endDate: string
+    guestCount: number; source: string; yacht: { name: string } | null
+  } | null
   ownerAssignedAt: string | null
   assignmentLogs: { id: string; reason: 'AUTO_DISTRIBUTION' | 'CLAIM' | 'MANUAL' | 'STAGNANT'; createdAt: string; fromUser: { name: string | null; email: string } | null; toUser: { name: string | null; email: string } | null }[]
   owner: { id: string; name: string | null; email: string } | null
   destination: { name: string } | null
-  _count: { inquiries: number }
+  _count: { inquiries: number; instagramConversations: number }
   whatsappConversations: PipelineChat[]
 }
 interface Column { stage: LeadStage; items: PipelineLead[]; total: number }
@@ -69,9 +76,14 @@ function relTime(iso: string) {
   return `${Math.floor(hrs / 24)}d ago`
 }
 
-// Hours the customer has been waiting on a reply across this lead's chats (null = nobody waiting).
-function waitingHours(chats: PipelineChat[]): number | null {
+// Hours the customer has been waiting on a reply — across this lead's WhatsApp chats and the
+// lead's own last in/out timestamps (all channels). null = nobody waiting.
+function waitingHours(lead: PipelineLead): number | null {
+  const chats = lead.whatsappConversations
   let max: number | null = null
+  if (lead.lastInboundAt && (!lead.lastOutboundAt || new Date(lead.lastOutboundAt) < new Date(lead.lastInboundAt))) {
+    max = (Date.now() - new Date(lead.lastInboundAt).getTime()) / 3600000
+  }
   for (const c of chats) {
     if (!c.lastInboundAt) continue
     if (c.lastOutboundAt && new Date(c.lastOutboundAt) >= new Date(c.lastInboundAt)) continue
@@ -84,13 +96,46 @@ function waitingHours(chats: PipelineChat[]): number | null {
 function ChannelIcons({ lead }: { lead: PipelineLead }) {
   const web = lead._count.inquiries > 0
   const wa = lead.whatsappConversations.length > 0
+  const ig = lead._count.instagramConversations > 0
   return (
     <span className="flex items-center gap-1 shrink-0 text-muted-foreground">
       {web && <Globe className="h-3 w-3" aria-label="Website form" />}
       {wa && <MessageCircle className="h-3 w-3" style={{ color: WA_GREEN }} aria-label="WhatsApp" />}
-      {!web && !wa && <UserPen className="h-3 w-3" aria-label="Manual" />}
+      {ig && <Instagram className="h-3 w-3" aria-label="Instagram / Messenger" />}
+      {!web && !wa && !ig && <UserPen className="h-3 w-3" aria-label="Manual" />}
     </span>
   )
+}
+
+// Card value, like the $ on a Freshsales deal: the booking total once booked, else the lead's budget.
+function dealValue(l: PipelineLead): { amount: number; currency: string; estimate: boolean } | null {
+  if (l.booking) return { amount: l.booking.totalPrice, currency: 'USD', estimate: false }
+  const v = l.budgetMax ?? l.budgetMin
+  return v ? { amount: v, currency: l.budgetCurrency || 'USD', estimate: true } : null
+}
+
+function money(amount: number, currency: string) {
+  try {
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency, maximumFractionDigits: 0 }).format(amount)
+  } catch {
+    return `${currency} ${Math.round(amount).toLocaleString('en-US')}`
+  }
+}
+
+const SHORT_DATE = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: '2-digit' })
+
+// "2 PAX · 5 Nov 27 · 3N · Samara 1" — the facts the team writes into Freshsales deal names.
+function tripSummary(l: PipelineLead): string {
+  const start = l.booking?.startDate ?? l.travelStartDate
+  const end = l.booking?.endDate ?? l.travelEndDate
+  const pax = l.booking?.guestCount ?? l.guestCount
+  const nights = start && end ? Math.round((new Date(end).getTime() - new Date(start).getTime()) / 86400000) : null
+  return [
+    pax ? `${pax} PAX` : null,
+    start ? SHORT_DATE.format(new Date(start)) : l.travelSeason,
+    nights && nights > 0 ? `${nights}N` : null,
+    l.booking?.yacht?.name ?? l.productInterest,
+  ].filter(Boolean).join(' · ')
 }
 
 /**
@@ -166,11 +211,6 @@ export default function SalesPipeline({ onOpenChat }: { onOpenChat: (conversatio
 
   async function changeStage(lead: PipelineLead, stage: LeadStage, extra?: { lostReason: string; lostNote: string }) {
     if (stage === lead.stage) return
-    if (!canTransition(lead.stage, stage)) {
-      const next = LEAD_TRANSITIONS[lead.stage].map(s => LEAD_STAGE_LABEL[s]).join(', ')
-      toast.error(next ? `${LEAD_STAGE_LABEL[lead.stage]} can only move to: ${next}` : `${LEAD_STAGE_LABEL[lead.stage]} is final`)
-      return
-    }
     if (stage === 'CLOSED_LOST' && !extra) { setLostTarget(lead); return }
     setBusy(true)
     try {
@@ -178,15 +218,7 @@ export default function SalesPipeline({ onOpenChat }: { onOpenChat: (conversatio
         method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ stage, ...extra }),
       })
       const data = await res.json().catch(() => ({}))
-      if (!res.ok) {
-        if (data?.missingFields?.length) {
-          toast.error(`Please complete first: ${data.missingFields.join(', ')}`)
-          setEditLeadId(lead.id)
-        } else {
-          toast.error(data?.error ?? 'Failed to change stage')
-        }
-        return
-      }
+      if (!res.ok) { toast.error(data?.error ?? 'Failed to change stage'); return }
       toast.success(`${lead.name} → ${LEAD_STAGE_LABEL[stage]}`)
       setLostTarget(null)
       await load()
@@ -237,7 +269,7 @@ export default function SalesPipeline({ onOpenChat }: { onOpenChat: (conversatio
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 className="text-2xl font-bold tracking-tight">Sales Pipeline</h2>
-          <p className="text-sm text-muted-foreground">All leads from website, WhatsApp and manual entry. Drag a card to change stage, click for details.</p>
+          <p className="text-sm text-muted-foreground">All leads from website, WhatsApp, Instagram, email and manual entry. Cards move on their own as you chat, book and invoice — drag to move by hand.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative w-full sm:w-56">
@@ -321,6 +353,7 @@ export default function SalesPipeline({ onOpenChat }: { onOpenChat: (conversatio
           {COLUMNS.map(stage => {
             const col = byStage[stage]
             const items = col?.items ?? []
+            const usdTotal = items.reduce((sum, l) => { const v = dealValue(l); return v && v.currency === 'USD' ? sum + v.amount : sum }, 0)
             return (
               <div key={stage}
                 onDragOver={e => { if (dragId) { e.preventDefault(); setDropStage(stage) } }}
@@ -335,24 +368,50 @@ export default function SalesPipeline({ onOpenChat }: { onOpenChat: (conversatio
                       {col && col.total > items.length ? `${items.length} / ${col.total}` : items.length}
                     </span>
                   </div>
-                  {stage === 'NEW' && <p className="text-[10px] text-muted-foreground">Last {newLookbackDays} days</p>}
+                  <p className="text-[10px] text-muted-foreground">
+                    {usdTotal > 0 ? money(usdTotal, 'USD') : '\u00a0'}
+                    {stage === 'NEW' && ` · last ${newLookbackDays} days`}
+                  </p>
                 </div>
                 <div className="flex-1 overflow-y-auto p-2 space-y-2">
                   {items.map(l => {
                     const chat = l.whatsappConversations[0]
-                    const waiting = stage.startsWith('CLOSED') ? null : waitingHours(l.whatsappConversations)
+                    const inConversation = CONVERSATION_STAGES.includes(stage)
+                    const waiting = inConversation ? waitingHours(l) : null
+                    const followUpDue = isFollowUpDue(l)
+                    const overdue = followUpDue || (waiting !== null && waiting >= STAGNANT_HOURS)
                     const unread = l.whatsappConversations.reduce((n, c) => n + c.unreadCount, 0)
+                    const value = dealValue(l)
+                    const summary = tripSummary(l)
                     return (
                       <div key={l.id} draggable onDragStart={() => setDragId(l.id)} onDragEnd={() => { setDragId(null); setDropStage(null) }}
                         onClick={() => setSelectedId(l.id)}
-                        className={cn('rounded-lg border bg-card p-2.5 cursor-pointer hover:shadow-sm transition-shadow space-y-1.5', dragId === l.id && 'opacity-50')}>
+                        className={cn('rounded-lg border bg-card p-2.5 cursor-pointer hover:shadow-sm transition-shadow space-y-1.5',
+                          overdue && 'border-destructive/40 bg-destructive/5',
+                          dragId === l.id && 'opacity-50')}>
                         <div className="flex items-start justify-between gap-2">
-                          <p className="text-sm font-medium leading-tight truncate">{l.name}</p>
+                          <p className={cn('text-sm font-medium leading-tight line-clamp-2', overdue ? 'text-destructive' : 'text-primary')}>{l.name}</p>
                           <span className="flex items-center gap-1.5 shrink-0">
                             {unread > 0 && <span className="rounded-full px-1.5 text-[10px] font-semibold text-white" style={{ backgroundColor: WA_GREEN }}>{unread}</span>}
                             <ChannelIcons lead={l} />
                           </span>
                         </div>
+                        {(value || summary) && (
+                          <div className="space-y-0.5">
+                            {value && (
+                              <p className="text-sm font-semibold tabular-nums">
+                                {money(value.amount, value.currency)}
+                                {value.estimate && <span className="ml-1 text-[10px] font-normal text-muted-foreground">budget</span>}
+                              </p>
+                            )}
+                            {summary && <p className="text-[11px] text-muted-foreground truncate">{summary}</p>}
+                          </div>
+                        )}
+                        {l.booking && (
+                          <p className="text-[11px] text-muted-foreground truncate">
+                            {l.booking.bookingCode} · {l.booking.status.replace(/_/g, ' ')}
+                          </p>
+                        )}
                         <div className="flex flex-wrap gap-1">
                           {Array.from(new Set(l.whatsappConversations.map(c => c.brand))).map(b => (
                             <span key={b} className="text-[10px] rounded bg-success/10 text-success px-1.5 py-0.5">{WHATSAPP_BRAND_LABELS[b]}</span>
@@ -360,8 +419,13 @@ export default function SalesPipeline({ onOpenChat }: { onOpenChat: (conversatio
                           {l.leadQuality && <span className={`text-[10px] rounded px-1.5 py-0.5 ${QUALITY_COLOR[l.leadQuality]}`}>{l.leadQuality}</span>}
                           {!l.owner && <span className="text-[10px] rounded bg-warning/10 text-warning px-1.5 py-0.5">No owner</span>}
                           {stage === 'CLOSED_LOST' && l.lostReason && <span className="text-[10px] rounded bg-muted px-1.5 py-0.5">{LEAD_LOST_REASON_LABEL[l.lostReason]}</span>}
+                          {followUpDue && (
+                            <span className="text-[10px] rounded bg-destructive/10 text-destructive px-1.5 py-0.5 flex items-center gap-0.5" title={`No reply ${FOLLOW_UP_DUE_DAYS}+ days after your last message`}>
+                              <BellRing className="h-2.5 w-2.5" /> Follow-up due
+                            </span>
+                          )}
                         </div>
-                        {chat?.lastMessagePreview && <p className="text-xs text-muted-foreground line-clamp-2">{chat.lastMessagePreview}</p>}
+                        {inConversation && chat?.lastMessagePreview && <p className="text-xs text-muted-foreground line-clamp-2">{chat.lastMessagePreview}</p>}
                         <div className="flex items-center justify-between text-[11px] text-muted-foreground">
                           <span className="truncate">{isAdmin && l.owner ? (l.owner.name ?? l.owner.email) : (chat ? `Chat ${relTime(chat.lastMessageAt)}` : `Received ${relTime(l.createdAt)}`)}</span>
                           {waiting !== null && (
@@ -397,19 +461,18 @@ export default function SalesPipeline({ onOpenChat }: { onOpenChat: (conversatio
                   <span className="text-xs uppercase tracking-wide text-muted-foreground">Stage</span>
                   <Badge className={`${LEAD_STAGE_COLOR[selected.stage]} border-transparent`}>{LEAD_STAGE_LABEL[selected.stage]}</Badge>
                 </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {LEAD_TRANSITIONS[selected.stage].length === 0 ? (
-                    <span className="text-xs text-muted-foreground italic">Final stage</span>
-                  ) : LEAD_TRANSITIONS[selected.stage].map(next => (
-                    <Button key={next} size="sm" disabled={busy}
-                      variant={next.startsWith('CLOSED') || next === 'UNQUALIFIED' ? 'outline' : 'default'}
-                      onClick={() => changeStage(selected, next)}>
-                      {next === 'CONTACTED' && selected.stage === 'UNQUALIFIED' ? 'Reopen to Contacted' : `→ ${LEAD_STAGE_LABEL[next]}`}
-                    </Button>
-                  ))}
-                </div>
-                {selected.stage === 'CONTACTED' && (
-                  <p className="text-[11px] text-muted-foreground">Required for Qualified: product, destination, country, dates/season, guest count, lead quality.</p>
+                <Select value={selected.stage} onValueChange={v => changeStage(selected, v as LeadStage)} disabled={busy}>
+                  <SelectTrigger aria-label="Move to stage" className="w-full"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {LEAD_STAGES.map(s => <SelectItem key={s} value={s}>{LEAD_STAGE_LABEL[s]}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <p className="text-[11px] text-muted-foreground flex gap-1">
+                  <Zap className="h-3 w-3 shrink-0 mt-0.5" />
+                  <span>Moves on its own: your first reply from the ERP → Initial Message Sent; customer answers → In Active Communication; you write again {'≥'}24h later with no answer → 1st / 2nd Follow-Up; booking created → Booking Confirmation; invoice generated → Invoice; first payment confirmed → Won.</span>
+                </p>
+                {isFollowUpDue(selected) && (
+                  <p className="text-[11px] text-destructive flex items-center gap-1"><BellRing className="h-3 w-3" /> No reply for {FOLLOW_UP_DUE_DAYS}+ days since your last message — time to follow up.</p>
                 )}
               </div>
 
@@ -460,7 +523,10 @@ export default function SalesPipeline({ onOpenChat }: { onOpenChat: (conversatio
                   ['Destination', selected.destination?.name ?? '—'],
                   ['Guests', selected.guestCount ?? '—'],
                   ['Planned trip', selected.travelStartDate ? formatDate(selected.travelStartDate) : (selected.travelSeason ?? '—')],
-                  ['Proposal sent', selected.proposalSentAt ? formatDate(selected.proposalSentAt) : '—'],
+                  ['Value', (() => { const v = dealValue(selected); return v ? `${money(v.amount, v.currency)}${v.estimate ? ' (budget)' : ''}` : '—' })()],
+                  ['Booking', selected.booking ? `${selected.booking.bookingCode} · ${selected.booking.status.replace(/_/g, ' ')}` : '—'],
+                  ['Customer last wrote', selected.lastInboundAt ? relTime(selected.lastInboundAt) : '—'],
+                  ['We last wrote', selected.lastOutboundAt ? relTime(selected.lastOutboundAt) : '—'],
                   ['Received', formatDate(selected.createdAt)],
                 ] as [string, string | number][]).map(([k, v]) => (
                   <div key={k}>

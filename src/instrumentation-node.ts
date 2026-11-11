@@ -88,6 +88,28 @@ export async function startNodeInstrumentation() {
     }
   }, leadStagnantCheckIntervalMs)
 
+  // Sales Pipeline "follow-up due" reminder — tells a lead's owner when the customer has been
+  // silent FOLLOW_UP_DUE_DAYS after our last message (src/lib/lead-stage-auto.ts). Called directly
+  // rather than through a cron route (those sit behind the login middleware). Production only so
+  // a local `next dev` on the same DB doesn't also remind; LEAD_FOLLOWUP_REMINDER=off disables it.
+  // followUpRemindedAt makes re-running it harmless.
+  if (process.env.NODE_ENV === 'production' && process.env.LEAD_FOLLOWUP_REMINDER !== 'off') {
+    const followUpTick = async () => {
+      try {
+        const { runLeadFollowUpReminders } = await import('@/lib/lead-stage-auto')
+        const tenants = await centralDb.tenant.findMany({ where: { isActive: true }, select: { slug: true, databaseUrl: true } })
+        for (const t of tenants) {
+          const client = t.databaseUrl === process.env.DATABASE_URL ? db : getTenantDb(t.databaseUrl)
+          await runLeadFollowUpReminders(client).catch(err => console.error(`[scheduler] lead follow-up reminder "${t.slug}" failed:`, err))
+        }
+      } catch (err) {
+        console.error('[scheduler] lead follow-up reminder tick failed:', err)
+      }
+    }
+    setTimeout(followUpTick, 5 * 60_000)
+    setInterval(followUpTick, 60 * 60 * 1000)
+  }
+
   // Freshsales archive crawl (src/lib/freshsales-archive.ts) — pulls emails / deal details /
   // timelines into the Freshsales* tables until done. Production only (a local `next dev` on
   // the same DB must not crawl); FRESHSALES_ARCHIVE_SYNC=off disables it. runArchiveCrawl's

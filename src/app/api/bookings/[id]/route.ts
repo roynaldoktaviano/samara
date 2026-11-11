@@ -9,6 +9,7 @@ import { getTenantSecret } from '@/lib/tenant-secrets'
 import { recalcOpenTripPrice } from '@/lib/booking-pricing'
 import { roleMatches } from '@/lib/role-utils'
 import { renumberTripYear } from '@/lib/openTripNumbering'
+import { syncLeadStageFromBooking } from '@/lib/lead-stage-auto'
 
 function paymentStatus(depositPaid: number, totalPrice: number): 'pending' | 'partially_paid' | 'fully_paid' {
   if (depositPaid <= 0)          return 'pending'
@@ -318,6 +319,8 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       }, db).catch(() => {})
 
       scheduleTripSheetSync(db, tripSheetId)
+      // Deposit edited by hand can make it paid → Sales Pipeline Won (src/lib/lead-stage-auto.ts)
+      await syncLeadStageFromBooking(db, id, session.user.id).catch(e => console.error('[bookings] lead stage sync failed', e))
       return NextResponse.json({ id, bookingCode: existing.bookingCode, status: paymentStatus(paid, total) })
     }
 

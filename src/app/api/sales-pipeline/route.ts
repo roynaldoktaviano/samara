@@ -21,8 +21,8 @@ export type PipelineChannel = 'website' | 'whatsapp' | 'instagram' | 'manual'
 // WhatsApp, manual), one card per person. SALES sees only the leads they own; ADMIN sees
 // all and can filter by owner. Also returns the WhatsApp chats still
 // waiting to be triaged (a chat only becomes a Lead once marked SALES, see whatsapp-lead.ts).
-// Won leads are soft-deleted when a booking converts them (POST /api/bookings), so
-// CLOSED_WON is read regardless of deletedAt.
+// Leads are soft-deleted when a booking converts them (POST /api/bookings), so the
+// booking-driven columns (Booking Confirmation → Invoice → Won) are read regardless of deletedAt.
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions)
   const role = (session?.user as { role?: string })?.role ?? ''
@@ -73,20 +73,28 @@ export async function GET(req: NextRequest) {
     if (stage === 'NEW') return { deletedAt: null, createdAt: { gte: new Date(now - NEW_LOOKBACK_DAYS * DAY) } }
     if (stage === 'CLOSED_WON') return { stageUpdatedAt: { gte: new Date(now - CLOSED_LOOKBACK_DAYS * DAY) } }
     if (stage === 'CLOSED_LOST') return { deletedAt: null, stageUpdatedAt: { gte: new Date(now - CLOSED_LOOKBACK_DAYS * DAY) } }
+    if (stage === 'BOOKING_CONFIRMATION' || stage === 'INVOICE_SENT') return {}
     return { deletedAt: null }
   }
 
   const select = {
     id: true, name: true, phone: true, email: true, stage: true, stageUpdatedAt: true, leadQuality: true,
-    guestCount: true, travelStartDate: true, travelSeason: true, proposalSentAt: true,
+    guestCount: true, travelStartDate: true, travelEndDate: true, travelSeason: true, productInterest: true,
+    budgetMin: true, budgetMax: true, budgetCurrency: true, lastInboundAt: true, lastOutboundAt: true,
     lostReason: true, createdAt: true, source: true, ownerAssignedAt: true,
+    booking: {
+      select: {
+        id: true, bookingCode: true, status: true, totalPrice: true, depositPaid: true, startDate: true, endDate: true,
+        guestCount: true, source: true, yacht: { select: { name: true } },
+      },
+    },
     assignmentLogs: {
       orderBy: { createdAt: 'desc' as const }, take: 10,
       select: { id: true, reason: true, createdAt: true, fromUser: { select: { name: true, email: true } }, toUser: { select: { name: true, email: true } } },
     },
     owner: { select: { id: true, name: true, email: true } },
     destination: { select: { name: true } },
-    _count: { select: { inquiries: true } },
+    _count: { select: { inquiries: true, instagramConversations: true } },
     whatsappConversations: {
       where: salesChat,
       orderBy: { lastMessageAt: 'desc' as const },

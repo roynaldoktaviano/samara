@@ -9,6 +9,9 @@ import { getTenantSecret } from '@/lib/tenant-secrets'
 import { roleMatches } from '@/lib/role-utils'
 import { resolveClawbackRatePerNight } from '@/lib/agent-clawback'
 import { renumberTripYear } from '@/lib/openTripNumbering'
+import { syncLeadStageFromBooking } from '@/lib/lead-stage-auto'
+import { CONVERSATION_STAGES } from '@/lib/lead-pipeline'
+import type { Prisma } from '@prisma/client'
 
 /* ── helpers ─────────────────────────────────────────────────────────── */
 
@@ -479,12 +482,34 @@ export async function POST(request: NextRequest) {
     // converted into Guests above (never do this before booking.create succeeds).
     // Best-effort: the booking itself is already secured, so a failure here is
     // logged rather than surfaced as a failed booking creation.
+    // The lead guest may already have been a Guest while their enquiry still sits in the Sales
+    // Pipeline as a Lead (same email / phone) — that open lead belongs to this booking too.
+    if (lead?.customerId) {
+      try {
+        const c = await db.customer.findUnique({ where: { id: lead.customerId }, select: { email: true, phone: true } })
+        const match: Prisma.LeadWhereInput[] = []
+        if (c?.email?.trim()) match.push({ email: { equals: c.email.trim(), mode: 'insensitive' } })
+        if (c?.phone?.trim()) match.push({ phone: c.phone.trim() })
+        if (match.length > 0) {
+          const open = await db.lead.findMany({
+            where: { deletedAt: null, stage: { in: [...CONVERSATION_STAGES] }, OR: match, id: { notIn: convertedLeads.map(l => l.leadId) } },
+            select: { id: true },
+          })
+          for (const l of open) convertedLeads.push({ leadId: l.id, customerId: lead.customerId })
+        }
+      } catch (err) {
+        console.error('[bookings] Failed to match open pipeline lead(s):', err)
+      }
+    }
     if (convertedLeads.length > 0) {
       await Promise.all(convertedLeads.map(({ leadId, customerId }) => Promise.all([
         db.inquiry.updateMany({ where: { leadId }, data: { leadId: null, customerId } }),
-        // Booked = won — stamped so the WhatsApp Pipeline's Closed Won column still shows it.
-        db.lead.update({ where: { id: leadId }, data: { deletedAt: new Date(), stage: 'CLOSED_WON', stageUpdatedAt: new Date(), stageUpdatedById: session.user.id } }),
-      ]))).catch(err => console.error('[bookings] Failed to archive converted lead(s):', err))
+        // Archived from the Leads list but linked to the booking — the Sales Pipeline keeps
+        // showing it in Send Booking Confirmation → Send Invoice 1 → Won as payments come in.
+        db.lead.update({ where: { id: leadId }, data: { deletedAt: new Date(), bookingId: booking.id } }),
+      ])))
+        .then(() => syncLeadStageFromBooking(db, booking.id, session.user.id))
+        .catch(err => console.error('[bookings] Failed to archive converted lead(s):', err))
     }
 
     // Close any conflicting open trips (private charter override), then recompute the

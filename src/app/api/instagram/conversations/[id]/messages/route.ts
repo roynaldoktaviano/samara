@@ -5,6 +5,7 @@ import { getDb } from '@/lib/get-db'
 import { salesCanAccessConversation } from '@/lib/whatsapp-distribution'
 import { sendMetaDm } from '@/lib/meta-dm'
 import { setLeadOwner } from '@/lib/whatsapp-lead'
+import { recordLeadOutbound } from '@/lib/lead-stage-auto'
 
 // Admin composes a reply from the Chat UI. The message is saved immediately
 // (so the thread always reflects what was sent), then sent through Meta's Send
@@ -57,14 +58,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     where: { id },
     data: { lastMessageAt: new Date(), lastMessagePreview: text ?? (mediaUrl ? '📎 Attachment' : '') },
   })
-  // First staff reply moves a still-NEW lead to CONTACTED (as recordStaffReply does for WhatsApp).
-  if (conversation.leadId) {
-    await db.lead.updateMany({
-      where: { id: conversation.leadId, stage: 'NEW' },
-      data: { stage: 'CONTACTED', stageUpdatedAt: new Date(), stageUpdatedById: session.user.id },
-    }).catch(() => {})
-  }
-
   const tenantId = (session.user as { tenantId?: string }).tenantId
   const result = tenantId
     ? await sendMetaDm(tenantId, conversation, { text, mediaUrl, mediaType, replyToMid })
@@ -78,6 +71,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       : { status: 'FAILED', errorMessage: result.error ?? 'Send failed' },
     include: { replyTo: { select: { id: true, body: true, direction: true, mediaType: true } } },
   })
+
+  // Sales Pipeline: New Enquiry → Initial Message Sent → Follow-ups (src/lib/lead-stage-auto.ts)
+  if (result.ok && conversation.leadId) {
+    await recordLeadOutbound(db, conversation.leadId, session.user.id).catch(e => console.error('[instagram] lead outbound stage failed', e))
+  }
 
   return NextResponse.json({ message: updated, providerError: result.ok ? undefined : result.error })
 }

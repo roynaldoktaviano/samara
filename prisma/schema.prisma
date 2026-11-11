@@ -359,12 +359,17 @@ model Customer {
   @@index([ownerId])
 }
 
+// Sales Pipeline stages — mirror the Freshsales Deals board (Roy, 2026-11-11). Most moves are
+// automatic, see src/lib/lead-stage-auto.ts. CONTACTED was renamed in place to
+// INITIAL_MESSAGE_SENT (scripts/migrate-lead-stages-freshsales.ts) before this enum changed.
 enum LeadStage {
-  NEW
-  CONTACTED
-  QUALIFIED
-  UNQUALIFIED
-  OPPORTUNITY
+  NEW // "New Enquiry"
+  INITIAL_MESSAGE_SENT
+  ACTIVE_COMMUNICATION
+  FOLLOW_UP_1
+  FOLLOW_UP_2
+  BOOKING_CONFIRMATION
+  INVOICE_SENT
   CLOSED_WON
   CLOSED_LOST
 }
@@ -410,26 +415,36 @@ model Lead {
   updatedAt           DateTime  @updatedAt
 
   // Pipeline / qualification
-  stage            LeadStage       @default(NEW)
-  stageUpdatedAt   DateTime?
-  stageUpdatedById String?
-  stageUpdatedBy   User?           @relation("LeadStageUpdatedBy", fields: [stageUpdatedById], references: [id])
-  productInterest  String? // yacht / product interest, free text
-  destinationId    String?
-  destination      Destination?    @relation("LeadDestination", fields: [destinationId], references: [id])
-  travelStartDate  DateTime?
-  travelEndDate    DateTime?
-  travelSeason     String? // free-text fallback when exact dates aren't known yet
-  guestCount       Int?
-  leadQuality      LeadQuality?
-  budgetMin        Float? // optional — never required to advance stage
-  budgetMax        Float?
-  budgetCurrency   String?
+  stage              LeadStage       @default(NEW)
+  stageUpdatedAt     DateTime?
+  stageUpdatedById   String?
+  stageUpdatedBy     User?           @relation("LeadStageUpdatedBy", fields: [stageUpdatedById], references: [id])
+  productInterest    String? // yacht / product interest, free text
+  destinationId      String?
+  destination        Destination?    @relation("LeadDestination", fields: [destinationId], references: [id])
+  travelStartDate    DateTime?
+  travelEndDate      DateTime?
+  travelSeason       String? // free-text fallback when exact dates aren't known yet
+  guestCount         Int?
+  leadQuality        LeadQuality?
+  budgetMin          Float? // optional — never required to advance stage
+  budgetMax          Float?
+  budgetCurrency     String?
   // Set (defaulting to "now") when the lead first moves to OPPORTUNITY — the single
   // OPPORTUNITY stage covers both "proposal sent" and "negotiating", this dates the former.
-  proposalSentAt   DateTime?
-  lostReason       LeadLostReason?
-  lostNote         String?
+  proposalSentAt     DateTime?
+  lostReason         LeadLostReason?
+  lostNote           String?
+  // Latest customer message / latest staff message across every channel (WA, IG, Messenger,
+  // email) — drive the automatic Initial Message → Active → Follow-up moves and the
+  // "follow-up due" reminder (src/lib/lead-stage-auto.ts).
+  lastInboundAt      DateTime?
+  lastOutboundAt     DateTime?
+  // Set when the owner was reminded to follow up; one reminder per silent stretch.
+  followUpRemindedAt DateTime?
+  // Booking this lead turned into — Booking Confirmation → Invoice → Won follow its payments.
+  bookingId          String?
+  booking            Booking?        @relation("LeadBooking", fields: [bookingId], references: [id], onDelete: SetNull)
 
   // Sales rep who owns this lead. For WhatsApp-sourced leads it's kept in sync with the
   // linked chat's assignedToId (chat owner = lead owner, see src/lib/whatsapp-lead.ts).
@@ -456,6 +471,7 @@ model Lead {
   @@index([createdAt])
   @@index([stage])
   @@index([ownerId])
+  @@index([bookingId])
 }
 
 // One row per hand-over of a Lead between sales reps (history for the Sales Pipeline and
@@ -1120,6 +1136,7 @@ model Booking {
   stockTransfers                StockTransfer[]
   stockUsages                   StockMovement[]
   freelanceTripAssignments      FreelanceTripAssignment[]
+  pipelineLeads                 Lead[]                    @relation("LeadBooking")
 
   @@index([status])
   @@index([openTripId, status])

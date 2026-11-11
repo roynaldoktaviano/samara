@@ -7,6 +7,7 @@ import { emitTenantEvent } from '@/lib/realtime-bus'
 import { parseAddress, repEmailForInboundAddress } from '@/lib/email-inbox'
 import { pickNextSalesUserId } from '@/lib/whatsapp-distribution'
 import { sendPushToUser } from '@/lib/push'
+import { findOpenLeadIdByEmail, recordLeadInbound } from '@/lib/lead-stage-auto'
 
 // Resend Inbound webhook (event: email.received). Point the Resend webhook at:
 //   https://<app-domain>/api/webhooks/email-inbox?tenant=<slug>
@@ -154,6 +155,10 @@ export async function POST(request: NextRequest) {
       internetMessageId: email.message_id || null,
     },
   })
+
+  // Customer answered → Sales Pipeline "In Active Communication" (src/lib/lead-stage-auto.ts)
+  const pipelineLeadId = await findOpenLeadIdByEmail(db, fromEmail).catch(() => null)
+  if (pipelineLeadId) await recordLeadInbound(db, pipelineLeadId).catch(e => console.error('[email-inbox webhook] lead inbound stage failed', e))
 
   if (newlyAssigned && ownerId) {
     const title = `New email: ${sender.name ?? fromEmail}`

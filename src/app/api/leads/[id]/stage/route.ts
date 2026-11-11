@@ -4,7 +4,7 @@ import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { logActivity } from '@/lib/activity'
 import { leadOwnerScope } from '@/lib/lead-access'
-import { canTransition, getMissingQualificationFields, isLeadLostReason, isLeadStage, LEAD_STAGE_LABEL, LEAD_TRANSITIONS } from '@/lib/lead-pipeline'
+import { isLeadLostReason, isLeadStage, LEAD_STAGE_LABEL } from '@/lib/lead-pipeline'
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getServerSession(authOptions)
@@ -13,45 +13,26 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   try {
     const { id } = await params
     const body = await request.json()
-    const { stage: targetStage, lostReason, lostNote, proposalSentAt } = body
+    const { stage: targetStage, lostReason, lostNote } = body
 
     if (!isLeadStage(targetStage)) {
       return NextResponse.json({ error: 'Invalid stage' }, { status: 400 })
     }
 
+    // Won leads are archived (deletedAt) once their booking converts them — still movable from the board.
     const lead = await db.lead.findFirst({ where: { id, ...leadOwnerScope((session.user as { role?: string }).role, session.user.id) } })
     if (!lead) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-
-    if (!canTransition(lead.stage, targetStage)) {
-      const validNext = LEAD_TRANSITIONS[lead.stage].map(s => LEAD_STAGE_LABEL[s])
-      return NextResponse.json({
-        error: validNext.length > 0
-          ? `Cannot move from ${LEAD_STAGE_LABEL[lead.stage]} to ${LEAD_STAGE_LABEL[targetStage]}. Valid next stage(s): ${validNext.join(', ')}`
-          : `${LEAD_STAGE_LABEL[lead.stage]} is a final stage and cannot be changed.`,
-      }, { status: 409 })
-    }
-
-    if (targetStage === 'QUALIFIED') {
-      const missingFields = getMissingQualificationFields(lead)
-      if (missingFields.length > 0) {
-        return NextResponse.json({
-          error: 'Complete the required qualification fields before marking this lead as Qualified.',
-          missingFields,
-        }, { status: 400 })
-      }
-    }
+    // Manual moves are free (Freshsales-style board) — the automatic ones live in lead-stage-auto.ts.
+    if (lead.stage === targetStage) return NextResponse.json({ error: `Already in ${LEAD_STAGE_LABEL[targetStage]}` }, { status: 409 })
 
     if (targetStage === 'CLOSED_LOST' && !isLeadLostReason(lostReason)) {
-      return NextResponse.json({ error: 'Pick a lost reason before marking this lead as Closed Lost.' }, { status: 400 })
+      return NextResponse.json({ error: 'Pick a lost reason before marking this lead as Lost.' }, { status: 400 })
     }
 
     const updated = await db.lead.update({
       where: { id },
       data: {
         stage: targetStage, stageUpdatedAt: new Date(), stageUpdatedById: session.user.id,
-        ...(targetStage === 'OPPORTUNITY' && !lead.proposalSentAt
-          ? { proposalSentAt: proposalSentAt ? new Date(proposalSentAt) : new Date() }
-          : {}),
         ...(targetStage === 'CLOSED_LOST' ? { lostReason, lostNote: typeof lostNote === 'string' && lostNote.trim() ? lostNote.trim() : null } : {}),
       },
       // The detail view swaps in this response — keep the owner so Sales Owner doesn't blank out

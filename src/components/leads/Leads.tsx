@@ -22,7 +22,7 @@ import { isHttpUrl } from '@/lib/url-safety'
 import { WebsiteJourney } from '@/components/shared/WebsiteJourney'
 import { LEAD_ORIGINS, LEAD_ORIGIN_LABEL, LEAD_ORIGIN_COLOR, INQUIRY_FORM_LABEL, classifyLeadOrigin, formPageLabel, type LeadOrigin } from '@/lib/lead-origin'
 import FreshsalesImportModal from '@/components/shared/FreshsalesImportModal'
-import { LEAD_STAGES, LEAD_STAGE_LABEL, LEAD_STAGE_COLOR, LEAD_TRANSITIONS, type LeadStage } from '@/lib/lead-pipeline'
+import { LEAD_STAGES, LEAD_STAGE_LABEL, LEAD_STAGE_COLOR, type LeadStage } from '@/lib/lead-pipeline'
 import { toast } from 'sonner'
 import { NewChatForm, type NewChatPayload } from '@/components/chat/UnifiedInbox'
 import { WHATSAPP_BRANDS, WHATSAPP_BRAND_LABELS, type WhatsappBrand } from '@/lib/whatsapp-brands'
@@ -324,12 +324,7 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail }: {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ stage, ...extra }),
       })
       const data = await res.json()
-      if (!res.ok) {
-        toast.error(data?.missingFields?.length
-          ? `Missing required fields: ${data.missingFields.join(', ')}`
-          : (data?.error ?? 'Failed to update stage'))
-        return
-      }
+      if (!res.ok) { toast.error(data?.error ?? 'Failed to update stage'); return }
       toast.success(`Stage updated to ${LEAD_STAGE_LABEL[stage]}`)
       setLostTarget(null)
       setDetail(data)
@@ -875,24 +870,15 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail }: {
                       <p className="text-xs text-muted-foreground uppercase tracking-wide">Pipeline Stage</p>
                       <Badge className={`${LEAD_STAGE_COLOR[detail.stage]} border-transparent`}>{LEAD_STAGE_LABEL[detail.stage]}</Badge>
                     </div>
-                    <div className="flex items-center gap-1.5">
-                      {LEAD_TRANSITIONS[detail.stage].length === 0 ? (
-                        <span className="text-xs text-muted-foreground italic">Final stage</span>
-                      ) : LEAD_TRANSITIONS[detail.stage].map(next => (
-                        <Button
-                          key={next}
-                          size="sm"
-                          variant={next.startsWith('CLOSED') || next === 'UNQUALIFIED' ? 'outline' : 'default'}
-                          disabled={stageBusy}
-                          onClick={() => changeStage(detail, next)}
-                        >
-                          {next === 'CONTACTED' && detail.stage === 'UNQUALIFIED' ? 'Reopen to Contacted' : `Mark ${LEAD_STAGE_LABEL[next]}`}
-                        </Button>
-                      ))}
-                    </div>
+                    <Select value={detail.stage} onValueChange={v => changeStage(detail, v as LeadStage)} disabled={stageBusy}>
+                      <SelectTrigger aria-label="Move to stage" className="w-full sm:w-56"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {LEAD_STAGES.map(s => <SelectItem key={s} value={s}>{LEAD_STAGE_LABEL[s]}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
                   </div>
                   <p className="text-[11px] text-muted-foreground">
-                    Yacht/product interest, destination, country, travel dates/season, guest count, and lead quality are required before this lead can be marked Qualified. Budget is optional.
+                    Stages move on their own as you reply from the ERP, create a booking, generate the invoice and confirm the first payment — pick one here to move it by hand.
                   </p>
                 </div>
                 <div className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">

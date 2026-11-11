@@ -5,6 +5,7 @@ import { getDb } from '@/lib/get-db'
 import { sendEmailInboxReply, emailConversationScope } from '@/lib/email-inbox'
 import { normalizeEmailSignature } from '@/lib/email-signature'
 import { sanitizeEmailHtml, emailHtmlToText } from '@/lib/email-html'
+import { findOpenLeadIdByEmail, recordLeadOutbound } from '@/lib/lead-stage-auto'
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getServerSession(authOptions)
@@ -66,6 +67,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     where: { id: message.id },
     data: result.ok ? { status: 'SENT', providerMessageId: result.providerMessageId, signatureHtml: result.signatureHtml ?? null } : { status: 'FAILED' },
   })
+
+  // Sales Pipeline: New Enquiry → Initial Message Sent → Follow-ups (src/lib/lead-stage-auto.ts)
+  if (result.ok) {
+    const pipelineLeadId = await findOpenLeadIdByEmail(db, conversation.fromEmail).catch(() => null)
+    if (pipelineLeadId) await recordLeadOutbound(db, pipelineLeadId, session.user.id).catch(e => console.error('[email-inbox] lead outbound stage failed', e))
+  }
 
   return NextResponse.json({ message: updated, providerError: result.ok ? undefined : result.error })
 }

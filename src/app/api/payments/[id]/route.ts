@@ -10,6 +10,7 @@ import { requireRole } from '@/lib/auth-guard'
 import { BookingStatus } from '@prisma/client'
 import { emitTenantEvent } from '@/lib/realtime-bus'
 import { getAgentCommissionPct } from '@/lib/agent-commission'
+import { syncLeadStageFromBooking } from '@/lib/lead-stage-auto'
 
 function bookingStatus(depositPaid: number, totalPrice: number): BookingStatus {
   if (depositPaid <= 0)          return BookingStatus.pending
@@ -213,6 +214,8 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
       scheduleTripSheetSync(db, tripSheetId)
       if (!isSilent) emitTenantEvent(session.user.tenantId, 'payments')
+      // Sales Pipeline: first invoice → "Send Invoice 1" (src/lib/lead-stage-auto.ts)
+      if (isFirstGeneration) await syncLeadStageFromBooking(db, existing.bookingId, session.user.id).catch(e => console.error('[payments] lead stage sync failed', e))
       return NextResponse.json({ ok: true, invoiceNumber })
     }
 
@@ -471,6 +474,8 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
       scheduleTripSheetSync(db, tripSheetId)
       emitTenantEvent(session.user.tenantId, 'payments')
+      // Sales Pipeline: first confirmed payment → Won (src/lib/lead-stage-auto.ts)
+      if (action === 'confirm') await syncLeadStageFromBooking(db, payment.bookingId, actorId).catch(e => console.error('[payments] lead stage sync failed', e))
       return NextResponse.json({ ok: true })
     }
 

@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Loader2 } from 'lucide-react'
 import { LEAD_LOST_REASONS, LEAD_LOST_REASON_LABEL, type LeadLostReason } from '@/lib/lead-pipeline'
 
-// Asked before a lead moves to CLOSED_LOST — the stage API refuses the move without a reason.
+// Asked before a lead moves to Lost (CLOSED_LOST) — the stage API refuses the move without a reason.
 export default function LostReasonDialog({ open, leadName, busy, onCancel, onConfirm }: {
   open: boolean
   leadName?: string
@@ -26,7 +26,7 @@ export default function LostReasonDialog({ open, leadName, busy, onCancel, onCon
     <Dialog open={open} onOpenChange={v => { if (!v) onCancel() }}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Mark as Closed Lost{leadName ? ` — ${leadName}` : ''}</DialogTitle>
+          <DialogTitle>Mark as Lost{leadName ? ` — ${leadName}` : ''}</DialogTitle>
         </DialogHeader>
         <div className="space-y-3">
           <div className="space-y-1.5">
