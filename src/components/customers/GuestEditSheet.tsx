@@ -296,11 +296,15 @@ function MultiFileUpload({ label, values, onChange }: { label: string; values: s
 }
 
 /* ── Section components ── */
-function ProfileTab({ form, setForm, passportImage, onPassportImage }: {
+function ProfileTab({ form, setForm, passportImage, onPassportImage, salesUsers, ownerId, onOwnerId }: {
   form: GuestFormState
   setForm: (f: GuestFormState) => void
   passportImage: string
   onPassportImage: (v: string) => void
+  // null = the viewer can't list users (non-admin) → the owner field is hidden and never sent
+  salesUsers: { id: string; name: string }[] | null
+  ownerId: string
+  onOwnerId: (v: string) => void
 }) {
   const set = (k: keyof GuestFormState) =>
     (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
@@ -356,6 +360,23 @@ function ProfileTab({ form, setForm, passportImage, onPassportImage }: {
           </Field>
         </div>
       </div>
+
+      {salesUsers && (
+        <div>
+          <SectionTitle>Sales</SectionTitle>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Field label="Sales Owner" htmlFor="guest-owner" hint="Sales rep responsible for this guest">
+              <Select value={ownerId || 'none'} onValueChange={v => onOwnerId(v === 'none' ? '' : v)}>
+                <SelectTrigger id="guest-owner" className="w-full"><SelectValue placeholder="Unassigned" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Unassigned</SelectItem>
+                  {salesUsers.map(u => <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </Field>
+          </div>
+        </div>
+      )}
 
       <div>
         <SectionTitle>Notes</SectionTitle>
@@ -509,12 +530,25 @@ export default function GuestEditSheet({ open, guestId, bookingGuestId, hasDivin
   const [saving, setSaving]           = useState(false)
   const [guestName, setGuestName]     = useState('')
   const [passportImage, setPassportImage] = useState('')
+  const [ownerId, setOwnerId]             = useState('')
+  const [salesUsers, setSalesUsers]       = useState<{ id: string; name: string }[] | null>(null)
+  // /api/users is admin-only — a 403 leaves salesUsers null so the owner field stays hidden
+  useEffect(() => {
+    if (!open || salesUsers) return
+    fetch('/api/users')
+      .then(r => r.ok ? r.json() : null)
+      .then((users: { id: string; name: string; role: string }[] | null) => {
+        if (users) setSalesUsers(users.filter(u => ['SALES', 'SALES_MARKETING', 'ADMIN'].includes(u.role)).sort((a, b) => a.name.localeCompare(b.name)))
+      })
+      .catch(() => {})
+  }, [open, salesUsers])
   useEffect(() => {
     if (!open) { setActiveTab('profile'); return }
     if (!guestId) {
       setForm(GUEST_FORM_EMPTY)
       setMedData({}); setFoodData({}); setDrinkData({}); setDivData({}); setSurfData({})
       setPassportImage('')
+      setOwnerId('')
       setGuestName('')
       return
     }
@@ -531,6 +565,7 @@ export default function GuestEditSheet({ open, guestId, bookingGuestId, hasDivin
         setDivData(data.divingData   ?? {})
         setSurfData(data.surfingData ?? {})
         setPassportImage(data.passportImage ?? '')
+        setOwnerId(data.ownerId ?? '')
       })
       .catch(e => { if (e.name !== 'AbortError') console.error(e) })
       .finally(() => setLoading(false))
@@ -552,6 +587,7 @@ export default function GuestEditSheet({ open, guestId, bookingGuestId, hasDivin
         divingData:    divData,
         surfingData:   surfData,
         passportImage: passportImage || null,
+        ...(salesUsers ? { ownerId: ownerId || null } : {}),
       }
       const res = isEdit
         ? await fetch(`/api/customers/${guestId}`, { method: 'PUT',  headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
@@ -631,7 +667,8 @@ export default function GuestEditSheet({ open, guestId, bookingGuestId, hasDivin
 
             {activeTab === 'profile' && (
               <ProfileTab form={form} setForm={setForm}
-                passportImage={passportImage} onPassportImage={setPassportImage} />
+                passportImage={passportImage} onPassportImage={setPassportImage}
+                salesUsers={salesUsers} ownerId={ownerId} onOwnerId={setOwnerId} />
             )}
             {activeTab === 'medical' && (
               <div className="space-y-1">

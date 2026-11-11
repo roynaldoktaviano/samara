@@ -16,7 +16,37 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const role = (session?.user as { role?: string })?.role ?? ''
   if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
-  const { action, decisionNote } = await req.json() as { action?: 'approve' | 'reject'; decisionNote?: string }
+  const { action, decisionNote, type: newType } = await req.json() as { action?: 'approve' | 'reject' | 'convert'; decisionNote?: string; type?: 'LEAVE' | 'WFH' }
+
+  // HR re-classifies a still-undecided request (e.g. a "leave" whose reason is really
+  // WFH). Nothing has touched leaveBalance or Attendance Recap yet while it's pending —
+  // both only happen on final approve — so flipping the type is all that's needed; the
+  // day count doesn't depend on type (countLeaveDays). Freelance fields are LEAVE-only,
+  // same as on create.
+  if (action === 'convert') {
+    if (newType !== 'LEAVE' && newType !== 'WFH') return NextResponse.json({ error: 'Invalid type' }, { status: 400 })
+    const current = await db.leaveRequest.findUnique({ where: { id }, select: { status: true, type: true, employee: { select: { userId: true } } } })
+    if (!current) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    if (current.status !== 'PENDING' && current.status !== 'PENDING_HR_APPROVAL') {
+      return NextResponse.json({ error: 'Only pending requests can be converted' }, { status: 409 })
+    }
+    if (current.type === newType) return NextResponse.json({ ok: true })
+    await db.leaveRequest.update({
+      where: { id },
+      data: { type: newType, ...(newType === 'WFH' ? { needsFreelance: false, freelanceRecommendations: [] } : {}) },
+    })
+    if (current.employee.userId) {
+      const title = newType === 'WFH' ? 'Leave request changed to WFH' : 'WFH request changed to Leave'
+      const body = newType === 'WFH'
+        ? 'HR changed your leave request to Work From Home — it will not use your leave balance.'
+        : 'HR changed your WFH request to Leave — it will use your leave balance once approved.'
+      await db.notification.create({ data: { userId: current.employee.userId, type: 'LEAVE_DECIDED', title, body } }).catch(() => {})
+      sendPushToUsers(db, [current.employee.userId], { title, body }).catch(() => {})
+    }
+    emitTenantEvent(session.user.tenantId, 'hr-leave-requests')
+    return NextResponse.json({ ok: true })
+  }
+
   if (action !== 'approve' && action !== 'reject') return NextResponse.json({ error: 'Invalid action' }, { status: 400 })
 
   const existing = await db.leaveRequest.findUnique({

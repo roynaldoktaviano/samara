@@ -35,6 +35,7 @@ export async function GET(request: NextRequest) {
           dietaryRequirements: true, allergies: true,
           drinkPreferences: true, equipmentSizes: true, operationalNotes: true,
           isChild: true, deletedAt: true, createdAt: true, updatedAt: true,
+          ownerId: true, owner: { select: { id: true, name: true } },
           // A booking's own account holder also gets their own BookingGuest row (isLead:
           // true, same bookingId) — so counting bookings + guestOf separately would double-
           // count that one trip. Union the two sets of bookingIds instead (see below).
@@ -90,7 +91,7 @@ export async function POST(request: NextRequest) {
       dietaryRequirements, allergies, equipmentSizes, operationalNotes,
       nationality, passportExpiry, emergencyContact, drinkPreferences,
       isChild,
-      medicalData, foodData, drinksData, divingData, surfingData, passportImage,
+      medicalData, foodData, drinksData, divingData, surfingData, passportImage, ownerId,
     } = body
 
     const name = [firstName, lastName].filter(Boolean).join(' ') || body.name
@@ -113,6 +114,7 @@ export async function POST(request: NextRequest) {
         ...(divingData    !== undefined && { divingData }),
         ...(surfingData   !== undefined && { surfingData }),
         ...(passportImage !== undefined && { passportImage: passportImage || null }),
+        ...(ownerId ? { ownerId } : {}),
       },
     })
 

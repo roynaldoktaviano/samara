@@ -164,4 +164,28 @@ export async function startNodeInstrumentation() {
   }
   setTimeout(igLoginRefresh, 60_000)
   setInterval(igLoginRefresh, 24 * 60 * 60 * 1000)
+
+  // Facebook Messenger DMs, pulled from each brand Page every minute — Meta doesn't deliver
+  // Page messaging webhooks yet (see src/lib/messenger-sync.ts). Production only, so a local
+  // `next dev` on the same DB doesn't also poll; MESSENGER_SYNC=off disables it.
+  if (process.env.NODE_ENV === 'production' && process.env.MESSENGER_SYNC !== 'off') {
+    let syncing = false
+    const messengerTick = async () => {
+      if (syncing) return
+      syncing = true
+      try {
+        const { syncMessengerForTenant } = await import('@/lib/messenger-sync')
+        const tenants = await centralDb.tenant.findMany({ where: { isActive: true }, select: { id: true, databaseUrl: true } })
+        for (const t of tenants) {
+          await syncMessengerForTenant(t.databaseUrl === process.env.DATABASE_URL ? db : getTenantDb(t.databaseUrl), t.id)
+        }
+      } catch (err) {
+        console.error('[scheduler] messenger sync failed:', err)
+      } finally {
+        syncing = false
+      }
+    }
+    setTimeout(messengerTick, 30_000)
+    setInterval(messengerTick, 60_000)
+  }
 }

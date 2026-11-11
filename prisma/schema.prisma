@@ -133,6 +133,7 @@ model User {
   createdBookings                        Booking[]                         @relation("BookingCreatedBy")
   leadStageUpdates                       Lead[]                            @relation("LeadStageUpdatedBy")
   ownedLeads                             Lead[]                            @relation("LeadOwner")
+  ownedCustomers                         Customer[]                        @relation("CustomerOwner")
   leadAssignmentsFrom                    LeadAssignmentLog[]               @relation("LeadAssignmentFrom")
   leadAssignmentsTo                      LeadAssignmentLog[]               @relation("LeadAssignmentTo")
   managedAgents                          Agent[]                           @relation("AgentSalesperson")
@@ -337,6 +338,9 @@ model Customer {
   pastDestinations      String?
   pastDestinationsOther String?
   passportImage         String?
+  // Sales rep who owns this guest (mirrors the Freshsales contact owner; editable in Guest form)
+  ownerId               String?
+  owner                 User?                @relation("CustomerOwner", fields: [ownerId], references: [id], onDelete: SetNull)
   deletedAt             DateTime?
   createdAt             DateTime             @default(now())
   updatedAt             DateTime             @updatedAt
@@ -352,6 +356,7 @@ model Customer {
   @@index([name])
   @@index([email])
   @@index([createdAt])
+  @@index([ownerId])
 }
 
 enum LeadStage {

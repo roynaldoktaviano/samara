@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Plus, Search, X, CalendarDays, Check, ThumbsUp, ThumbsDown, ClipboardList, Ship, ArrowLeft } from 'lucide-react'
+import { Plus, Search, X, CalendarDays, Check, ThumbsUp, ThumbsDown, ClipboardList, Ship, ArrowLeft, Home } from 'lucide-react'
 import { StatusBadge, type StatusTone } from '@/components/ui/status-badge'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -135,6 +135,8 @@ export default function LeaveRequestsPage() {
   const [deciding, setDeciding] = useState(false)
 
   const [selected, setSelected] = useState<LeaveRequest | null>(null)
+  const [converting, setConverting] = useState(false)
+  const [convertError, setConvertError] = useState('')
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -191,6 +193,21 @@ export default function LeaveRequestsPage() {
       body: JSON.stringify({ action: decision.action, decisionNote }),
     })
     setDeciding(false); setDecision(null); setDecisionNote('')
+    const list = await load()
+    setSelected(prev => (prev && list.find(r => r.id === prev.id)) ?? null)
+  }
+
+  // HR re-classifies a pending request (Leave ↔ WFH) — see action 'convert' in
+  // /api/hr/leave-requests/[id]. Nothing is applied to balance/attendance until approve.
+  async function convertType(type: 'LEAVE' | 'WFH') {
+    if (!selected) return
+    setConverting(true); setConvertError('')
+    const res = await fetch(`/api/hr/leave-requests/${selected.id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'convert', type }),
+    })
+    if (!res.ok) setConvertError((await res.json().catch(() => ({}))).error ?? 'Failed to convert')
+    setConverting(false)
     const list = await load()
     setSelected(prev => (prev && list.find(r => r.id === prev.id)) ?? null)
   }
@@ -329,15 +346,23 @@ export default function LeaveRequestsPage() {
               )}
             </div>
 
-            {(selected.status === 'PENDING_HR_APPROVAL' || (selected.status === 'PENDING' && !selected.requiresCrewApproval && !selected.requiresManagerApproval)) && (
-              <div className="flex justify-end gap-2 px-5 py-4 border-t">
-                <Button variant="outline" onClick={() => setDecision({ req: selected, action: 'reject' })}
-                  className="hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30 dark:hover:bg-destructive/10">
-                  <ThumbsDown /> Reject
+            {(selected.status === 'PENDING' || selected.status === 'PENDING_HR_APPROVAL') && (
+              <div className="flex flex-wrap items-center gap-2 px-5 py-4 border-t">
+                {convertError && <p className="w-full text-xs text-destructive">{convertError}</p>}
+                <Button variant="outline" onClick={() => convertType(selected.type === 'WFH' ? 'LEAVE' : 'WFH')} loading={converting}>
+                  {selected.type === 'WFH' ? <CalendarDays /> : <Home />} {selected.type === 'WFH' ? 'Convert to Leave' : 'Convert to WFH'}
                 </Button>
-                <Button variant="success" onClick={() => setDecision({ req: selected, action: 'approve' })}>
-                  <ThumbsUp /> Approve
-                </Button>
+                {(selected.status === 'PENDING_HR_APPROVAL' || (!selected.requiresCrewApproval && !selected.requiresManagerApproval)) && (
+                  <div className="flex gap-2 ml-auto">
+                    <Button variant="outline" onClick={() => setDecision({ req: selected, action: 'reject' })}
+                      className="hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30 dark:hover:bg-destructive/10">
+                      <ThumbsDown /> Reject
+                    </Button>
+                    <Button variant="success" onClick={() => setDecision({ req: selected, action: 'approve' })}>
+                      <ThumbsUp /> Approve
+                    </Button>
+                  </div>
+                )}
               </div>
             )}
           </div>

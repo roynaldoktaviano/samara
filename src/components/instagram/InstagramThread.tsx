@@ -2,11 +2,14 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { uploadToR2 } from '@/lib/r2-client'
-import { Loader2, Image as ImageIcon, Heart, Reply, X, ArrowLeft, AlertCircle, Clock } from 'lucide-react'
+import { Loader2, Image as ImageIcon, Heart, Reply, X, ArrowLeft, AlertCircle, Clock, Pencil } from 'lucide-react'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { isHttpUrl } from '@/lib/url-safety'
 import { WHATSAPP_BRAND_LABELS, type WhatsappBrand } from '@/lib/whatsapp-brands'
 import { formatDate } from '@/lib/format'
+import { chatDisplayName } from '@/lib/chat-display-name'
+import { useChatLeadEditor } from '@/components/chat/useChatLeadEditor'
+import { LEAD_STAGE_COLOR, LEAD_STAGE_LABEL, type LeadStage } from '@/lib/lead-pipeline'
 
 const IG_BLUE = '#3897F0'
 const MESSENGER_BLUE = '#0866FF'
@@ -31,6 +34,9 @@ interface ConversationDetail {
   brand: WhatsappBrand | null
   lastInboundAt: string | null
   ourAccountUsername: string | null
+  assignedToId: string | null
+  leadId: string | null
+  lead: { id: string; name: string; stage: LeadStage } | null
   messages: Message[]
 }
 
@@ -61,7 +67,7 @@ export default function InstagramThread({ conversationId, onConversationUpdate, 
   const fileInputRef = useRef<HTMLInputElement>(null)
   const isMessenger = detail?.platform === 'MESSENGER'
   const accent = isMessenger ? MESSENGER_BLUE : IG_BLUE
-  const contactName = detail?.displayName || (detail?.igUsername ? `@${detail.igUsername}` : isMessenger ? 'Facebook user' : 'Instagram user')
+  const contactName = chatDisplayName(detail?.lead?.name, detail?.displayName || (detail?.igUsername ? `@${detail.igUsername}` : isMessenger ? 'Facebook user' : 'Instagram user'))
   // Meta's reply window: free within 24h of the customer's last message, Human Agent tag up to 7 days.
   const sinceInbound = detail?.lastInboundAt ? Date.now() - new Date(detail.lastInboundAt).getTime() : null
   const replyWindow = sinceInbound === null || sinceInbound <= DAY_MS ? null : sinceInbound <= 7 * DAY_MS ? 'tagged' : 'closed'
@@ -70,6 +76,11 @@ export default function InstagramThread({ conversationId, onConversationUpdate, 
     const res = await fetch(`/api/instagram/conversations/${conversationId}`)
     if (res.ok) setDetail(await res.json())
   }, [conversationId])
+
+  const leadEditor = useChatLeadEditor({
+    channel: 'instagram', conversationId, leadId: detail?.leadId, assignedToId: detail?.assignedToId,
+    onSaved: () => { loadDetail(); onConversationUpdate() },
+  })
 
   useEffect(() => {
     let cancelled = false
@@ -129,7 +140,7 @@ export default function InstagramThread({ conversationId, onConversationUpdate, 
         )}
         <Avatar>
           {detail?.profilePicUrl && <AvatarImage src={detail.profilePicUrl} alt={contactName} />}
-          <AvatarFallback className="text-xs font-semibold bg-muted">{initials(detail?.displayName ?? null, detail?.igUsername ?? null)}</AvatarFallback>
+          <AvatarFallback className="text-xs font-semibold bg-muted">{initials(chatDisplayName(detail?.lead?.name, detail?.displayName ?? '') || null, detail?.igUsername ?? null)}</AvatarFallback>
         </Avatar>
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold truncate">{contactName}</p>
@@ -137,10 +148,22 @@ export default function InstagramThread({ conversationId, onConversationUpdate, 
             {isMessenger ? 'Facebook Messenger' : detail?.igUsername && detail.displayName ? `@${detail.igUsername} · Instagram` : 'Instagram'}
           </p>
         </div>
+        {detail?.lead && (
+          <span className={`shrink-0 text-[11px] font-medium rounded-full px-2 py-0.5 ${LEAD_STAGE_COLOR[detail.lead.stage]}`} title="Lead stage">
+            {LEAD_STAGE_LABEL[detail.lead.stage]}
+          </span>
+        )}
         {(detail?.brand || detail?.ourAccountUsername) && (
           <p className="hidden sm:block text-xs text-muted-foreground shrink-0">
             To: <span className="font-medium text-foreground">{detail.brand ? WHATSAPP_BRAND_LABELS[detail.brand] : `@${detail.ourAccountUsername}`}</span>
           </p>
+        )}
+        {detail && leadEditor.canEdit && (
+          <button type="button" onClick={leadEditor.open} disabled={leadEditor.busy}
+            title={detail.leadId ? 'Edit lead (name, phone, email…)' : 'Create & edit lead for this chat'} aria-label="Edit lead"
+            className="h-8 w-8 shrink-0 rounded-full flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50">
+            {leadEditor.busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Pencil className="h-4 w-4" />}
+          </button>
         )}
       </div>
 
@@ -242,6 +265,7 @@ export default function InstagramThread({ conversationId, onConversationUpdate, 
           )}
         </div>
       </div>
+      {leadEditor.sheet}
     </div>
   )
 }

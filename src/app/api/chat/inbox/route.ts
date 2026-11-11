@@ -5,6 +5,7 @@ import { getDb } from '@/lib/get-db'
 import { WHATSAPP_BRANDS, type WhatsappBrand } from '@/lib/whatsapp-brands'
 import { instagramConversationScope } from '@/lib/whatsapp-distribution'
 import { emailConversationScope } from '@/lib/email-inbox'
+import { chatDisplayName } from '@/lib/chat-display-name'
 import type { MetaDmPlatform } from '@prisma/client'
 
 export type ChatChannel = 'whatsapp' | 'instagram' | 'email'
@@ -79,22 +80,22 @@ export async function GET(request: NextRequest) {
             { lastInboundAt: { not: null }, lastOutboundAt: null },
             { lastInboundAt: { gt: db.whatsappConversation.fields.lastOutboundAt } },
           ] } : {},
-          q ? { OR: [contains('contactName'), contains('phone'), contains('lastMessagePreview')] } : {},
+          q ? { OR: [contains('contactName'), contains('phone'), contains('lastMessagePreview'), { lead: contains('name') }] } : {},
         ],
       },
       orderBy: { lastMessageAt: 'desc' },
       take: PER_CHANNEL_LIMIT,
-      include: { assignedTo: { select: { id: true, name: true, email: true } } },
+      include: { assignedTo: { select: { id: true, name: true, email: true } }, lead: { select: { name: true } } },
     }),
     metaDmChannel ? db.instagramConversation.findMany({
       where: { AND: [
         instagramConversationScope(role, session.user.id), assigneeWhere, unreadWhere,
         brand ? { brand } : {},
-        q ? { OR: [contains('displayName'), contains('igUsername'), contains('lastMessagePreview')] } : {},
+        q ? { OR: [contains('displayName'), contains('igUsername'), contains('lastMessagePreview'), { lead: contains('name') }] } : {},
       ] },
       orderBy: { lastMessageAt: 'desc' },
       take: PER_CHANNEL_LIMIT,
-      include: { assignedTo: { select: { id: true, name: true, email: true } } },
+      include: { assignedTo: { select: { id: true, name: true, email: true } }, lead: { select: { name: true } } },
     }) : Promise.resolve([]),
     otherChannels ? db.emailInboxConversation.findMany({
       where: { AND: [
@@ -121,14 +122,14 @@ export async function GET(request: NextRequest) {
 
   const items: UnifiedInboxItem[] = [
     ...whatsapp.map((c): UnifiedInboxItem => ({
-      id: c.id, channel: 'whatsapp', name: c.contactName || c.phone, avatarUrl: null,
+      id: c.id, channel: 'whatsapp', name: chatDisplayName(c.lead?.name, c.contactName || c.phone), avatarUrl: null,
       preview: c.lastMessagePreview, lastMessageAt: c.lastMessageAt.toISOString(), unreadCount: c.unreadCount,
       assignedToId: c.assignedToId, assignedToName: c.assignedTo?.name || c.assignedTo?.email || null,
       brand: c.brand,
       waitingSince: isWaiting(c) ? c.lastInboundAt!.toISOString() : null,
     })),
     ...instagram.map((c): UnifiedInboxItem => ({
-      id: c.id, channel: 'instagram', name: c.displayName || c.igUsername || (c.platform === 'MESSENGER' ? 'Facebook user' : 'Instagram user'), avatarUrl: c.profilePicUrl,
+      id: c.id, channel: 'instagram', name: chatDisplayName(c.lead?.name, c.displayName || c.igUsername || (c.platform === 'MESSENGER' ? 'Facebook user' : 'Instagram user')), avatarUrl: c.profilePicUrl,
       preview: c.lastMessagePreview, lastMessageAt: c.lastMessageAt.toISOString(), unreadCount: c.unreadCount,
       assignedToId: c.assignedToId, assignedToName: c.assignedTo?.name || c.assignedTo?.email || null,
       brand: c.brand, metaPlatform: c.platform,

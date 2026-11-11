@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { Loader2, X, UserRound, Ship, MessageCircle } from 'lucide-react'
+import { Loader2, X, UserRound, Ship, MessageCircle, Pencil } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
@@ -32,10 +32,13 @@ function Row({ k, v }: { k: string; v: React.ReactNode }) {
  * to a Customer), the same number's chats on our other brands, and quick-edit Lead notes.
  * Data: GET/PATCH /api/whatsapp/conversations/[id]/contact.
  */
-export default function WhatsappContactPanel({ conversationId, leadId, onClose, onOpenBooking, onOpenChat }: {
+export default function WhatsappContactPanel({ conversationId, leadId, refreshKey = 0, onClose, onOpenBooking, onOpenChat, onEditLead }: {
   conversationId: string
   // Reloads when the chat gets (re)linked to a Lead, e.g. after categorising it as Sales.
   leadId: string | null
+  // Bumped by the thread after the Lead was edited, to re-read it
+  refreshKey?: number
+  onEditLead?: () => void
   onClose: () => void
   onOpenBooking?: (bookingId: string) => void
   onOpenChat?: (conversationId: string) => void
@@ -52,7 +55,7 @@ export default function WhatsappContactPanel({ conversationId, leadId, onClose, 
     setNotes(body.lead?.notes ?? '')
   }, [conversationId])
 
-  useEffect(() => { load() }, [load, leadId])
+  useEffect(() => { load() }, [load, leadId, refreshKey])
 
   async function saveNotes() {
     setSavingNotes(true)
@@ -90,7 +93,14 @@ export default function WhatsappContactPanel({ conversationId, leadId, onClose, 
       ) : (
         <div className="flex-1 overflow-y-auto p-4 space-y-5">
           <section className="space-y-2">
-            <h3 className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"><UserRound className="h-3 w-3" /> Lead</h3>
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"><UserRound className="h-3 w-3" /> Lead</h3>
+              {lead && onEditLead && (
+                <Button variant="ghost" size="sm" onClick={onEditLead} className="h-6 px-2 -mr-2 text-xs text-muted-foreground hover:text-foreground">
+                  <Pencil className="h-3 w-3 mr-1" /> Edit
+                </Button>
+              )}
+            </div>
             {lead ? (
               <>
                 <div className="flex flex-wrap items-center gap-1.5">

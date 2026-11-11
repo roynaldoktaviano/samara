@@ -15,6 +15,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const conversation = await db.instagramConversation.findUnique({
     where: { id },
     include: {
+      lead: { select: { id: true, name: true, stage: true } },
       messages: {
         orderBy: { createdAt: 'asc' },
         include: { replyTo: { select: { id: true, body: true, direction: true, mediaType: true } } },

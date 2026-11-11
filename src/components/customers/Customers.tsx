@@ -41,6 +41,8 @@ interface Guest {
   totalSpent: number
   createdAt: string
   isSubscribed: boolean | null
+  ownerId?: string | null
+  owner?: { id: string; name: string } | null
 }
 
 interface TripEntry {
@@ -353,6 +355,7 @@ export default function Guests() {
                   <TableHead>Passport</TableHead>
                   <TableHead>Date of Birth</TableHead>
                   <TableHead>Trips</TableHead>
+                  <TableHead>Sales Owner</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -375,12 +378,13 @@ export default function Guests() {
                       <TableCell><Skeleton className="h-3 w-24" /></TableCell>
                       <TableCell><Skeleton className="h-3 w-20" /></TableCell>
                       <TableCell><Skeleton className="h-3 w-8" /></TableCell>
+                      <TableCell><Skeleton className="h-3 w-16" /></TableCell>
                       <TableCell><div className="flex justify-end gap-1"><Skeleton className="h-8 w-8 rounded-md" /><Skeleton className="h-8 w-8 rounded-md" /></div></TableCell>
                     </TableRow>
                   ))
                 ) : guests.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={isAdmin ? 8 : 7} className="py-12 text-center text-muted-foreground">No guests found</TableCell>
+                    <TableCell colSpan={isAdmin ? 9 : 8} className="py-12 text-center text-muted-foreground">No guests found</TableCell>
                   </TableRow>
                 ) : guests.map(g => (
                   <TableRow
@@ -435,6 +439,9 @@ export default function Guests() {
                         <Ship className="h-3.5 w-3.5 text-muted-foreground" />
                         <span className="text-sm font-medium">{g.totalBookings}</span>
                       </div>
+                    </TableCell>
+                    <TableCell>
+                      {g.owner ? <span className="text-xs whitespace-nowrap">{g.owner.name}</span> : <span className="text-muted-foreground text-xs">—</span>}
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1">
@@ -570,6 +577,7 @@ export default function Guests() {
                       ['Passport / ID', detail.passport],
                       ['Date of Birth', detail.dateOfBirth ? formatDate(detail.dateOfBirth) : ''],
                       ['Nationality', detail.nationality],
+                      ['Sales Owner', detail.owner?.name ?? 'Unassigned'],
                       ['Address', detail.address],
                       ['Dietary Requirements', detail.dietaryRequirements],
                       ['Allergies', detail.allergies],

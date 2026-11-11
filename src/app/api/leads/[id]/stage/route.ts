@@ -54,6 +54,8 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
           : {}),
         ...(targetStage === 'CLOSED_LOST' ? { lostReason, lostNote: typeof lostNote === 'string' && lostNote.trim() ? lostNote.trim() : null } : {}),
       },
+      // The detail view swaps in this response — keep the owner so Sales Owner doesn't blank out
+      include: { owner: { select: { id: true, name: true } } },
     })
 
     logActivity({

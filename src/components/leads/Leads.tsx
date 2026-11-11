@@ -901,6 +901,7 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail }: {
                     ['Phone', detail.phone],
                     ['Instagram', detail.instagram ? `@${detail.instagram}` : null],
                     ['Country', detail.nationality],
+                    ['Sales Owner', detail.owner?.name ?? 'Unassigned'],
                     ['Yacht / Product Interest', detail.productInterest],
                     ['Destination', detail.destinationId ? destinationMap[detail.destinationId] : null],
                     ['Travel Dates', (detail.travelStartDate && detail.travelEndDate)

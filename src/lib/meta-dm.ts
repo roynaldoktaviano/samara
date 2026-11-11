@@ -187,7 +187,7 @@ async function hasMessageWithCanonicalMid(db: PrismaClient, conversationKey: { p
 }
 
 interface MetaAttachment { type?: string; payload?: { url?: string; title?: string } | null }
-interface MetaMessagingEvent {
+export interface MetaMessagingEvent {
   sender: { id: string }
   recipient: { id: string }
   timestamp?: number
@@ -205,6 +205,8 @@ interface MetaMessagingEvent {
   reaction?: { mid?: string; action?: string; emoji?: string; reaction?: string }
   read?: { mid?: string; watermark?: number }
   delivery?: { mids?: string[]; watermark?: number }
+  /** Not from Meta — set by the Messenger poller (src/lib/messenger-sync.ts), which already has the name. */
+  customerName?: string
 }
 export interface MetaMessagingBody {
   object?: string
@@ -331,7 +333,10 @@ export async function handleMetaMessagingEvents(db: PrismaClient, tenantId: stri
         if (!brand) console.error('[meta-dm] no brand configured for', platform, 'account', ourAccountId, 'in tenant', tenantId)
         const firstMediaType = described.media[0]?.mediaType ?? null
         const preview = previewOf(described.text, firstMediaType)
-        const now = new Date()
+        // When the message was actually sent — the Messenger poller hands in older messages.
+        const now = event.timestamp ? new Date(event.timestamp) : new Date()
+        // Picked up long after it was sent (poller backfill) — store it, but don't ping anyone.
+        const stale = Date.now() - now.getTime() > 15 * 60_000
 
         // ── Echo: a reply sent from our side ──
         if (isEcho) {
@@ -374,12 +379,21 @@ export async function handleMetaMessagingEvents(db: PrismaClient, tenantId: stri
         const before = await db.instagramConversation.findUnique({ where: key, select: { id: true, leadId: true, lastInboundAt: true } })
         let conversation = before && await touch(before.id)
         let isNew = false
+        // Thread opened by our side (e.g. a private reply to a Page comment) — the customer's first
+        // message is when it enters the distribution pool, same as a thread they started.
+        if (conversation && !isEcho && !before?.lastInboundAt && !conversation.assignedToId) {
+          const pick = await pickNextSalesUserId(db, 'SAMARA', 'INSTAGRAM')
+          if (pick) {
+            await db.instagramConversation.updateMany({ where: { id: conversation.id, assignedToId: null }, data: { assignedToId: pick } })
+            conversation = await db.instagramConversation.findUniqueOrThrow({ where: { id: conversation.id } })
+          }
+        }
         if (!conversation) {
           try {
             conversation = await db.instagramConversation.create({
               data: {
                 platform, externalUserId: customerId, ourAccountId, brand,
-                igUsername: profile?.username ?? null, displayName: profile?.displayName ?? null, profilePicUrl: profile?.profilePicUrl ?? null,
+                igUsername: profile?.username ?? null, displayName: profile?.displayName ?? event.customerName ?? null, profilePicUrl: profile?.profilePicUrl ?? null,
                 lastMessagePreview: preview, lastMessageAt: now,
                 ...(!isEcho && { lastInboundAt: now, unreadCount: 1 }),
                 // Instagram and Messenger share the INSTAGRAM pool (Chat › Leads Distribution).
@@ -408,6 +422,7 @@ export async function handleMetaMessagingEvents(db: PrismaClient, tenantId: stri
               mediaUrl: null,
               mediaType: media?.mediaType ?? null,
               status: isEcho ? 'SENT' : 'DELIVERED',
+              createdAt: now,
               providerMessageId: mid ? (i === 0 ? mid : `${mid}#${i}`) : null,
               replyToId: i === 0 ? quoted?.id ?? null : null,
               ...(isEcho && { sentByName: echoName }),
@@ -446,6 +461,7 @@ export async function handleMetaMessagingEvents(db: PrismaClient, tenantId: stri
           console.error('[meta-dm] lead link/history failed', e)
         }
 
+        if (stale) continue
         const who = conversation.displayName || (conversation.igUsername ? `@${conversation.igUsername}` : null) || profile?.displayName || 'customer'
         const label = META_DM_PLATFORM_LABELS[platform]
         const title = isNew ? `New ${label} DM: ${who}` : `${label}: ${who}`

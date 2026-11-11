@@ -17,6 +17,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     const customer = await withRetry(db, () => db.customer.findUnique({
       where: { id },
       include: {
+        owner: { select: { id: true, name: true } },
         bookings: {
           include: {
             yacht: { select: { name: true } },
@@ -156,7 +157,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       dietaryRequirements, allergies, equipmentSizes, operationalNotes,
       nationality, passportExpiry, emergencyContact, drinkPreferences,
       medicalData, foodData, drinksData, divingData, surfingData,
-      passportImage,
+      passportImage, ownerId,
     } = body
 
     const name = [firstName, lastName].filter(Boolean).join(' ') || body.name
@@ -183,7 +184,9 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         ...(divingData    !== undefined && { divingData }),
         ...(surfingData   !== undefined && { surfingData }),
         ...(passportImage !== undefined && { passportImage: passportImage || null }),
+        ...(ownerId       !== undefined && { ownerId: ownerId || null }),
       },
+      include: { owner: { select: { id: true, name: true } } },
     })
 
     logActivity({
