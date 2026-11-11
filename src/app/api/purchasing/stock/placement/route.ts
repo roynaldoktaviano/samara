@@ -5,7 +5,9 @@ import { getDb } from '@/lib/get-db'
 
 import { roleMatches } from '@/lib/role-utils'
 
-const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE']
+// Room & Loc is decided by the warehouse team themselves — Purchasing only views it.
+// Keep in sync with PLACEMENT_EDITORS in StockPage.tsx.
+const ALLOWED = ['WAREHOUSE', 'ADMIN', 'SUPER_ADMIN']
 
 const clean = (v: unknown) => (typeof v === 'string' ? v.trim().slice(0, 100) : '') || null
 

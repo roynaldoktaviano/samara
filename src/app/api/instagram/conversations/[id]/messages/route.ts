@@ -31,9 +31,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     if (conversation.leadId) await setLeadOwner(db, conversation.leadId, session.user.id, 'CLAIM', true).catch(() => {})
   }
 
+  let replyToMid: string | null = null
   if (replyToId) {
     const quoted = await db.instagramMessage.findFirst({ where: { id: replyToId, conversationId: id } })
     if (!quoted) return NextResponse.json({ error: 'Message being replied to was not found' }, { status: 400 })
+    // Extra attachment rows carry "<mid>#<n>" — Meta only knows the plain mid.
+    replyToMid = quoted.providerMessageId?.split('#')[0] ?? null
   }
 
   const message = await db.instagramMessage.create({
@@ -64,7 +67,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const tenantId = (session.user as { tenantId?: string }).tenantId
   const result = tenantId
-    ? await sendMetaDm(tenantId, conversation, { text, mediaUrl, mediaType })
+    ? await sendMetaDm(tenantId, conversation, { text, mediaUrl, mediaType, replyToMid })
     : { ok: false, error: 'No tenant on session' }
 
   // The webhook echo may have already filled in providerMessageId — setting it again is a no-op.

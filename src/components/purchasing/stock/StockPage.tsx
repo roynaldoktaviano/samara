@@ -3,6 +3,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Warehouse, Ship, AlertTriangle, Search, X, Layers, FileText, ShoppingCart, Trash2, Loader2, MapPin } from 'lucide-react'
 import { toast } from 'sonner'
+import { useSession } from 'next-auth/react'
+import { roleMatches } from '@/lib/role-utils'
 import { formatMoney, formatNumber, formatDate } from '@/lib/format'
 import { displayQty, displayUnitCost, hasPurchaseUnit, isMeasureUnit, type UnitInfo } from '@/lib/purchasing/units'
 
@@ -19,6 +21,9 @@ interface StockRow {
   replenish: { reserved: number; available: number; toBeOrder: number; pending: number; po: number; sources: ReplenishSource[] } | null
 }
 interface Placement { room: string | null; bin: string | null }
+// Room & Loc is set by the warehouse team themselves (same list as the placement API).
+const PLACEMENT_EDITORS = ['WAREHOUSE', 'ADMIN', 'SUPER_ADMIN']
+
 function placementLabel(p: Placement | null | undefined) {
   return p ? [p.room, p.bin].filter(Boolean).join(' / ') : ''
 }
@@ -398,6 +403,8 @@ function defaultRestockLine(row: StockRow): RestockLine {
 }
 
 export default function StockPage({ onOpenPo, onOpenRequest, onOpenTransfer }: { onOpenPo?: (poId: string) => void; onOpenRequest?: (requestId: string) => void; onOpenTransfer?: (transferId: string) => void } = {}) {
+  const { data: session } = useSession()
+  const canEditPlacement = roleMatches((session?.user as { role?: string })?.role ?? '', PLACEMENT_EDITORS)
   const [data, setData] = useState<StockData | null>(null)
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -786,6 +793,12 @@ export default function StockPage({ onOpenPo, onOpenRequest, onOpenTransfer }: {
                     <div className="flex items-center gap-1.5 px-4 py-2 bg-muted/40 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
                       <MapPin className="h-3.5 w-3.5" /> Room &amp; Loc
                     </div>
+                    {!canEditPlacement ? (
+                      <div className="p-4 text-sm">
+                        {saved ? <span className="font-medium">{placementLabel(saved)}</span> : <span className="text-muted-foreground">Not set yet</span>}
+                        <p className="mt-1 text-xs text-muted-foreground">Room &amp; Loc is set by the Warehouse team.</p>
+                      </div>
+                    ) : (
                     <form className="p-4 space-y-3" onSubmit={e => { e.preventDefault(); savePlacement() }}>
                       <div className="grid grid-cols-2 gap-3">
                         <label className="space-y-1">
@@ -812,6 +825,7 @@ export default function StockPage({ onOpenPo, onOpenRequest, onOpenTransfer }: {
                         </button>
                       </div>
                     </form>
+                    )}
                   </div>
                 )
               })()}

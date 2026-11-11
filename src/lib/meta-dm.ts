@@ -65,7 +65,7 @@ function attachmentType(mediaType: string | null | undefined): 'image' | 'video'
 export async function sendMetaDm(
   tenantId: string,
   conversation: { platform: MetaDmPlatform; externalUserId: string | null; ourAccountId: string | null; brand: WhatsappBrand | null; lastInboundAt: Date | null },
-  message: { text?: string; mediaUrl?: string | null; mediaType?: string | null },
+  message: { text?: string; mediaUrl?: string | null; mediaType?: string | null; replyToMid?: string | null },
 ): Promise<SendMetaDmResult> {
   if (!conversation.externalUserId) return { ok: false, error: 'This conversation did not come in through Meta, so it cannot be replied to' }
   const brand = conversation.brand ?? await resolveMetaDmBrand(tenantId, conversation.platform, conversation.ourAccountId)
@@ -87,15 +87,29 @@ export async function sendMetaDm(
   if (message.text) parts.push({ text: message.text })
   if (parts.length === 0) return { ok: false, error: 'Nothing to send' }
 
+  const post = async (part: Record<string, unknown>, replyToMid: string | null) => {
+    const res = await fetch(sendUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sendToken}` },
+      body: JSON.stringify({
+        recipient: { id: conversation.externalUserId }, ...messaging,
+        // Quoted reply ("swipe to reply") — shows the quoted bubble in the IG / Messenger app.
+        ...(replyToMid && { reply_to: { mid: replyToMid } }),
+        message: part,
+      }),
+    })
+    const data = await res.json().catch(() => ({})) as { message_id?: string; error?: { message?: string; code?: number; error_subcode?: number } }
+    return { res, data }
+  }
+
   let providerMessageId: string | undefined
-  for (const part of parts) {
+  for (const [i, part] of parts.entries()) {
     try {
-      const res = await fetch(sendUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sendToken}` },
-        body: JSON.stringify({ recipient: { id: conversation.externalUserId }, ...messaging, message: part }),
-      })
-      const data = await res.json().catch(() => ({})) as { message_id?: string; error?: { message?: string; code?: number; error_subcode?: number } }
+      // The quote rides on the first part only (attachment + text = two Meta messages).
+      const replyToMid = i === 0 ? message.replyToMid ?? null : null
+      let { res, data } = await post(part, replyToMid)
+      // Meta can refuse the quote (old/unknown mid) — still deliver the message, just unquoted.
+      if ((!res.ok || !data.message_id) && replyToMid) ({ res, data } = await post(part, null))
       if (!res.ok || !data.message_id) {
         const err = data.error
         return { ok: false, providerMessageId, error: err ? `(#${err.code}${err.error_subcode ? `/${err.error_subcode}` : ''}) ${err.message ?? 'Send failed'}` : `Meta returned ${res.status}` }
@@ -138,6 +152,24 @@ function claimMid(key: string): boolean {
   if (claimedMids.has(key)) return false
   claimedMids.set(key, now)
   return true
+}
+
+/**
+ * The stored message a reply_to.mid points at — exact id first, else the same message stored
+ * under Meta's other mid encoding (see canonicalMetaMid).
+ */
+async function findQuotedMessage(db: PrismaClient, conversationId: string, mid: string): Promise<{ id: string } | null> {
+  const exact = await db.instagramMessage.findUnique({ where: { providerMessageId: mid }, select: { id: true, conversationId: true } })
+  if (exact) return exact.conversationId === conversationId ? { id: exact.id } : null
+  const canon = canonicalMetaMid(mid)
+  const recent = await db.instagramMessage.findMany({
+    where: { conversationId, providerMessageId: { not: null } },
+    orderBy: { createdAt: 'desc' },
+    take: 500,
+    select: { id: true, providerMessageId: true },
+  })
+  const hit = recent.find(r => !r.providerMessageId!.includes('#') && canonicalMetaMid(r.providerMessageId!) === canon)
+  return hit ? { id: hit.id } : null
 }
 
 /** True if this conversation already has a message whose mid is the same message in another encoding. */
@@ -362,9 +394,7 @@ export async function handleMetaMessagingEvents(db: PrismaClient, tenantId: stri
           }
         }
 
-        const quoted = msg?.reply_to?.mid
-          ? await db.instagramMessage.findUnique({ where: { providerMessageId: msg.reply_to.mid }, select: { id: true } })
-          : null
+        const quoted = msg?.reply_to?.mid ? await findQuotedMessage(db, conversation.id, msg.reply_to.mid) : null
         const echoName = platform === 'INSTAGRAM' ? 'Instagram app' : 'Meta Business Suite'
 
         // First attachment rides on the main row (with the text); any extra ones get their own.
