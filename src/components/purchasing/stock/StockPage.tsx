@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Warehouse, Ship, AlertTriangle, Search, X, Layers, FileText, ShoppingCart, Trash2, Loader2 } from 'lucide-react'
+import { Warehouse, Ship, AlertTriangle, Search, X, Layers, FileText, ShoppingCart, Trash2, Loader2, MapPin } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatMoney, formatNumber, formatDate } from '@/lib/format'
 import { displayQty, displayUnitCost, hasPurchaseUnit, isMeasureUnit, type UnitInfo } from '@/lib/purchasing/units'
@@ -13,8 +13,14 @@ interface StockRow {
   costPerUnit: number
   lotsCount: number
   nearestExpiry: string | null
+  /** Room & Loc (shelf) of the item at this location — e.g. "Ruang Tengah" / "Rak 5.1". */
+  placement: Placement | null
   /** Warehouses only (null elsewhere), base units. */
   replenish: { reserved: number; available: number; toBeOrder: number; pending: number; po: number; sources: ReplenishSource[] } | null
+}
+interface Placement { room: string | null; bin: string | null }
+function placementLabel(p: Placement | null | undefined) {
+  return p ? [p.room, p.bin].filter(Boolean).join(' / ') : ''
 }
 interface ReplenishSource { kind: 'PR' | 'PO' | 'TR' | 'BACKORDER' | 'REQUEST'; id: string; number: string; status: string; createdAt: string; qty: number }
 interface NonStockRow {
@@ -75,15 +81,6 @@ const qtyText = (item: StockRow['item'], qty: number) => { const d = stockQty(it
 const sourcesTitle = (item: StockRow['item'], sources: ReplenishSource[] | undefined, kinds: ReplenishSource['kind'][]) =>
   (sources ?? []).filter(x => kinds.includes(x.kind)).map(x => `${x.number} · ${qtyText(item, x.qty)} · ${sourceStatus(x)}`).join('\n') || undefined
 
-const expiryLabel = (s: string) => {
-  const d = new Date(s)
-  const days = Math.ceil((d.getTime() - Date.now()) / 86400000)
-  const label = formatDate(d)
-  if (days < 0) return <span className="text-destructive font-medium">{label} <span className="text-xs">({Math.abs(days)}d ago)</span></span>
-  if (days <= 30) return <span className="text-warning font-medium">{label} <span className="text-xs">({days}d)</span></span>
-  return <span className="text-muted-foreground">{label}</span>
-}
-
 // 10-per-page tablet card view, own pagination per table instance (one per location
 // section) — table stays for desktop (lg+), where 8 columns actually fit.
 const ITEM_CARD_PAGE_SIZE = 10
@@ -106,7 +103,7 @@ function StockTable({ rows, locationId, locationName, onOpenLots, onRestock }: {
   const isWarehouse = rows.some(r => r.replenish)
 
   const shown = q.trim()
-    ? rows.filter(r => { const t = q.trim().toLowerCase(); return r.item.name.toLowerCase().includes(t) || r.item.sku.toLowerCase().includes(t) })
+    ? rows.filter(r => { const t = q.trim().toLowerCase(); return r.item.name.toLowerCase().includes(t) || r.item.sku.toLowerCase().includes(t) || placementLabel(r.placement).toLowerCase().includes(t) })
     : rows
   const totalPages = Math.max(1, Math.ceil(shown.length / ITEM_CARD_PAGE_SIZE))
   const currentPage = Math.min(cardPage, totalPages)
@@ -142,7 +139,7 @@ function StockTable({ rows, locationId, locationName, onOpenLots, onRestock }: {
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
           <input
             className="w-full pl-8 pr-7 h-8 text-sm border rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring/50 focus:border-ring"
-            placeholder="Search item name or SKU…" value={q} onChange={e => { setQ(e.target.value); setCardPage(1) }}
+            placeholder="Search item, SKU, room or rack…" value={q} onChange={e => { setQ(e.target.value); setCardPage(1) }}
           />
           {q && <button onClick={() => setQ('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"><X className="h-3.5 w-3.5" /></button>}
         </div>
@@ -177,27 +174,23 @@ function StockTable({ rows, locationId, locationName, onOpenLots, onRestock }: {
                   <input type="checkbox" className="h-4 w-4 accent-primary cursor-pointer align-middle" checked={allShownSelected} onChange={toggleAllShown} aria-label="Select all" />
                 </th>
               )}
-              <th className="text-left px-5 py-2.5 font-medium">SKU</th>
               <th className="text-left px-5 py-2.5 font-medium">Name</th>
-              <th className="text-right px-5 py-2.5 font-medium">Lots</th>
+              <th className="text-left px-5 py-2.5 font-medium" title="Room / rack where the item is kept at this location — click the row to set it">Room &amp; Loc</th>
               <th className="text-right px-5 py-2.5 font-medium">Stock</th>
-              {isWarehouse && <>
-                <th className="text-right px-5 py-2.5 font-medium" title="Owed to ships from this warehouse: pending transfers, backorders, and ship requests waiting for the warehouse check">Reserved</th>
-                <th className="text-right px-5 py-2.5 font-medium" title="Stock − Reserved">Available</th>
-              </>}
               <th className="text-right px-5 py-2.5 font-medium">Min</th>
               {isWarehouse && <>
-                <th className="text-right px-5 py-2.5 font-medium">To Be Order</th>
-                <th className="text-right px-5 py-2.5 font-medium">Pending</th>
-                <th className="text-right px-5 py-2.5 font-medium">PO</th>
+                <th className="text-right px-5 py-2.5 font-medium" title="Min + Total Request − Stock − PO − Pending">To Be Ordered</th>
+                <th className="text-right px-5 py-2.5 font-medium" title="All ship requests still owed from this warehouse: pending transfers, backorders, and PR lines waiting for the warehouse check">Total Request</th>
+                <th className="text-right px-5 py-2.5 font-medium" title="To Be Ordered + Total Request">Total Order</th>
+                <th className="text-right px-5 py-2.5 font-medium" title="On an open PO to this warehouse, not received yet">PO</th>
+                <th className="text-right px-5 py-2.5 font-medium" title="On a PR sent to Purchasing, not on a PO yet">Pending</th>
               </>}
-              <th className="text-left px-5 py-2.5 font-medium">Nearest Expiry</th>
               {isWarehouse && <th className="px-5 py-2.5" />}
             </tr>
           </thead>
           <tbody className="divide-y">
             {shown.map(row => {
-              const { item, qty, lotsCount, nearestExpiry, replenish } = row
+              const { item, qty, replenish, placement } = row
               const isLow = isLowRow(row)
               const isSel = selected.has(item.id)
               return (
@@ -209,43 +202,36 @@ function StockTable({ rows, locationId, locationName, onOpenLots, onRestock }: {
                       <input type="checkbox" className="h-4 w-4 accent-primary cursor-pointer align-middle" checked={isSel} onChange={() => toggle(item.id)} aria-label={`Select ${item.name}`} />
                     </td>
                   )}
-                  <td className="px-5 py-3 font-mono text-xs text-muted-foreground">{item.sku}</td>
                   <td className="px-5 py-3">
                     <p className="font-medium">{item.name}</p>
-                    <p className="text-xs text-muted-foreground">{item.category}</p>
+                    <p className="text-xs text-muted-foreground"><span className="font-mono">{item.sku}</span> · {item.category}</p>
                   </td>
-                  <td className="px-5 py-3 text-right tabular-nums text-muted-foreground text-xs">
-                    <span className="inline-flex items-center gap-1">
-                      {lotsCount}
-                      {lotsCount > 1 && <Layers className="h-3 w-3 text-muted-foreground/50" />}
-                    </span>
+                  <td className="px-5 py-3 text-xs whitespace-nowrap">
+                    {placement ? (
+                      <span className="inline-flex items-center gap-1"><MapPin className="h-3 w-3 text-muted-foreground shrink-0" />{placementLabel(placement)}</span>
+                    ) : <span className="text-muted-foreground/40">—</span>}
                   </td>
                   <td className="px-5 py-3 text-right font-semibold tabular-nums">
                     <StockQty item={item} qty={qty} />
                   </td>
-                  {isWarehouse && <>
-                    <td className="px-5 py-3 text-right tabular-nums" title={sourcesTitle(item, replenish?.sources, RESERVED_KINDS)}>
-                      <QtyCell item={item} qty={replenish?.reserved} className="font-medium text-warning" />
-                    </td>
-                    <td className="px-5 py-3 text-right font-semibold tabular-nums">
-                      <StockQty item={item} qty={replenish?.available ?? qty} />
-                    </td>
-                  </>}
                   <td className="px-5 py-3 text-right text-xs tabular-nums"><MinCell item={item} isLow={isLow} /></td>
                   {isWarehouse && <>
                     <td className="px-5 py-3 text-right tabular-nums">
                       <QtyCell item={item} qty={replenish?.toBeOrder} className="font-semibold text-destructive" />
                     </td>
-                    <td className="px-5 py-3 text-right tabular-nums" title={sourcesTitle(item, replenish?.sources, ['PR'])}>
-                      <QtyCell item={item} qty={replenish?.pending} className="font-medium text-warning" />
+                    <td className="px-5 py-3 text-right tabular-nums" title={sourcesTitle(item, replenish?.sources, RESERVED_KINDS)}>
+                      <QtyCell item={item} qty={replenish?.reserved} className="font-medium text-orange-600 dark:text-orange-300" />
+                    </td>
+                    <td className="px-5 py-3 text-right tabular-nums">
+                      <QtyCell item={item} qty={replenish ? replenish.toBeOrder + replenish.reserved : null} className="font-semibold" />
                     </td>
                     <td className="px-5 py-3 text-right tabular-nums" title={sourcesTitle(item, replenish?.sources, ['PO'])}>
                       <QtyCell item={item} qty={replenish?.po} className="font-medium text-info" />
                     </td>
+                    <td className="px-5 py-3 text-right tabular-nums" title={sourcesTitle(item, replenish?.sources, ['PR'])}>
+                      <QtyCell item={item} qty={replenish?.pending} className="font-medium text-warning" />
+                    </td>
                   </>}
-                  <td className="px-5 py-3 text-sm">
-                    {nearestExpiry ? expiryLabel(nearestExpiry) : <span className="text-muted-foreground/40">—</span>}
-                  </td>
                   {isWarehouse && <td className="px-5 py-3 text-right">{orderButton(row)}</td>}
                 </tr>
               )
@@ -256,7 +242,7 @@ function StockTable({ rows, locationId, locationName, onOpenLots, onRestock }: {
 
       <div className="desktop:hidden divide-y">
         {pageRows.map(row => {
-          const { item, qty, nearestExpiry, replenish } = row
+          const { item, qty, replenish, placement } = row
           const isLow = isLowRow(row)
           const isSel = selected.has(item.id)
           return (
@@ -274,20 +260,25 @@ function StockTable({ rows, locationId, locationName, onOpenLots, onRestock }: {
                   <StockQty item={item} qty={qty} className="text-sm font-semibold tabular-nums shrink-0 text-right" />
                 </div>
                 <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground mt-0.5">
-                  <span className="truncate min-w-0 font-mono">{item.sku}{nearestExpiry && <> · {expiryLabel(nearestExpiry)}</>}</span>
+                  <span className="truncate min-w-0 font-mono">{item.sku}</span>
                   {item.minStock > 0 && <span className="tabular-nums shrink-0">Min <MinCell item={item} isLow={isLow} /></span>}
                 </div>
-                {replenish && replenish.reserved > 0 && (
+                {placement && (
+                  <div className="flex items-center gap-1 text-xs text-muted-foreground mt-0.5">
+                    <MapPin className="h-3 w-3 shrink-0" /><span className="truncate">{placementLabel(placement)}</span>
+                  </div>
+                )}
+                {replenish && (replenish.toBeOrder > 0 || replenish.reserved > 0) && (
                   <div className="flex items-center gap-3 text-xs text-muted-foreground mt-1">
-                    <span>Reserved <QtyCell item={item} qty={replenish.reserved} className="font-medium text-warning" /></span>
-                    <span>Available <StockQty item={item} qty={replenish.available} className="font-semibold text-foreground" /></span>
+                    {replenish.toBeOrder > 0 && <span>To Be Ordered <QtyCell item={item} qty={replenish.toBeOrder} className="font-semibold text-destructive" /></span>}
+                    {replenish.reserved > 0 && <span>Total Request <QtyCell item={item} qty={replenish.reserved} className="font-medium text-orange-600 dark:text-orange-300" /></span>}
+                    <span>Total Order <QtyCell item={item} qty={replenish.toBeOrder + replenish.reserved} className="font-semibold text-foreground" /></span>
                   </div>
                 )}
                 {replenish && (replenish.toBeOrder > 0 || replenish.pending > 0 || replenish.po > 0) && (
                   <div className="flex items-center gap-3 text-xs text-muted-foreground mt-1">
-                    {replenish.toBeOrder > 0 && <span>To Be Order <QtyCell item={item} qty={replenish.toBeOrder} className="font-semibold text-destructive" /></span>}
-                    {replenish.pending > 0 && <span>Pending <QtyCell item={item} qty={replenish.pending} className="font-medium text-warning" /></span>}
                     {replenish.po > 0 && <span>PO <QtyCell item={item} qty={replenish.po} className="font-medium text-info" /></span>}
+                    {replenish.pending > 0 && <span>Pending <QtyCell item={item} qty={replenish.pending} className="font-medium text-warning" /></span>}
                     <span className="ml-auto">{orderButton(row, 'xs')}</span>
                   </div>
                 )}
@@ -420,6 +411,9 @@ export default function StockPage({ onOpenPo, onOpenRequest, onOpenTransfer }: {
   const [lotPanel, setLotPanel] = useState<{ item: StockRow['item']; locationId: string; locationName: string } | null>(null)
   const [lots, setLots] = useState<StockLot[]>([])
   const [lotsLoading, setLotsLoading] = useState(false)
+  // Room & Loc editor inside the lot panel.
+  const [placementDraft, setPlacementDraft] = useState<{ room: string; bin: string }>({ room: '', bin: '' })
+  const [placementSaving, setPlacementSaving] = useState(false)
 
   const load = useCallback(async (opts: { silent?: boolean } = {}) => {
     if (!opts.silent) setLoading(true)
@@ -478,6 +472,9 @@ export default function StockPage({ onOpenPo, onOpenRequest, onOpenTransfer }: {
 
   async function openLots(item: StockRow['item'], locationId: string, locationName: string) {
     setLotPanel({ item, locationId, locationName })
+    const current = data?.locations.find(l => l.location.id === locationId)?.rows
+      .find((r): r is StockRow => r.kind === 'stock' && r.item.id === item.id)?.placement
+    setPlacementDraft({ room: current?.room ?? '', bin: current?.bin ?? '' })
     setLotsLoading(true)
     setLots([])
     const res = await fetch(`/api/purchasing/stock/lots?itemId=${item.id}&locationId=${locationId}`)
@@ -485,11 +482,37 @@ export default function StockPage({ onOpenPo, onOpenRequest, onOpenTransfer }: {
     setLotsLoading(false)
   }
 
+  async function savePlacement() {
+    if (!lotPanel || placementSaving) return
+    const { item, locationId } = lotPanel
+    setPlacementSaving(true)
+    try {
+      const res = await fetch('/api/purchasing/stock/placement', {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ itemId: item.id, locationId, room: placementDraft.room, bin: placementDraft.bin }),
+      })
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok) { toast.error(d.error ?? 'Failed to save Room & Loc'); return }
+      const placement: Placement | null = d.placement ?? null
+      setPlacementDraft({ room: placement?.room ?? '', bin: placement?.bin ?? '' })
+      setData(prev => prev && {
+        ...prev,
+        locations: prev.locations.map(l => l.location.id !== locationId ? l : {
+          ...l,
+          rows: l.rows.map(r => r.kind === 'stock' && r.item.id === item.id ? { ...r, placement } : r),
+        }),
+      })
+      toast.success(placement ? `Room & Loc saved: ${placementLabel(placement)}` : 'Room & Loc cleared')
+    } finally {
+      setPlacementSaving(false)
+    }
+  }
+
   const matchesSearch = (r: Row) => {
     if (!search) return true
     const q = search.toLowerCase()
     return r.kind === 'stock'
-      ? r.item.name.toLowerCase().includes(q) || r.item.sku.toLowerCase().includes(q)
+      ? r.item.name.toLowerCase().includes(q) || r.item.sku.toLowerCase().includes(q) || placementLabel(r.placement).toLowerCase().includes(q)
       : r.itemName.toLowerCase().includes(q) || (r.poNumber ?? '').toLowerCase().includes(q)
   }
   const filtered = (rows: Row[]) => rows.filter(r => matchesSearch(r) && (itemKind === 'all' || r.kind === itemKind))
@@ -752,6 +775,47 @@ export default function StockPage({ onOpenPo, onOpenRequest, onOpenTransfer }: {
             {/* Content */}
             <div className="flex-1 overflow-y-auto">
               {(() => {
+                // Room & Loc — where this item sits at this location (room + rack/shelf).
+                const locRows = data?.locations.find(l => l.location.id === lotPanel.locationId)?.rows ?? []
+                const saved = locRows.find((r): r is StockRow => r.kind === 'stock' && r.item.id === lotPanel.item.id)?.placement ?? null
+                const roomOptions = [...new Set(locRows.flatMap(r => r.kind === 'stock' && r.placement?.room ? [r.placement.room] : []))].sort()
+                const dirty = placementDraft.room.trim() !== (saved?.room ?? '') || placementDraft.bin.trim() !== (saved?.bin ?? '')
+                const inputCls = 'w-full h-9 px-3 text-sm border rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring/50 focus:border-ring'
+                return (
+                  <div className="m-5 mb-0 rounded-lg border overflow-hidden">
+                    <div className="flex items-center gap-1.5 px-4 py-2 bg-muted/40 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                      <MapPin className="h-3.5 w-3.5" /> Room &amp; Loc
+                    </div>
+                    <form className="p-4 space-y-3" onSubmit={e => { e.preventDefault(); savePlacement() }}>
+                      <div className="grid grid-cols-2 gap-3">
+                        <label className="space-y-1">
+                          <span className="text-xs text-muted-foreground">Room</span>
+                          <input className={inputCls} list="placement-room-options" placeholder="e.g. Ruang Tengah"
+                            value={placementDraft.room} onChange={e => setPlacementDraft(d => ({ ...d, room: e.target.value }))} />
+                          <datalist id="placement-room-options">
+                            {roomOptions.map(r => <option key={r} value={r} />)}
+                          </datalist>
+                        </label>
+                        <label className="space-y-1">
+                          <span className="text-xs text-muted-foreground">Loc / Rack</span>
+                          <input className={inputCls} placeholder="e.g. Rak 5.1"
+                            value={placementDraft.bin} onChange={e => setPlacementDraft(d => ({ ...d, bin: e.target.value }))} />
+                        </label>
+                      </div>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs text-muted-foreground truncate">
+                          {saved ? <>Current: <span className="font-medium text-foreground">{placementLabel(saved)}</span></> : 'Not set yet'}
+                        </span>
+                        <button type="submit" disabled={!dirty || placementSaving}
+                          className="inline-flex items-center gap-1.5 h-8 px-3 text-xs font-medium rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0">
+                          {placementSaving && <Loader2 className="h-3.5 w-3.5 animate-spin" />} Save
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                )
+              })()}
+              {(() => {
                 // Incoming: the PRs (Pending) / POs behind this item's numbers at this warehouse.
                 const row = data?.locations.find(l => l.location.id === lotPanel.locationId)?.rows
                   .find((r): r is StockRow => r.kind === 'stock' && r.item.id === lotPanel.item.id)
@@ -785,8 +849,8 @@ export default function StockPage({ onOpenPo, onOpenRequest, onOpenTransfer }: {
                   </div>
                 )
                 return <>
-                  {section(`Reserved — owed to ships from ${lotPanel.locationName}`, sources.filter(x => RESERVED_KINDS.includes(x.kind)))}
-                  {section(`Incoming to ${lotPanel.locationName}`, sources.filter(x => x.kind === 'PR' || x.kind === 'PO'))}
+                  {section(`Total Request — owed to ships from ${lotPanel.locationName}`, sources.filter(x => RESERVED_KINDS.includes(x.kind)))}
+                  {section(`Incoming to ${lotPanel.locationName} (PO + Pending)`, sources.filter(x => x.kind === 'PR' || x.kind === 'PO'))}
                 </>
               })()}
               {lotsLoading ? (

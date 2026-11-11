@@ -17,11 +17,13 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url)
   const locationId = searchParams.get('locationId')
 
-  const [lots, items, locations] = await Promise.all([
+  const [lots, items, locations, placements] = await Promise.all([
     db.stockLot.findMany({ where: { quantity: { gt: 0 }, ...(locationId ? { locationId } : {}) } }),
     db.purchaseItem.findMany({ select: { id: true, sku: true, name: true, category: true, baseUnit: true, purchaseUnit: true, conversionFactor: true, minStock: true, valuationMethod: true } }),
     db.stockLocation.findMany({ select: { id: true, name: true, type: true, yachtId: true } }),
+    db.stockItemPlacement.findMany({ where: locationId ? { locationId } : {}, select: { itemId: true, locationId: true, room: true, bin: true } }),
   ])
+  const placementMap = new Map(placements.map(p => [`${p.itemId}:${p.locationId}`, { room: p.room, bin: p.bin }]))
 
   const itemMap = new Map(items.map(i => [i.id, i]))
   const locMap  = new Map(locations.map(l => [l.id, l]))
@@ -62,6 +64,8 @@ export async function GET(req: Request) {
     costPerUnit: number
     lotsCount: number
     nearestExpiry: Date | null
+    /** Room & Loc (shelf) of this item at this location — null when not set. */
+    placement: { room: string | null; bin: string | null } | null
     replenish: { reserved: number; available: number; toBeOrder: number; pending: number; po: number; sources: PositionSource[] } | null
   }
   type NonStockRow = {
@@ -102,7 +106,7 @@ export async function GET(req: Request) {
     const item = itemMap.get(lot.itemId)
     if (!item) continue
     if (!locEntry.rows.has(lot.itemId)) {
-      locEntry.rows.set(lot.itemId, { kind: 'stock', item, qty: 0, costPerUnit: lot.costPerUnit, lotsCount: 0, nearestExpiry: null, replenish: null })
+      locEntry.rows.set(lot.itemId, { kind: 'stock', item, qty: 0, costPerUnit: lot.costPerUnit, lotsCount: 0, nearestExpiry: null, placement: placementMap.get(`${lot.itemId}:${lot.locationId}`) ?? null, replenish: null })
     }
     const row = locEntry.rows.get(lot.itemId)!
     row.qty += lot.quantity
@@ -128,7 +132,7 @@ export async function GET(req: Request) {
     if (!item || !loc) continue
     if (!byLocation.has(locId)) byLocation.set(locId, { location: loc, rows: new Map(), nonStockRows: [] })
     const locEntry = byLocation.get(locId)!
-    if (!locEntry.rows.has(itemId)) locEntry.rows.set(itemId, { kind: 'stock', item, qty: 0, costPerUnit: 0, lotsCount: 0, nearestExpiry: null, replenish: null })
+    if (!locEntry.rows.has(itemId)) locEntry.rows.set(itemId, { kind: 'stock', item, qty: 0, costPerUnit: 0, lotsCount: 0, nearestExpiry: null, placement: placementMap.get(key) ?? null, replenish: null })
   }
 
   // Replenishment numbers only make sense where Min. Stock is kept — the warehouses.

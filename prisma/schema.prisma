@@ -2166,6 +2166,7 @@ model PurchaseItem {
   updatedAt         DateTime      @updatedAt
 
   stockLots             StockLot[]
+  placements            StockItemPlacement[]
   requestItems          PurchaseRequestItem[]
   orderItems            PurchaseOrderItem[]
   receiptItems          GoodsReceiptItem[]
@@ -2223,6 +2224,7 @@ model StockLocation {
   inventoryRooms    InventoryRoom[]
   inventoryItems    InventoryItem[]
   inventoryOpnames  InventoryOpname[]
+  itemPlacements    StockItemPlacement[]
 
   @@index([type])
   @@index([yachtId])
@@ -2472,6 +2474,26 @@ model StockLot {
   @@index([itemName, locationId])
   @@index([sourcePoId])
   @@index([expiresAt])
+}
+
+// Where a catalog item physically sits inside a location (Purchasing › Item by Location →
+// "Room & Loc", e.g. "Ruang Tengah / Rak 5.1"). One row per item+location, independent of
+// lots (lots merge/split; the shelf doesn't). Both fields free text.
+model StockItemPlacement {
+  id          String   @id @default(cuid())
+  itemId      String
+  locationId  String
+  room        String?
+  bin         String?
+  updatedById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  item     PurchaseItem  @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  location StockLocation @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@unique([itemId, locationId])
+  @@index([locationId])
 }
 
 model StockMovement {

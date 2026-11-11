@@ -126,6 +126,34 @@ export function canonicalMetaMid(mid: string): string {
 
 // ── Inbound webhook events ──────────────────────────────────────────────────────
 
+// The same DM can arrive twice, once per subscription (Page app + Instagram Login app),
+// each carrying its own mid encoding ("ig_dm_item:…" vs "new_ig_dm_item:…"), ~1s apart.
+// The DB check below catches the later one; this in-process claim catches the case where
+// both are being handled at the same time (before either row is written).
+const MID_CLAIM_TTL_MS = 10 * 60_000
+const claimedMids = new Map<string, number>()
+function claimMid(key: string): boolean {
+  const now = Date.now()
+  for (const [k, at] of claimedMids) if (now - at > MID_CLAIM_TTL_MS) claimedMids.delete(k)
+  if (claimedMids.has(key)) return false
+  claimedMids.set(key, now)
+  return true
+}
+
+/** True if this conversation already has a message whose mid is the same message in another encoding. */
+async function hasMessageWithCanonicalMid(db: PrismaClient, conversationKey: { platform_externalUserId: { platform: MetaDmPlatform; externalUserId: string } }, canon: string) {
+  const conv = await db.instagramConversation.findUnique({ where: conversationKey, select: { id: true } })
+  if (!conv) return false
+  const recent = await db.instagramMessage.findMany({
+    where: { conversationId: conv.id, providerMessageId: { not: null } },
+    orderBy: { createdAt: 'desc' },
+    take: 100,
+    select: { providerMessageId: true },
+  })
+  // Extra attachment rows carry "<mid>#<n>" — only the main row's plain mid is comparable.
+  return recent.some(r => !r.providerMessageId!.includes('#') && canonicalMetaMid(r.providerMessageId!) === canon)
+}
+
 interface MetaAttachment { type?: string; payload?: { url?: string; title?: string } | null }
 interface MetaMessagingEvent {
   sender: { id: string }
@@ -217,195 +245,198 @@ function previewOf(text: string | null, mediaType: string | null) {
 export async function handleMetaMessagingEvents(db: PrismaClient, tenantId: string, body: MetaMessagingBody): Promise<void> {
   const platform: MetaDmPlatform = body.object === 'instagram' ? 'INSTAGRAM' : 'MESSENGER'
   let changed = false
+  // Mids claimed by this delivery — released if it fails, so Meta's redelivery isn't skipped.
+  const claimed: string[] = []
 
-  for (const entry of body.entry ?? []) {
-    for (const event of entry.messaging ?? []) {
-      const isEcho = !!event.message?.is_echo
-      const ourAccountId = isEcho ? event.sender.id : event.recipient.id
-      const customerId = isEcho ? event.recipient.id : event.sender.id
-      if (!customerId || customerId === ourAccountId) continue
-      const key = { platform_externalUserId: { platform, externalUserId: customerId } }
+  try {
+    for (const entry of body.entry ?? []) {
+      for (const event of entry.messaging ?? []) {
+        const isEcho = !!event.message?.is_echo
+        const ourAccountId = isEcho ? event.sender.id : event.recipient.id
+        const customerId = isEcho ? event.recipient.id : event.sender.id
+        if (!customerId || customerId === ourAccountId) continue
+        const key = { platform_externalUserId: { platform, externalUserId: customerId } }
 
-      // ── Receipts ──
-      if (event.delivery || event.read) {
-        const conv = await db.instagramConversation.findUnique({ where: key, select: { id: true } })
-        if (!conv) continue
-        const watermark = event.read?.watermark ?? event.delivery?.watermark
-        const { count } = await db.instagramMessage.updateMany({
-          where: {
-            conversationId: conv.id, direction: 'OUT',
-            status: event.read ? { in: ['SENT', 'DELIVERED'] } : 'SENT',
-            ...(watermark && { createdAt: { lte: new Date(watermark) } }),
-          },
-          data: { status: event.read ? 'READ' : 'DELIVERED' },
-        })
-        if (count) changed = true
-        continue
-      }
-
-      const msg = event.message
-      if (msg?.is_deleted) continue
-      let described: { text: string | null; media: { url: string; mediaType: string }[] }
-      let mid: string | null = msg?.mid ?? null
-      if (msg) described = describeMessage(msg)
-      else if (event.postback) { described = { text: event.postback.title ?? event.postback.payload ?? null, media: [] }; mid = event.postback.mid ?? null }
-      else if (event.reaction?.action === 'react') { described = { text: `Reacted ${event.reaction.emoji ?? event.reaction.reaction ?? '❤️'}`, media: [] }; mid = null }
-      else continue
-      if (!described.text && !described.media.length) continue
-
-      if (mid && await db.instagramMessage.findUnique({ where: { providerMessageId: mid }, select: { id: true } })) continue
-
-      const brand = await resolveMetaDmBrand(tenantId, platform, ourAccountId)
-      if (!brand) console.error('[meta-dm] no brand configured for', platform, 'account', ourAccountId, 'in tenant', tenantId)
-      const firstMediaType = described.media[0]?.mediaType ?? null
-      const preview = previewOf(described.text, firstMediaType)
-      const now = new Date()
-
-      // ── Echo: a reply sent from our side ──
-      if (isEcho) {
-        const conv = await db.instagramConversation.findUnique({ where: key, select: { id: true } })
-        if (conv && mid) {
-          // The Send API already returned this message's id, but in a different encoding than
-          // the echo's mid — compare the canonical form so it isn't stored a second time.
-          const canon = canonicalMetaMid(mid)
-          const recentSent = await db.instagramMessage.findMany({
+        // ── Receipts ──
+        if (event.delivery || event.read) {
+          const conv = await db.instagramConversation.findUnique({ where: key, select: { id: true } })
+          if (!conv) continue
+          const watermark = event.read?.watermark ?? event.delivery?.watermark
+          const { count } = await db.instagramMessage.updateMany({
             where: {
-              conversationId: conv.id, direction: 'OUT', sentByUserId: { not: null }, providerMessageId: { not: null },
-              createdAt: { gte: new Date(Date.now() - 10 * 60_000) },
+              conversationId: conv.id, direction: 'OUT',
+              status: event.read ? { in: ['SENT', 'DELIVERED'] } : 'SENT',
+              ...(watermark && { createdAt: { lte: new Date(watermark) } }),
             },
-            select: { providerMessageId: true },
+            data: { status: event.read ? 'READ' : 'DELIVERED' },
           })
-          if (recentSent.some(r => canonicalMetaMid(r.providerMessageId!) === canon)) continue
+          if (count) changed = true
+          continue
         }
-        if (conv) {
-          // A reply sent from the ERP echoes back, sometimes before the Send API call returned
-          // its id — match it to that still-unconfirmed row instead of storing it twice.
-          const pending = await db.instagramMessage.findFirst({
-            where: {
-              conversationId: conv.id, direction: 'OUT', providerMessageId: null, sentByUserId: { not: null },
-              createdAt: { gte: new Date(Date.now() - 2 * 60_000) },
-              ...(described.media.length ? { mediaUrl: { not: null } } : { body: described.text }),
+
+        const msg = event.message
+        if (msg?.is_deleted) continue
+        let described: { text: string | null; media: { url: string; mediaType: string }[] }
+        let mid: string | null = msg?.mid ?? null
+        if (msg) described = describeMessage(msg)
+        else if (event.postback) { described = { text: event.postback.title ?? event.postback.payload ?? null, media: [] }; mid = event.postback.mid ?? null }
+        else if (event.reaction?.action === 'react') { described = { text: `Reacted ${event.reaction.emoji ?? event.reaction.reaction ?? '❤️'}`, media: [] }; mid = null }
+        else continue
+        if (!described.text && !described.media.length) continue
+
+        if (mid) {
+          const canon = canonicalMetaMid(mid)
+          const claimKey = `${tenantId}:${platform}:${canon}`
+          if (!claimMid(claimKey)) continue
+          claimed.push(claimKey)
+          if (await db.instagramMessage.findUnique({ where: { providerMessageId: mid }, select: { id: true } })) continue
+          // Same message already stored under its other encoding (second webhook subscription,
+          // or the echo of a reply whose Send API id was saved) — see canonicalMetaMid.
+          if (await hasMessageWithCanonicalMid(db, key, canon)) continue
+        }
+
+        const brand = await resolveMetaDmBrand(tenantId, platform, ourAccountId)
+        if (!brand) console.error('[meta-dm] no brand configured for', platform, 'account', ourAccountId, 'in tenant', tenantId)
+        const firstMediaType = described.media[0]?.mediaType ?? null
+        const preview = previewOf(described.text, firstMediaType)
+        const now = new Date()
+
+        // ── Echo: a reply sent from our side ──
+        if (isEcho) {
+          const conv = await db.instagramConversation.findUnique({ where: key, select: { id: true } })
+          if (conv) {
+            // A reply sent from the ERP echoes back, sometimes before the Send API call returned
+            // its id — match it to that still-unconfirmed row instead of storing it twice.
+            const pending = await db.instagramMessage.findFirst({
+              where: {
+                conversationId: conv.id, direction: 'OUT', providerMessageId: null, sentByUserId: { not: null },
+                createdAt: { gte: new Date(Date.now() - 2 * 60_000) },
+                ...(described.media.length ? { mediaUrl: { not: null } } : { body: described.text }),
+              },
+              orderBy: { createdAt: 'asc' },
+              select: { id: true },
+            })
+            if (pending) {
+              await db.instagramMessage.update({ where: { id: pending.id }, data: { providerMessageId: mid } }).catch(() => {})
+              continue
+            }
+          }
+        }
+
+        const profile = await (async () => {
+          const existing = await db.instagramConversation.findUnique({ where: key, select: { id: true } })
+          if (existing) return null
+          if (!brand) return null
+          const igToken = platform === 'INSTAGRAM' ? await getIgLoginToken(tenantId, brand) : null
+          const pageToken = igToken ? null : (await brandConfig(tenantId, brand)).pageToken
+          return fetchProfile(platform, customerId, igToken ? { token: igToken, graph: IG_GRAPH } : pageToken ? { token: pageToken, graph: GRAPH } : null)
+        })()
+
+        const touch = (id: string) => db.instagramConversation.update({
+          where: { id },
+          data: {
+            lastMessageAt: now, lastMessagePreview: preview, ourAccountId, ...(brand && { brand }),
+            ...(!isEcho && { lastInboundAt: now, unreadCount: { increment: 1 } }),
+          },
+        })
+        const before = await db.instagramConversation.findUnique({ where: key, select: { id: true, leadId: true, lastInboundAt: true } })
+        let conversation = before && await touch(before.id)
+        let isNew = false
+        if (!conversation) {
+          try {
+            conversation = await db.instagramConversation.create({
+              data: {
+                platform, externalUserId: customerId, ourAccountId, brand,
+                igUsername: profile?.username ?? null, displayName: profile?.displayName ?? null, profilePicUrl: profile?.profilePicUrl ?? null,
+                lastMessagePreview: preview, lastMessageAt: now,
+                ...(!isEcho && { lastInboundAt: now, unreadCount: 1 }),
+                // Instagram and Messenger share the INSTAGRAM pool (Chat › Leads Distribution).
+                assignedToId: isEcho ? null : await pickNextSalesUserId(db, 'SAMARA', 'INSTAGRAM'),
+              },
+            })
+            isNew = true
+          } catch (e) {
+            // Two first messages from the same person delivered concurrently.
+            if (!(e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002')) throw e
+            conversation = await touch((await db.instagramConversation.findUniqueOrThrow({ where: key, select: { id: true } })).id)
+          }
+        }
+
+        const quoted = msg?.reply_to?.mid
+          ? await db.instagramMessage.findUnique({ where: { providerMessageId: msg.reply_to.mid }, select: { id: true } })
+          : null
+        const echoName = platform === 'INSTAGRAM' ? 'Instagram app' : 'Meta Business Suite'
+
+        // First attachment rides on the main row (with the text); any extra ones get their own.
+        const rows = described.media.length ? described.media : [null]
+        for (const [i, media] of rows.entries()) {
+          const saved = await db.instagramMessage.create({
+            data: {
+              conversationId: conversation.id,
+              direction: isEcho ? 'OUT' : 'IN',
+              body: i === 0 ? described.text : null,
+              mediaUrl: null,
+              mediaType: media?.mediaType ?? null,
+              status: isEcho ? 'SENT' : 'DELIVERED',
+              providerMessageId: mid ? (i === 0 ? mid : `${mid}#${i}`) : null,
+              replyToId: i === 0 ? quoted?.id ?? null : null,
+              ...(isEcho && { sentByName: echoName }),
             },
-            orderBy: { createdAt: 'asc' },
             select: { id: true },
           })
-          if (pending) {
-            await db.instagramMessage.update({ where: { id: pending.id }, data: { providerMessageId: mid } }).catch(() => {})
-            continue
+          if (media) {
+            // Downloaded in the background so Meta gets its 200 quickly (same as WhatsApp).
+            void storeAttachment(media.url, `${saved.id}`)
+              .then(stored => db.instagramMessage.update({ where: { id: saved.id }, data: { mediaUrl: stored.url, ...(stored.mimeType && { mediaType: stored.mimeType }) } }))
+              .catch(e => {
+                console.error('[meta-dm] attachment store failed', saved.id, e)
+                return db.instagramMessage.update({ where: { id: saved.id }, data: { errorMessage: 'Attachment could not be downloaded from Meta' } })
+              })
+              .then(() => emitTenantEvent(tenantId, 'chat'), () => {})
           }
         }
-      }
+        changed = true
 
-      const profile = await (async () => {
-        const existing = await db.instagramConversation.findUnique({ where: key, select: { id: true } })
-        if (existing) return null
-        if (!brand) return null
-        const igToken = platform === 'INSTAGRAM' ? await getIgLoginToken(tenantId, brand) : null
-        const pageToken = igToken ? null : (await brandConfig(tenantId, brand)).pageToken
-        return fetchProfile(platform, customerId, igToken ? { token: igToken, graph: IG_GRAPH } : pageToken ? { token: pageToken, graph: GRAPH } : null)
-      })()
+        if (isEcho) continue
 
-      const touch = (id: string) => db.instagramConversation.update({
-        where: { id },
-        data: {
-          lastMessageAt: now, lastMessagePreview: preview, ourAccountId, ...(brand && { brand }),
-          ...(!isEcho && { lastInboundAt: now, unreadCount: { increment: 1 } }),
-        },
-      })
-      const before = await db.instagramConversation.findUnique({ where: key, select: { id: true, leadId: true, lastInboundAt: true } })
-      let conversation = before && await touch(before.id)
-      let isNew = false
-      if (!conversation) {
+        // Every DM sender is a Lead — linked/created on their first message (also for an older
+        // thread that predates this), and each new contact (24h+ after their last message) goes
+        // into the lead's history. See src/lib/lead-contact.ts. Never blocks acking the webhook.
         try {
-          conversation = await db.instagramConversation.create({
-            data: {
-              platform, externalUserId: customerId, ourAccountId, brand,
-              igUsername: profile?.username ?? null, displayName: profile?.displayName ?? null, profilePicUrl: profile?.profilePicUrl ?? null,
-              lastMessagePreview: preview, lastMessageAt: now,
-              ...(!isEcho && { lastInboundAt: now, unreadCount: 1 }),
-              // Instagram and Messenger share the INSTAGRAM pool (Chat › Leads Distribution).
-              assignedToId: isEcho ? null : await pickNextSalesUserId(db, 'SAMARA', 'INSTAGRAM'),
-            },
-          })
-          isNew = true
-        } catch (e) {
-          // Two first messages from the same person delivered concurrently.
-          if (!(e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002')) throw e
-          conversation = await touch((await db.instagramConversation.findUniqueOrThrow({ where: key, select: { id: true } })).id)
-        }
-      }
-
-      const quoted = msg?.reply_to?.mid
-        ? await db.instagramMessage.findUnique({ where: { providerMessageId: msg.reply_to.mid }, select: { id: true } })
-        : null
-      const echoName = platform === 'INSTAGRAM' ? 'Instagram app' : 'Meta Business Suite'
-
-      // First attachment rides on the main row (with the text); any extra ones get their own.
-      const rows = described.media.length ? described.media : [null]
-      for (const [i, media] of rows.entries()) {
-        const saved = await db.instagramMessage.create({
-          data: {
-            conversationId: conversation.id,
-            direction: isEcho ? 'OUT' : 'IN',
-            body: i === 0 ? described.text : null,
-            mediaUrl: null,
-            mediaType: media?.mediaType ?? null,
-            status: isEcho ? 'SENT' : 'DELIVERED',
-            providerMessageId: mid ? (i === 0 ? mid : `${mid}#${i}`) : null,
-            replyToId: i === 0 ? quoted?.id ?? null : null,
-            ...(isEcho && { sentByName: echoName }),
-          },
-          select: { id: true },
-        })
-        if (media) {
-          // Downloaded in the background so Meta gets its 200 quickly (same as WhatsApp).
-          void storeAttachment(media.url, `${saved.id}`)
-            .then(stored => db.instagramMessage.update({ where: { id: saved.id }, data: { mediaUrl: stored.url, ...(stored.mimeType && { mediaType: stored.mimeType }) } }))
-            .catch(e => {
-              console.error('[meta-dm] attachment store failed', saved.id, e)
-              return db.instagramMessage.update({ where: { id: saved.id }, data: { errorMessage: 'Attachment could not be downloaded from Meta' } })
-            })
-            .then(() => emitTenantEvent(tenantId, 'chat'), () => {})
-        }
-      }
-      changed = true
-
-      if (isEcho) continue
-
-      // Every DM sender is a Lead — linked/created on their first message (also for an older
-      // thread that predates this), and each new contact (24h+ after their last message) goes
-      // into the lead's history. See src/lib/lead-contact.ts. Never blocks acking the webhook.
-      try {
-        const { leadId, created } = await ensureLeadForMetaDm(db, conversation.id)
-        const justLinked = !!leadId && !before?.leadId
-        if (leadId && (justLinked || (before && isNewContactSession(before.lastInboundAt, now)))) {
-          await recordLeadContact(db, { leadId, channel: platform, brand, instagramConversationId: conversation.id, message: preview, isFirstContact: created })
-        }
-        // Linking to an existing lead may have handed the chat to that lead's owner.
-        if (justLinked && !created) {
-          conversation = await db.instagramConversation.findUniqueOrThrow({ where: { id: conversation.id } })
-        }
-      } catch (e) {
-        console.error('[meta-dm] lead link/history failed', e)
-      }
-
-      const who = conversation.displayName || (conversation.igUsername ? `@${conversation.igUsername}` : null) || profile?.displayName || 'customer'
-      const label = META_DM_PLATFORM_LABELS[platform]
-      const title = isNew ? `New ${label} DM: ${who}` : `${label}: ${who}`
-      const notifBody = preview || 'New message'
-      if (conversation.assignedToId && !isViewing(tenantId, conversation.assignedToId, conversation.id)) {
-        db.notification.create({ data: { userId: conversation.assignedToId, type: 'WHATSAPP_MESSAGE', title, body: notifBody } }).catch(() => {})
-        sendPushToUser(db, conversation.assignedToId, { title, body: notifBody, url: '/' }).catch(() => {})
-      } else if (!conversation.assignedToId && isNew) {
-        const unassignedTitle = `Unassigned ${label} DM: ${who}`
-        db.user.findMany({ where: { role: 'ADMIN' }, select: { id: true } }).then(admins => {
-          for (const a of admins) {
-            db.notification.create({ data: { userId: a.id, type: 'WHATSAPP_MESSAGE', title: unassignedTitle, body: notifBody } }).catch(() => {})
-            sendPushToUser(db, a.id, { title: unassignedTitle, body: notifBody, url: '/' }).catch(() => {})
+          const { leadId, created } = await ensureLeadForMetaDm(db, conversation.id)
+          const justLinked = !!leadId && !before?.leadId
+          if (leadId && (justLinked || (before && isNewContactSession(before.lastInboundAt, now)))) {
+            await recordLeadContact(db, { leadId, channel: platform, brand, instagramConversationId: conversation.id, message: preview, isFirstContact: created })
           }
-        }).catch(() => {})
+          // Linking to an existing lead may have handed the chat to that lead's owner.
+          if (justLinked && !created) {
+            conversation = await db.instagramConversation.findUniqueOrThrow({ where: { id: conversation.id } })
+          }
+        } catch (e) {
+          console.error('[meta-dm] lead link/history failed', e)
+        }
+
+        const who = conversation.displayName || (conversation.igUsername ? `@${conversation.igUsername}` : null) || profile?.displayName || 'customer'
+        const label = META_DM_PLATFORM_LABELS[platform]
+        const title = isNew ? `New ${label} DM: ${who}` : `${label}: ${who}`
+        const notifBody = preview || 'New message'
+        if (conversation.assignedToId && !isViewing(tenantId, conversation.assignedToId, conversation.id)) {
+          db.notification.create({ data: { userId: conversation.assignedToId, type: 'WHATSAPP_MESSAGE', title, body: notifBody } }).catch(() => {})
+          sendPushToUser(db, conversation.assignedToId, { title, body: notifBody, url: '/' }).catch(() => {})
+        } else if (!conversation.assignedToId && isNew) {
+          const unassignedTitle = `Unassigned ${label} DM: ${who}`
+          db.user.findMany({ where: { role: 'ADMIN' }, select: { id: true } }).then(admins => {
+            for (const a of admins) {
+              db.notification.create({ data: { userId: a.id, type: 'WHATSAPP_MESSAGE', title: unassignedTitle, body: notifBody } }).catch(() => {})
+              sendPushToUser(db, a.id, { title: unassignedTitle, body: notifBody, url: '/' }).catch(() => {})
+            }
+          }).catch(() => {})
+        }
       }
     }
+  } catch (e) {
+    for (const k of claimed) claimedMids.delete(k)
+    throw e
   }
 
   if (changed) emitTenantEvent(tenantId, 'chat')
