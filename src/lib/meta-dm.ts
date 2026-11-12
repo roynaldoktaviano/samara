@@ -442,6 +442,9 @@ export async function handleMetaMessagingEvents(db: PrismaClient, tenantId: stri
           }
         }
         changed = true
+        // Tell open inboxes right away — lead linking, stage updates and notifications below
+        // can take a few seconds, and the rep shouldn't wait on them to see the message.
+        emitTenantEvent(tenantId, 'chat')
 
         if (isEcho) {
           // Sent from the Instagram app / Meta Business Suite (ERP sends were deduped above) —

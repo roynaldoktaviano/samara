@@ -1,12 +1,14 @@
 import type { Prisma, PrismaClient } from '@prisma/client'
+import { warehouseHomeLocationId } from '@/lib/purchasing/warehouseHome'
 
-// The specific StockLocation a WAREHOUSE-role user is tied to, via their Employee record —
-// nothing in the session/JWT carries this (see src/lib/auth.ts), so it's resolved fresh
-// per request. Null if they have no Employee record or no home location set, in which
-// case warehouseOrderWhere below falls back to "own PR's POs only".
-export async function resolveWarehouseLocationId(db: PrismaClient, userId: string): Promise<string | null> {
-  const employee = await db.employee.findUnique({ where: { userId }, select: { locationId: true } })
-  return employee?.locationId ?? null
+// The StockLocation a WAREHOUSE-role user works from = the home gudang (Gudang Labuan Bajo,
+// see warehouseHome.ts) — the same warehouse their PR stock check always takes from.
+// (This used to read Employee.locationId, but that points at an HR EmployeeWorkLocation,
+// never a StockLocation, so the delivery/transit match below could never hit.) Null when
+// the tenant has no such gudang, in which case warehouseOrderWhere falls back to
+// "own PR's POs only".
+export async function resolveWarehouseLocationId(db: PrismaClient, _userId: string): Promise<string | null> {
+  return warehouseHomeLocationId(db)
 }
 
 // Scopes what a WAREHOUSE user can see to exactly two things — never the full

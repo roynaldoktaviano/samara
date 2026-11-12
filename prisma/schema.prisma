@@ -430,6 +430,11 @@ model Lead {
   budgetMin          Float? // optional — never required to advance stage
   budgetMax          Float?
   budgetCurrency     String?
+  // Private Charter / Open Trip — same choice as on the Booking it turns into.
+  tripType           TripType?
+  // Agreed trip price — filled from Send Booking Confirmation on (chat Lead panel / Lead form).
+  tripAmount         Float?
+  tripAmountCurrency String?
   // Set (defaulting to "now") when the lead first moves to OPPORTUNITY — the single
   // OPPORTUNITY stage covers both "proposal sent" and "negotiating", this dates the former.
   proposalSentAt     DateTime?

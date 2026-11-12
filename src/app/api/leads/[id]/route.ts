@@ -60,6 +60,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       firstName, lastName, nationality, email, phone, instagram, notes,
       productInterest, destinationId, travelStartDate, travelEndDate, travelSeason,
       guestCount, leadQuality, budgetMin, budgetMax, budgetCurrency,
+      tripType, tripAmount, tripAmountCurrency,
     } = body
 
     const name = [firstName, lastName].filter(Boolean).join(' ') || body.name
@@ -80,6 +81,9 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         budgetMin: budgetMin != null && budgetMin !== '' ? Number(budgetMin) : null,
         budgetMax: budgetMax != null && budgetMax !== '' ? Number(budgetMax) : null,
         budgetCurrency: budgetCurrency || null,
+        ...(tripType !== undefined && { tripType: tripType === 'PRIVATE_CHARTER' || tripType === 'OPEN_TRIP' ? tripType : null }),
+        ...(tripAmount !== undefined && { tripAmount: tripAmount != null && tripAmount !== '' && Number.isFinite(Number(tripAmount)) ? Number(tripAmount) : null }),
+        ...(tripAmountCurrency !== undefined && { tripAmountCurrency: tripAmountCurrency || null }),
       },
     })
 

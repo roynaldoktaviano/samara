@@ -9,10 +9,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-import { Search, MessageCircle, Instagram, Facebook, Mail, Plus, Clock, MessageSquarePlus, MessagesSquare, Sailboat, Ship, Anchor } from 'lucide-react'
+import { Loader2, Search, MessageCircle, Instagram, Facebook, Mail, Plus, Clock, MessageSquarePlus, MessagesSquare, Sailboat, Ship, Anchor } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { formatDate } from '@/lib/format'
-import type { ChatChannel, InboxView, UnifiedInboxItem } from '@/app/api/chat/inbox/route'
+import type { ChatChannel, ChatPlatform, InboxView, UnifiedInboxItem } from '@/app/api/chat/inbox/route'
 import { WHATSAPP_BRANDS, WHATSAPP_BRAND_LABELS, type WhatsappBrand } from '@/lib/whatsapp-brands'
 import { missingTemplateParams, renderWhatsappTemplateBody } from '@/lib/whatsapp-templates'
 import { useWhatsappTemplates, templateKey } from '@/components/whatsapp/useWhatsappTemplates'
@@ -27,6 +27,14 @@ const CHANNEL_BADGE: Record<ChatChannel, { icon: typeof MessageCircle; color: st
   email:     { icon: Mail,          color: '#3B82F6' },
 }
 const MESSENGER_BADGE = { icon: Facebook, color: '#0866FF' }
+
+// Platform switcher in the list header — one tap narrows the inbox to a single platform.
+const PLATFORM_FILTERS: { value: 'all' | ChatPlatform; label: string; icon: typeof MessageCircle; color?: string }[] = [
+  { value: 'all',       label: 'All platforms', icon: MessagesSquare },
+  { value: 'whatsapp',  label: 'WhatsApp',      icon: MessageCircle, color: '#25D366' },
+  { value: 'instagram', label: 'Instagram',     icon: Instagram,     color: '#E1306C' },
+  { value: 'messenger', label: 'Messenger',     icon: Facebook,      color: '#0866FF' },
+]
 
 function timeLabel(iso: string) {
   const d = new Date(iso)
@@ -48,6 +56,8 @@ const BRAND_TAB_ICON: Record<'all' | WhatsappBrand, typeof MessageCircle> = {
 }
 
 const VIEW_LABELS: Record<InboxView, string> = { all: 'All', unread: 'Unread', waiting: 'Needs reply' }
+// "Needs reply" relies on reply timestamps only WhatsApp tracks — hidden for Instagram/Messenger-only views.
+const waitingSupported = (p: 'all' | ChatPlatform) => p === 'all' || p === 'whatsapp'
 
 function initials(name: string) {
   return name.trim().split(/\s+/).slice(0, 2).map(w => w[0]?.toUpperCase() ?? '').join('') || '?'
@@ -73,11 +83,14 @@ export default function UnifiedInbox({ onOpenEmail, onOpenBooking, initialWhatsa
 
   const [items, setItems] = useState<UnifiedInboxItem[]>([])
   const [loading, setLoading] = useState(true)
+  // A filter/search refetch that's taking a moment — the old list stays up, a spinner shows it's updating.
+  const [refreshing, setRefreshing] = useState(false)
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [view, setView] = useState<InboxView>('all')
   const [now, setNow] = useState(() => Date.now())
   const [brandFilter, setBrandFilter] = useState<'all' | WhatsappBrand>('all')
+  const [platformFilter, setPlatformFilter] = useState<'all' | ChatPlatform>('all')
   const [salesFilter, setSalesFilter] = useState('all')
   const [salesUsers, setSalesUsers] = useState<SalesUser[]>([])
   const [selected, setSelected] = useState<{ channel: 'whatsapp' | 'instagram'; id: string } | null>(
@@ -96,17 +109,21 @@ export default function UnifiedInbox({ onOpenEmail, onOpenBooking, initialWhatsa
   const requestSeq = useRef(0)
   const load = useCallback(async () => {
     const seq = ++requestSeq.current
+    // Only surfaces when the request is actually slow, so realtime refreshes don't flicker it.
+    const slow = setTimeout(() => { if (seq === requestSeq.current) setRefreshing(true) }, 400)
     const params = new URLSearchParams()
     if (debouncedSearch) params.set('q', debouncedSearch)
     if (brandFilter !== 'all') params.set('brand', brandFilter)
+    if (platformFilter !== 'all') params.set('platform', platformFilter)
     if (salesFilter !== 'all') params.set('assignee', salesFilter)
     if (view !== 'all') params.set('view', view)
     try {
       const res = await fetch(`/api/chat/inbox?${params}`)
       if (res.ok && seq === requestSeq.current) setItems(await res.json())
     } catch { /* offline — keep the last list */ }
-    if (seq === requestSeq.current) setLoading(false)
-  }, [debouncedSearch, brandFilter, salesFilter, view])
+    clearTimeout(slow)
+    if (seq === requestSeq.current) { setLoading(false); setRefreshing(false) }
+  }, [debouncedSearch, brandFilter, platformFilter, salesFilter, view])
 
   useEffect(() => { load() }, [load])
   // Consumed once on mount, so revisiting the inbox later doesn't reopen the same chat.
@@ -183,8 +200,23 @@ export default function UnifiedInbox({ onOpenEmail, onOpenBooking, initialWhatsa
           <div>
             <h2 className="text-2xl md:text-lg font-bold tracking-tight">
               <span className="md:hidden">Chats</span><span className="hidden md:inline">All Chats</span>
+              {refreshing && !loading && <Loader2 className="inline-block ml-2 h-4 w-4 animate-spin text-muted-foreground align-[-2px]" aria-label="Updating" />}
             </h2>
-            <p className="hidden md:block text-xs text-muted-foreground mt-0.5">WhatsApp, Instagram &amp; Messenger, newest first</p>
+            <div role="group" aria-label="Filter by platform" className="flex items-center gap-1 mt-1.5">
+              {PLATFORM_FILTERS.map(p => {
+                const Icon = p.icon
+                const active = platformFilter === p.value
+                return (
+                  <button key={p.value} type="button" aria-pressed={active} onClick={() => { setPlatformFilter(p.value); if (!waitingSupported(p.value) && view === 'waiting') setView('all') }}
+                    title={p.label} aria-label={p.label}
+                    className={cn('h-7 inline-flex items-center gap-1 rounded-full border px-2 text-[11px] font-medium transition-colors',
+                      active ? 'border-foreground bg-foreground text-background' : 'text-muted-foreground hover:bg-muted')}>
+                    <Icon className="h-3.5 w-3.5" style={!active && p.color ? { color: p.color } : undefined} />
+                    {p.value === 'all' ? 'All' : active && <span>{p.label}</span>}
+                  </button>
+                )
+              })}
+            </div>
           </div>
           <Dialog open={newChatOpen} onOpenChange={setNewChatOpen}>
             <DialogTrigger asChild>
@@ -217,7 +249,7 @@ export default function UnifiedInbox({ onOpenEmail, onOpenBooking, initialWhatsa
               className="pl-9 md:pl-8 h-10 md:h-9 rounded-full md:rounded-md bg-muted md:bg-transparent border-0 md:border" />
           </div>
           <div role="group" aria-label="Filter chats" className="flex gap-2 md:gap-1 overflow-x-auto [scrollbar-width:none]">
-            {(Object.keys(VIEW_LABELS) as InboxView[]).map(v => (
+            {(Object.keys(VIEW_LABELS) as InboxView[]).filter(v => v !== 'waiting' || waitingSupported(platformFilter)).map(v => (
               <button key={v} type="button" aria-pressed={view === v} onClick={() => setView(v)}
                 className={cn('shrink-0 md:flex-1 h-8 md:h-7 px-4 md:px-0 rounded-full md:rounded-md text-[13px] md:text-[11px] font-medium md:border transition-colors',
                   view === v
@@ -249,7 +281,7 @@ export default function UnifiedInbox({ onOpenEmail, onOpenBooking, initialWhatsa
             </div>
           ) : filtered.length === 0 ? (
             <p className="text-sm text-muted-foreground text-center p-6">
-              {debouncedSearch || view !== 'all' || brandFilter !== 'all' || salesFilter !== 'all' ? 'No chats match these filters.' : 'No conversations yet.'}
+              {debouncedSearch || view !== 'all' || brandFilter !== 'all' || platformFilter !== 'all' || salesFilter !== 'all' ? 'No chats match these filters.' : 'No conversations yet.'}
             </p>
           ) : (
             filtered.map(item => {

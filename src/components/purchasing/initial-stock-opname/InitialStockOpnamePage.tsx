@@ -7,7 +7,7 @@
 
 import { useState, useEffect, useCallback, type Dispatch, type SetStateAction } from 'react'
 import { useSession } from 'next-auth/react'
-import { Plus, X, ChevronRight, CheckCircle2, PackagePlus, AlertTriangle, Trash2, CheckCheck, Search, Pencil, ArrowRightLeft } from 'lucide-react'
+import { Plus, X, ChevronRight, CheckCircle2, PackagePlus, AlertTriangle, Trash2, CheckCheck, Search, Pencil, ArrowRightLeft, Package } from 'lucide-react'
 import { renderLocationOptions } from '@/components/purchasing/LocationOptions'
 import InventoryQuickAdd from './InventoryQuickAdd'
 import { formatDate } from '@/lib/format'
@@ -19,9 +19,12 @@ import { ItemFormFields, EMPTY_ITEM_FORM, newItemForm, type ItemForm, type ItemT
 interface Location { id: string; name: string; type: string; parentId: string | null }
 interface InventoryRoomOption { id: string; name: string; locationId: string }
 interface CatalogItem { id: string; sku: string; name: string; baseUnit: string; purchaseUnit: string; conversionFactor: number; category: string }
+interface Placement { room: string | null; bin: string | null }
 interface OpnameItem {
   id: string; itemName: string; systemQty: number; countedQty: number
   item: (CatalogItem & Partial<ItemForm>) | null
+  // Room & Loc of this product at the opname's location (StockItemPlacement — same as Item by Location).
+  placement?: Placement | null
 }
 interface Opname {
   id: string; countNumber: string; status: string; notes: string | null; createdAt: string
@@ -442,8 +445,12 @@ export default function InitialStockOpnamePage() {
     const res = await fetch(`/api/purchasing/initial-stock-opname/${detail.id}`)
     if (!res.ok) return
     const fresh: Opname = await res.json()
-    const typed = new Map((detail.items ?? []).map(i => [i.id, i.countedQty]))
-    setDetail({ ...fresh, items: fresh.items?.map(i => convertRow?.id === i.id || !typed.has(i.id) ? i : { ...i, countedQty: typed.get(i.id)! }) })
+    const typed = new Map((detail.items ?? []).map(i => [i.id, i]))
+    setDetail({ ...fresh, items: fresh.items?.map(i => {
+      const t = typed.get(i.id)
+      if (!t) return i
+      return convertRow?.id === i.id ? { ...i, placement: t.placement } : { ...i, countedQty: t.countedQty, placement: t.placement }
+    }) })
   }
 
   async function openDetail(opname: Opname) {
@@ -473,6 +480,16 @@ export default function InitialStockOpnamePage() {
     setDetail(d => d ? ({ ...d, items: d.items?.map(i => i.id === itemId ? { ...i, countedQty: val } : i) }) : null)
   }
 
+  function updatePlacement(itemId: string, field: 'room' | 'bin', val: string) {
+    setDetail(d => d ? ({ ...d, items: d.items?.map(i => i.id === itemId
+      ? { ...i, placement: { room: i.placement?.room ?? null, bin: i.placement?.bin ?? null, [field]: val } }
+      : i) }) : null)
+  }
+
+  // Unit each row is counted in — purchase unit (bottle/box) by default, base unit (pcs/ml) on
+  // request. Display-only: the qty is always stored in base units.
+  const [rowUnit, setRowUnit] = useState<Record<string, 'PURCHASE' | 'BASE'>>({})
+
   async function removeItem(itemId: string) {
     if (!detail) return
     setDetail(d => d ? ({ ...d, items: d.items?.filter(i => i.id !== itemId) }) : null)
@@ -487,7 +504,10 @@ export default function InitialStockOpnamePage() {
     const res = await fetch(`/api/purchasing/initial-stock-opname/${detail.id}`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        items: detail.items?.map(i => ({ id: i.id, countedQty: i.countedQty })),
+        items: detail.items?.map(i => ({
+          id: i.id, countedQty: i.countedQty,
+          ...(i.item ? { room: i.placement?.room ?? '', bin: i.placement?.bin ?? '' } : {}),
+        })),
         status: finalize ? 'COMPLETED' : undefined,
       }),
     })
@@ -581,8 +601,10 @@ export default function InitialStockOpnamePage() {
           const nonStockRows = (detail.items ?? []).filter(isNonStock)
           const inputCls = 'w-24 border rounded-md px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-1 focus:ring-ring/50 focus:border-ring tabular-nums [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none'
           const skeleton = [...Array(3)].map((_, i) => (
-            <tr key={i}>{[...Array(4)].map((_, j) => <td key={j} className="px-4 py-3"><div className="h-4 rounded bg-muted animate-pulse" /></td>)}</tr>
+            <tr key={i}>{[...Array(5)].map((_, j) => <td key={j} className="px-4 py-3"><div className="h-4 rounded bg-muted animate-pulse" /></td>)}</tr>
           ))
+          const textCls = 'w-full border rounded-md px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring/50 focus:border-ring bg-card'
+          const roomSuggestions = Array.from(new Set(stockRows.map(r => r.placement?.room?.trim()).filter((v): v is string => !!v))).sort()
           return (
             <>
               <div className="rounded-xl border overflow-hidden">
@@ -595,32 +617,79 @@ export default function InitialStockOpnamePage() {
                     <tr>
                       <th className="text-left px-4 py-2.5 font-medium">Product</th>
                       <th className="text-left px-4 py-2.5 font-medium">Category</th>
+                      <th className="text-left px-4 py-2.5 font-medium">Room &amp; Loc</th>
                       <th className="text-right px-4 py-2.5 font-medium">Current Stock</th>
                       {!readOnly && <th className="px-4 py-2.5" />}
                     </tr>
                   </thead>
                   <tbody className="divide-y">
                     {detailLoading ? skeleton : !stockRows.length ? (
-                      <tr><td colSpan={4} className="text-center py-10 text-muted-foreground text-sm">No stock products yet. Click "Add Product" to get started.</td></tr>
+                      <tr><td colSpan={5} className="text-center py-10 text-muted-foreground text-sm">No stock products yet. Click "Add Product" to get started.</td></tr>
                     ) : stockRows.map(ci => {
-                      const units = ci.item ?? {}
-                      const conv = countFactor(units)
-                      const unit = displayQty(units, 0).unit
+                      const units: UnitInfo = ci.item ?? {}
+                      const canSwitch = hasPurchaseUnit(units)
+                      const usePurchase = canSwitch && (rowUnit[ci.id] ?? 'PURCHASE') === 'PURCHASE'
+                      const conv = usePurchase ? countFactor(units) : 1
+                      const unit = usePurchase ? (units.purchaseUnit ?? '') : (units.baseUnit ?? '')
+                      const imageUrl = ci.item?.imageKey
                       return (
                         <tr key={ci.id} className="hover:bg-muted/10">
                           <td className="px-4 py-3">
-                            <p className="font-medium text-sm">{ci.itemName}</p>
-                            {ci.item && <p className="text-xs text-muted-foreground font-mono mt-0.5">{ci.item.sku}</p>}
+                            <div className="flex items-center gap-3">
+                              {imageUrl ? (
+                                <a href={imageUrl} target="_blank" rel="noopener noreferrer" title="Open photo" className="shrink-0">
+                                  <img src={imageUrl} alt={ci.itemName} className="w-10 h-10 rounded-lg object-cover border" />
+                                </a>
+                              ) : (
+                                <div className="w-10 h-10 rounded-lg border bg-muted/40 flex items-center justify-center shrink-0" title="No photo">
+                                  <Package className="h-4 w-4 text-muted-foreground/50" />
+                                </div>
+                              )}
+                              <div className="min-w-0">
+                                <p className="font-medium text-sm">{ci.itemName}</p>
+                                {ci.item && <p className="text-xs text-muted-foreground font-mono mt-0.5">{ci.item.sku}</p>}
+                              </div>
+                            </div>
                           </td>
                           <td className="px-4 py-3 text-muted-foreground text-sm">{ci.item?.category ?? '—'}</td>
+                          <td className="px-4 py-3">
+                            {readOnly ? (
+                              <span className="text-sm text-muted-foreground">
+                                {[ci.placement?.room, ci.placement?.bin].filter(Boolean).join(' · ') || '—'}
+                              </span>
+                            ) : (
+                              <div className="flex items-center gap-1.5 min-w-56">
+                                <input value={ci.placement?.room ?? ''} onChange={e => updatePlacement(ci.id, 'room', e.target.value)}
+                                  placeholder="Room" list="opname-room-suggestions" maxLength={100} className={textCls} />
+                                <input value={ci.placement?.bin ?? ''} onChange={e => updatePlacement(ci.id, 'bin', e.target.value)}
+                                  placeholder="Loc / Rack" maxLength={100} className={textCls} />
+                              </div>
+                            )}
+                          </td>
                           <td className="px-4 py-3 text-right">
                             {readOnly ? (
                               <StockQty item={units} qty={ci.countedQty} className="font-medium tabular-nums text-sm" />
                             ) : (
                               <div className="flex items-center justify-end gap-1.5">
                                 <input type="number" min={0} step="any" value={Math.round((ci.countedQty / conv) * 1000) / 1000} onChange={e => updateQty(ci.id, Number(e.target.value) * conv)} className={inputCls} />
-                                <span className="text-xs text-muted-foreground shrink-0 min-w-8">{unit}</span>
+                                {canSwitch ? (
+                                  <select value={usePurchase ? 'PURCHASE' : 'BASE'} title="Count in this unit"
+                                    onChange={e => setRowUnit(r => ({ ...r, [ci.id]: e.target.value as 'PURCHASE' | 'BASE' }))}
+                                    className="h-8 border rounded-md px-1.5 text-xs bg-card text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring/50 min-w-16">
+                                    <option value="PURCHASE">{units.purchaseUnit}</option>
+                                    <option value="BASE">{units.baseUnit}</option>
+                                  </select>
+                                ) : (
+                                  <span className="text-xs text-muted-foreground shrink-0 min-w-16">{unit}</span>
+                                )}
                               </div>
+                            )}
+                            {!readOnly && canSwitch && (
+                              <p className="text-[11px] text-muted-foreground mt-1 tabular-nums">
+                                = {usePurchase
+                                  ? `${Math.round(ci.countedQty * 1000) / 1000} ${units.baseUnit}`
+                                  : `${Math.round((ci.countedQty / countFactor(units)) * 1000) / 1000} ${units.purchaseUnit}`}
+                              </p>
                             )}
                           </td>
                           {!readOnly && (
@@ -636,6 +705,9 @@ export default function InitialStockOpnamePage() {
                     })}
                   </tbody>
                 </table></div>
+                <datalist id="opname-room-suggestions">
+                  {roomSuggestions.map(r => <option key={r} value={r} />)}
+                </datalist>
               </div>
 
               {(detailLoading || nonStockRows.length > 0) && (
@@ -708,7 +780,7 @@ export default function InitialStockOpnamePage() {
             row={editRow}
             onClose={() => setEditRow(null)}
             // Keep the qty the user may have typed but not saved yet — the PATCH only touches product fields.
-            onSaved={updated => setDetail(d => d ? ({ ...d, items: d.items?.map(i => i.id === updated.id ? { ...updated, countedQty: i.countedQty } : i) }) : null)}
+            onSaved={updated => setDetail(d => d ? ({ ...d, items: d.items?.map(i => i.id === updated.id ? { ...updated, countedQty: i.countedQty, placement: i.placement } : i) }) : null)}
           />
         )}
       </div>

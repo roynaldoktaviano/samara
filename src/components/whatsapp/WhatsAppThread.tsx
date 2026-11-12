@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback, useLayoutEffect } from 'react
 import { useSession } from 'next-auth/react'
 import { toast } from 'sonner'
 import { uploadToR2 } from '@/lib/r2-client'
-import { Send, Loader2, Check, CheckCheck, AlertCircle, Paperclip, Reply, X, Image as ImageIcon, FileText, UserPlus, RotateCcw, Clock, Upload, PanelRight, ArrowLeft, Pencil } from 'lucide-react'
+import { Send, Loader2, Check, CheckCheck, AlertCircle, Paperclip, Reply, X, Image as ImageIcon, FileText, UserPlus, RotateCcw, Clock, Upload, PanelRight, ArrowLeft } from 'lucide-react'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -14,7 +14,7 @@ import { Button } from '@/components/ui/button'
 import { useFileDrop } from '@/hooks/useFileDrop'
 import { formatDate } from '@/lib/format'
 import WhatsappContactPanel from '@/components/whatsapp/WhatsappContactPanel'
-import { useChatLeadEditor } from '@/components/chat/useChatLeadEditor'
+import { CHAT_LEAD_PANEL_KEY } from '@/components/chat/ChatLeadSection'
 import { chatDisplayName } from '@/lib/chat-display-name'
 import { missingTemplateParams, renderWhatsappTemplateBody } from '@/lib/whatsapp-templates'
 import { WHATSAPP_BRAND_LABELS, type WhatsappBrand } from '@/lib/whatsapp-brands'
@@ -111,7 +111,7 @@ function upsert(prev: Message[], m: Message): Message[] {
 
 function StatusIcon({ status }: { status: Message['status'] }) {
   if (status === 'FAILED') return <AlertCircle className="h-3 w-3 text-red-300" />
-  if (status === 'PENDING') return <Clock className="h-3 w-3 text-white/60" />
+  if (status === 'PENDING') return <Loader2 className="h-3 w-3 text-white/70 animate-spin" aria-label="Sending" />
   if (status === 'READ') return <CheckCheck className="h-3 w-3 text-blue-300" />
   if (status === 'DELIVERED') return <CheckCheck className="h-3 w-3 text-white/60" />
   return <Check className="h-3 w-3 text-white/60" />
@@ -131,7 +131,7 @@ function windowLabel(expiresAt: string, now: number) {
  * Live updates come from the realtime 'chat' topic (page.tsx re-dispatches it as a
  * 'chat-changed' window event); sends are optimistic so the rep never waits on Meta's API.
  */
-const PANEL_PREF_KEY = 'wa-contact-panel-open'
+const PANEL_PREF_KEY = CHAT_LEAD_PANEL_KEY
 
 export default function WhatsAppThread({ conversationId, onConversationUpdate, salesUsers = [], onOpenBooking, onOpenChat, onBack }: {
   conversationId: string
@@ -189,8 +189,6 @@ export default function WhatsAppThread({ conversationId, onConversationUpdate, s
   const canFreeText = !detail || windowOpen
   const windowClosingSoon = windowOpen && detail?.windowExpiresAt && new Date(detail.windowExpiresAt).getTime() - now < 3 * 60 * 60 * 1000
   const contactLabel = chatDisplayName(detail?.lead?.name, detail?.contactName || detail?.phone || '')
-  // Bumped after the lead is edited here so the contact panel re-reads it
-  const [leadVersion, setLeadVersion] = useState(0)
 
   const templates = useWhatsappTemplates(detail?.brand)
   const selectedTemplate = templates.find(t => templateKey(t) === templateName)
@@ -222,11 +220,6 @@ export default function WhatsAppThread({ conversationId, onConversationUpdate, s
     if (lastInboundId.current !== null && newestIn && newestIn !== lastInboundId.current && document.visibilityState === 'visible') markRead()
     lastInboundId.current = newestIn ?? lastInboundId.current ?? ''
   }, [conversationId, markRead])
-
-  const leadEditor = useChatLeadEditor({
-    channel: 'whatsapp', conversationId, leadId: detail?.leadId, assignedToId: detail?.assignedToId,
-    onSaved: () => { loadDetail(); onConversationUpdate(); setLeadVersion(v => v + 1) },
-  })
 
   useEffect(() => {
     // Mounted fresh per chat (UnifiedInbox keys it by conversation id), so loading state starts true.
@@ -538,15 +531,8 @@ export default function WhatsAppThread({ conversationId, onConversationUpdate, s
             </Select>
           )}
         </div>
-        {detail && leadEditor.canEdit && (
-          <Button type="button" variant="ghost" size="icon" onClick={leadEditor.open} disabled={leadEditor.busy}
-            title={detail.leadId ? 'Edit lead (name, phone, email…)' : 'Create & edit lead for this chat'} aria-label="Edit lead"
-            className="size-8 shrink-0 text-muted-foreground">
-            {leadEditor.busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Pencil className="h-4 w-4" />}
-          </Button>
-        )}
         {!panelOpen && (
-          <Button type="button" variant="ghost" size="icon" onClick={() => togglePanel(true)} title="Show contact info" aria-label="Show contact info"
+          <Button type="button" variant="ghost" size="icon" onClick={() => togglePanel(true)} title="Show lead & contact" aria-label="Show lead & contact"
             className="size-8 shrink-0 text-muted-foreground">
             <PanelRight className="h-4 w-4" />
           </Button>
@@ -746,10 +732,10 @@ export default function WhatsAppThread({ conversationId, onConversationUpdate, s
       </div>
     </div>
     {panelOpen && (
-      <WhatsappContactPanel conversationId={conversationId} leadId={detail?.leadId ?? null} refreshKey={leadVersion}
-        onClose={() => togglePanel(false)} onOpenBooking={onOpenBooking} onOpenChat={onOpenChat} onEditLead={leadEditor.canEdit ? leadEditor.open : undefined} />
+      <WhatsappContactPanel conversationId={conversationId} leadId={detail?.leadId ?? null} assignedToId={detail?.assignedToId}
+        onLeadChanged={() => { loadDetail(); onConversationUpdate() }}
+        onClose={() => togglePanel(false)} onOpenBooking={onOpenBooking} onOpenChat={onOpenChat} />
     )}
-    {leadEditor.sheet}
     </div>
   )
 }

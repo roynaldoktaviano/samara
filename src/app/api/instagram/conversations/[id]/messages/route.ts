@@ -6,6 +6,7 @@ import { salesCanAccessConversation } from '@/lib/whatsapp-distribution'
 import { sendMetaDm } from '@/lib/meta-dm'
 import { setLeadOwner } from '@/lib/whatsapp-lead'
 import { recordLeadOutbound } from '@/lib/lead-stage-auto'
+import { emitTenantEvent } from '@/lib/realtime-bus'
 
 // Admin composes a reply from the Chat UI. The message is saved immediately
 // (so the thread always reflects what was sent), then sent through Meta's Send
@@ -40,7 +41,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     replyToMid = quoted.providerMessageId?.split('#')[0] ?? null
   }
 
-  const message = await db.instagramMessage.create({
+  // Independent writes — run together, every round-trip here is time the rep waits on "Send".
+  const [message] = await Promise.all([db.instagramMessage.create({
     data: {
       conversationId: id,
       direction: 'OUT',
@@ -53,11 +55,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       sentByName: session.user.name ?? session.user.email ?? 'Admin',
     },
     include: { replyTo: { select: { id: true, body: true, direction: true, mediaType: true } } },
-  })
-  await db.instagramConversation.update({
+  }), db.instagramConversation.update({
     where: { id },
     data: { lastMessageAt: new Date(), lastMessagePreview: text ?? (mediaUrl ? '📎 Attachment' : '') },
-  })
+  })])
   const tenantId = (session.user as { tenantId?: string }).tenantId
   const result = tenantId
     ? await sendMetaDm(tenantId, conversation, { text, mediaUrl, mediaType, replyToMid })
@@ -72,9 +73,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     include: { replyTo: { select: { id: true, body: true, direction: true, mediaType: true } } },
   })
 
-  // Sales Pipeline: New Enquiry → Initial Message Sent → Follow-ups (src/lib/lead-stage-auto.ts)
+  // Sales Pipeline: New Enquiry → Initial Message Sent → Follow-ups (src/lib/lead-stage-auto.ts) —
+  // bookkeeping the rep doesn't need to wait for. Other open screens refresh once it's done.
   if (result.ok && conversation.leadId) {
-    await recordLeadOutbound(db, conversation.leadId, session.user.id).catch(e => console.error('[instagram] lead outbound stage failed', e))
+    recordLeadOutbound(db, conversation.leadId, session.user.id)
+      .catch(e => console.error('[instagram] lead outbound stage failed', e))
+      .finally(() => emitTenantEvent(tenantId, 'chat'))
+  } else {
+    emitTenantEvent(tenantId, 'chat')
   }
 
   return NextResponse.json({ message: updated, providerError: result.ok ? undefined : result.error })

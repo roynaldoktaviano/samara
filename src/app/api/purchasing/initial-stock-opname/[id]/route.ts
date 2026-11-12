@@ -7,6 +7,21 @@ import { roleMatches } from '@/lib/role-utils'
 import { OPNAME_ITEM_SELECT } from '@/lib/purchasing/initialOpnameItem'
 import { canUseInitialOpname } from '@/lib/purchasing/initialOpnameScope'
 
+type Db = Awaited<ReturnType<typeof getDb>>
+
+// Room & Loc lives on StockItemPlacement (per item per location — the same record Item by
+// Location shows/edits), not on the opname row, so it's attached here for the detail view.
+async function withPlacements<T extends { locationId: string; items: { itemId: string | null }[] }>(db: Db, count: T) {
+  const itemIds = count.items.map(i => i.itemId).filter((v): v is string => !!v)
+  const placements = itemIds.length
+    ? await db.stockItemPlacement.findMany({ where: { locationId: count.locationId, itemId: { in: itemIds } }, select: { itemId: true, room: true, bin: true } })
+    : []
+  const map = new Map(placements.map(p => [p.itemId, { room: p.room, bin: p.bin }]))
+  return { ...count, items: count.items.map(i => ({ ...i, placement: (i.itemId && map.get(i.itemId)) || null })) }
+}
+
+const cleanPlacement = (v: unknown) => (typeof v === 'string' ? v.trim().slice(0, 100) : '') || null
+
 const ALLOWED = ['ADMIN', 'SUPER_ADMIN', 'FINANCE_DIRECTOR', 'WAREHOUSE']
 
 export async function GET(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -29,7 +44,7 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
     },
   })
   if (!count || count.type !== 'INITIAL') return NextResponse.json({ error: 'Not found' }, { status: 404 })
-  return NextResponse.json(count)
+  return NextResponse.json(await withPlacements(db, count))
 }
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -58,6 +73,29 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         db.stockCountItem.update({ where: { id: item.id }, data: { countedQty: item.countedQty } })
       )
     )
+
+    // Room & Loc typed in the opname table → the item's placement at this location (only rows
+    // that sent a placement; clearing both fields removes it, same as Item by Location).
+    const placementRows = (items as { id: string; room?: unknown; bin?: unknown }[]).filter(i => i.room !== undefined || i.bin !== undefined)
+    if (placementRows.length) {
+      const rows = await db.stockCountItem.findMany({ where: { countId: id, id: { in: placementRows.map(i => i.id) } }, select: { id: true, itemId: true } })
+      const itemIdByRow = new Map(rows.map(r => [r.id, r.itemId]))
+      for (const r of placementRows) {
+        const itemId = itemIdByRow.get(r.id)
+        if (!itemId) continue
+        const room = cleanPlacement(r.room)
+        const bin = cleanPlacement(r.bin)
+        if (!room && !bin) {
+          await db.stockItemPlacement.deleteMany({ where: { itemId, locationId: count.locationId } })
+        } else {
+          await db.stockItemPlacement.upsert({
+            where: { itemId_locationId: { itemId, locationId: count.locationId } },
+            create: { itemId, locationId: count.locationId, room, bin, updatedById: session.user.id },
+            update: { room, bin, updatedById: session.user.id },
+          })
+        }
+      }
+    }
   }
 
   const updated = await db.stockCount.update({
@@ -111,7 +149,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     }
   }
 
-  return NextResponse.json(updated)
+  return NextResponse.json(await withPlacements(db, updated))
 }
 
 export async function DELETE(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {

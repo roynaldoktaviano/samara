@@ -187,7 +187,7 @@ export async function startNodeInstrumentation() {
   setTimeout(igLoginRefresh, 60_000)
   setInterval(igLoginRefresh, 24 * 60 * 60 * 1000)
 
-  // Facebook Messenger DMs, pulled from each brand Page every minute — Meta doesn't deliver
+  // Facebook Messenger DMs, pulled from each brand Page every 15s — Meta doesn't deliver
   // Page messaging webhooks yet (see src/lib/messenger-sync.ts). Production only, so a local
   // `next dev` on the same DB doesn't also poll; MESSENGER_SYNC=off disables it.
   if (process.env.NODE_ENV === 'production' && process.env.MESSENGER_SYNC !== 'off') {
@@ -207,7 +207,9 @@ export async function startNodeInstrumentation() {
         syncing = false
       }
     }
+    // 15s keeps incoming Messenger DMs close to real time: one Graph call per Page per tick
+    // (~240/h per Page), well inside Meta's Page rate limit. `syncing` skips overlapping ticks.
     setTimeout(messengerTick, 30_000)
-    setInterval(messengerTick, 60_000)
+    setInterval(messengerTick, Number(process.env.MESSENGER_SYNC_INTERVAL_MS) || 15_000)
   }
 }

@@ -32,6 +32,8 @@ export interface UnifiedInboxItem {
 }
 
 export type InboxView = 'all' | 'unread' | 'waiting'
+export const CHAT_PLATFORMS = ['whatsapp', 'instagram', 'messenger'] as const
+export type ChatPlatform = typeof CHAT_PLATFORMS[number]
 
 // Newest N per channel — the list is re-fetched on every realtime 'chat' event, so it stays
 // bounded; anything older is reached through the search box (filtered server-side).
@@ -47,7 +49,8 @@ const isWaiting = (c: { lastInboundAt: Date | null; lastOutboundAt: Date | null 
 // Query params (all optional): q (name/number/email/last message), brand (WhatsApp brand —
 // hides Email and other brands' Instagram/Messenger DMs), assignee (ADMIN: 'unassigned' or a
 // user id), view ('unread' | 'waiting' — waiting is WhatsApp-only, the only channel that
-// tracks reply timestamps).
+// tracks reply timestamps), platform ('whatsapp' | 'instagram' | 'messenger' — hides Email
+// and the other platforms).
 export async function GET(request: NextRequest) {
   const session = await getServerSession(authOptions)
   const role = (session?.user as { role?: string })?.role ?? ''
@@ -58,17 +61,19 @@ export async function GET(request: NextRequest) {
   const brand = WHATSAPP_BRANDS.find(b => b === sp.get('brand')) ?? null
   const assignee = role === 'ADMIN' ? sp.get('assignee') || null : null
   const view = (['unread', 'waiting'] as const).find(v => v === sp.get('view')) ?? 'all'
+  const platform = CHAT_PLATFORMS.find(p => p === sp.get('platform')) ?? null
   const contains = (field: string) => ({ [field]: { contains: q, mode: 'insensitive' as const } })
   const assigneeWhere = assignee === 'unassigned' ? { assignedToId: null } : assignee ? { assignedToId: assignee } : {}
   const unreadWhere = view === 'unread' ? { unreadCount: { gt: 0 } } : {}
   // Email has no brand, and Instagram/Email have no reply timestamps — skip them for those filters.
-  const otherChannels = !brand && view !== 'waiting'
-  const metaDmChannel = view !== 'waiting'
+  const otherChannels = !brand && !platform && view !== 'waiting'
+  const metaDmChannel = view !== 'waiting' && platform !== 'whatsapp'
+  const whatsappChannel = !platform || platform === 'whatsapp'
 
   // allSettled so one channel's failure (e.g. a column missing after an un-pushed schema
   // change) doesn't blank the whole inbox — the other channels still show.
   const [waRes, igRes, emailRes] = await Promise.allSettled([
-    db.whatsappConversation.findMany({
+    whatsappChannel ? db.whatsappConversation.findMany({
       where: {
         AND: [
           // SALES: their own chats plus unassigned ones they can claim (see salesCanAccessConversation).
@@ -86,11 +91,12 @@ export async function GET(request: NextRequest) {
       orderBy: { lastMessageAt: 'desc' },
       take: PER_CHANNEL_LIMIT,
       include: { assignedTo: { select: { id: true, name: true, email: true } }, lead: { select: { name: true } } },
-    }),
+    }) : Promise.resolve([]),
     metaDmChannel ? db.instagramConversation.findMany({
       where: { AND: [
         instagramConversationScope(role, session.user.id), assigneeWhere, unreadWhere,
         brand ? { brand } : {},
+        platform === 'instagram' ? { platform: 'INSTAGRAM' as const } : platform === 'messenger' ? { platform: 'MESSENGER' as const } : {},
         q ? { OR: [contains('displayName'), contains('igUsername'), contains('lastMessagePreview'), { lead: contains('name') }] } : {},
       ] },
       orderBy: { lastMessageAt: 'desc' },

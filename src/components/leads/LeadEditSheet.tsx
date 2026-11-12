@@ -20,6 +20,7 @@ export interface LeadFormState {
   travelStartDate: string; travelEndDate: string; travelSeason: string
   guestCount: string; leadQuality: string
   budgetMin: string; budgetMax: string; budgetCurrency: string
+  tripType: string; tripAmount: string; tripAmountCurrency: string
 }
 
 export const LEAD_FORM_EMPTY: LeadFormState = {
@@ -28,6 +29,7 @@ export const LEAD_FORM_EMPTY: LeadFormState = {
   travelStartDate: '', travelEndDate: '', travelSeason: '',
   guestCount: '', leadQuality: '',
   budgetMin: '', budgetMax: '', budgetCurrency: 'USD',
+  tripType: '', tripAmount: '', tripAmountCurrency: 'USD',
 }
 
 export function toLeadFormState(data: any): LeadFormState {
@@ -50,6 +52,9 @@ export function toLeadFormState(data: any): LeadFormState {
     budgetMin:       data.budgetMin != null ? String(data.budgetMin) : '',
     budgetMax:       data.budgetMax != null ? String(data.budgetMax) : '',
     budgetCurrency:  data.budgetCurrency  ?? 'USD',
+    tripType:        data.tripType        ?? '',
+    tripAmount:      data.tripAmount != null ? String(data.tripAmount) : '',
+    tripAmountCurrency: data.tripAmountCurrency ?? 'USD',
   }
 }
 
@@ -185,6 +190,9 @@ function DestinationSelect({ id, value, onChange }: { id?: string; value: string
 }
 
 /* ── Small helpers ── */
+// Radix Select can't hold an empty-string value — this stands in for "none picked".
+const NONE = '__none__'
+
 function getInitials(name: string) {
   return name.split(' ').filter(Boolean).map(w => w[0]).slice(0, 2).join('').toUpperCase()
 }
@@ -208,7 +216,8 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
   )
 }
 
-function ProfileFields({ form, setForm }: { form: LeadFormState; setForm: (f: LeadFormState) => void }) {
+// `narrow`: single column — for the lead panel beside a chat thread (src/components/chat/ChatLeadSection.tsx).
+export function ProfileFields({ form, setForm, narrow }: { form: LeadFormState; setForm: (f: LeadFormState) => void; narrow?: boolean }) {
   const set = (k: keyof LeadFormState) =>
     (e: React.ChangeEvent<HTMLInputElement>) =>
       setForm({ ...form, [k]: e.target.value })
@@ -216,7 +225,7 @@ function ProfileFields({ form, setForm }: { form: LeadFormState; setForm: (f: Le
   return (
     <div>
       <SectionTitle>Personal Information</SectionTitle>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div className={narrow ? 'grid grid-cols-1 gap-3' : 'grid grid-cols-1 sm:grid-cols-2 gap-4'}>
         <Field label="First Name *" htmlFor="lead-first-name">
           <Input id="lead-first-name" value={form.firstName} onChange={set('firstName')} placeholder="First name" />
         </Field>
@@ -243,7 +252,17 @@ function ProfileFields({ form, setForm }: { form: LeadFormState; setForm: (f: Le
   )
 }
 
-function QualificationFields({ form, setForm }: { form: LeadFormState; setForm: (f: LeadFormState) => void }) {
+export const TRIP_TYPE_OPTIONS = [
+  { value: 'PRIVATE_CHARTER', label: 'Private Charter' },
+  { value: 'OPEN_TRIP', label: 'Open Trip' },
+] as const
+const TRIP_CURRENCIES = ['USD', 'IDR', 'EUR'] as const
+// Trip price is asked for once the deal is at Send Booking Confirmation or later.
+const TRIP_AMOUNT_STAGES = ['BOOKING_CONFIRMATION', 'INVOICE_SENT', 'CLOSED_WON']
+
+// `stage`: the lead's pipeline stage — shows Trip Amount from Send Booking Confirmation on
+// (always shown once it has a value, so it never silently disappears).
+export function QualificationFields({ form, setForm, narrow, stage }: { form: LeadFormState; setForm: (f: LeadFormState) => void; narrow?: boolean; stage?: string | null }) {
   const set = (k: keyof LeadFormState) =>
     (e: React.ChangeEvent<HTMLInputElement>) =>
       setForm({ ...form, [k]: e.target.value })
@@ -256,13 +275,42 @@ function QualificationFields({ form, setForm }: { form: LeadFormState; setForm: 
   return (
     <div>
       <SectionTitle>Trip Qualification</SectionTitle>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <Field label="Yacht / Product Interest" htmlFor="lead-product-interest" col2 hint="Required before this lead can be marked Qualified.">
-          <Input id="lead-product-interest" list="lead-yacht-options" value={form.productInterest} onChange={set('productInterest')} placeholder="e.g. Phinisi charter, day trip…" />
-          <datalist id="lead-yacht-options">
-            {yachtNames.map(n => <option key={n} value={n} />)}
-          </datalist>
+      <div className={narrow ? 'grid grid-cols-1 gap-3' : 'grid grid-cols-1 sm:grid-cols-2 gap-4'}>
+        <Field label="Yacht" htmlFor="lead-product-interest" col2={!narrow}>
+          <Select value={form.productInterest || undefined} onValueChange={v => setForm({ ...form, productInterest: v === NONE ? '' : v })}>
+            <SelectTrigger id="lead-product-interest" className="w-full"><SelectValue placeholder="Select yacht" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NONE}>—</SelectItem>
+              {yachtNames.map(n => <SelectItem key={n} value={n}>{n}</SelectItem>)}
+              {/* Older free-text value that isn't a yacht name — keep it selectable instead of blanking it. */}
+              {form.productInterest && !yachtNames.includes(form.productInterest) && (
+                <SelectItem value={form.productInterest}>{form.productInterest}</SelectItem>
+              )}
+            </SelectContent>
+          </Select>
         </Field>
+        <Field label="Trip Type" htmlFor="lead-trip-type" col2={!narrow}>
+          <Select value={form.tripType || undefined} onValueChange={v => setForm({ ...form, tripType: v === NONE ? '' : v })}>
+            <SelectTrigger id="lead-trip-type" className="w-full"><SelectValue placeholder="Select trip type" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NONE}>—</SelectItem>
+              {TRIP_TYPE_OPTIONS.map(t => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </Field>
+        {(TRIP_AMOUNT_STAGES.includes(stage ?? '') || form.tripAmount) && (
+          <Field label="Trip Amount" htmlFor="lead-trip-amount" col2 hint="Agreed price of the trip.">
+            <div className="flex items-center gap-2">
+              <Input id="lead-trip-amount" type="number" min={0} value={form.tripAmount} onChange={set('tripAmount')} placeholder="e.g. 25000" className="min-w-0" />
+              <Select value={form.tripAmountCurrency || 'USD'} onValueChange={v => setForm({ ...form, tripAmountCurrency: v })}>
+                <SelectTrigger aria-label="Trip amount currency" className="w-20 shrink-0"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {TRIP_CURRENCIES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          </Field>
+        )}
         <Field label="Destination" htmlFor="lead-destination" col2>
           <DestinationSelect id="lead-destination" value={form.destinationId} onChange={v => setForm({ ...form, destinationId: v })} />
         </Field>
@@ -271,9 +319,6 @@ function QualificationFields({ form, setForm }: { form: LeadFormState; setForm: 
         </Field>
         <Field label="Travel End Date" htmlFor="lead-travel-end">
           <Input id="lead-travel-end" type="date" value={form.travelEndDate} onChange={set('travelEndDate')} />
-        </Field>
-        <Field label="Season (if dates unknown)" htmlFor="lead-travel-season" col2 hint="Fill this if exact dates aren't fixed yet, e.g. “High season Aug 2026”.">
-          <Input id="lead-travel-season" value={form.travelSeason} onChange={set('travelSeason')} placeholder="e.g. High season, Aug 2026" />
         </Field>
         <Field label="Number of Guests" htmlFor="lead-guest-count">
           <Input id="lead-guest-count" type="number" min={1} value={form.guestCount} onChange={set('guestCount')} placeholder="e.g. 6" />
@@ -290,10 +335,19 @@ function QualificationFields({ form, setForm }: { form: LeadFormState; setForm: 
         </Field>
         <Field label="Budget Range (optional)" htmlFor="lead-budget-min" col2 hint="Only fill if the guest's budget was actually discussed — never required to progress the pipeline.">
           <div className="flex items-center gap-2">
-            <Input id="lead-budget-min" type="number" min={0} value={form.budgetMin} onChange={set('budgetMin')} placeholder="Min" />
+            <Input id="lead-budget-min" type="number" min={0} value={form.budgetMin} onChange={set('budgetMin')} placeholder="Min" className="min-w-0" />
             <span className="text-muted-foreground text-xs">to</span>
-            <Input type="number" min={0} value={form.budgetMax} onChange={set('budgetMax')} placeholder="Max" aria-label="Budget max" />
-            <Input value={form.budgetCurrency} onChange={set('budgetCurrency')} placeholder="USD" aria-label="Budget currency" className="w-20 shrink-0" />
+            <Input type="number" min={0} value={form.budgetMax} onChange={set('budgetMax')} placeholder="Max" aria-label="Budget max" className="min-w-0" />
+            <Select value={form.budgetCurrency || 'USD'} onValueChange={v => setForm({ ...form, budgetCurrency: v })}>
+              <SelectTrigger aria-label="Budget currency" className="w-20 shrink-0"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {TRIP_CURRENCIES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                {/* Older free-text currency — keep it selectable instead of blanking it. */}
+                {form.budgetCurrency && !(TRIP_CURRENCIES as readonly string[]).includes(form.budgetCurrency) && (
+                  <SelectItem value={form.budgetCurrency}>{form.budgetCurrency}</SelectItem>
+                )}
+              </SelectContent>
+            </Select>
           </div>
         </Field>
       </div>
@@ -315,12 +369,14 @@ export default function LeadEditSheet({ open, leadId, onClose, onSaved }: Props)
   const [loading, setLoading]   = useState(false)
   const [saving, setSaving]     = useState(false)
   const [leadName, setLeadName] = useState('')
+  const [stage, setStage] = useState<string | null>(null)
 
   useEffect(() => {
     if (!open) return
     if (!leadId) {
       setForm(LEAD_FORM_EMPTY)
       setLeadName('')
+      setStage(null)
       return
     }
     const controller = new AbortController()
@@ -329,6 +385,7 @@ export default function LeadEditSheet({ open, leadId, onClose, onSaved }: Props)
       .then(r => r.json())
       .then(data => {
         setLeadName(data.name ?? '')
+        setStage(data.stage ?? null)
         setForm(toLeadFormState(data))
       })
       .catch(e => { if (e.name !== 'AbortError') console.error(e) })
@@ -389,7 +446,7 @@ export default function LeadEditSheet({ open, leadId, onClose, onSaved }: Props)
         ) : (
           <div className="flex-1 overflow-y-auto px-5 py-5 space-y-6">
             <ProfileFields form={form} setForm={setForm} />
-            <QualificationFields form={form} setForm={setForm} />
+            <QualificationFields form={form} setForm={setForm} stage={stage} />
           </div>
         )}
 
