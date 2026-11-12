@@ -7,7 +7,7 @@ import { emitTenantEvent } from '@/lib/realtime-bus'
 import { pickNextSalesUserId } from '@/lib/whatsapp-distribution'
 import { sendPushToUser } from '@/lib/push'
 import { isViewing } from '@/lib/chat-presence'
-import { ensureLeadForMetaDm, isNewContactSession, recordLeadContact } from '@/lib/lead-contact'
+import { ensureLeadForMetaDm, fillLeadContactFromText, isNewContactSession, recordLeadContact } from '@/lib/lead-contact'
 import { recordLeadInbound, recordLeadOutbound } from '@/lib/lead-stage-auto'
 import { IG_GRAPH, getIgLoginToken } from '@/lib/instagram-login'
 
@@ -465,6 +465,8 @@ export async function handleMetaMessagingEvents(db: PrismaClient, tenantId: stri
           // Customer answered → Sales Pipeline "In Active Communication" (src/lib/lead-stage-auto.ts).
           // Skipped for old history the Messenger poll back-fills.
           if (leadId && !stale) await recordLeadInbound(db, leadId, now)
+          // Email / phone typed in the DM → onto the lead (Meta doesn't share them otherwise).
+          if (leadId) await fillLeadContactFromText(db, leadId, described.text)
           // Linking to an existing lead may have handed the chat to that lead's owner.
           if (justLinked && !created) {
             conversation = await db.instagramConversation.findUniqueOrThrow({ where: { id: conversation.id } })

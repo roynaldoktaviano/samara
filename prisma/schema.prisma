@@ -410,6 +410,10 @@ model Lead {
   // match a later DM from the same person back to this lead (see src/lib/lead-contact.ts).
   instagram           String?
   freshsalesContactId String?   @unique
+  // The Freshsales deal this lead mirrors on the Sales Pipeline (its contact's newest open
+  // deal, else newest deal). Freshsales is the source of truth: stage/owner/value follow it via
+  // src/lib/freshsales-erp-sync.ts. A Freshsales-imported lead with no deal stays off the board.
+  freshsalesDealId    String?
   deletedAt           DateTime?
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
@@ -477,6 +481,7 @@ model Lead {
   @@index([stage])
   @@index([ownerId])
   @@index([bookingId])
+  @@index([freshsalesDealId])
 }
 
 // One row per hand-over of a Lead between sales reps (history for the Sales Pipeline and

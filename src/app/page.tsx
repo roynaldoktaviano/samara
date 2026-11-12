@@ -320,6 +320,7 @@ export default function Home() {
   // not chat-bubble UI), so this tells it which conversation to auto-open once it mounts.
   const [emailDeepLinkId, setEmailDeepLinkId] = useState<string | null>(null)
   const [whatsappDeepLinkId, setWhatsappDeepLinkId] = useState<string | null>(null)
+  const [instagramDeepLinkId, setInstagramDeepLinkId] = useState<string | null>(null)
   // Lets Item by Location's "click PO number" deep-link into a specific PO's
   // detail view on the Purchase Orders page — there's no URL routing between
   // top-level views in this app, so this is the plain state-lifting equivalent.
@@ -892,11 +893,11 @@ export default function Home() {
       case 'yachts':       return <Yachts />
       case 'destinations': return <Destinations />
       case 'bookings':     return <Bookings deepLinkId={deepLink?.view === 'bookings' ? deepLink.id : null} onDeepLinkHandled={() => setDeepLink(null)} />
-      case 'customers':    return <Customers />
-      case 'leads':        return <Leads onOpenWhatsapp={id => { setWhatsappDeepLinkId(id); setCurrentView('chat-inbox') }} onOpenEmail={id => { setEmailDeepLinkId(id); setCurrentView('chat-email') }} />
+      case 'customers':    return <Customers deepLinkId={deepLink?.view === 'customers' ? deepLink.id : null} onDeepLinkHandled={() => setDeepLink(null)} onOpenBooking={id => { setDeepLink({ view: 'bookings', id }); setCurrentView('bookings') }} />
+      case 'leads':        return <Leads onOpenWhatsapp={id => { setWhatsappDeepLinkId(id); setCurrentView('chat-inbox') }} onOpenEmail={id => { setEmailDeepLinkId(id); setCurrentView('chat-email') }} onOpenBooking={id => { setDeepLink({ view: 'bookings', id }); setCurrentView('bookings') }} onOpenGuest={id => { setDeepLink({ view: 'customers', id }); setCurrentView('customers') }} />
       case 'calendar':     return <CalendarView />
-      case 'chat-inbox':   return <UnifiedInbox onOpenBooking={id => { setDeepLink({ view: 'bookings', id }); setCurrentView('bookings') }} initialWhatsappId={whatsappDeepLinkId} onDeepLinkHandled={() => setWhatsappDeepLinkId(null)} onOpenEmail={id => { setEmailDeepLinkId(id); setCurrentView('chat-email') }} />
-      case 'sales-pipeline': return <SalesPipeline onOpenChat={id => { setWhatsappDeepLinkId(id); setCurrentView('chat-inbox') }} />
+      case 'chat-inbox':   return <UnifiedInbox onOpenBooking={id => { setDeepLink({ view: 'bookings', id }); setCurrentView('bookings') }} initialWhatsappId={whatsappDeepLinkId} initialInstagramId={instagramDeepLinkId} onDeepLinkHandled={() => { setWhatsappDeepLinkId(null); setInstagramDeepLinkId(null) }} onOpenEmail={id => { setEmailDeepLinkId(id); setCurrentView('chat-email') }} />
+      case 'sales-pipeline': return <SalesPipeline onOpenChat={id => { setWhatsappDeepLinkId(id); setCurrentView('chat-inbox') }} onOpenMetaChat={id => { setInstagramDeepLinkId(id); setCurrentView('chat-inbox') }} onOpenBooking={id => { setDeepLink({ view: 'bookings', id }); setCurrentView('bookings') }} onOpenGuest={id => { setDeepLink({ view: 'customers', id }); setCurrentView('customers') }} />
       case 'chat-email':   return <EmailInboxPage initialConversationId={emailDeepLinkId ?? undefined} />
       case 'chat-whatsapp-distribution': return <WhatsappDistributionSettings />
       case 'chat-whatsapp-templates': return <WhatsappTemplateSettings />

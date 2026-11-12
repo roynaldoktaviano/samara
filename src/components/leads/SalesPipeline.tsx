@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSession } from 'next-auth/react'
 import { toast } from 'sonner'
-import { Loader2, MessageCircle, Search, Pencil, Clock, Inbox, ChevronDown, ChevronUp, Globe, UserPen, UserPlus, Instagram, BellRing, Zap } from 'lucide-react'
+import { Loader2, MessageCircle, Search, Pencil, Clock, Inbox, ChevronDown, ChevronUp, Globe, UserPen, UserPlus, Instagram, BellRing, Zap, Facebook } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -20,8 +20,13 @@ import { WHATSAPP_BRANDS, WHATSAPP_BRAND_LABELS, type WhatsappBrand } from '@/li
 import { WHATSAPP_CHAT_CATEGORY_LABEL, type WhatsappChatCategory } from '@/lib/whatsapp-chat-category'
 import LeadEditSheet from '@/components/leads/LeadEditSheet'
 import LostReasonDialog from '@/components/leads/LostReasonDialog'
+import DealBookingHistory from '@/components/leads/DealBookingHistory'
+import FreshsalesHistory from '@/components/freshsales/FreshsalesHistory'
+import { leadDealName, type DealTripType } from '@/lib/deal-name'
 
 const WA_GREEN = '#25D366'
+const IG_PINK = '#E1306C'
+const FB_BLUE = '#0866FF'
 // Same columns, same order as the Freshsales Deals board.
 const COLUMNS: readonly LeadStage[] = LEAD_STAGES
 const TRIAGE_OPTIONS: Exclude<WhatsappChatCategory, 'UNSORTED'>[] = ['SALES', 'GUEST', 'VENDOR', 'SPAM']
@@ -29,8 +34,8 @@ const TRIAGE_SHORT: Record<Exclude<WhatsappChatCategory, 'UNSORTED'>, string> = 
 const STAGNANT_HOURS = 24
 const UNOWNED = '__unowned__'
 
-type Channel = 'all' | 'website' | 'whatsapp' | 'instagram' | 'manual'
-const CHANNEL_LABEL: Record<Channel, string> = { all: 'All channels', website: 'Website form', whatsapp: 'WhatsApp', instagram: 'Instagram / Messenger', manual: 'Manual' }
+type Channel = 'website' | 'whatsapp' | 'instagram' | 'manual'
+const CHANNEL_LABEL: Record<Channel, string> = { whatsapp: 'WhatsApp', website: 'Website form', instagram: 'Instagram / Messenger', manual: 'Manual' }
 
 interface PipelineChat {
   id: string; brand: WhatsappBrand; lastMessageAt: string; lastMessagePreview: string | null; unreadCount: number
@@ -44,10 +49,14 @@ interface PipelineLead {
   lastInboundAt: string | null; lastOutboundAt: string | null
   lostReason: LeadLostReason | null; createdAt: string
   source: string | null
+  tripType: DealTripType | null; tripAmount: number | null; tripAmountCurrency: string | null
   booking: {
     id: string; bookingCode: string; status: string; totalPrice: number; depositPaid: number; startDate: string; endDate: string
-    guestCount: number; source: string; yacht: { name: string } | null
+    guestCount: number; source: string; tripType: DealTripType; currency: string; destination: string | null
+    yacht: { name: string } | null; destinationRef: { name: string } | null; openTrip: { destination: string | null } | null
+    customer: { id: string; name: string }
   } | null
+  instagramConversations: { id: string; platform: 'INSTAGRAM' | 'MESSENGER'; brand: WhatsappBrand | null; lastMessageAt: string; lastMessagePreview: string | null }[]
   ownerAssignedAt: string | null
   assignmentLogs: { id: string; reason: 'AUTO_DISTRIBUTION' | 'CLAIM' | 'MANUAL' | 'STAGNANT'; createdAt: string; fromUser: { name: string | null; email: string } | null; toUser: { name: string | null; email: string } | null }[]
   owner: { id: string; name: string | null; email: string } | null
@@ -96,20 +105,24 @@ function waitingHours(lead: PipelineLead): number | null {
 function ChannelIcons({ lead }: { lead: PipelineLead }) {
   const web = lead._count.inquiries > 0
   const wa = lead.whatsappConversations.length > 0
-  const ig = lead._count.instagramConversations > 0
+  const ig = lead.instagramConversations.some(c => c.platform === 'INSTAGRAM')
+  const fb = lead.instagramConversations.some(c => c.platform === 'MESSENGER')
   return (
     <span className="flex items-center gap-1 shrink-0 text-muted-foreground">
       {web && <Globe className="h-3 w-3" aria-label="Website form" />}
       {wa && <MessageCircle className="h-3 w-3" style={{ color: WA_GREEN }} aria-label="WhatsApp" />}
-      {ig && <Instagram className="h-3 w-3" aria-label="Instagram / Messenger" />}
-      {!web && !wa && !ig && <UserPen className="h-3 w-3" aria-label="Manual" />}
+      {ig && <Instagram className="h-3 w-3" style={{ color: IG_PINK }} aria-label="Instagram" />}
+      {fb && <Facebook className="h-3 w-3" style={{ color: FB_BLUE }} aria-label="Messenger" />}
+      {!web && !wa && !ig && !fb && <UserPen className="h-3 w-3" aria-label="Manual" />}
     </span>
   )
 }
 
-// Card value, like the $ on a Freshsales deal: the booking total once booked, else the lead's budget.
+// Card value, like the $ on a Freshsales deal: the booking total once booked, else the trip
+// amount sales quoted on the lead, else its budget (marked as an estimate).
 function dealValue(l: PipelineLead): { amount: number; currency: string; estimate: boolean } | null {
-  if (l.booking) return { amount: l.booking.totalPrice, currency: 'USD', estimate: false }
+  if (l.booking) return { amount: l.booking.totalPrice, currency: l.booking.currency || 'USD', estimate: false }
+  if (l.tripAmount) return { amount: l.tripAmount, currency: l.tripAmountCurrency || 'USD', estimate: false }
   const v = l.budgetMax ?? l.budgetMin
   return v ? { amount: v, currency: l.budgetCurrency || 'USD', estimate: true } : null
 }
@@ -124,17 +137,13 @@ function money(amount: number, currency: string) {
 
 const SHORT_DATE = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: '2-digit' })
 
-// "2 PAX · 5 Nov 27 · 3N · Samara 1" — the facts the team writes into Freshsales deal names.
+// "2 PAX · 5 Nov 27" — what the deal name (yacht / 3D2N / destination) doesn't already say.
 function tripSummary(l: PipelineLead): string {
   const start = l.booking?.startDate ?? l.travelStartDate
-  const end = l.booking?.endDate ?? l.travelEndDate
   const pax = l.booking?.guestCount ?? l.guestCount
-  const nights = start && end ? Math.round((new Date(end).getTime() - new Date(start).getTime()) / 86400000) : null
   return [
     pax ? `${pax} PAX` : null,
     start ? SHORT_DATE.format(new Date(start)) : l.travelSeason,
-    nights && nights > 0 ? `${nights}N` : null,
-    l.booking?.yacht?.name ?? l.productInterest,
   ].filter(Boolean).join(' · ')
 }
 
@@ -145,7 +154,12 @@ function tripSummary(l: PipelineLead): string {
  * through PATCH /api/leads/[id]/stage, so the Leads module's transition rules and
  * Qualified field requirements apply here too.
  */
-export default function SalesPipeline({ onOpenChat }: { onOpenChat: (conversationId: string) => void }) {
+export default function SalesPipeline({ onOpenChat, onOpenMetaChat, onOpenBooking, onOpenGuest }: {
+  onOpenChat: (conversationId: string) => void
+  onOpenMetaChat?: (conversationId: string) => void
+  onOpenBooking?: (bookingId: string) => void
+  onOpenGuest?: (guestId: string) => void
+}) {
   const { data: session } = useSession()
   const role = (session?.user as { role?: string })?.role ?? ''
   const isAdmin = roleMatches(role, ['ADMIN'])
@@ -155,8 +169,8 @@ export default function SalesPipeline({ onOpenChat }: { onOpenChat: (conversatio
   const [unsorted, setUnsorted] = useState<UnsortedChat[]>([])
   const [newLookbackDays, setNewLookbackDays] = useState(30)
   const [loading, setLoading] = useState(true)
-  const [channel, setChannel] = useState<Channel>('all')
-  const [brand, setBrand] = useState<'all' | WhatsappBrand>('all')
+  const [channel, setChannel] = useState<Channel>('whatsapp')
+  const [brand, setBrand] = useState<WhatsappBrand>('SAMARA')
   const [owner, setOwner] = useState('all')
   const [searchInput, setSearchInput] = useState('')
   const [search, setSearch] = useState('')
@@ -177,8 +191,8 @@ export default function SalesPipeline({ onOpenChat }: { onOpenChat: (conversatio
 
   const load = useCallback(async () => {
     const params = new URLSearchParams()
-    if (channel !== 'all') params.set('channel', channel)
-    if (brand !== 'all') params.set('brand', brand)
+    params.set('channel', channel)
+    params.set('brand', brand)
     if (isAdmin && owner !== 'all') params.set('ownerId', owner)
     if (search) params.set('q', search)
     const res = await fetch(`/api/sales-pipeline?${params}`)
@@ -208,6 +222,20 @@ export default function SalesPipeline({ onOpenChat }: { onOpenChat: (conversatio
   const byStage = useMemo(() => Object.fromEntries(columns.map(c => [c.stage, c])) as Record<LeadStage, Column | undefined>, [columns])
   const allLeads = useMemo(() => columns.flatMap(c => c.items), [columns])
   const selected = selectedId ? allLeads.find(l => l.id === selectedId) ?? null : null
+
+  // The Guest this lead became (via its booking, else same email) — feeds the booking history.
+  const [detailGuestId, setDetailGuestId] = useState<string | null>(null)
+  const selectedBookingGuest = selected?.booking?.customer.id ?? null
+  useEffect(() => {
+    setDetailGuestId(selectedBookingGuest)
+    if (!selectedId || selectedBookingGuest) return
+    let alive = true
+    fetch(`/api/leads/${selectedId}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (alive) setDetailGuestId(d?.guestId ?? null) })
+      .catch(() => {})
+    return () => { alive = false }
+  }, [selectedId, selectedBookingGuest])
 
   async function changeStage(lead: PipelineLead, stage: LeadStage, extra?: { lostReason: string; lostNote: string }) {
     if (stage === lead.stage) return
@@ -282,10 +310,9 @@ export default function SalesPipeline({ onOpenChat }: { onOpenChat: (conversatio
               {(Object.keys(CHANNEL_LABEL) as Channel[]).map(c => <SelectItem key={c} value={c}>{CHANNEL_LABEL[c]}</SelectItem>)}
             </SelectContent>
           </Select>
-          <Select value={brand} onValueChange={v => setBrand(v as 'all' | WhatsappBrand)}>
+          <Select value={brand} onValueChange={v => setBrand(v as WhatsappBrand)}>
             <SelectTrigger aria-label="Filter by WhatsApp number" className="w-full sm:w-40"><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All WA numbers</SelectItem>
               {WHATSAPP_BRANDS.map(b => <SelectItem key={b} value={b}>WA {WHATSAPP_BRAND_LABELS[b]}</SelectItem>)}
             </SelectContent>
           </Select>
@@ -303,7 +330,7 @@ export default function SalesPipeline({ onOpenChat }: { onOpenChat: (conversatio
       </div>
 
       {/* Triage strip — WhatsApp chats nobody has categorised yet */}
-      {(channel === 'all' || channel === 'whatsapp') && (
+      {channel === 'whatsapp' && (
         <div className="rounded-xl border bg-card">
           <button type="button" aria-expanded={triageOpen} onClick={() => setTriageOpen(o => !o)} className="w-full flex items-center justify-between px-4 py-3">
             <span className="flex items-center gap-2 text-sm font-semibold">
@@ -390,7 +417,7 @@ export default function SalesPipeline({ onOpenChat }: { onOpenChat: (conversatio
                           overdue && 'border-destructive/40 bg-destructive/5',
                           dragId === l.id && 'opacity-50')}>
                         <div className="flex items-start justify-between gap-2">
-                          <p className={cn('text-sm font-medium leading-tight line-clamp-2', overdue ? 'text-destructive' : 'text-primary')}>{l.name}</p>
+                          <p className={cn('text-sm font-medium leading-tight line-clamp-3 break-words', overdue ? 'text-destructive' : 'text-primary')} title={leadDealName(l)}>{leadDealName(l)}</p>
                           <span className="flex items-center gap-1.5 shrink-0">
                             {unread > 0 && <span className="rounded-full px-1.5 text-[10px] font-semibold text-white" style={{ backgroundColor: WA_GREEN }}>{unread}</span>}
                             <ChannelIcons lead={l} />
@@ -448,122 +475,171 @@ export default function SalesPipeline({ onOpenChat }: { onOpenChat: (conversatio
 
       {/* Lead detail */}
       <Sheet open={!!selected} onOpenChange={v => { if (!v) setSelectedId(null) }}>
-        <SheetContent className="w-full sm:max-w-md overflow-y-auto">
-          {selected && (
-            <div className="space-y-5 pt-2">
-              <div>
-                <SheetTitle className="text-lg">{selected.name}</SheetTitle>
-                <p className="text-sm text-muted-foreground">{[selected.phone, selected.email].filter(Boolean).join(' · ') || '—'}</p>
-              </div>
-
-              <div className="rounded-lg border bg-muted/20 p-3 space-y-2.5">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs uppercase tracking-wide text-muted-foreground">Stage</span>
-                  <Badge className={`${LEAD_STAGE_COLOR[selected.stage]} border-transparent`}>{LEAD_STAGE_LABEL[selected.stage]}</Badge>
+        <SheetContent className="w-full sm:max-w-md overflow-y-auto p-0 gap-0">
+          {selected && (() => {
+            const value = dealValue(selected)
+            const contact = [selected.phone, selected.email].filter(Boolean).join(' · ')
+            const hasChannel = selected._count.inquiries > 0 || selected.whatsappConversations.length > 0 || selected.instagramConversations.length > 0
+            return (
+              <div className="divide-y">
+                {/* Deal header — same name as on the card, the guest page and booking history */}
+                <div className="px-5 pt-5 pb-4 pr-12 space-y-2">
+                  <SheetTitle className="text-base font-semibold leading-snug text-primary break-words">{leadDealName(selected)}</SheetTitle>
+                  <p className="text-sm text-muted-foreground break-words">
+                    <span className="font-medium text-foreground">{selected.name}</span>
+                    {contact && <> · {contact}</>}
+                  </p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-xl font-semibold tabular-nums">{value ? money(value.amount, value.currency) : '—'}</span>
+                    {value?.estimate && <span className="text-[11px] text-muted-foreground">budget estimate</span>}
+                    {selected.booking && (
+                      <button type="button" disabled={!onOpenBooking} onClick={() => onOpenBooking?.(selected.booking!.id)}
+                        className="ml-auto text-[11px] font-mono rounded bg-muted px-1.5 py-0.5 enabled:hover:bg-primary/15 enabled:hover:text-primary transition-colors"
+                        title="Open booking">
+                        {selected.booking.bookingCode} · {selected.booking.status.replace(/_/g, ' ')}
+                      </button>
+                    )}
+                  </div>
                 </div>
-                <Select value={selected.stage} onValueChange={v => changeStage(selected, v as LeadStage)} disabled={busy}>
-                  <SelectTrigger aria-label="Move to stage" className="w-full"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {LEAD_STAGES.map(s => <SelectItem key={s} value={s}>{LEAD_STAGE_LABEL[s]}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-                <p className="text-[11px] text-muted-foreground flex gap-1">
-                  <Zap className="h-3 w-3 shrink-0 mt-0.5" />
-                  <span>Moves on its own: your first reply from the ERP → Initial Message Sent; customer answers → In Active Communication; you write again {'≥'}24h later with no answer → 1st / 2nd Follow-Up; booking created → Booking Confirmation; invoice generated → Invoice; first payment confirmed → Won.</span>
-                </p>
-                {isFollowUpDue(selected) && (
-                  <p className="text-[11px] text-destructive flex items-center gap-1"><BellRing className="h-3 w-3" /> No reply for {FOLLOW_UP_DUE_DAYS}+ days since your last message — time to follow up.</p>
-                )}
-              </div>
 
-              <div className="space-y-1.5">
-                <p className="text-xs uppercase tracking-wide text-muted-foreground">Owner</p>
-                {isAdmin ? (
-                  <Select value={selected.owner?.id ?? UNOWNED} onValueChange={v => setOwnerOf(selected, v === UNOWNED ? null : v)} disabled={busy}>
-                    <SelectTrigger aria-label="Owner" className="w-full"><SelectValue /></SelectTrigger>
+                {/* Stage */}
+                <section className="px-5 py-4 space-y-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Stage</p>
+                    <Badge className={`${LEAD_STAGE_COLOR[selected.stage]} border-transparent`}>{LEAD_STAGE_LABEL[selected.stage]}</Badge>
+                  </div>
+                  <Select value={selected.stage} onValueChange={v => changeStage(selected, v as LeadStage)} disabled={busy}>
+                    <SelectTrigger aria-label="Move to stage" className="w-full"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value={UNOWNED}>No owner</SelectItem>
-                      {selected.owner && !salesUsers.some(u => u.id === selected.owner?.id) && (
-                        <SelectItem value={selected.owner.id}>{selected.owner.name ?? selected.owner.email}</SelectItem>
-                      )}
-                      {salesUsers.map(u => <SelectItem key={u.id} value={u.id}>{u.name ?? u.email}</SelectItem>)}
+                      {LEAD_STAGES.map(s => <SelectItem key={s} value={s}>{LEAD_STAGE_LABEL[s]}</SelectItem>)}
                     </SelectContent>
                   </Select>
-                ) : selected.owner ? (
-                  <p className="text-sm font-medium">{selected.owner.id === myId ? 'You' : (selected.owner.name ?? selected.owner.email)}</p>
-                ) : (
-                  <Button size="sm" variant="outline" disabled={busy} onClick={() => myId && setOwnerOf(selected, myId)}>
-                    <UserPlus className="h-3.5 w-3.5" /> Claim this lead
-                  </Button>
-                )}
-                {selected.whatsappConversations.length > 0 && (
-                  <p className="text-[11px] text-muted-foreground">This lead’s WhatsApp chats move to the new owner too.</p>
-                )}
-                {selected.owner && selected.ownerAssignedAt && !selected.stage.startsWith('CLOSED') && (
-                  <p className="text-[11px] text-muted-foreground">
-                    Assigned {relTime(selected.ownerAssignedAt)} — with no follow-up for {STAGNANT_HOURS}h, the lead moves to another sales rep automatically.
-                  </p>
-                )}
-                {selected.assignmentLogs.length > 0 && (
-                  <div className="pt-1 space-y-1">
-                    <p className="text-[11px] font-medium text-muted-foreground">Owner history</p>
-                    {selected.assignmentLogs.map(log => (
-                      <p key={log.id} className="text-[11px] text-muted-foreground">
-                        {formatDate(log.createdAt)} · {log.fromUser ? (log.fromUser.name ?? log.fromUser.email) : '—'} → {log.toUser ? (log.toUser.name ?? log.toUser.email) : 'No owner'}
-                        <span className="ml-1 italic">({ASSIGN_REASON_LABEL[log.reason]})</span>
-                      </p>
+                  {isFollowUpDue(selected) && (
+                    <p className="text-[11px] text-destructive flex items-center gap-1"><BellRing className="h-3 w-3" /> No reply for {FOLLOW_UP_DUE_DAYS}+ days since your last message — time to follow up.</p>
+                  )}
+                  <details className="text-[11px] text-muted-foreground">
+                    <summary className="cursor-pointer select-none flex items-center gap-1 w-fit"><Zap className="h-3 w-3" /> How stages move on their own</summary>
+                    <p className="mt-1.5 pl-4">First reply from the ERP → Initial Message Sent; customer answers → In Active Communication; you write again {'≥'}24h later with no answer → 1st / 2nd Follow-Up; booking created → Booking Confirmation; invoice generated → Invoice; first payment confirmed → Won.</p>
+                  </details>
+                </section>
+
+                {/* Owner */}
+                <section className="px-5 py-4 space-y-2">
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Owner</p>
+                  {isAdmin ? (
+                    <Select value={selected.owner?.id ?? UNOWNED} onValueChange={v => setOwnerOf(selected, v === UNOWNED ? null : v)} disabled={busy}>
+                      <SelectTrigger aria-label="Owner" className="w-full"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={UNOWNED}>No owner</SelectItem>
+                        {selected.owner && !salesUsers.some(u => u.id === selected.owner?.id) && (
+                          <SelectItem value={selected.owner.id}>{selected.owner.name ?? selected.owner.email}</SelectItem>
+                        )}
+                        {salesUsers.map(u => <SelectItem key={u.id} value={u.id}>{u.name ?? u.email}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  ) : selected.owner ? (
+                    <p className="text-sm font-medium">{selected.owner.id === myId ? 'You' : (selected.owner.name ?? selected.owner.email)}</p>
+                  ) : (
+                    <Button size="sm" variant="outline" disabled={busy} onClick={() => myId && setOwnerOf(selected, myId)}>
+                      <UserPlus className="h-3.5 w-3.5" /> Claim this lead
+                    </Button>
+                  )}
+                  {selected.owner && selected.ownerAssignedAt && !selected.stage.startsWith('CLOSED') && (
+                    <p className="text-[11px] text-muted-foreground">
+                      Assigned {relTime(selected.ownerAssignedAt)} · all of this lead’s chats follow the owner.
+                    </p>
+                  )}
+                  {selected.assignmentLogs.length > 0 && (
+                    <details className="text-[11px] text-muted-foreground">
+                      <summary className="cursor-pointer select-none w-fit">Owner history ({selected.assignmentLogs.length})</summary>
+                      <ul className="mt-1.5 space-y-0.5 pl-3">
+                        {selected.assignmentLogs.map(log => (
+                          <li key={log.id}>
+                            {formatDate(log.createdAt)} · {log.fromUser ? (log.fromUser.name ?? log.fromUser.email) : '—'} → {log.toUser ? (log.toUser.name ?? log.toUser.email) : 'No owner'}
+                            <span className="ml-1 italic">({ASSIGN_REASON_LABEL[log.reason]})</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
+                  )}
+                </section>
+
+                {/* Trip details */}
+                <section className="px-5 py-4 space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Trip details</p>
+                    <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => setEditLeadId(selected.id)}>
+                      <Pencil className="h-3.5 w-3.5" /> Edit
+                    </Button>
+                  </div>
+                  <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+                    {([
+                      ['Destination', selected.booking?.destinationRef?.name ?? selected.destination?.name],
+                      ['Guests', selected.booking?.guestCount ?? selected.guestCount],
+                      ['Trip dates', selected.booking ? formatDate(selected.booking.startDate) : selected.travelStartDate ? formatDate(selected.travelStartDate) : selected.travelSeason],
+                      ['Quality', selected.leadQuality],
+                      ['Customer last wrote', selected.lastInboundAt ? relTime(selected.lastInboundAt) : null],
+                      ['We last wrote', selected.lastOutboundAt ? relTime(selected.lastOutboundAt) : null],
+                      ['Received', formatDate(selected.createdAt)],
+                    ] as [string, string | number | null | undefined][]).map(([k, v]) => (
+                      <div key={k} className="min-w-0">
+                        <dt className="text-[11px] text-muted-foreground">{k}</dt>
+                        <dd className={cn('font-medium truncate', v == null && 'text-muted-foreground font-normal')}>{v ?? '—'}</dd>
+                      </div>
                     ))}
-                  </div>
-                )}
-              </div>
+                  </dl>
+                </section>
 
-              <dl className="grid grid-cols-2 gap-x-4 gap-y-2.5 text-sm">
-                {([
-                  ['Quality', selected.leadQuality ?? '—'],
-                  ['Destination', selected.destination?.name ?? '—'],
-                  ['Guests', selected.guestCount ?? '—'],
-                  ['Planned trip', selected.travelStartDate ? formatDate(selected.travelStartDate) : (selected.travelSeason ?? '—')],
-                  ['Value', (() => { const v = dealValue(selected); return v ? `${money(v.amount, v.currency)}${v.estimate ? ' (budget)' : ''}` : '—' })()],
-                  ['Booking', selected.booking ? `${selected.booking.bookingCode} · ${selected.booking.status.replace(/_/g, ' ')}` : '—'],
-                  ['Customer last wrote', selected.lastInboundAt ? relTime(selected.lastInboundAt) : '—'],
-                  ['We last wrote', selected.lastOutboundAt ? relTime(selected.lastOutboundAt) : '—'],
-                  ['Received', formatDate(selected.createdAt)],
-                ] as [string, string | number][]).map(([k, v]) => (
-                  <div key={k}>
-                    <dt className="text-xs text-muted-foreground">{k}</dt>
-                    <dd className="font-medium">{v}</dd>
-                  </div>
-                ))}
-              </dl>
+                {/* Booking history (from the guest this lead became) */}
+                <section className="px-5 py-4">
+                  <DealBookingHistory guestId={detailGuestId} currentBookingId={selected.booking?.id} onOpenBooking={onOpenBooking} onOpenGuest={onOpenGuest} />
+                </section>
 
-              <Button variant="outline" className="w-full" onClick={() => setEditLeadId(selected.id)}>
-                <Pencil className="h-4 w-4" /> Edit lead details
-              </Button>
+                {/* Freshsales deals + history (the source of truth for this pipeline) */}
+                <section className="px-5 py-4">
+                  <FreshsalesHistory leadId={selected.id} />
+                </section>
 
-              <div className="space-y-2">
-                <p className="text-xs uppercase tracking-wide text-muted-foreground">Channel</p>
-                {selected._count.inquiries > 0 && (
-                  <div className="rounded-lg border p-2.5 text-xs flex items-center gap-1.5">
-                    <Globe className="h-3.5 w-3.5 text-muted-foreground" />
-                    {selected._count.inquiries} website form(s) <span className="text-muted-foreground">— details in the Leads menu</span>
-                  </div>
-                )}
-                {selected.whatsappConversations.map(c => (
-                  <button key={c.id} type="button" onClick={() => onOpenChat(c.id)}
-                    className="w-full text-left rounded-lg border p-2.5 hover:bg-muted/40 transition-colors">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="font-medium flex items-center gap-1"><MessageCircle className="h-3.5 w-3.5" style={{ color: WA_GREEN }} /> WhatsApp {WHATSAPP_BRAND_LABELS[c.brand]}</span>
-                      <span className="text-muted-foreground">{relTime(c.lastMessageAt)}</span>
+                {/* Channels */}
+                <section className="px-5 py-4 pb-6 space-y-2">
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Channels</p>
+                  {selected._count.inquiries > 0 && (
+                    <div className="rounded-lg border p-2.5 text-xs flex items-center gap-1.5">
+                      <Globe className="h-3.5 w-3.5 text-muted-foreground" />
+                      {selected._count.inquiries} website form(s) <span className="text-muted-foreground">— details in the Leads menu</span>
                     </div>
-                    <p className="text-xs text-muted-foreground truncate mt-1">{c.lastMessagePreview || '—'}</p>
-                  </button>
-                ))}
-                {selected._count.inquiries === 0 && selected.whatsappConversations.length === 0 && (
-                  <p className="text-xs text-muted-foreground">Manual entry — no form or chat yet.</p>
-                )}
+                  )}
+                  {selected.whatsappConversations.map(c => (
+                    <button key={c.id} type="button" onClick={() => onOpenChat(c.id)}
+                      className="w-full text-left rounded-lg border p-2.5 hover:bg-muted/40 transition-colors">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-medium flex items-center gap-1"><MessageCircle className="h-3.5 w-3.5" style={{ color: WA_GREEN }} /> WhatsApp {WHATSAPP_BRAND_LABELS[c.brand]}</span>
+                        <span className="text-muted-foreground">{relTime(c.lastMessageAt)}</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground truncate mt-1">{c.lastMessagePreview || '—'}</p>
+                    </button>
+                  ))}
+                  {selected.instagramConversations.map(c => {
+                    const Icon = c.platform === 'MESSENGER' ? Facebook : Instagram
+                    return (
+                      <button key={c.id} type="button" disabled={!onOpenMetaChat} onClick={() => onOpenMetaChat?.(c.id)}
+                        className="w-full text-left rounded-lg border p-2.5 enabled:hover:bg-muted/40 transition-colors">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-medium flex items-center gap-1">
+                            <Icon className="h-3.5 w-3.5" style={{ color: c.platform === 'MESSENGER' ? FB_BLUE : IG_PINK }} />
+                            {c.platform === 'MESSENGER' ? 'Messenger' : 'Instagram'}{c.brand ? ` ${WHATSAPP_BRAND_LABELS[c.brand]}` : ''}
+                          </span>
+                          <span className="text-muted-foreground">{relTime(c.lastMessageAt)}</span>
+                        </div>
+                        <p className="text-xs text-muted-foreground truncate mt-1">{c.lastMessagePreview || '—'}</p>
+                      </button>
+                    )
+                  })}
+                  {!hasChannel && <p className="text-xs text-muted-foreground">Manual entry — no form or chat yet.</p>}
+                </section>
               </div>
-            </div>
-          )}
+            )
+          })()}
         </SheetContent>
       </Sheet>
 

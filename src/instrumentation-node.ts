@@ -148,6 +148,35 @@ export async function startNodeInstrumentation() {
     setInterval(crawlTick, 10 * 60_000)
   }
 
+  // Freshsales → ERP sync (src/lib/freshsales-erp-sync.ts): every 15 min pull what changed in
+  // Freshsales and put Lead stage/owner/value + Guest owner back in line with it — Freshsales is
+  // the source of truth while sales still work there. Production only; FRESHSALES_ERP_SYNC=off
+  // disables it. A lease keeps it from overlapping a manual `scripts/freshsales-erp-sync.ts delta`.
+  if (process.env.NODE_ENV === 'production' && process.env.FRESHSALES_ERP_SYNC !== 'off') {
+    let syncing = false
+    const syncTick = async () => {
+      if (syncing) return
+      syncing = true
+      try {
+        const { FreshsalesClient } = await import('@/lib/freshsales-archive')
+        const { runFreshsalesErpSync } = await import('@/lib/freshsales-erp-sync')
+        const { getTenantSecret } = await import('@/lib/tenant-secrets')
+        const tenant = await centralDb.tenant.findFirst({ where: { databaseUrl: process.env.DATABASE_URL }, select: { id: true } })
+        const apiKey = (tenant && await getTenantSecret(tenant.id, 'freshsalesApiKey')) || process.env.FRESHSALES_API_KEY
+        const domain = (tenant && await getTenantSecret(tenant.id, 'freshsalesDomain')) || process.env.FRESHSALES_DOMAIN
+        if (!apiKey || !domain) return
+        const log = (m: string) => console.log(`[freshsales-erp-sync] ${m.trim()}`)
+        await runFreshsalesErpSync(db, new FreshsalesClient(domain, apiKey, log), `server-${process.pid}`, log)
+      } catch (err) {
+        console.error('[freshsales-erp-sync] tick failed:', err)
+      } finally {
+        syncing = false
+      }
+    }
+    setTimeout(syncTick, 4 * 60_000)
+    setInterval(syncTick, 15 * 60_000)
+  }
+
   // Creates the next copy of weekly/monthly/yearly My Works tasks once their date arrives —
   // see spawnRecurringTodos in src/lib/todo.ts. Hourly is plenty for day-granularity dates, and
   // the per-series claim makes re-running it harmless.

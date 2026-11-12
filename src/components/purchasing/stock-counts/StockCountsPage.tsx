@@ -6,6 +6,7 @@ import { useFileDrop } from '@/hooks/useFileDrop'
 import { PhotoSourceMenu } from '@/components/ui/file-preview'
 import { renderLocationOptions } from '@/components/purchasing/LocationOptions'
 import { formatMoney, formatDate } from '@/lib/format'
+import { useHidePrices } from '@/hooks/useHidePrices'
 import { StatusBadge, type StatusTone } from '@/components/ui/status-badge'
 import { displayQty, hasPurchaseUnit, qtyLabel } from '@/lib/purchasing/units'
 import { StockQty } from '@/components/purchasing/StockQty'
@@ -82,6 +83,7 @@ function PhotoUpload({ value, onChange }: { value: string; onChange: (v: string)
 }
 
 export default function StockCountsPage() {
+  const hidePrices = useHidePrices()
   const [counts, setCounts] = useState<StockCount[]>([])
   const [locations, setLocations] = useState<Location[]>([])
   const [team, setTeam] = useState<{ id: string; name: string; role: string }[]>([])
@@ -245,7 +247,7 @@ export default function StockCountsPage() {
             <AlertTriangle className="h-4 w-4 text-warning shrink-0 mt-0.5" />
             <div className="text-sm text-warning">
               <span className="font-semibold">{varianceItems.length} item{varianceItems.length !== 1 ? 's' : ''}</span> have a variance.
-              {totalVarianceValue > 0 && <span className="ml-1">Total value at risk: <span className="font-semibold">{formatMoney(totalVarianceValue)}</span>.</span>}
+              {totalVarianceValue > 0 && !hidePrices && <span className="ml-1">Total value at risk: <span className="font-semibold">{formatMoney(totalVarianceValue)}</span>.</span>}
               {!isApproved && <span className="ml-1">Fill in reason for each, then "Approve & Apply".</span>}
             </div>
           </div>

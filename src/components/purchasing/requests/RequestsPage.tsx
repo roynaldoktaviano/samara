@@ -16,6 +16,7 @@ import { currentLocationLabel } from '@/lib/purchasing/currentLocationLabel'
 import { renderLocationOptions } from '@/components/purchasing/LocationOptions'
 import { TripPicker, tripDates, tripShortLabel, tripLinkBody, type TripOption } from '@/components/purchasing/TripPicker'
 import { RupiahInput } from '@/components/ui/rupiah-input'
+import { useHidePrices } from '@/hooks/useHidePrices'
 import { TREATMENTS, TREATMENT_LABEL, type Treatment } from '@/lib/purchasing/treatment'
 import { formatDate, formatMoney } from '@/lib/format'
 import { isMeasureUnit } from '@/lib/purchasing/units'
@@ -298,6 +299,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
   // so every Purchasing-only action in this page stays hidden for all of them (mirrors the
   // server-side OWN_ONLY_ROLES check in the requests API routes).
   const isWarehouse = ['WAREHOUSE', 'CREW', 'BOAT_CAPTAIN', 'CRUISE_DIRECTOR'].includes((session?.user as { role?: string })?.role ?? '')
+  const hidePrices = useHidePrices()
   // "Requested by Me" only makes sense for Admin — Purchasing/Warehouse's whole job here
   // is processing everyone else's requests, not filtering down to their own.
   const isAdmin = ['ADMIN', 'SUPER_ADMIN'].includes((session?.user as { role?: string })?.role ?? '')
@@ -3087,7 +3089,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                 </div>
               )}
 
-              {detail?.status !== 'ON_PROCESS' || isWarehouse ? (
+              {hidePrices ? null : detail?.status !== 'ON_PROCESS' || isWarehouse ? (
                 <p className="text-xs text-muted-foreground italic bg-muted/40 rounded-md px-3 py-2.5">
                   Price, supplier and quotations can only be set once this request has been verified (On Process).
                 </p>

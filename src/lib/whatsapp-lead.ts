@@ -2,6 +2,7 @@ import type { LeadAssignmentReason, Prisma, PrismaClient, WhatsappBrand } from '
 import { pickNextSalesUserId } from '@/lib/whatsapp-distribution'
 import { sendPushToUser } from '@/lib/push'
 import { recordLeadOutbound } from '@/lib/lead-stage-auto'
+import { findChatLeadByName } from '@/lib/lead-name-match'
 
 // Links WhatsApp chats into the Lead pipeline. The pipeline stage lives on Lead only —
 // a chat just points at its Lead (WhatsappConversation.leadId) and carries a triage
@@ -79,7 +80,7 @@ async function reconcileOwnership(db: PrismaClient, conversationId: string, lead
 export async function autoLinkNewConversation(db: PrismaClient, conversationId: string, opts: { createLead?: boolean } = {}): Promise<{ leadId: string | null; created: boolean }> {
   const conv = await db.whatsappConversation.findUnique({
     where: { id: conversationId },
-    select: { phone: true, assignedToId: true, category: true, leadId: true },
+    select: { phone: true, contactName: true, brand: true, assignedToId: true, category: true, leadId: true },
   })
   if (!conv || conv.leadId || conv.category !== 'UNSORTED') return { leadId: conv?.leadId ?? null, created: false }
 
@@ -92,6 +93,14 @@ export async function autoLinkNewConversation(db: PrismaClient, conversationId: 
   if (await customerExistsByPhone(db, conv.phone)) {
     await db.whatsappConversation.update({ where: { id: conversationId }, data: { category: 'GUEST' } })
     return { leadId: null, created: false }
+  }
+  // Unknown number but the same name as someone already chatting on IG/Messenger/another brand.
+  const byName = opts.createLead ? await findChatLeadByName(db, conv.contactName, 'WHATSAPP', conv.brand) : null
+  if (byName) {
+    await db.lead.updateMany({ where: { id: byName.id, phone: null }, data: { phone: `+${conv.phone}` } })
+    await db.whatsappConversation.update({ where: { id: conversationId }, data: { leadId: byName.id, category: 'SALES' } })
+    await reconcileOwnership(db, conversationId, byName.id)
+    return { leadId: byName.id, created: false }
   }
   if (opts.createLead) {
     await db.whatsappConversation.update({ where: { id: conversationId }, data: { category: 'SALES' } })
@@ -112,6 +121,15 @@ export async function ensureLeadForConversation(db: PrismaClient, conversationId
   if (conv.leadId) return conv.leadId
 
   let leadId = await findLeadIdByPhone(db, conv.phone)
+  if (!leadId) {
+    // Same person already a lead from Instagram/Messenger or another brand's number (same name)?
+    const byName = await findChatLeadByName(db, conv.contactName, 'WHATSAPP', conv.brand)
+    if (byName) {
+      leadId = byName.id
+      // Remember the number so this chat matches by phone from now on.
+      await db.lead.updateMany({ where: { id: leadId, phone: null }, data: { phone: `+${conv.phone}` } })
+    }
+  }
   if (!leadId) {
     const name = conv.contactName?.trim() || `+${conv.phone}`
     const parts = name.split(/\s+/)

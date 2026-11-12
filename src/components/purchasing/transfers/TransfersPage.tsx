@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, type ReactNode } from 'react'
 import { useSession } from 'next-auth/react'
+import { useHidePrices } from '@/hooks/useHidePrices'
 import { Plus, ChevronRight, X, ArrowRight, Package, Trash2, Search, Camera, AlertTriangle, CheckCircle2, ArrowLeftRight, ChevronDown, ChevronLeft, User, FileDown, Ship, Warehouse, MapPin, FileText, ClipboardList, CalendarDays, StickyNote, type LucideIcon } from 'lucide-react'
 import { useFileDrop } from '@/hooks/useFileDrop'
 import { PhotoSourceMenu } from '@/components/ui/file-preview'
@@ -191,6 +192,7 @@ function EmployeeCombobox({ employees, value, onChange }: {
 
 export default function TransfersPage({ deepLinkId, onDeepLinkHandled, onOpenRequest, onOpenPo }: { deepLinkId?: string | null; onDeepLinkHandled?: () => void; onOpenRequest?: (id: string) => void; onOpenPo?: (id: string) => void } = {}) {
   const { data: session } = useSession()
+  const hidePrices = useHidePrices()
   // Cruise Director / Boat Captain only see transfers to/from their own yacht (scoped by the
   // API): they receive what arrives (Cruise Director also dispatches what leaves) — no
   // creating, cancelling or editing.
@@ -486,7 +488,7 @@ export default function TransfersPage({ deepLinkId, onDeepLinkHandled, onOpenReq
               <th className="text-left px-4 py-3 font-medium">Transfer No.</th>
               <th className="text-left px-4 py-3 font-medium">Route</th>
               <th className="text-left px-4 py-3 font-medium">Contents</th>
-              <th className="text-right px-4 py-3 font-medium">Value</th>
+              {!hidePrices && <th className="text-right px-4 py-3 font-medium">Value</th>}
               <th className="text-left px-4 py-3 font-medium">Photo</th>
               <th className="text-left px-4 py-3 font-medium">Date</th>
               <th className="text-left px-4 py-3 font-medium">Status</th>
@@ -497,7 +499,7 @@ export default function TransfersPage({ deepLinkId, onDeepLinkHandled, onOpenReq
             {loading ? (
               [...Array(4)].map((_, i) => (
                 <tr key={i} className="border-t">
-                  {[...Array(8)].map((_, j) => <td key={j} className="px-4 py-3.5"><div className="h-3.5 rounded bg-muted animate-pulse" style={{ width: j === 0 ? 100 : j === 7 ? 16 : 80 }} /></td>)}
+                  {[...Array(hidePrices ? 7 : 8)].map((_, j) => <td key={j} className="px-4 py-3.5"><div className="h-3.5 rounded bg-muted animate-pulse" style={{ width: j === 0 ? 100 : j === 7 ? 16 : 80 }} /></td>)}
                 </tr>
               ))
             ) : transfers.length === 0 ? (
@@ -525,7 +527,7 @@ export default function TransfersPage({ deepLinkId, onDeepLinkHandled, onOpenReq
                   </div>
                 </td>
                 <td className="px-4 py-3 text-muted-foreground text-xs max-w-[140px] truncate">{t.contents ?? `${t.itemCount} items`}</td>
-                <td className="px-4 py-3 text-right text-xs font-medium tabular-nums whitespace-nowrap">{t.totalValue ? formatMoney(t.totalValue) : '—'}</td>
+                {!hidePrices && <td className="px-4 py-3 text-right text-xs font-medium tabular-nums whitespace-nowrap">{t.totalValue ? formatMoney(t.totalValue) : '—'}</td>}
                 <td className="px-4 py-3">
                   {t.status === 'PENDING' ? (
                     <span className="text-xs text-muted-foreground">—</span>
@@ -581,7 +583,7 @@ export default function TransfersPage({ deepLinkId, onDeepLinkHandled, onOpenReq
                 <span className="font-medium text-foreground truncate">{t.toLocation?.name ?? '—'}</span>
                 <span> · {t.contents ?? `${t.itemCount} items`}</span>
               </span>
-              <span className="shrink-0 tabular-nums">{t.totalValue ? formatMoney(t.totalValue) : '—'}</span>
+              {!hidePrices && <span className="shrink-0 tabular-nums">{t.totalValue ? formatMoney(t.totalValue) : '—'}</span>}
             </div>
           </button>
         ))}

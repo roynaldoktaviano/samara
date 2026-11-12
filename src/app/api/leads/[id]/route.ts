@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { logActivity } from '@/lib/activity'
 import { leadOwnerScope, canAccessLead } from '@/lib/lead-access'
+import { leadDealName } from '@/lib/deal-name'
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getServerSession(authOptions)
@@ -11,9 +12,31 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const db = await getDb(session)
   try {
     const { id } = await params
-    const lead = await db.lead.findFirst({ where: { id, ...leadOwnerScope((session.user as { role?: string }).role, session.user.id) } })
+    const lead = await db.lead.findFirst({
+      where: { id, ...leadOwnerScope((session.user as { role?: string }).role, session.user.id) },
+      include: {
+        destination: { select: { name: true } },
+        booking: {
+          select: {
+            id: true, bookingCode: true, status: true, totalPrice: true, currency: true, tripType: true,
+            startDate: true, endDate: true, destination: true,
+            yacht: { select: { name: true } }, destinationRef: { select: { name: true } },
+            openTrip: { select: { destination: true } }, customer: { select: { id: true, name: true } },
+          },
+        },
+      },
+    })
     if (!lead) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-    return NextResponse.json(lead)
+    // The Guest this lead became — via its booking, else the guest profile with the same email.
+    const phoneTail = lead.phone?.replace(/\D/g, '').slice(-10)
+    const guestMatch = [
+      ...(lead.email?.trim() ? [{ email: { equals: lead.email.trim(), mode: 'insensitive' as const } }] : []),
+      ...(phoneTail && phoneTail.length >= 8 ? [{ phone: { endsWith: phoneTail } }] : []),
+    ]
+    const guestId = lead.booking?.customer.id ?? (guestMatch.length
+      ? (await db.customer.findFirst({ where: { deletedAt: null, OR: guestMatch }, orderBy: { createdAt: 'desc' }, select: { id: true } }))?.id ?? null
+      : null)
+    return NextResponse.json({ ...lead, dealName: leadDealName(lead), guestId })
   } catch (error) {
     console.error('Error fetching lead:', error)
     return NextResponse.json({ error: 'Failed to fetch lead' }, { status: 500 })

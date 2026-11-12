@@ -19,6 +19,7 @@ import { toast } from 'sonner'
 import type { ExtractedInvoice } from '@/app/api/purchasing/orders/extract-invoice/route'
 import { TREATMENTS, TREATMENT_LABEL, type Treatment } from '@/lib/purchasing/treatment'
 import { formatDate, formatMoney } from '@/lib/format'
+import { useHidePrices } from '@/hooks/useHidePrices'
 import { StatusBadge, type StatusTone } from '@/components/ui/status-badge'
 
 
@@ -452,6 +453,7 @@ function ItemPickerCell({ idx, line, locked, purchaseItems, historicalCustomItem
 // Quick look at a PO from the list — where it's going, who asked for it, and what's in it —
 // without leaving the list. "Open full detail" goes to the full detail view.
 function PoPreview({ order: o, onOpen, onClose, sheet = false }: { order: PurchaseOrder; onOpen: () => void; onClose: () => void; sheet?: boolean }) {
+  const hidePrices = useHidePrices()
   const total = o.items.reduce((s, i) => s + poLineTotal(i), 0)
   const stops = [...(o.transitStops ?? [])].sort((a, b) => a.sequence - b.sequence)
   const row = (label: string, value: React.ReactNode) => (
@@ -506,10 +508,10 @@ function PoPreview({ order: o, onOpen, onClose, sheet = false }: { order: Purcha
                   <div key={i.id} className="flex items-start gap-3 px-3 py-2">
                     <div className="min-w-0 flex-1">
                       <p className="text-xs font-medium leading-snug">{i.itemName}</p>
-                      <p className="text-[11px] text-muted-foreground">
+                      {!hidePrices && <p className="text-[11px] text-muted-foreground">
                         {formatMoney(i.unitCost)} / {i.unit ?? 'unit'}
                         {poLineDiscount(i) > 0 && <span className="text-success"> · disc {i.discountType === 'PERCENT' ? `${i.discountValue}%` : formatMoney(poLineDiscount(i))}</span>}
-                      </p>
+                      </p>}
                     </div>
                     <div className="text-right shrink-0">
                       <p className="text-xs font-semibold tabular-nums">{i.orderedQty}{i.unit ? ` ${i.unit}` : ''}</p>
@@ -522,7 +524,7 @@ function PoPreview({ order: o, onOpen, onClose, sheet = false }: { order: Purcha
               })}
             </div>
           )}
-          {total > 0 && (
+          {total > 0 && !hidePrices && (
             <div className="flex items-center justify-between pt-2 text-xs">
               <span className="text-muted-foreground">Items total</span>
               <span className="font-semibold tabular-nums">{formatMoney(total)}</span>
@@ -550,6 +552,7 @@ function PoPreview({ order: o, onOpen, onClose, sheet = false }: { order: Purcha
 export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHandled, onOpenRequest, onOpenTransfer }: { warehouseView?: boolean; openPoId?: string | null; onOpenPoHandled?: () => void; onOpenRequest?: (id: string) => void; onOpenTransfer?: (id: string) => void }) {
   const { data: session } = useSession()
   const role = (session?.user as { role?: string })?.role ?? ''
+  const hidePrices = useHidePrices()
   // canReceive is now computed per-order based on deliveryLocation.managedBy
   const isAdminish = ['ADMIN', 'SUPER_ADMIN'].includes(role)
   const canTransit = roleMatches(role, ['PURCHASING', 'ADMIN', 'SUPER_ADMIN'])
@@ -2147,8 +2150,8 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                   <th className="text-left px-5 py-2.5 font-medium">Item</th>
                   <th className="text-right px-5 py-2.5 font-medium">Ordered</th>
                   <th className="text-right px-5 py-2.5 font-medium">Received</th>
-                  <th className="text-right px-5 py-2.5 font-medium">Price</th>
-                  <th className="text-right px-5 py-2.5 font-medium">Subtotal</th>
+                  {!hidePrices && <th className="text-right px-5 py-2.5 font-medium">Price</th>}
+                  {!hidePrices && <th className="text-right px-5 py-2.5 font-medium">Subtotal</th>}
                 </tr>
               </thead>
               <tbody className="divide-y">
@@ -2169,8 +2172,8 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                       </span>
                       {it.unit && <span className="text-muted-foreground text-xs"> {it.unit}</span>}
                     </td>
-                    <td className="px-5 py-3 text-right text-muted-foreground">{formatMoney(it.unitCost)}</td>
-                    <td className="px-5 py-3 text-right font-medium whitespace-nowrap">
+                    {!hidePrices && <td className="px-5 py-3 text-right text-muted-foreground">{formatMoney(it.unitCost)}</td>}
+                    {!hidePrices && <td className="px-5 py-3 text-right font-medium whitespace-nowrap">
                       {poLineDiscount(it) > 0 && (
                         <span className="block text-[11px] font-normal text-muted-foreground">
                           <span className="line-through">{formatMoney(it.orderedQty * it.unitCost)}</span>
@@ -2178,11 +2181,11 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                         </span>
                       )}
                       {formatMoney(poLineTotal(it))}
-                    </td>
+                    </td>}
                   </tr>
                 ))}
               </tbody>
-              {(() => {
+              {!hidePrices && (() => {
                 const itemsSubtotal = detail.items.reduce((s, i) => s + poLineTotal(i), 0)
                 const discountAmount = detail.discountType
                   ? Math.min(itemsSubtotal, detail.discountType === 'PERCENT' ? itemsSubtotal * ((detail.discountValue ?? 0) / 100) : (detail.discountValue ?? 0))
@@ -2327,7 +2330,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
             </div>
           )}
 
-          {detail.paymentRequests.length > 0 && (
+          {detail.paymentRequests.length > 0 && !hidePrices && (
             <div className="space-y-2">
               <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Payment Requests</h3>
               {detail.paymentRequests.map(p => {
@@ -2396,7 +2399,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
             </div>
           )}
 
-          {detail.reimbursements.length > 0 && (
+          {detail.reimbursements.length > 0 && !hidePrices && (
             <div className="space-y-2">
               <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Reimbursements</h3>
               {detail.reimbursements.map(r => (
@@ -2971,15 +2974,15 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                             <span className="text-xs text-muted-foreground">/ {line.orderedQty} {line.unit ?? ''}</span>
                           </div>
                         </div>
-                        {/* Actual unit cost + expiry */}
+                        {/* Actual unit cost + expiry — price hidden from price-blind roles (keeps the PO price) */}
                         <div className="grid grid-cols-2 gap-3">
-                          <div className="space-y-1">
+                          {!hidePrices && <div className="space-y-1">
                             <label className="text-xs text-muted-foreground font-medium">Actual Price / {line.unit ?? 'unit'} <span className="text-primary">*</span></label>
                             <input type="number" min={0} step="any"
                               className="w-full border rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-ring text-right"
                               value={line.unitCost}
                               onChange={e => setReceiveLines(l => l.map((li, idx) => idx !== i ? li : { ...li, unitCost: Number(e.target.value) }))} />
-                          </div>
+                          </div>}
                           <div className="space-y-1">
                             <label className="text-xs text-muted-foreground font-medium">Exp. Date</label>
                             <input type="date" className="w-full border rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-ring"

@@ -47,6 +47,15 @@ export async function GET(req: NextRequest) {
       { NOT: { source: { startsWith: 'WHATSAPP_' } } },
       { whatsappConversations: { some: salesChat } },
     ] },
+    // Freshsales is the source of truth (src/lib/freshsales-erp-sync.ts): a lead imported from a
+    // Freshsales contact is a card only while that contact has a deal — same as the Freshsales
+    // board. Chat-born and booking-driven leads keep showing on ERP terms.
+    { OR: [
+      { freshsalesContactId: null },
+      { freshsalesDealId: { not: null } },
+      { source: { not: null } },
+      { bookingId: { not: null } },
+    ] },
   ]
   // Sales only ever see their own leads — unowned ones are handed out by auto-distribution or an admin
   if (!isAdmin) filters.push({ ownerId: session.user.id })
@@ -66,11 +75,13 @@ export async function GET(req: NextRequest) {
     { name: { contains: q, mode: 'insensitive' } },
     { email: { contains: q, mode: 'insensitive' } },
     { phone: { contains: q } },
+    { booking: { bookingCode: { contains: q, mode: 'insensitive' } } },
   ] })
 
   const now = Date.now()
   const stageWindow = (stage: LeadStage): Prisma.LeadWhereInput => {
-    if (stage === 'NEW') return { deletedAt: null, createdAt: { gte: new Date(now - NEW_LOOKBACK_DAYS * DAY) } }
+    // A Freshsales deal still in New Enquiry shows however old it is, like on the Freshsales board
+    if (stage === 'NEW') return { deletedAt: null, OR: [{ createdAt: { gte: new Date(now - NEW_LOOKBACK_DAYS * DAY) } }, { freshsalesDealId: { not: null } }] }
     if (stage === 'CLOSED_WON') return { stageUpdatedAt: { gte: new Date(now - CLOSED_LOOKBACK_DAYS * DAY) } }
     if (stage === 'CLOSED_LOST') return { deletedAt: null, stageUpdatedAt: { gte: new Date(now - CLOSED_LOOKBACK_DAYS * DAY) } }
     if (stage === 'BOOKING_CONFIRMATION' || stage === 'INVOICE_SENT') return {}
@@ -82,11 +93,18 @@ export async function GET(req: NextRequest) {
     guestCount: true, travelStartDate: true, travelEndDate: true, travelSeason: true, productInterest: true,
     budgetMin: true, budgetMax: true, budgetCurrency: true, lastInboundAt: true, lastOutboundAt: true,
     lostReason: true, createdAt: true, source: true, ownerAssignedAt: true,
+    tripType: true, tripAmount: true, tripAmountCurrency: true,
     booking: {
       select: {
         id: true, bookingCode: true, status: true, totalPrice: true, depositPaid: true, startDate: true, endDate: true,
-        guestCount: true, source: true, yacht: { select: { name: true } },
+        guestCount: true, source: true, tripType: true, currency: true, destination: true,
+        yacht: { select: { name: true } }, destinationRef: { select: { name: true } },
+        openTrip: { select: { destination: true } }, customer: { select: { id: true, name: true } },
       },
+    },
+    instagramConversations: {
+      orderBy: { lastMessageAt: 'desc' as const },
+      select: { id: true, platform: true, brand: true, lastMessageAt: true, lastMessagePreview: true },
     },
     assignmentLogs: {
       orderBy: { createdAt: 'desc' as const }, take: 10,

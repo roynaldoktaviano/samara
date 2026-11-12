@@ -17,6 +17,13 @@ type Db = Awaited<ReturnType<typeof getDb>>
 //                 a PR delivered to it, or a restock line for it)
 //   PO          = on an open PO to it, not received yet
 //   To Be Order = Min. Stock + Demand − Stock − Pending − PO   (≥ 0)
+//   Requested   = the FULL qty of every ship PR line still open here (it has a pending transfer,
+//                 a backorder, or waits for the warehouse check) — stays the same while the line
+//                 is filled batch by batch ("merge cell", user 2026-11-12); Demand is what's left
+//   Reserve     = held on the shelf now: PENDING transfers out + Reserves Warehouse approved on
+//                 lines not processed yet (approvedHolds.ts). A backorder is NOT Reserve — it's
+//                 the part that has to be ordered
+//   Received    = the part of still-open POs to it that already arrived (GR, now in Stock)
 //
 // So the number moves To Be Order → Pending (restock line / Create Purchase Request) → PO
 // (Purchasing converts) → Stock (received).
@@ -26,8 +33,14 @@ export interface PositionSource { kind: PositionSourceKind; id: string; number: 
 export interface WarehousePosition {
   stock: number
   demand: number
+  /** Full qty of the open ship PR lines behind Demand (doesn't shrink as batches ship). */
+  requested: number
+  /** Of Demand, what is already held from stock (pending TRs out + approved Reserves). */
+  reserve: number
   pending: number
   po: number
+  /** Already received (GR) on POs to this warehouse that are still open. */
+  received: number
   minStock: number
   /** Min + Demand − Stock − Pending − PO, unclamped (negative = covered with room to spare). */
   net: number
@@ -54,18 +67,18 @@ export async function computeWarehousePositions(db: Db, opts: { itemIds?: string
     db.stockLot.findMany({ where: { itemId: itemFilter, locationId: { in: whIds }, quantity: { gt: 0 } }, select: { itemId: true, locationId: true, quantity: true } }),
     db.stockTransferItem.findMany({
       where: { itemId: itemFilter, transfer: { status: 'PENDING', fromLocationId: { in: whIds } } },
-      select: { itemId: true, requestedQty: true, transfer: { select: { id: true, transferNumber: true, status: true, createdAt: true, fromLocationId: true } } },
+      select: { itemId: true, requestedQty: true, transfer: { select: { id: true, transferNumber: true, status: true, createdAt: true, fromLocationId: true, purchaseRequestId: true } } },
     }),
     db.purchaseRequestItem.findMany({
       where: { itemId: itemFilter, backorderQty: { gt: 0 }, backorderLocationId: { in: whIds }, request: { status: { notIn: ['CANCELLED', 'REJECTED'] } } },
-      select: { itemId: true, backorderQty: true, backorderLocationId: true, request: { select: { id: true, prNumber: true, status: true, createdAt: true } } },
+      select: { id: true, itemId: true, quantity: true, unit: true, backorderQty: true, backorderLocationId: true, request: { select: { id: true, prNumber: true, status: true, createdAt: true } } },
     }),
     db.purchaseRequestItem.findMany({
       where: {
         itemId: itemFilter, viaWarehouse: true, warehouseDecision: null, convertedAt: null, verifyRejectedAt: null,
         request: { status: { in: ['DRAFT', 'ON_PROCESS'] }, warehouseDoneAt: null },
       },
-      select: { id: true, itemId: true, quantity: true, unit: true, warehouseFromLocationId: true, request: { select: { id: true, prNumber: true, status: true, createdAt: true, deliveryLocationId: true } } },
+      select: { id: true, itemId: true, quantity: true, unit: true, warehouseFromLocationId: true, warehouseApprovedAt: true, warehouseReserveQty: true, request: { select: { id: true, prNumber: true, status: true, createdAt: true, deliveryLocationId: true } } },
     }),
     db.purchaseRequestItem.findMany({
       where: {
@@ -87,7 +100,7 @@ export async function computeWarehousePositions(db: Db, opts: { itemIds?: string
     const key = positionKey(itemId, locationId)
     let p = positions.get(key)
     if (!p) {
-      p = { stock: 0, demand: 0, pending: 0, po: 0, minStock: masterMap.get(itemId)?.minStock ?? 0, net: 0, toBeOrder: 0, sources: [] }
+      p = { stock: 0, demand: 0, requested: 0, reserve: 0, pending: 0, po: 0, received: 0, minStock: masterMap.get(itemId)?.minStock ?? 0, net: 0, toBeOrder: 0, sources: [] }
       positions.set(key, p)
     }
     return p
@@ -97,17 +110,37 @@ export async function computeWarehousePositions(db: Db, opts: { itemIds?: string
     if (same) same.qty += src.qty; else p.sources.push(src)
   }
 
+  // Requested counts each open ship PR line's full qty once per warehouse.
+  const counted = new Set<string>()
+  const addRequested = (p: WarehousePosition, key: string, lineId: string, qty: number) => {
+    if (counted.has(`${key}|${lineId}`)) return
+    counted.add(`${key}|${lineId}`)
+    p.requested += qty
+  }
+  // The PR lines a pending transfer ships (same PR + item); a transfer without one counts itself.
+  const trRequestIds = [...new Set(pendingOut.map(t => t.transfer.purchaseRequestId).filter((x): x is string => !!x))]
+  const trLines = trRequestIds.length ? await db.purchaseRequestItem.findMany({
+    where: { requestId: { in: trRequestIds }, itemId: itemFilter, restockLocationId: null, verifyRejectedAt: null },
+    select: { id: true, requestId: true, itemId: true, quantity: true, unit: true },
+  }) : []
+
   for (const l of lots) if (l.itemId) pos(l.itemId, l.locationId).stock += l.quantity
   for (const t of pendingOut) {
     if (!t.itemId) continue
     const p = pos(t.itemId, t.transfer.fromLocationId)
+    const key = positionKey(t.itemId, t.transfer.fromLocationId)
     p.demand += t.requestedQty // transfer qty is already base units
+    p.reserve += t.requestedQty
+    const lines = trLines.filter(l => l.requestId === t.transfer.purchaseRequestId && l.itemId === t.itemId)
+    if (lines.length) for (const l of lines) addRequested(p, key, l.id, toBaseQty(l.quantity, l.unit, masterMap.get(t.itemId)))
+    else addRequested(p, key, `TR:${t.transfer.id}`, t.requestedQty)
     addSource(p, { kind: 'TR', id: t.transfer.id, number: t.transfer.transferNumber, status: t.transfer.status, createdAt: t.transfer.createdAt, qty: t.requestedQty })
   }
   for (const b of backorders) {
     if (!b.itemId || !b.backorderLocationId) continue
     const p = pos(b.itemId, b.backorderLocationId)
     p.demand += b.backorderQty
+    addRequested(p, positionKey(b.itemId, b.backorderLocationId), b.id, toBaseQty(b.quantity, b.unit, masterMap.get(b.itemId)))
     addSource(p, { kind: 'BACKORDER', id: b.request.id, number: b.request.prNumber, status: b.request.status, createdAt: b.request.createdAt, qty: b.backorderQty })
   }
   for (const l of undecided) {
@@ -121,6 +154,9 @@ export async function computeWarehousePositions(db: Db, opts: { itemIds?: string
     const qty = toBaseQty(l.quantity, l.unit, masterMap.get(l.itemId))
     const p = pos(l.itemId, source)
     p.demand += qty
+    addRequested(p, positionKey(l.itemId, source), l.id, qty)
+    // Approved Reserve = a hold on the shelf already (same rule as approvedHolds.ts).
+    if (l.warehouseApprovedAt && l.warehouseFromLocationId === source && (l.warehouseReserveQty ?? 0) > 0) p.reserve += Math.min(qty, l.warehouseReserveQty!)
     addSource(p, { kind: 'REQUEST', id: l.request.id, number: l.request.prNumber, status: l.request.status, createdAt: l.request.createdAt, qty })
   }
   for (const l of prLines) {
@@ -134,7 +170,9 @@ export async function computeWarehousePositions(db: Db, opts: { itemIds?: string
   for (const l of poLines) {
     if (!l.itemId || !l.order.deliveryLocationId) continue
     // PO lines are in purchase units — receiveGoods() multiplies by conversionFactor too.
-    const qty = Math.max(0, l.orderedQty - l.receivedQty) * (masterMap.get(l.itemId)?.conversionFactor || 1)
+    const conv = masterMap.get(l.itemId)?.conversionFactor || 1
+    const qty = Math.max(0, l.orderedQty - l.receivedQty) * conv
+    if (l.receivedQty > 0) pos(l.itemId, l.order.deliveryLocationId).received += Math.min(l.receivedQty, l.orderedQty) * conv
     if (qty <= 0) continue
     const p = pos(l.itemId, l.order.deliveryLocationId)
     p.po += qty

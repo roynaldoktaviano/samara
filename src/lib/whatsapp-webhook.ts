@@ -7,7 +7,7 @@ import { getTenantSecret } from '@/lib/tenant-secrets'
 import { emitTenantEvent } from '@/lib/realtime-bus'
 import { pickNextSalesUserId } from '@/lib/whatsapp-distribution'
 import { autoLinkNewConversation } from '@/lib/whatsapp-lead'
-import { isNewContactSession, recordLeadContact } from '@/lib/lead-contact'
+import { fillLeadContactFromText, isNewContactSession, recordLeadContact } from '@/lib/lead-contact'
 import { recordLeadInbound } from '@/lib/lead-stage-auto'
 import { sendPushToUser } from '@/lib/push'
 import { isViewing } from '@/lib/chat-presence'
@@ -319,6 +319,8 @@ export function createWhatsappWebhookHandlers(endpointBrand?: WhatsappBrand) {
             }
             // Customer answered → Sales Pipeline "In Active Communication" (src/lib/lead-stage-auto.ts)
             if (leadId) await recordLeadInbound(db, leadId)
+            // Email typed in the chat → onto the lead (phone is already the WA number).
+            if (leadId) await fillLeadContactFromText(db, leadId, text)
           } catch (e) {
             console.error('[whatsapp webhook] lead link/history failed', e)
           }

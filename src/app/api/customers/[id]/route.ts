@@ -4,6 +4,32 @@ import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { logActivity } from '@/lib/activity'
 import { withRetry } from '@/lib/db'
+import type { Prisma } from '@prisma/client'
+import { bookingDealName, leadDealName } from '@/lib/deal-name'
+
+// Booking-history rows carry the deal name (src/lib/deal-name.ts) and the Sales Pipeline lead the
+// booking closed, so Guest ↔ Booking ↔ Lead read as one deal.
+const BOOKING_HISTORY_INCLUDE = {
+  yacht: { select: { name: true } },
+  openTrip: { select: { title: true, destination: true } },
+  destinationRef: { select: { name: true } },
+  customer: { select: { id: true, name: true } },
+  pipelineLeads: {
+    orderBy: { createdAt: 'asc' as const },
+    take: 1,
+    select: { id: true, name: true, stage: true, owner: { select: { name: true } } },
+  },
+} satisfies Prisma.BookingInclude
+
+function dealFields(b: Prisma.BookingGetPayload<{ include: typeof BOOKING_HISTORY_INCLUDE }>) {
+  const lead = b.pipelineLeads[0]
+  return {
+    dealName: bookingDealName(b),
+    currency: b.currency,
+    bookerName: b.customer.name,
+    pipelineLead: lead ? { id: lead.id, stage: lead.stage, ownerName: lead.owner?.name ?? null } : null,
+  }
+}
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getServerSession(authOptions)
@@ -19,20 +45,12 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       include: {
         owner: { select: { id: true, name: true } },
         bookings: {
-          include: {
-            yacht: { select: { name: true } },
-            openTrip: { select: { title: true } },
-          },
+          include: BOOKING_HISTORY_INCLUDE,
           orderBy: { startDate: 'desc' },
         },
         guestOf: {
           include: {
-            booking: {
-              include: {
-                yacht: { select: { name: true } },
-                openTrip: { select: { title: true } },
-              },
-            },
+            booking: { include: BOOKING_HISTORY_INCLUDE },
             cabin: { select: { name: true } },
           },
           orderBy: { id: 'desc' },
@@ -52,6 +70,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 
     // Merge bookings as lead + bookings as guest into unified trip history
     const asLead = customer.bookings.map(b => ({
+      ...dealFields(b),
       id: b.id,
       bookingCode: b.bookingCode,
       tripType: b.tripType,
@@ -67,6 +86,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     }))
 
     const asGuest = customer.guestOf.map(g => ({
+      ...dealFields(g.booking),
       id: g.booking.id,
       bookingCode: g.booking.bookingCode,
       tripType: g.booking.tripType,
@@ -96,6 +116,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       cabin: '',
       isWaitingList: true,
       wlStatus: w.status,
+      dealName: null, currency: 'USD', pipelineLead: null,
     }))
 
     // Deduplicate (guest can appear in both as lead booking and guestOf)
@@ -104,7 +125,26 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       .filter(t => { if (seen.has(t.id)) return false; seen.add(t.id); return true })
       .sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime())
 
-    return NextResponse.json({ ...customer, tripHistory })
+    // Sales Pipeline leads for this guest: the ones their bookings closed, plus enquiries under the
+    // same email / phone (older leads predate the booking ↔ lead link).
+    const phoneTail = customer.phone?.replace(/\D/g, '').slice(-10)
+    const pipelineLeads = await db.lead.findMany({
+      where: { OR: [
+        { bookingId: { in: customer.bookings.map(b => b.id) } },
+        ...(customer.email?.trim() ? [{ deletedAt: null, email: { equals: customer.email.trim(), mode: 'insensitive' as const } }] : []),
+        ...(phoneTail && phoneTail.length >= 8 ? [{ deletedAt: null, phone: { endsWith: phoneTail } }] : []),
+      ] },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+      select: {
+        id: true, name: true, stage: true, createdAt: true, tripType: true, productInterest: true,
+        travelStartDate: true, travelEndDate: true, owner: { select: { name: true } }, destination: { select: { name: true } },
+        booking: { select: { tripType: true, startDate: true, endDate: true, destination: true, yacht: { select: { name: true } }, destinationRef: { select: { name: true } }, openTrip: { select: { destination: true } }, customer: { select: { name: true } } } },
+      },
+    })
+    const leads = pipelineLeads.map(l => ({ id: l.id, dealName: leadDealName(l), stage: l.stage, ownerName: l.owner?.name ?? null, createdAt: l.createdAt }))
+
+    return NextResponse.json({ ...customer, tripHistory, pipelineLeads: leads })
   } catch (error) {
     console.error('Error fetching customer:', error)
     return NextResponse.json({ error: 'Failed to fetch customer' }, { status: 500 })

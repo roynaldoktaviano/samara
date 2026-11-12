@@ -66,7 +66,7 @@ export async function GET(req: Request) {
     nearestExpiry: Date | null
     /** Room & Loc (shelf) of this item at this location — null when not set. */
     placement: { room: string | null; bin: string | null } | null
-    replenish: { reserved: number; available: number; toBeOrder: number; pending: number; po: number; sources: PositionSource[] } | null
+    replenish: { reserved: number; requested: number; reserve: number; available: number; toBeOrder: number; pending: number; po: number; received: number; sources: PositionSource[] } | null
   }
   type NonStockRow = {
     kind: 'non-stock'
@@ -143,9 +143,12 @@ export async function GET(req: Request) {
       const reserved = p?.demand ?? 0
       row.replenish = {
         reserved,
+        requested: p?.requested ?? 0,
+        reserve: p?.reserve ?? 0,
         available: Math.max(0, row.qty - reserved),
         pending: p?.pending ?? 0,
         po: p?.po ?? 0,
+        received: p?.received ?? 0,
         toBeOrder: p ? p.toBeOrder : Math.max(0, row.item.minStock - row.qty),
         sources: p?.sources ?? [],
       }

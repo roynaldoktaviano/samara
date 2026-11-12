@@ -1,5 +1,6 @@
 'use client'
 
+import FreshsalesHistory from '@/components/freshsales/FreshsalesHistory'
 import { useState, useEffect, useCallback } from 'react'
 import { useSession } from 'next-auth/react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -18,6 +19,7 @@ import FreshsalesImportModal from '@/components/shared/FreshsalesImportModal'
 import { isHttpUrl } from '@/lib/url-safety'
 import { WebsiteJourney } from '@/components/shared/WebsiteJourney'
 import { formatDate, formatDateRange, formatMoney } from '@/lib/format'
+import { LEAD_STAGE_COLOR, LEAD_STAGE_LABEL, type LeadStage } from '@/lib/lead-pipeline'
 
 /* ─── Types ─────────────────────────────────────────────────────────────── */
 interface Guest {
@@ -60,10 +62,17 @@ interface TripEntry {
   cabin: string
   isWaitingList?: boolean
   wlStatus?: string
+  // "PC/Samara II/Private Charter 3D2N Komodo/Christopher Boykin" — same name as on the Sales Pipeline.
+  dealName?: string | null
+  currency?: string
+  bookerName?: string
+  pipelineLead?: { id: string; stage: LeadStage; ownerName: string | null } | null
 }
 
 interface GuestDetail extends Guest {
   tripHistory: TripEntry[]
+  // Sales Pipeline deals for this guest (booking-linked + same email/phone), newest first.
+  pipelineLeads?: { id: string; dealName: string; stage: LeadStage; ownerName: string | null; createdAt: string }[]
 }
 
 interface Inquiry {
@@ -108,7 +117,12 @@ interface PageView {
 }
 
 /* ─── Main Component ─────────────────────────────────────────────────────── */
-export default function Guests() {
+export default function Guests({ deepLinkId, onDeepLinkHandled, onOpenBooking }: {
+  // Opens this guest's detail straight away (Sales Pipeline / Leads "Guest profile" link).
+  deepLinkId?: string | null
+  onDeepLinkHandled?: () => void
+  onOpenBooking?: (bookingId: string) => void
+} = {}) {
   const { data: session } = useSession()
   const isAdmin = (session?.user as { role?: string })?.role === 'ADMIN'
   const role = (session?.user as { role?: string })?.role ?? ''
@@ -182,6 +196,13 @@ export default function Guests() {
   }
 
   const closeDetail = () => { setDetailOpen(false); setDetail(null); setInquiries(null); setPageViews(null) }
+
+  useEffect(() => {
+    if (!deepLinkId) return
+    openDetail({ id: deepLinkId } as Guest)
+    onDeepLinkHandled?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deepLinkId])
 
   const openEdit = (g: Guest, e: React.MouseEvent) => {
     e.stopPropagation()
@@ -593,6 +614,32 @@ export default function Guests() {
 
                   <Separator />
 
+                  {/* Sales Pipeline deals */}
+                  {!!detail.pipelineLeads?.length && (
+                    <>
+                      <div>
+                        <p className="text-sm font-semibold mb-3 flex items-center gap-2">
+                          <Target className="h-4 w-4 text-muted-foreground" />
+                          Sales Pipeline ({detail.pipelineLeads.length})
+                        </p>
+                        <div className="space-y-2">
+                          {detail.pipelineLeads.map(l => (
+                            <div key={l.id} className="rounded-lg border p-3 text-sm flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="font-medium text-primary break-words">{l.dealName}</p>
+                                <p className="text-xs text-muted-foreground mt-0.5">
+                                  {formatDate(l.createdAt)}{l.ownerName ? ` · ${l.ownerName}` : ''}
+                                </p>
+                              </div>
+                              <span className={`shrink-0 text-[10px] rounded px-1.5 py-0.5 font-medium ${LEAD_STAGE_COLOR[l.stage]}`}>{LEAD_STAGE_LABEL[l.stage]}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      <Separator />
+                    </>
+                  )}
+
                   {/* Trip History */}
                   <div>
                     <p className="text-sm font-semibold mb-3 flex items-center gap-2">
@@ -613,15 +660,29 @@ export default function Guests() {
                             <div className="flex items-start justify-between gap-2">
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-2 flex-wrap">
-                                  <span className="font-semibold font-mono text-xs bg-muted px-1.5 py-0.5 rounded">{t.bookingCode}</span>
+                                  {onOpenBooking && !t.isWaitingList ? (
+                                    <button type="button" onClick={() => onOpenBooking(t.id)} title="Open booking"
+                                      className="font-semibold font-mono text-xs bg-muted px-1.5 py-0.5 rounded hover:bg-primary/15 hover:text-primary transition-colors">{t.bookingCode}</button>
+                                  ) : (
+                                    <span className="font-semibold font-mono text-xs bg-muted px-1.5 py-0.5 rounded">{t.bookingCode}</span>
+                                  )}
+                                  {t.pipelineLead && (
+                                    <span title={`Sales Pipeline${t.pipelineLead.ownerName ? ` · owner ${t.pipelineLead.ownerName}` : ''}`}
+                                      className={`text-[10px] rounded px-1.5 py-0.5 font-medium ${LEAD_STAGE_COLOR[t.pipelineLead.stage]}`}>
+                                      {LEAD_STAGE_LABEL[t.pipelineLead.stage]}{t.pipelineLead.ownerName ? ` · ${t.pipelineLead.ownerName}` : ''}
+                                    </span>
+                                  )}
                                   {t.isWaitingList && (
                                     <span className="text-[10px] bg-warning/15 text-warning border border-warning/30 rounded px-1.5 py-0.5 font-medium">Waiting List</span>
                                   )}
                                   {!t.isWaitingList && t.isLead && <span className="text-[10px] bg-primary/20 text-primary-strong rounded px-1.5 py-0.5 font-medium">Lead</span>}
                                   {t.cabin && <span className="text-[10px] text-muted-foreground">{t.cabin}</span>}
                                 </div>
-                                <p className="font-medium mt-1">{t.tripTitle || t.destination || '—'}</p>
-                                {t.yachtName && <p className="text-xs text-muted-foreground">{t.yachtName}</p>}
+                                <p className="font-medium mt-1 break-words">{t.dealName || t.tripTitle || t.destination || '—'}</p>
+                                {!t.dealName && t.yachtName && <p className="text-xs text-muted-foreground">{t.yachtName}</p>}
+                                {t.dealName && t.bookerName && t.bookerName !== detail.name && (
+                                  <p className="text-xs text-muted-foreground">Booked by {t.bookerName}</p>
+                                )}
                                 <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
                                   <Calendar className="h-3 w-3" />
                                   {formatDateRange(t.startDate, t.endDate)}
@@ -636,7 +697,7 @@ export default function Guests() {
                                   <BookingStatusBadge status={t.status} size="sm" />
                                 )}
                                 {!t.isWaitingList && (
-                                  <p className="text-xs text-muted-foreground mt-1.5">{formatMoney(t.totalPrice, { currency: 'USD' })}</p>
+                                  <p className="text-xs text-muted-foreground mt-1.5">{formatMoney(t.totalPrice, { currency: t.currency || 'USD' })}</p>
                                 )}
                               </div>
                             </div>
@@ -645,6 +706,11 @@ export default function Guests() {
                       </div>
                     )}
                   </div>
+
+                  <Separator />
+
+                  {/* Freshsales deals + history of this guest's contact (renders nothing when not linked) */}
+                  <FreshsalesHistory customerId={detail.id} />
 
                   <Separator />
 

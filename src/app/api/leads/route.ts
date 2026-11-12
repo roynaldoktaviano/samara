@@ -120,9 +120,11 @@ export async function GET(request: NextRequest) {
 
     const unsubscribed = await db.emailUnsubscribe.findMany({ select: { email: true } })
     const unsubscribedSet = new Set(unsubscribed.map(u => u.email.toLowerCase()))
+    const entryChannels = await resolveEntryChannels(db, leads)
     const result = leads.map(l => ({
       ...l,
       isSubscribed: l.email ? !unsubscribedSet.has(l.email.toLowerCase()) : null,
+      entryChannel: entryChannels.get(l.id) ?? null,
     }))
 
     // Body stays a plain array for existing callers; the true count (which
@@ -186,4 +188,37 @@ export async function POST(request: NextRequest) {
     console.error('Error creating lead:', error)
     return NextResponse.json({ error: 'Failed to create lead' }, { status: 500 })
   }
+}
+
+// Where a lead first came in from — shown as a small badge in the Leads table's Contact column.
+// Chat-created leads carry it on Lead.source ("MESSENGER_OTIUM"); otherwise it's the oldest
+// form inquiry, then any linked chat thread, then a Freshsales import.
+type LeadEntryChannel = 'WHATSAPP' | 'INSTAGRAM' | 'MESSENGER' | 'WEBSITE' | 'INSTANT_FORM' | 'FRESHSALES'
+
+async function resolveEntryChannels(
+  db: Awaited<ReturnType<typeof getDb>>,
+  leads: { id: string; source: string | null }[],
+): Promise<Map<string, LeadEntryChannel>> {
+  const out = new Map<string, LeadEntryChannel>()
+  for (const l of leads) {
+    const prefix = l.source?.split('_')[0]
+    if (prefix === 'WHATSAPP' || prefix === 'INSTAGRAM' || prefix === 'MESSENGER') out.set(l.id, prefix)
+  }
+  const ids = leads.map(l => l.id).filter(id => !out.has(id))
+  if (ids.length === 0) return out
+
+  const [inquiries, waConvs, igConvs, fsContacts] = await Promise.all([
+    db.inquiry.findMany({ where: { leadId: { in: ids } }, orderBy: { createdAt: 'asc' }, select: { leadId: true, source: true } }),
+    db.whatsappConversation.findMany({ where: { leadId: { in: ids } }, select: { leadId: true } }),
+    db.instagramConversation.findMany({ where: { leadId: { in: ids } }, orderBy: { createdAt: 'asc' }, select: { leadId: true, platform: true } }),
+    db.freshsalesContact.findMany({ where: { leadId: { in: ids } }, select: { leadId: true } }),
+  ])
+  const setOnce = (id: string | null, ch: LeadEntryChannel) => { if (id && !out.has(id)) out.set(id, ch) }
+  for (const i of inquiries) {
+    setOnce(i.leadId, i.source === 'CF7' ? 'WEBSITE' : i.source === 'META_LEAD_AD' ? 'INSTANT_FORM' : 'FRESHSALES')
+  }
+  for (const c of waConvs) setOnce(c.leadId, 'WHATSAPP')
+  for (const c of igConvs) setOnce(c.leadId, c.platform === 'MESSENGER' ? 'MESSENGER' : 'INSTAGRAM')
+  for (const c of fsContacts) setOnce(c.leadId, 'FRESHSALES')
+  return out
 }

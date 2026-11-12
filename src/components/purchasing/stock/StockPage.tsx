@@ -5,6 +5,7 @@ import { Warehouse, Ship, AlertTriangle, Search, X, Layers, FileText, ShoppingCa
 import { toast } from 'sonner'
 import { useSession } from 'next-auth/react'
 import { roleMatches } from '@/lib/role-utils'
+import { useHidePrices } from '@/hooks/useHidePrices'
 import { formatMoney, formatNumber, formatDate } from '@/lib/format'
 import { displayQty, displayUnitCost, hasPurchaseUnit, isMeasureUnit, type UnitInfo } from '@/lib/purchasing/units'
 
@@ -18,7 +19,7 @@ interface StockRow {
   /** Room & Loc (shelf) of the item at this location — e.g. "Ruang Tengah" / "Rak 5.1". */
   placement: Placement | null
   /** Warehouses only (null elsewhere), base units. */
-  replenish: { reserved: number; available: number; toBeOrder: number; pending: number; po: number; sources: ReplenishSource[] } | null
+  replenish: { reserved: number; requested: number; reserve: number; available: number; toBeOrder: number; pending: number; po: number; received: number; sources: ReplenishSource[] } | null
 }
 interface Placement { room: string | null; bin: string | null }
 // Room & Loc is set by the warehouse team themselves (same list as the placement API).
@@ -42,6 +43,16 @@ interface NonStockRow {
 type Row = StockRow | NonStockRow
 interface LocationStock { location: { id: string; name: string; type: string }; rows: Row[] }
 interface StockData { locations: LocationStock[]; summary: { totalItems: number; lowStock: number } }
+// Detail panel sheet (user's layout): one block per PR / PO, a row per batch (warehouse check,
+// then each restock that shipped part of it). PR no. + PR qty merged per block, Min merged over all.
+interface HistoryRow {
+  // MOVEMENT = stock in/out with no PR / PO (transfer, adjustment, opname…) — change is signed.
+  key: string; kind: 'SHIP_PR' | 'WAREHOUSE_PR' | 'PO' | 'MOVEMENT'; change?: number
+  doc: { id: string; number: string; status: string }; destination: string | null; stage: string
+  minStock: number; pr: number
+  batches: { date: string; label: string; current: number | null; reserve: number; ending: number | null }[]
+  ordered: number; po: number; pending: number; gr: number
+}
 interface StockLot { id: string; quantity: number; costPerUnit: number; batch: string | null; expiresAt: string | null; createdAt: string }
 
 type ItemKindFilter = 'all' | 'stock' | 'non-stock'
@@ -69,10 +80,37 @@ function QtyCell({ item, qty, className = '' }: { item: StockRow['item']; qty: n
   return <StockQty item={item} qty={qty} className={className} />
 }
 
+// Ending never goes below 0 (a shortage is in Ordered instead) — 0 still shows, not a dash.
+function EndingCell({ item, qty, min }: { item: StockRow['item']; qty: number; min: number }) {
+  if (Math.abs(qty) < 1e-9) return <span className={min > 0 ? 'text-destructive font-semibold' : 'text-muted-foreground'}>0 <span className="text-xs font-normal text-muted-foreground">{stockQty(item, 0).unit}</span></span>
+  return <StockQty item={item} qty={qty} className={qty < 0 || qty < min ? 'font-semibold text-destructive' : 'font-medium'} />
+}
+
+// The row's figures in the table's column order (base units, warehouses only):
+//   PR       = full qty of every ship PR still open here — stays the same while it's filled
+//              batch by batch (user: "kayak merge cell")
+//   Reserve  = held on the shelf now (pending transfers + approved Reserves); a backorder isn't
+//   Ending   = Current − Reserve, never below 0
+//   Ordered  = (still owed, not reserved) + Min − Ending — e.g. Min 3, Current 2, PR 4, Reserve 2
+//              → Ending 0, Ordered 2 + 3 − 0 = 5
+//   PO / Pending / GR = where the order is: on a PO / sent to Purchasing, no PO yet / arrived on
+//              a PO still open. Ordered − PO − Pending is what's still to order (Order button).
+function figuresOf(r: StockRow) {
+  const rp = r.replenish
+  const reserve = rp?.reserve ?? 0
+  const ending = Math.max(0, r.qty - reserve)
+  const unreserved = Math.max(0, (rp?.reserved ?? 0) - reserve) // owed but not held: backorders + unreserved requests
+  return {
+    pr: rp?.requested ?? 0, reserve, ending,
+    ordered: Math.max(0, unreserved + r.item.minStock - ending),
+    toOrder: rp?.toBeOrder ?? 0, po: rp?.po ?? 0, pending: rp?.pending ?? 0, gr: rp?.received ?? 0,
+  }
+}
+
 const STATUS_LABEL: Record<string, string> = {
   DRAFT: 'Draft', PENDING_APPROVAL: 'Pending approval', ON_PROCESS: 'On process',
   ORDERED: 'Ordered', IN_TRANSIT: 'In transit', PARTIALLY_RECEIVED: 'Partly received',
-  PENDING: 'Waiting dispatch',
+  PENDING: 'Waiting dispatch', CONVERTED: 'Converted', RECEIVED: 'Received', COMPLETED: 'Completed',
 }
 const RESERVED_KINDS: ReplenishSource['kind'][] = ['TR', 'BACKORDER', 'REQUEST']
 const sourceStatus = (src: ReplenishSource) =>
@@ -139,7 +177,8 @@ function StockTable({ rows, locationId, locationName, onOpenLots, onRestock }: {
   return (
     <>
       {/* Toolbar: search this location + bulk Create Purchase Request */}
-      <div className="flex items-center gap-2 flex-wrap px-4 desktop:px-5 py-2.5 border-b bg-muted/10">
+      {/* Sticky under the 48px app header (main is the scroll container); the thead sticks right below it at 48 + 53px. */}
+      <div className="sticky top-12 z-[5] flex items-center gap-2 flex-wrap px-4 desktop:px-5 py-2.5 border-b bg-background">
         <div className="relative flex-1 min-w-[180px] max-w-xs">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
           <input
@@ -170,27 +209,29 @@ function StockTable({ rows, locationId, locationName, onOpenLots, onRestock }: {
 
       {shown.length === 0 && <p className="text-sm text-muted-foreground text-center py-8">No items match “{q}”.</p>}
 
-      {shown.length > 0 && <div className="hidden desktop:block overflow-x-auto">
+      {shown.length > 0 && <div className="hidden desktop:block overflow-x-clip">
         <table className="w-full text-sm">
-          <thead className="bg-muted/50 text-xs text-muted-foreground">
+          <thead className="sticky top-[101px] z-[4] bg-background text-xs text-muted-foreground [&>tr]:bg-muted/50 shadow-[0_1px_0_var(--border)]">
             <tr>
               {isWarehouse && (
                 <th className="pl-5 pr-1 py-2.5 w-8">
                   <input type="checkbox" className="h-4 w-4 accent-primary cursor-pointer align-middle" checked={allShownSelected} onChange={toggleAllShown} aria-label="Select all" />
                 </th>
               )}
-              <th className="text-left px-5 py-2.5 font-medium">Name</th>
-              <th className="text-left px-5 py-2.5 font-medium" title="Room / rack where the item is kept at this location — click the row to set it">Room &amp; Loc</th>
-              <th className="text-right px-5 py-2.5 font-medium">Stock</th>
-              <th className="text-right px-5 py-2.5 font-medium">Min</th>
+              <th className="text-left px-4 py-2.5 font-medium">Name</th>
+              <th className="text-left px-3 py-2.5 font-medium" title="Room / rack where the item is kept at this location — click the row to set it">Room &amp; Loc</th>
+              <th className="text-right px-3 py-2.5 font-medium whitespace-nowrap">Min Stock</th>
+              <th className="text-right px-3 py-2.5 font-medium" title="On hand at this location">Current</th>
               {isWarehouse && <>
-                <th className="text-right px-5 py-2.5 font-medium" title="Min + Total Request − Stock − PO − Pending">To Be Ordered</th>
-                <th className="text-right px-5 py-2.5 font-medium" title="All ship requests still owed from this warehouse: pending transfers, backorders, and PR lines waiting for the warehouse check">Total Request</th>
-                <th className="text-right px-5 py-2.5 font-medium" title="To Be Ordered + Total Request">Total Order</th>
-                <th className="text-right px-5 py-2.5 font-medium" title="On an open PO to this warehouse, not received yet">PO</th>
-                <th className="text-right px-5 py-2.5 font-medium" title="On a PR sent to Purchasing, not on a PO yet">Pending</th>
+                <th className="text-right px-3 py-2.5 font-medium" title="Total of all open ship PRs from this warehouse (full requested qty — stays the same until the PR is fully sent)">PR</th>
+                <th className="text-right px-3 py-2.5 font-medium" title="Total Reserve on those PRs — held on the shelf now (pending transfers + approved Reserves)">Reserve</th>
+                <th className="text-right px-3 py-2.5 font-medium whitespace-nowrap" title="Current − Reserve (never below 0)">Ending Stock</th>
+                <th className="text-right px-3 py-2.5 font-medium" title="(PR still owed − Reserve) + Min − Ending: what covers the PRs and refills Min. Stock. Red = part of it is not on a PR / PO yet (Order)">Ordered</th>
+                <th className="text-right px-3 py-2.5 font-medium" title="On an open PO to this warehouse, not received yet">P.O</th>
+                <th className="text-right px-3 py-2.5 font-medium" title="On a PR sent to Purchasing, not on a PO yet">Pending</th>
+                <th className="text-right px-3 py-2.5 font-medium" title="Goods Receipt — already arrived on a PO that is still open (the rest of it is in P.O)">GR</th>
               </>}
-              {isWarehouse && <th className="px-5 py-2.5" />}
+              {isWarehouse && <th className="px-4 py-2.5" />}
             </tr>
           </thead>
           <tbody className="divide-y">
@@ -198,6 +239,7 @@ function StockTable({ rows, locationId, locationName, onOpenLots, onRestock }: {
               const { item, qty, replenish, placement } = row
               const isLow = isLowRow(row)
               const isSel = selected.has(item.id)
+              const f = figuresOf(row)
               return (
                 <tr key={item.id}
                   className={`hover:bg-primary/5 cursor-pointer transition-colors ${isSel ? 'bg-primary/5' : isLow ? 'bg-destructive/5' : ''}`}
@@ -207,37 +249,44 @@ function StockTable({ rows, locationId, locationName, onOpenLots, onRestock }: {
                       <input type="checkbox" className="h-4 w-4 accent-primary cursor-pointer align-middle" checked={isSel} onChange={() => toggle(item.id)} aria-label={`Select ${item.name}`} />
                     </td>
                   )}
-                  <td className="px-5 py-3">
+                  <td className="px-4 py-3">
                     <p className="font-medium">{item.name}</p>
                     <p className="text-xs text-muted-foreground"><span className="font-mono">{item.sku}</span> · {item.category}</p>
                   </td>
-                  <td className="px-5 py-3 text-xs whitespace-nowrap">
+                  <td className="px-3 py-3 text-xs whitespace-nowrap">
                     {placement ? (
                       <span className="inline-flex items-center gap-1"><MapPin className="h-3 w-3 text-muted-foreground shrink-0" />{placementLabel(placement)}</span>
                     ) : <span className="text-muted-foreground/40">—</span>}
                   </td>
-                  <td className="px-5 py-3 text-right font-semibold tabular-nums">
+                  <td className="px-3 py-3 text-right text-xs tabular-nums"><MinCell item={item} isLow={isLow} /></td>
+                  <td className="px-3 py-3 text-right font-semibold tabular-nums">
                     <StockQty item={item} qty={qty} />
                   </td>
-                  <td className="px-5 py-3 text-right text-xs tabular-nums"><MinCell item={item} isLow={isLow} /></td>
                   {isWarehouse && <>
-                    <td className="px-5 py-3 text-right tabular-nums">
-                      <QtyCell item={item} qty={replenish?.toBeOrder} className="font-semibold text-destructive" />
+                    <td className="px-3 py-3 text-right tabular-nums" title={sourcesTitle(item, replenish?.sources, RESERVED_KINDS)}>
+                      <QtyCell item={item} qty={f.pr} className="font-medium text-orange-600 dark:text-orange-300" />
                     </td>
-                    <td className="px-5 py-3 text-right tabular-nums" title={sourcesTitle(item, replenish?.sources, RESERVED_KINDS)}>
-                      <QtyCell item={item} qty={replenish?.reserved} className="font-medium text-orange-600 dark:text-orange-300" />
+                    <td className="px-3 py-3 text-right tabular-nums" title={sourcesTitle(item, replenish?.sources, ['TR'])}>
+                      <QtyCell item={item} qty={f.reserve} className="font-medium" />
                     </td>
-                    <td className="px-5 py-3 text-right tabular-nums">
-                      <QtyCell item={item} qty={replenish ? replenish.toBeOrder + replenish.reserved : null} className="font-semibold" />
+                    <td className="px-3 py-3 text-right tabular-nums">
+                      <EndingCell item={item} qty={f.ending} min={item.minStock} />
                     </td>
-                    <td className="px-5 py-3 text-right tabular-nums" title={sourcesTitle(item, replenish?.sources, ['PO'])}>
-                      <QtyCell item={item} qty={replenish?.po} className="font-medium text-info" />
+                    <td className="px-3 py-3 text-right tabular-nums">
+                      <QtyCell item={item} qty={f.ordered} className={f.toOrder > 0 ? 'font-semibold text-destructive' : 'font-semibold'} />
+                      {f.toOrder > 0 && f.toOrder < f.ordered - 1e-9 && <span className="block text-[10px] text-destructive">{qtyText(item, f.toOrder)} to order</span>}
                     </td>
-                    <td className="px-5 py-3 text-right tabular-nums" title={sourcesTitle(item, replenish?.sources, ['PR'])}>
-                      <QtyCell item={item} qty={replenish?.pending} className="font-medium text-warning" />
+                    <td className="px-3 py-3 text-right tabular-nums" title={sourcesTitle(item, replenish?.sources, ['PO'])}>
+                      <QtyCell item={item} qty={f.po} className="font-medium text-info" />
+                    </td>
+                    <td className="px-3 py-3 text-right tabular-nums" title={sourcesTitle(item, replenish?.sources, ['PR'])}>
+                      <QtyCell item={item} qty={f.pending} className="font-medium text-warning" />
+                    </td>
+                    <td className="px-3 py-3 text-right tabular-nums">
+                      <QtyCell item={item} qty={f.gr} className="font-medium text-success" />
                     </td>
                   </>}
-                  {isWarehouse && <td className="px-5 py-3 text-right">{orderButton(row)}</td>}
+                  {isWarehouse && <td className="px-4 py-3 text-right">{orderButton(row)}</td>}
                 </tr>
               )
             })}
@@ -273,20 +322,25 @@ function StockTable({ rows, locationId, locationName, onOpenLots, onRestock }: {
                     <MapPin className="h-3 w-3 shrink-0" /><span className="truncate">{placementLabel(placement)}</span>
                   </div>
                 )}
-                {replenish && (replenish.toBeOrder > 0 || replenish.reserved > 0) && (
-                  <div className="flex items-center gap-3 text-xs text-muted-foreground mt-1">
-                    {replenish.toBeOrder > 0 && <span>To Be Ordered <QtyCell item={item} qty={replenish.toBeOrder} className="font-semibold text-destructive" /></span>}
-                    {replenish.reserved > 0 && <span>Total Request <QtyCell item={item} qty={replenish.reserved} className="font-medium text-orange-600 dark:text-orange-300" /></span>}
-                    <span>Total Order <QtyCell item={item} qty={replenish.toBeOrder + replenish.reserved} className="font-semibold text-foreground" /></span>
-                  </div>
-                )}
-                {replenish && (replenish.toBeOrder > 0 || replenish.pending > 0 || replenish.po > 0) && (
-                  <div className="flex items-center gap-3 text-xs text-muted-foreground mt-1">
-                    {replenish.po > 0 && <span>PO <QtyCell item={item} qty={replenish.po} className="font-medium text-info" /></span>}
-                    {replenish.pending > 0 && <span>Pending <QtyCell item={item} qty={replenish.pending} className="font-medium text-warning" /></span>}
-                    <span className="ml-auto">{orderButton(row, 'xs')}</span>
-                  </div>
-                )}
+                {replenish && (() => {
+                  const f = figuresOf(row)
+                  return <>
+                    <div className="flex items-center gap-3 flex-wrap text-xs text-muted-foreground mt-1">
+                      {f.pr > 0 && <span>PR <QtyCell item={item} qty={f.pr} className="font-medium text-orange-600 dark:text-orange-300" /></span>}
+                      {f.reserve > 0 && <span>Reserve <QtyCell item={item} qty={f.reserve} className="font-medium text-foreground" /></span>}
+                      <span>Ending <EndingCell item={item} qty={f.ending} min={item.minStock} /></span>
+                      {f.ordered > 0 && <span>Ordered <QtyCell item={item} qty={f.ordered} className={f.toOrder > 0 ? 'font-semibold text-destructive' : 'font-semibold text-foreground'} /></span>}
+                    </div>
+                    {(f.toOrder > 0 || f.pending > 0 || f.po > 0 || f.gr > 0) && (
+                      <div className="flex items-center gap-3 text-xs text-muted-foreground mt-1">
+                        {f.po > 0 && <span>P.O <QtyCell item={item} qty={f.po} className="font-medium text-info" /></span>}
+                        {f.pending > 0 && <span>Pending <QtyCell item={item} qty={f.pending} className="font-medium text-warning" /></span>}
+                        {f.gr > 0 && <span>GR <QtyCell item={item} qty={f.gr} className="font-medium text-success" /></span>}
+                        <span className="ml-auto">{orderButton(row, 'xs')}</span>
+                      </div>
+                    )}
+                  </>
+                })()}
               </div>
             </div>
           )
@@ -315,9 +369,9 @@ function NonStockTable({ rows, onOpenPo }: { rows: NonStockRow[]; onOpenPo?: (po
 
   return (
     <>
-      <div className="hidden desktop:block overflow-x-auto">
+      <div className="hidden desktop:block overflow-x-clip">
         <table className="w-full text-sm">
-          <thead className="bg-muted/50 text-xs text-muted-foreground">
+          <thead className="sticky top-[101px] z-[4] bg-background text-xs text-muted-foreground [&>tr]:bg-muted/50 shadow-[0_1px_0_var(--border)]">
             <tr>
               <th className="text-left px-5 py-2.5 font-medium">Item</th>
               <th className="text-right px-5 py-2.5 font-medium">Stock</th>
@@ -402,9 +456,10 @@ function defaultRestockLine(row: StockRow): RestockLine {
   return { row, unit: item.baseUnit, qty: String(need > 0 ? Math.ceil(need * 100 - 1e-9) / 100 : 1) }
 }
 
-export default function StockPage({ onOpenPo, onOpenRequest, onOpenTransfer }: { onOpenPo?: (poId: string) => void; onOpenRequest?: (requestId: string) => void; onOpenTransfer?: (transferId: string) => void } = {}) {
+export default function StockPage({ onOpenPo, onOpenRequest }: { onOpenPo?: (poId: string) => void; onOpenRequest?: (requestId: string) => void; onOpenTransfer?: (transferId: string) => void } = {}) {
   const { data: session } = useSession()
   const canEditPlacement = roleMatches((session?.user as { role?: string })?.role ?? '', PLACEMENT_EDITORS)
+  const hidePrices = useHidePrices()
   const [data, setData] = useState<StockData | null>(null)
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -418,6 +473,9 @@ export default function StockPage({ onOpenPo, onOpenRequest, onOpenTransfer }: {
   const [lotPanel, setLotPanel] = useState<{ item: StockRow['item']; locationId: string; locationName: string } | null>(null)
   const [lots, setLots] = useState<StockLot[]>([])
   const [lotsLoading, setLotsLoading] = useState(false)
+  // Same columns as the table, one row per PR / PO on its date (warehouses only).
+  const [history, setHistory] = useState<HistoryRow[] | null>(null)
+  const [historyTotal, setHistoryTotal] = useState<number | null>(null)
   // Room & Loc editor inside the lot panel.
   const [placementDraft, setPlacementDraft] = useState<{ room: string; bin: string }>({ room: '', bin: '' })
   const [placementSaving, setPlacementSaving] = useState(false)
@@ -484,7 +542,14 @@ export default function StockPage({ onOpenPo, onOpenRequest, onOpenTransfer }: {
     setPlacementDraft({ room: current?.room ?? '', bin: current?.bin ?? '' })
     setLotsLoading(true)
     setLots([])
-    const res = await fetch(`/api/purchasing/stock/lots?itemId=${item.id}&locationId=${locationId}`)
+    setHistory(null)
+    setHistoryTotal(null)
+    const isWarehouse = data?.locations.find(l => l.location.id === locationId)?.location.type === 'WAREHOUSE'
+    const [res] = await Promise.all([
+      fetch(`/api/purchasing/stock/lots?itemId=${item.id}&locationId=${locationId}`),
+      isWarehouse && fetch(`/api/purchasing/stock/history?itemId=${item.id}&locationId=${locationId}`)
+        .then(r => r.ok ? r.json() : { rows: [] }).then(d => { setHistory(d.rows ?? []); setHistoryTotal(d.totalStock ?? null) }).catch(() => setHistory([])),
+    ])
     if (res.ok) setLots(await res.json())
     setLotsLoading(false)
   }
@@ -629,7 +694,7 @@ export default function StockPage({ onOpenPo, onOpenRequest, onOpenTransfer }: {
           const lowStockCount = loc.rows.filter((r): r is StockRow => r.kind === 'stock' && isLowRow(r)).length
           const Icon = loc.location.type === 'VESSEL' ? Ship : Warehouse
           return (
-            <div className="rounded-xl border overflow-hidden">
+            <div className="rounded-xl border overflow-clip">
               <div className="flex items-center justify-between px-5 py-4 bg-muted/20 border-b">
                 <div className="flex items-center gap-3">
                   <Icon className="h-4 w-4 text-muted-foreground" />
@@ -659,7 +724,7 @@ export default function StockPage({ onOpenPo, onOpenRequest, onOpenTransfer }: {
               const lowStockCount = rows.filter((r): r is StockRow => r.kind === 'stock' && isLowRow(r)).length
               const Icon = location.type === 'VESSEL' ? Ship : Warehouse
               return (
-                <div key={location.id} className="rounded-xl border overflow-hidden">
+                <div key={location.id} className="rounded-xl border overflow-clip">
                   <button
                     className="w-full flex items-center justify-between px-5 py-4 hover:bg-muted/30 transition-colors text-left"
                     onClick={() => setOpenLoc(isOpen ? null : location.id)}
@@ -766,7 +831,7 @@ export default function StockPage({ onOpenPo, onOpenRequest, onOpenTransfer }: {
       {lotPanel && (
         <>
           <div className="fixed inset-0 bg-black/30 z-40" onClick={() => setLotPanel(null)} />
-          <div className="fixed right-0 top-0 h-full w-full max-w-lg bg-card shadow-2xl z-50 flex flex-col">
+          <div className={`fixed right-0 top-0 h-full w-full ${data?.locations.find(l => l.location.id === lotPanel.locationId)?.location.type === 'WAREHOUSE' ? 'max-w-5xl' : 'max-w-lg'} bg-card shadow-2xl z-50 flex flex-col`}>
             {/* Header */}
             <div className="flex items-start justify-between px-5 py-4 border-b shrink-0">
               <div>
@@ -830,42 +895,94 @@ export default function StockPage({ onOpenPo, onOpenRequest, onOpenTransfer }: {
                 )
               })()}
               {(() => {
-                // Incoming: the PRs (Pending) / POs behind this item's numbers at this warehouse.
-                const row = data?.locations.find(l => l.location.id === lotPanel.locationId)?.rows
-                  .find((r): r is StockRow => r.kind === 'stock' && r.item.id === lotPanel.item.id)
-                const sources = row?.replenish?.sources ?? []
-                if (!sources.length) return null
-                const BADGE: Record<ReplenishSource['kind'], { label: string; cls: string }> = {
-                  PR: { label: 'Pending', cls: 'bg-warning/10 text-warning' },
-                  PO: { label: 'PO', cls: 'bg-info/10 text-info' },
-                  TR: { label: 'Transfer', cls: 'bg-orange-500/10 text-orange-600 dark:text-orange-300' },
-                  BACKORDER: { label: 'Backorder', cls: 'bg-orange-500/10 text-orange-600 dark:text-orange-300' },
-                  REQUEST: { label: 'Ship request', cls: 'bg-orange-500/10 text-orange-600 dark:text-orange-300' },
-                }
-                const open = (src: ReplenishSource) =>
-                  src.kind === 'PO' ? onOpenPo?.(src.id) : src.kind === 'TR' ? onOpenTransfer?.(src.id) : onOpenRequest?.(src.id)
-                const section = (title: string, list: ReplenishSource[]) => list.length > 0 && (
-                  <div className="m-5 mb-0 rounded-lg border overflow-hidden">
-                    <div className="px-4 py-2 bg-muted/40 text-xs font-semibold text-muted-foreground uppercase tracking-wide">{title}</div>
-                    <div className="divide-y">
-                      {list.map(src => (
-                        <div key={`${src.kind}-${src.id}`} className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm">
-                          <div className="min-w-0">
-                            <button onClick={() => open(src)}
-                              className="font-mono text-xs font-medium hover:underline underline-offset-2 text-primary">{src.number}</button>
-                            <span className={`ml-2 text-[11px] px-1.5 py-0.5 rounded font-medium ${BADGE[src.kind].cls}`}>{BADGE[src.kind].label}</span>
-                            <p className="text-xs text-muted-foreground mt-0.5">{sourceStatus(src)} · {formatDate(src.createdAt)}</p>
-                          </div>
-                          <StockQty item={lotPanel.item} qty={src.qty} className="font-semibold tabular-nums shrink-0 text-right" />
-                        </div>
-                      ))}
+                // The user's sheet: Tanggal · PR no. · Min · Current · PR · Reserve · Ending · Ordered ·
+                // STATUS (P.O · Pending · GR). PR no. / PR qty merged per document, Min over all rows.
+                const isWh = data?.locations.find(l => l.location.id === lotPanel.locationId)?.location.type === 'WAREHOUSE'
+                if (!isWh) return null
+                const it = lotPanel.item
+                const n = (q: number | null) => q === null ? '—' : formatNumber(stockQty(it, q).qty, { decimals: 2 })
+                const unit = stockQty(it, 0).unit
+                const cell = 'border px-3 py-2 text-center tabular-nums'
+                const head = 'border px-3 py-2 text-center font-medium bg-muted/50 whitespace-nowrap'
+                const totalRows = (history ?? []).reduce((t, h) => t + h.batches.length, 0)
+                const open = (h: HistoryRow) => h.kind === 'PO' ? onOpenPo?.(h.doc.id) : onOpenRequest?.(h.doc.id)
+                return (
+                  <div className="m-5 mb-0">
+                    <div className="flex items-baseline justify-between mb-2">
+                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">History</p>
+                      <p className="text-xs text-muted-foreground">in {unit}</p>
                     </div>
+                    {history === null ? (
+                      <p className="text-sm text-muted-foreground py-6 text-center"><Loader2 className="h-4 w-4 animate-spin inline mr-1.5" />Loading…</p>
+                    ) : history.length === 0 ? (
+                      <p className="text-sm text-muted-foreground py-6 text-center border rounded-lg">No PR or PO for this item at {lotPanel.locationName} yet.</p>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm border-collapse">
+                          <thead>
+                            <tr>
+                              <th rowSpan={2} className={head}>Tanggal</th>
+                              <th rowSpan={2} className={head}>PR</th>
+                              <th rowSpan={2} className={head}>Min Stock</th>
+                              <th rowSpan={2} className={head}>Current</th>
+                              <th rowSpan={2} className={head}>PR</th>
+                              <th rowSpan={2} className={head}>Reserve</th>
+                              <th rowSpan={2} className={head}>Ending Stock</th>
+                              <th rowSpan={2} className={head}>Ordered</th>
+                              <th colSpan={3} className={head}>STATUS</th>
+                            </tr>
+                            <tr>
+                              <th className={head}>P.O</th>
+                              <th className={head}>Pending</th>
+                              <th className={head}>GR</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {history.map((h, hi) => h.batches.map((b, i) => (
+                              <tr key={`${h.key}-${i}`}>
+                                <td className="border px-3 py-2 whitespace-nowrap text-muted-foreground">{formatDate(b.date)}</td>
+                                {i === 0 && (
+                                  <td rowSpan={h.batches.length} className={`${cell} align-middle`}>
+                                    {h.kind === 'MOVEMENT' ? (
+                                      <div className="text-xs text-left">
+                                        <span className="text-muted-foreground">{h.doc.number}</span>{' '}
+                                        <span className={`font-medium tabular-nums ${(h.change ?? 0) < 0 ? 'text-destructive' : 'text-success'}`}>
+                                          {(h.change ?? 0) > 0 ? '+' : '−'}{n(Math.abs(h.change ?? 0))}
+                                        </span>
+                                        {h.stage && <p className="text-[11px] text-muted-foreground/80 truncate max-w-[14rem]" title={h.stage}>{h.stage}</p>}
+                                      </div>
+                                    ) : (
+                                      <button onClick={() => open(h)} title={[h.destination, h.stage].filter(Boolean).join(' · ')}
+                                        className="font-mono text-xs font-medium hover:text-primary hover:underline underline-offset-2">{h.doc.number}</button>
+                                    )}
+                                  </td>
+                                )}
+                                {hi === 0 && i === 0 && <td rowSpan={totalRows} className={`${cell} align-middle`}>{n(h.minStock)}</td>}
+                                <td className={cell}>{n(b.current)}</td>
+                                {i === 0 && <td rowSpan={h.batches.length} className={`${cell} align-middle`}>{h.kind === 'SHIP_PR' ? n(h.pr) : '—'}</td>}
+                                <td className={cell}>{n(b.reserve)}</td>
+                                <td className={cell}>{n(b.ending)}</td>
+                                <td className={`${cell} ${i === 0 && h.ordered > 0 ? 'text-destructive' : ''}`}>{n(i === 0 ? h.ordered : 0)}</td>
+                                <td className={`${cell} ${i === 0 && h.po > 0 ? 'text-info' : ''}`}>{n(i === 0 ? h.po : 0)}</td>
+                                <td className={`${cell} ${i === 0 && h.pending > 0 ? 'text-warning' : ''}`}>{n(i === 0 ? h.pending : 0)}</td>
+                                <td className={`${cell} ${i === 0 && h.gr > 0 ? 'text-success' : ''}`}>{n(i === 0 ? h.gr : 0)}</td>
+                              </tr>
+                            )))}
+                          </tbody>
+                          {/* Total Stock = on hand here now (the server's figure), so usage after the last document counts. */}
+                          <tfoot>
+                            <tr className="bg-muted/50 font-semibold">
+                              <td colSpan={3} className="border px-3 py-2 text-center">Total Stock</td>
+                              <td colSpan={8} className="border px-3 py-2 text-center tabular-nums">
+                                {n(historyTotal)}
+                              </td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                    )}
                   </div>
                 )
-                return <>
-                  {section(`Total Request — owed to ships from ${lotPanel.locationName}`, sources.filter(x => RESERVED_KINDS.includes(x.kind)))}
-                  {section(`Incoming to ${lotPanel.locationName} (PO + Pending)`, sources.filter(x => x.kind === 'PR' || x.kind === 'PO'))}
-                </>
               })()}
               {lotsLoading ? (
                 <div className="p-5 space-y-3">
@@ -883,25 +1000,6 @@ export default function StockPage({ onOpenPo, onOpenRequest, onOpenTransfer }: {
                 </div>
               ) : (
                 <>
-                  {/* Summary */}
-                  <div className="grid grid-cols-3 gap-px bg-border m-5 mb-0 rounded-lg overflow-hidden border">
-                    <div className="bg-card px-3 py-3">
-                      <p className="text-xs text-muted-foreground">Total Qty</p>
-                      {(() => { const t = stockQty(lotPanel.item, lots.reduce((s, l) => s + l.quantity, 0)); return <>
-                        <p className="font-bold text-sm sm:text-lg tabular-nums truncate">{formatNumber(t.qty, { decimals: 3 })}</p>
-                        <p className="text-xs text-muted-foreground">{t.unit}{t.baseQty !== null && ` · ${formatNumber(t.baseQty, { decimals: 3 })} ${t.baseUnit}`}</p>
-                      </> })()}
-                    </div>
-                    <div className="bg-card px-3 py-3">
-                      <p className="text-xs text-muted-foreground">Total Value</p>
-                      <p className="font-bold text-sm sm:text-lg tabular-nums truncate">{formatMoney(lots.reduce((s, l) => s + l.quantity * l.costPerUnit, 0))}</p>
-                    </div>
-                    <div className="bg-card px-3 py-3">
-                      <p className="text-xs text-muted-foreground">Lots</p>
-                      <p className="font-bold text-sm sm:text-lg tabular-nums">{lots.length}</p>
-                    </div>
-                  </div>
-
                   {/* Lot list */}
                   <div className="p-5 space-y-2">
                     {lots.map((lot, idx) => {
@@ -921,11 +1019,11 @@ export default function StockPage({ onOpenPo, onOpenRequest, onOpenTransfer }: {
                               </div>
                               <div className="flex items-center gap-4 text-sm">
                                 <StockQty item={lotPanel.item} qty={lot.quantity} className="font-semibold tabular-nums" />
-                                <span className="text-muted-foreground tabular-nums">@ {formatMoney(displayUnitCost(lotPanel.item, lot.costPerUnit))}</span>
+                                {!hidePrices && <span className="text-muted-foreground tabular-nums">@ {formatMoney(displayUnitCost(lotPanel.item, lot.costPerUnit))}</span>}
                               </div>
                             </div>
                             <div className="text-right shrink-0">
-                              <p className="text-sm font-semibold tabular-nums">{formatMoney(lot.quantity * lot.costPerUnit)}</p>
+                              {!hidePrices && <p className="text-sm font-semibold tabular-nums">{formatMoney(lot.quantity * lot.costPerUnit)}</p>}
                               {lot.expiresAt && (
                                 <p className={`text-xs mt-0.5 ${isExpired ? 'text-destructive font-medium' : isNearExpiry ? 'text-warning font-medium' : 'text-muted-foreground'}`}>
                                   Exp: {formatDate(lot.expiresAt)}

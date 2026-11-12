@@ -4,6 +4,7 @@ import { Fragment, useState, useEffect, useCallback, useMemo } from 'react'
 import { RefreshCw, Search, ChevronRight, ChevronDown, Download } from 'lucide-react'
 import { formatDate, formatDateRange, formatMoney, formatNumber } from '@/lib/format'
 import { displayQty } from '@/lib/purchasing/units'
+import { useHidePrices } from '@/hooks/useHidePrices'
 
 // Purchasing › Trip Usage — what each trip took as usage (pemakaian), per yacht & year.
 // Same ledger and trip-matching rule as Finance › Trip Stats (see api/purchasing/reports/trip-usage).
@@ -92,6 +93,7 @@ function FilterChip({ label, value, options, onChange }: { label: string; value:
 }
 
 function LinesTable({ lines, mode }: { lines: Line[]; mode: 'item' | 'detail' }) {
+  const hidePrices = useHidePrices()
   const th = 'px-3 py-2 font-medium whitespace-nowrap'
   const td = 'px-3 py-2'
   if (!lines.length) return <p className="px-5 py-4 text-sm text-muted-foreground italic">No usage recorded.</p>
@@ -105,8 +107,8 @@ function LinesTable({ lines, mode }: { lines: Line[]; mode: 'item' | 'detail' })
             <th className={`${th} text-left`}>Category</th>
             <th className={`${th} text-left`}>Type</th>
             <th className={`${th} text-right`}>Qty</th>
-            <th className={`${th} text-right`}>Price</th>
-            <th className={`${th} text-right pr-5`}>Total</th>
+            {!hidePrices && <th className={`${th} text-right`}>Price</th>}
+            {!hidePrices && <th className={`${th} text-right pr-5`}>Total</th>}
           </tr>
         </thead>
         <tbody className="divide-y">
@@ -116,8 +118,8 @@ function LinesTable({ lines, mode }: { lines: Line[]; mode: 'item' | 'detail' })
               <td className={`${td} text-muted-foreground`}>{r.category ?? '—'}</td>
               <td className={`${td} text-muted-foreground text-xs`}>{USAGE_LABEL[r.usageType]}</td>
               <td className={`${td} text-right tabular-nums whitespace-nowrap ${d.qty < 0 ? 'text-destructive' : ''}`}>{formatNumber(d.qty, { decimals: 2 })} <span className="text-xs text-muted-foreground">{d.unit}</span></td>
-              <td className={`${td} text-right tabular-nums whitespace-nowrap`}>{d.price === null ? '—' : formatMoney(d.price)}</td>
-              <td className={`${td} text-right tabular-nums whitespace-nowrap pr-5 ${r.cost < 0 ? 'text-destructive' : ''}`}>{formatMoney(r.cost)}</td>
+              {!hidePrices && <td className={`${td} text-right tabular-nums whitespace-nowrap`}>{d.price === null ? '—' : formatMoney(d.price)}</td>}
+              {!hidePrices && <td className={`${td} text-right tabular-nums whitespace-nowrap pr-5 ${r.cost < 0 ? 'text-destructive' : ''}`}>{formatMoney(r.cost)}</td>}
             </tr>
           ) })}
         </tbody>
@@ -133,8 +135,8 @@ function LinesTable({ lines, mode }: { lines: Line[]; mode: 'item' | 'detail' })
           <th className={`${th} text-left`}>Item</th>
           <th className={`${th} text-left`}>Type</th>
           <th className={`${th} text-right`}>Qty</th>
-          <th className={`${th} text-right`}>Price</th>
-          <th className={`${th} text-right pr-5`}>Total</th>
+          {!hidePrices && <th className={`${th} text-right`}>Price</th>}
+          {!hidePrices && <th className={`${th} text-right pr-5`}>Total</th>}
         </tr>
       </thead>
       <tbody className="divide-y">
@@ -148,8 +150,8 @@ function LinesTable({ lines, mode }: { lines: Line[]; mode: 'item' | 'detail' })
             <td className={`${td} font-medium`}>{l.itemName}</td>
             <td className={`${td} text-muted-foreground text-xs`}>{l.qty < 0 ? 'Returned' : USAGE_LABEL[l.usageType]}</td>
             <td className={`${td} text-right tabular-nums whitespace-nowrap ${d.qty < 0 ? 'text-destructive' : ''}`}>{formatNumber(d.qty, { decimals: 2 })} <span className="text-xs text-muted-foreground">{d.unit}</span></td>
-            <td className={`${td} text-right tabular-nums whitespace-nowrap`}>{d.price === null ? '—' : formatMoney(d.price)}</td>
-            <td className={`${td} text-right tabular-nums whitespace-nowrap pr-5 ${l.cost < 0 ? 'text-destructive' : ''}`}>{formatMoney(l.cost)}</td>
+            {!hidePrices && <td className={`${td} text-right tabular-nums whitespace-nowrap`}>{d.price === null ? '—' : formatMoney(d.price)}</td>}
+            {!hidePrices && <td className={`${td} text-right tabular-nums whitespace-nowrap pr-5 ${l.cost < 0 ? 'text-destructive' : ''}`}>{formatMoney(l.cost)}</td>}
           </tr>
         ) })}
       </tbody>
@@ -289,6 +291,7 @@ function buildDetail(trips: Trip[], unassigned: Line[]): DetailRow[] {
 }
 
 function UsageDetail({ rows }: { rows: DetailRow[] }) {
+  const hidePrices = useHidePrices()
   if (!rows.length) return <p className="px-5 py-10 text-center text-sm text-muted-foreground">No usage recorded.</p>
   const th = 'px-3 py-2.5 font-medium whitespace-nowrap'
   const td = 'px-3 py-2.5'
@@ -303,8 +306,8 @@ function UsageDetail({ rows }: { rows: DetailRow[] }) {
             <th className={`${th} text-left`}>Trip No</th>
             <th className={`${th} text-left`}>Item</th>
             <th className={`${th} text-right`}>Qty</th>
-            <th className={`${th} text-right`}>Price</th>
-            <th className={`${th} text-right pr-5`}>Total</th>
+            {!hidePrices && <th className={`${th} text-right`}>Price</th>}
+            {!hidePrices && <th className={`${th} text-right pr-5`}>Total</th>}
           </tr>
         </thead>
         <tbody className="divide-y">
@@ -324,27 +327,31 @@ function UsageDetail({ rows }: { rows: DetailRow[] }) {
               <td className={`${td} text-right tabular-nums whitespace-nowrap ${r.qty < 0 ? 'text-destructive' : ''}`}>
                 {formatNumber(r.qty, { decimals: 2 })} <span className="text-xs text-muted-foreground">{r.unit}</span>
               </td>
-              <td className={`${td} text-right tabular-nums whitespace-nowrap`}>{r.price === null ? '—' : formatMoney(r.price)}</td>
-              <td className={`${td} text-right tabular-nums whitespace-nowrap pr-5 font-medium ${r.total < 0 ? 'text-destructive' : ''}`}>{formatMoney(r.total)}</td>
+              {!hidePrices && <td className={`${td} text-right tabular-nums whitespace-nowrap`}>{r.price === null ? '—' : formatMoney(r.price)}</td>}
+              {!hidePrices && <td className={`${td} text-right tabular-nums whitespace-nowrap pr-5 font-medium ${r.total < 0 ? 'text-destructive' : ''}`}>{formatMoney(r.total)}</td>}
             </tr>
           ))}
         </tbody>
-        <tfoot className="border-t-2">
+        {!hidePrices && <tfoot className="border-t-2">
           <tr>
             <td colSpan={6} className="px-3 py-3 text-right font-semibold">Total</td>
             <td className="px-3 py-3 pr-5 text-right tabular-nums font-bold whitespace-nowrap">{formatMoney(total)}</td>
           </tr>
-        </tfoot>
+        </tfoot>}
       </table>
     </div>
   )
 }
 
-async function exportDetailXlsx(rows: DetailRow[], fileLabel: string) {
+// Money columns dropped from the workbook for roles that must not see prices (useHidePrices).
+const MONEY_KEYS = ['price', 'cost', 'total']
+const withoutMoney = <T extends { key?: string }>(cols: T[], hide: boolean) => hide ? cols.filter(c => !MONEY_KEYS.includes(c.key ?? '')) : cols
+
+async function exportDetailXlsx(rows: DetailRow[], fileLabel: string, hidePrices = false) {
   const { default: ExcelJS } = await import('exceljs')
   const wb = new ExcelJS.Workbook()
   const ws = wb.addWorksheet('Usage Detail')
-  ws.columns = [
+  ws.columns = withoutMoney([
     { header: 'No', key: 'no', width: 6 },
     { header: 'Ship', key: 'ship', width: 18 },
     { header: 'Trip No', key: 'trip', width: 9 },
@@ -354,13 +361,15 @@ async function exportDetailXlsx(rows: DetailRow[], fileLabel: string) {
     { header: 'Unit', key: 'unit', width: 8 },
     { header: 'Price (IDR)', key: 'price', width: 14, style: { numFmt: '#,##0' } },
     { header: 'Total (IDR)', key: 'total', width: 16, style: { numFmt: '#,##0' } },
-  ]
+  ], hidePrices)
   rows.forEach((r, i) => ws.addRow({
     no: i + 1, ship: r.yachtName, trip: r.tripNumber ?? '', tripLabel: r.tripLabel ?? 'Unassigned', item: r.itemName,
     qty: r.qty, unit: r.unit, price: r.price === null ? '' : Math.round(r.price), total: Math.round(r.total),
   }))
-  const totalRow = ws.addRow({ price: 'Total', total: Math.round(rows.reduce((s, r) => s + r.total, 0)) })
-  totalRow.font = { bold: true }
+  if (!hidePrices) {
+    const totalRow = ws.addRow({ price: 'Total', total: Math.round(rows.reduce((s, r) => s + r.total, 0)) })
+    totalRow.font = { bold: true }
+  }
   const head = ws.getRow(1)
   head.font = { bold: true }
   head.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1EDE3' } }
@@ -374,7 +383,7 @@ async function exportDetailXlsx(rows: DetailRow[], fileLabel: string) {
   URL.revokeObjectURL(url)
 }
 
-async function exportXlsx(data: Data, trips: Trip[], unassigned: Line[]) {
+async function exportXlsx(data: Data, trips: Trip[], unassigned: Line[], hidePrices = false) {
   const { default: ExcelJS } = await import('exceljs')
   const wb = new ExcelJS.Workbook()
   const yacht = data.yachts.find(y => y.id === data.yachtId)?.name ?? ''
@@ -396,7 +405,7 @@ async function exportXlsx(data: Data, trips: Trip[], unassigned: Line[]) {
   })
 
   const ws1 = wb.addWorksheet('By item')
-  ws1.columns = [
+  ws1.columns = withoutMoney([
     ...tripCols,
     { header: 'Item', key: 'item', width: 34 },
     { header: 'Category', key: 'category', width: 18 },
@@ -405,7 +414,7 @@ async function exportXlsx(data: Data, trips: Trip[], unassigned: Line[]) {
     { header: 'Unit', key: 'unit', width: 8 },
     { header: 'Price (IDR)', key: 'price', width: 14, style: { numFmt: '#,##0' } },
     { header: 'Total (IDR)', key: 'cost', width: 14, style: { numFmt: '#,##0' } },
-  ]
+  ], hidePrices)
   for (const g of groups) for (const r of byItem(g.lines)) {
     const d = qtyPrice(r)
     ws1.addRow({ ...tripCells(g.trip), item: r.itemName, category: r.category ?? '', type: USAGE_LABEL[r.usageType], qty: d.qty, unit: d.unit, price: d.price === null ? '' : Math.round(d.price), cost: Math.round(r.cost) })
@@ -413,7 +422,7 @@ async function exportXlsx(data: Data, trips: Trip[], unassigned: Line[]) {
   styleHeader(ws1)
 
   const ws2 = wb.addWorksheet('Detail')
-  ws2.columns = [
+  ws2.columns = withoutMoney([
     ...tripCols,
     { header: 'Date', key: 'date', width: 12, style: { numFmt: 'dd mmm yyyy' } },
     { header: 'Document', key: 'doc', width: 26 },
@@ -425,7 +434,7 @@ async function exportXlsx(data: Data, trips: Trip[], unassigned: Line[]) {
     { header: 'Price (IDR)', key: 'price', width: 14, style: { numFmt: '#,##0' } },
     { header: 'Total (IDR)', key: 'cost', width: 14, style: { numFmt: '#,##0' } },
     { header: 'By date', key: 'byDate', width: 9 },
-  ]
+  ], hidePrices)
   for (const g of groups) for (const l of g.lines) {
     const d = qtyPrice(l)
     ws2.addRow({
@@ -445,6 +454,7 @@ async function exportXlsx(data: Data, trips: Trip[], unassigned: Line[]) {
 }
 
 export default function TripUsagePage() {
+  const hidePrices = useHidePrices()
   const thisYear = new Date().getFullYear()
   const [year, setYear] = useState(thisYear)
   const [yachtId, setYachtId] = useState('all')
@@ -514,8 +524,8 @@ export default function TripUsagePage() {
               if (!data) return
               setExporting(true)
               try {
-                if (view === 'detail') await exportDetailXlsx(detailRows, `${yachtName ?? 'All yachts'} ${data.year}`)
-                else await exportXlsx(data, trips, unassigned)
+                if (view === 'detail') await exportDetailXlsx(detailRows, `${yachtName ?? 'All yachts'} ${data.year}`, hidePrices)
+                else await exportXlsx(data, trips, unassigned, hidePrices)
               } finally { setExporting(false) }
             }}
             disabled={!data || exporting}
@@ -550,18 +560,20 @@ export default function TripUsagePage() {
       </div>
 
       {/* Summary strip */}
-      <div className="grid grid-cols-2 md:grid-cols-4 rounded-lg border divide-y md:divide-y-0 md:divide-x">
+      <div className={`grid grid-cols-2 ${hidePrices ? 'md:grid-cols-2' : 'md:grid-cols-4'} rounded-lg border divide-y md:divide-y-0 md:divide-x`}>
         <Stat label="Trips with usage" value={String(withUsage.length)} sub={`of ${data?.trips.length ?? 0} in ${year}`} />
-        <Stat label="Total cost" value={formatMoney(grandTotal)} />
-        <Stat label="Avg per trip" value={withUsage.length ? formatMoney(grandTotal / withUsage.length) : '—'} />
-        <Stat label="Unassigned" value={formatMoney(unassignedTotal)} sub={unassigned.length ? `${unassigned.length} lines` : undefined} tone={unassigned.length ? 'amber' : undefined} />
+        {!hidePrices && <Stat label="Total cost" value={formatMoney(grandTotal)} />}
+        {!hidePrices && <Stat label="Avg per trip" value={withUsage.length ? formatMoney(grandTotal / withUsage.length) : '—'} />}
+        {hidePrices
+          ? <Stat label="Unassigned" value={`${unassigned.length} lines`} tone={unassigned.length ? 'amber' : undefined} />
+          : <Stat label="Unassigned" value={formatMoney(unassignedTotal)} sub={unassigned.length ? `${unassigned.length} lines` : undefined} tone={unassigned.length ? 'amber' : undefined} />}
       </div>
 
       {view === 'detail' ? (
         <div className="rounded-lg border overflow-hidden">
           <div className="px-4 py-2.5 border-b">
             <p className="text-sm font-medium">
-              {yachtName ?? 'All yachts'} <span className="text-muted-foreground font-normal">· items used per trip in {year}, valued at average purchase cost</span>
+              {yachtName ?? 'All yachts'} <span className="text-muted-foreground font-normal">· items used per trip in {year}{!hidePrices && ', valued at average purchase cost'}</span>
             </p>
           </div>
           {loading && !data
@@ -575,7 +587,7 @@ export default function TripUsagePage() {
               {yachtName ?? 'Ship'} <span className="text-muted-foreground font-normal">· spare parts received in {year} — ship upkeep, not charged to any trip</span>
             </p>
             <div className="flex items-center gap-4">
-              <p className="text-sm font-semibold tabular-nums">{formatMoney(maintenance.reduce((s, l) => s + l.cost, 0))}</p>
+              {!hidePrices && <p className="text-sm font-semibold tabular-nums">{formatMoney(maintenance.reduce((s, l) => s + l.cost, 0))}</p>}
               <div className="inline-flex rounded-md bg-muted p-0.5 text-xs">
                 {(['item', 'detail'] as const).map(m => (
                   <button key={m} onClick={() => setMode(m)}
@@ -636,7 +648,7 @@ export default function TripUsagePage() {
                   <th className="text-left px-3 py-2.5 font-medium">Trip</th>
                   <th className="text-left px-3 py-2.5 font-medium whitespace-nowrap">Dates</th>
                   <th className="text-right px-3 py-2.5 font-medium">Items</th>
-                  <th className="text-right px-5 py-2.5 font-medium">Total</th>
+                  {!hidePrices && <th className="text-right px-5 py-2.5 font-medium">Total</th>}
                 </tr>
               </thead>
               <tbody className="divide-y">
@@ -656,11 +668,11 @@ export default function TripUsagePage() {
                         </td>
                         <td className="px-3 py-3 whitespace-nowrap text-muted-foreground">{formatDateRange(t.startDate, t.endDate)}</td>
                         <td className="px-3 py-3 text-right tabular-nums">{itemCount}</td>
-                        <td className="px-5 py-3 text-right tabular-nums font-semibold whitespace-nowrap">{formatMoney(t.total)}</td>
+                        {!hidePrices && <td className="px-5 py-3 text-right tabular-nums font-semibold whitespace-nowrap">{formatMoney(t.total)}</td>}
                       </tr>
                       {isOpen && (
                         <tr>
-                          <td colSpan={6} className="p-0 bg-muted/10 border-t">
+                          <td colSpan={hidePrices ? 5 : 6} className="p-0 bg-muted/10 border-t">
                             <LinesTable lines={t.lines} mode={mode} />
                           </td>
                         </tr>
@@ -678,7 +690,7 @@ export default function TripUsagePage() {
         <div className="rounded-lg border border-warning/30 overflow-hidden">
           <div className="px-5 py-3 bg-warning/10 border-b border-warning/30 flex items-center justify-between gap-3">
             <p className="text-sm font-medium text-warning">Unassigned usage — no trip on this yacht to charge it to</p>
-            <p className="text-sm font-semibold text-warning tabular-nums">{formatMoney(unassignedTotal)}</p>
+            {!hidePrices && <p className="text-sm font-semibold text-warning tabular-nums">{formatMoney(unassignedTotal)}</p>}
           </div>
           <div className="overflow-x-auto"><LinesTable lines={unassigned} mode={mode} /></div>
         </div>
@@ -688,7 +700,7 @@ export default function TripUsagePage() {
       <p className="text-[11px] text-muted-foreground">
         Usage is charged to the trip picked on the Transfer / PO; without one (marked BY DATE), to the trip running that day on this yacht, else the next one to depart.
         Returns from the ship to stock show as negative. Same numbers as Finance › Trip Stats.
-        {view === 'detail' && ' Price = average purchase cost per unit (moving average of PO prices) at the time the goods reached the ship; PO payments are cash flow and are not added here.'}
+        {view === 'detail' && !hidePrices && ' Price = average purchase cost per unit (moving average of PO prices) at the time the goods reached the ship; PO payments are cash flow and are not added here.'}
         {view === 'pattern' && ' Order Pattern: food & supplies are counted as used on arrival, so "Lasts" is estimated from the gap between orders; Per guest/day = qty of completed order cycles ÷ (pax × days). Bar stock (POS sales) is not shown here.'}
       </p>
     </div>

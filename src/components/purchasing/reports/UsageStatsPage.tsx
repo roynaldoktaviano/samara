@@ -5,6 +5,7 @@ import { RefreshCw, Search, ArrowUpDown } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, CartesianGrid } from 'recharts'
 import { formatMoney, formatNumber, formatCompact, formatDate, formatDateRange } from '@/lib/format'
 import { StatusBadge } from '@/components/ui/status-badge'
+import { useHidePrices } from '@/hooks/useHidePrices'
 
 interface UsageItem {
   id: string
@@ -70,6 +71,7 @@ function CoverBadge({ weeks }: { weeks: number | null }) {
 }
 
 export default function UsageStatsPage() {
+  const hidePrices = useHidePrices()
   const [itemType, setItemType] = useState('BEVERAGE')
   const initial = PRESETS[1].get()
   const [from, setFrom] = useState(initial.from)
@@ -163,12 +165,12 @@ export default function UsageStatsPage() {
         <div className="rounded-lg border p-10 text-center text-sm text-muted-foreground">No usage recorded in this period.</div>
       ) : (
         <div className={`space-y-5 ${loading ? 'opacity-60' : ''}`}>
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+          <div className={`grid grid-cols-2 ${hidePrices ? 'md:grid-cols-4' : 'md:grid-cols-5'} gap-3`}>
             <Tile label="Avg used / week" value={`${formatNumber(data.totals.avgWeek, { decimals: 1 })} units`} sub={`${formatNumber(data.totals.net)} units in period`} />
             <Tile label="Avg used / month" value={`${formatNumber(data.totals.avgMonth, { decimals: 1 })} units`} />
-            <Tile label="Avg cost / month" value={formatMoney(data.totals.valuePerMonth)} sub={`${formatMoney(data.totals.value)} in period`} />
+            {!hidePrices && <Tile label="Avg cost / month" value={formatMoney(data.totals.valuePerMonth)} sub={`${formatMoney(data.totals.value)} in period`} />}
             <Tile label="Items under 4 weeks of stock" value={String(data.totals.lowCover)} tone={data.totals.lowCover > 0 ? 'amber' : undefined} sub="warehouse stock ÷ avg weekly use" />
-            <Tile label="Lost / miscounted" value={`${formatNumber(data.totals.loss)} units`} tone={data.totals.loss > 0 ? 'red' : undefined} sub={data.totals.lossValue > 0 ? formatMoney(data.totals.lossValue) : undefined} />
+            <Tile label="Lost / miscounted" value={`${formatNumber(data.totals.loss)} units`} tone={data.totals.loss > 0 ? 'red' : undefined} sub={data.totals.lossValue > 0 && !hidePrices ? formatMoney(data.totals.lossValue) : undefined} />
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -194,7 +196,7 @@ export default function UsageStatsPage() {
                     <button key={c.category} onClick={() => setCategory(category === c.category ? '' : c.category)} className={`w-full text-left rounded-md px-2 py-1.5 transition-colors ${category === c.category ? 'bg-warning/10 ring-1 ring-warning/40' : 'hover:bg-muted'}`}>
                       <div className="flex justify-between text-xs">
                         <span className="font-medium">{c.category}</span>
-                        <span className="text-muted-foreground">{formatNumber(c.net)} units · {formatCompact(c.value)}</span>
+                        <span className="text-muted-foreground">{formatNumber(c.net)} units{!hidePrices && <> · {formatCompact(c.value)}</>}</span>
                       </div>
                       <div className="h-1.5 rounded bg-muted mt-1"><div className="h-1.5 rounded bg-primary" style={{ width: `${pct}%` }} /></div>
                     </button>
@@ -226,7 +228,7 @@ export default function UsageStatsPage() {
                     <SortTh k="avgWeek" className="text-right">Avg / wk</SortTh>
                     <SortTh k="avgMonth" className="text-right">Avg / mo</SortTh>
                     {data.ships.map(s => <th key={s} className="px-3 py-2 font-medium text-right whitespace-nowrap">{s}</th>)}
-                    <SortTh k="value" className="text-right">Cost</SortTh>
+                    {!hidePrices && <SortTh k="value" className="text-right">Cost</SortTh>}
                     <SortTh k="warehouseStock" className="text-right">Warehouse</SortTh>
                     <SortTh k="weeksCover" className="text-right">Cover</SortTh>
                     <SortTh k="loss" className="text-right">Lost</SortTh>
@@ -243,7 +245,7 @@ export default function UsageStatsPage() {
                       <td className="px-3 py-2 text-right tabular-nums">{formatNumber(r.avgWeek, { decimals: 1 })}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{formatNumber(r.avgMonth, { decimals: 1 })}</td>
                       {data.ships.map(s => <td key={s} className="px-3 py-2 text-right tabular-nums text-muted-foreground">{r.byShip[s] ? formatNumber(r.byShip[s], { decimals: 1 }) : '—'}</td>)}
-                      <td className="px-3 py-2 text-right tabular-nums text-muted-foreground whitespace-nowrap">{r.value > 0 ? formatMoney(r.value) : '—'}</td>
+                      {!hidePrices && <td className="px-3 py-2 text-right tabular-nums text-muted-foreground whitespace-nowrap">{r.value > 0 ? formatMoney(r.value) : '—'}</td>}
                       <td className="px-3 py-2 text-right tabular-nums">{formatNumber(r.warehouseStock, { decimals: 1 })}</td>
                       <td className="px-3 py-2 text-right"><CoverBadge weeks={r.weeksCover} /></td>
                       <td className="px-3 py-2 text-right tabular-nums">{r.loss ? <span className="text-destructive">{formatNumber(r.loss, { decimals: 1 })}</span> : '—'}</td>
@@ -256,7 +258,7 @@ export default function UsageStatsPage() {
 
           <p className="text-[11px] text-muted-foreground">
             Used = issued to ships − returns, in each item&apos;s purchase unit. Averages are over the days in range that have data.
-            Cover = warehouse stock ÷ average weekly use. Cost uses the item&apos;s current average cost.
+            Cover = warehouse stock ÷ average weekly use.{!hidePrices && <> Cost uses the item&apos;s current average cost.</>}
             {data.range.cutoff && <> History up to {formatDate(new Date(data.range.cutoff).getTime() - 86400000)} comes from the imported CariStok sheet; later movements from ERP transfers.</>}
           </p>
         </div>

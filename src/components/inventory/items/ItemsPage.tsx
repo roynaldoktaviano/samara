@@ -6,6 +6,7 @@ import { renderLocationOptions } from '@/components/purchasing/LocationOptions'
 import { MultiFilePicker, FilePreview } from '@/components/ui/file-preview'
 import { StatusBadge, type StatusTone } from '@/components/ui/status-badge'
 import { formatDate, formatMoney } from '@/lib/format'
+import { useHidePrices } from '@/hooks/useHidePrices'
 
 interface StockLocation { id: string; name: string; type: string; parentId: string | null }
 interface Room { id: string; name: string; locationId: string }
@@ -52,6 +53,7 @@ const BLANK_FORM = {
 }
 
 export default function InventoryItemsPage() {
+  const hidePrices = useHidePrices()
   const [locations, setLocations] = useState<StockLocation[]>([])
   const [rooms, setRooms] = useState<Room[]>([])
   const [categories, setCategories] = useState<Category[]>([])
@@ -275,15 +277,15 @@ export default function InventoryItemsPage() {
                 <th className="text-left px-4 py-3 font-medium">Category</th>
                 <th className="text-left px-4 py-3 font-medium">Brand</th>
                 <th className="text-right px-4 py-3 font-medium">Qty</th>
-                <th className="text-right px-4 py-3 font-medium">Price</th>
-                <th className="text-right px-4 py-3 font-medium">Total</th>
+                {!hidePrices && <th className="text-right px-4 py-3 font-medium">Price</th>}
+                {!hidePrices && <th className="text-right px-4 py-3 font-medium">Total</th>}
                 <th className="text-left px-4 py-3 font-medium">Vendor</th>
                 <th className="px-4 py-3" />
               </tr>
             </thead>
             <tbody className="divide-y">
               {items.length === 0 ? (
-                <tr><td colSpan={9} className="text-center py-12 text-muted-foreground text-sm">
+                <tr><td colSpan={hidePrices ? 7 : 9} className="text-center py-12 text-muted-foreground text-sm">
                   <Package className="h-8 w-8 mx-auto mb-2 opacity-20" />
                   No items found.
                 </td></tr>
@@ -297,8 +299,8 @@ export default function InventoryItemsPage() {
                   <td className="px-4 py-3"><span className="px-2 py-0.5 rounded-full text-xs bg-muted text-muted-foreground">{item.category.name}</span></td>
                   <td className="px-4 py-3 text-muted-foreground">{item.brand || '—'}</td>
                   <td className="px-4 py-3 text-right">{item.quantity}</td>
-                  <td className="px-4 py-3 text-right">{formatMoney(item.unitPrice)}</td>
-                  <td className="px-4 py-3 text-right font-medium">{formatMoney(item.total)}</td>
+                  {!hidePrices && <td className="px-4 py-3 text-right">{formatMoney(item.unitPrice)}</td>}
+                  {!hidePrices && <td className="px-4 py-3 text-right font-medium">{formatMoney(item.total)}</td>}
                   <td className="px-4 py-3 text-muted-foreground text-xs">{item.vendorName || '—'}</td>
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-end gap-1">
@@ -402,14 +404,14 @@ export default function InventoryItemsPage() {
                   <input type="number" min={1} className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
                     value={form.quantity} onChange={e => setForm(f => ({ ...f, quantity: e.target.value }))} />
                 </div>
-                <div className="space-y-1">
+                {!hidePrices && <div className="space-y-1">
                   <label className="text-xs font-medium text-muted-foreground">Price</label>
                   <input type="number" min={0} className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
                     value={form.unitPrice} onChange={e => setForm(f => ({ ...f, unitPrice: e.target.value }))} />
-                </div>
-                <div className="col-span-2 text-xs text-muted-foreground">
+                </div>}
+                {!hidePrices && <div className="col-span-2 text-xs text-muted-foreground">
                   Total: <span className="font-semibold text-foreground">{formatMoney((Number(form.quantity) || 0) * (Number(form.unitPrice) || 0))}</span>
-                </div>
+                </div>}
 
                 <div className="col-span-2 space-y-1">
                   <label className="text-xs font-medium text-muted-foreground">Link to Purchase Order (optional — auto-fills Vendor & Purchase Date)</label>

@@ -109,7 +109,7 @@ function hasMore(meta: Json | undefined, page: number, pageLen: number, seen: nu
 }
 const uniq = (a: (string | null)[]) => [...new Set(a.filter((x): x is string => !!x))]
 
-async function retryDb<T>(db: PrismaClient, fn: () => Promise<T>): Promise<T> {
+export async function retryDb<T>(db: PrismaClient, fn: () => Promise<T>): Promise<T> {
   for (let i = 0; ; i++) {
     try { return await fn() } catch (e: any) {
       const conn = ['P1017', 'P1001', 'P1008', 'P2024'].includes(e?.code) || e?.name === 'PrismaClientInitializationError'
@@ -213,7 +213,7 @@ export async function syncUsers(db: PrismaClient, fs: FreshsalesClient) {
 
 // ─── contacts ───────────────────────────────────────────────────────────────
 
-function contactRow(c: Json) {
+export function contactRow(c: Json) {
   return {
     name: str(c.display_name) ?? (uniq([str(c.first_name), str(c.last_name)]).join(' ') || null),
     email: str(c.email),
@@ -245,16 +245,12 @@ export async function syncContacts(db: PrismaClient, fs: FreshsalesClient, viewI
   return track(db, 'contacts', async () => {
     let { page, processed: n } = resume, total: number | null = null
     for (;;) {
-      const data = await fs.get(`/api/contacts/view/${viewId}?page=${page}&per_page=${PAGE}&sort=created_at&sort_type=asc`)
+      // include=owner — without it the view omits owner_id and every contact's ownerFsId ends up null
+      const data = await fs.get(`/api/contacts/view/${viewId}?page=${page}&per_page=${PAGE}&sort=created_at&sort_type=asc&include=owner`)
       const list: Json[] = data?.contacts ?? []
       total = data?.meta?.total ?? total
       const rows = list.map(c => ({ id: String(c.id), ...contactRow(c) }))
-      await retryDb(db, () => upsertMany(
-        ids => db.freshsalesContact.findMany({ where: { id: { in: ids } }, select: { id: true } }).then(r => r.map(x => x.id)),
-        rows,
-        r => db.freshsalesContact.createMany({ data: r, skipDuplicates: true }),
-        ({ id, ...r }) => db.freshsalesContact.update({ where: { id }, data: r }),
-      ))
+      await upsertContactRows(db, rows)
       n += rows.length
       if (page % 10 === 0) await state(db, 'contacts', { processed: n, total, cursor: { page: page + 1 } })
       if (list.length < PAGE) break
@@ -263,6 +259,40 @@ export async function syncContacts(db: PrismaClient, fs: FreshsalesClient, viewI
     await state(db, 'contacts', { processed: n, total })
     await linkContacts(db)
     return n
+  })
+}
+
+type ContactRow = { id: string } & ReturnType<typeof contactRow>
+
+/**
+ * Insert new contacts, and update the existing ones in ONE statement per page — row-by-row
+ * updates made a full 35k-contact refresh take hours.
+ */
+export async function upsertContactRows(db: PrismaClient, rows: ContactRow[]) {
+  if (!rows.length) return
+  await retryDb(db, async () => {
+    const have = new Set((await db.freshsalesContact.findMany({ where: { id: { in: rows.map(r => r.id) } }, select: { id: true } })).map(r => r.id))
+    const fresh = rows.filter(r => !have.has(r.id))
+    if (fresh.length) await db.freshsalesContact.createMany({ data: fresh, skipDuplicates: true })
+    const old = rows.filter(r => have.has(r.id))
+    if (!old.length) return
+    const payload = JSON.stringify(old.map(r => ({
+      ...r,
+      lastContactedAt: r.lastContactedAt?.toISOString() ?? null,
+      fsCreatedAt: r.fsCreatedAt?.toISOString() ?? null,
+      fsUpdatedAt: r.fsUpdatedAt?.toISOString() ?? null,
+      raw: r.raw ?? null,
+    })))
+    await db.$executeRawUnsafe(`
+      UPDATE "FreshsalesContact" fc SET
+        name = x.name, email = x.email, phone = x.phone, "ownerFsId" = x."ownerFsId",
+        "lastContactedAt" = (x."lastContactedAt")::timestamptz AT TIME ZONE 'UTC',
+        "fsCreatedAt" = (x."fsCreatedAt")::timestamptz AT TIME ZONE 'UTC',
+        "fsUpdatedAt" = (x."fsUpdatedAt")::timestamptz AT TIME ZONE 'UTC',
+        "isDeleted" = x."isDeleted", raw = COALESCE(x.raw, fc.raw), "syncedAt" = NOW()
+      FROM jsonb_to_recordset($1::jsonb) AS x(id text, name text, email text, phone text, "ownerFsId" text,
+        "lastContactedAt" text, "fsCreatedAt" text, "fsUpdatedAt" text, "isDeleted" boolean, raw jsonb)
+      WHERE fc.id = x.id`, payload)
   })
 }
 
@@ -276,6 +306,28 @@ export async function linkContacts(db: PrismaClient) {
 }
 
 // ─── deals ──────────────────────────────────────────────────────────────────
+
+// One row of /api/filtered_search/deal (slim: no custom fields / lost reason — those come from the detail pull)
+export function dealIndexRow(d: Json, pipelineOf: Map<string, string | null>) {
+  const stageFsId = str(d.deal_stage_id)
+  return {
+    id: String(d.id),
+    name: str(d.name) ?? `Deal ${d.id}`,
+    amount: num(d.amount),
+    baseCurrencyAmount: num(d.base_currency_amount),
+    currencyFsId: str(d.currency_id),
+    stageFsId,
+    pipelineFsId: stageFsId ? pipelineOf.get(stageFsId) ?? null : null,
+    stageUpdatedAt: date(d.stage_updated_time),
+    ownerFsId: str(d.owner_id),
+    contactFsIds: (d.contact_ids ?? []).map(String),
+    probability: int(d.probability),
+    expectedClose: date(d.expected_close),
+    fsCreatedAt: date(d.created_at),
+    // only when sent, so a slim index row never blanks what the detail pull stored
+    ...(d.updated_at ? { fsUpdatedAt: date(d.updated_at) } : {}),
+  }
+}
 
 export async function syncDealsIndex(db: PrismaClient, fs: FreshsalesClient) {
   const resume = await resumePage(db, 'dealsIndex')
@@ -295,24 +347,7 @@ export async function syncDealsIndex(db: PrismaClient, fs: FreshsalesClient) {
           skipDuplicates: true,
         }))
       }
-      const rows = list.map(d => {
-        const stageFsId = str(d.deal_stage_id)
-        return {
-          id: String(d.id),
-          name: str(d.name) ?? `Deal ${d.id}`,
-          amount: num(d.amount),
-          baseCurrencyAmount: num(d.base_currency_amount),
-          currencyFsId: str(d.currency_id),
-          stageFsId,
-          pipelineFsId: stageFsId ? pipelineOf.get(stageFsId) ?? null : null,
-          stageUpdatedAt: date(d.stage_updated_time),
-          ownerFsId: str(d.owner_id),
-          contactFsIds: (d.contact_ids ?? []).map(String),
-          probability: int(d.probability),
-          expectedClose: date(d.expected_close),
-          fsCreatedAt: date(d.created_at),
-        }
-      })
+      const rows = list.map(d => dealIndexRow(d, pipelineOf))
       await retryDb(db, () => upsertMany(
         ids => db.freshsalesDeal.findMany({ where: { id: { in: ids } }, select: { id: true } }).then(r => r.map(x => x.id)),
         rows,
@@ -333,9 +368,9 @@ export async function syncDealsIndex(db: PrismaClient, fs: FreshsalesClient) {
 // `include` was requested — GET /api/deals/{id} without it silently omits the key. A missing key
 // therefore means "not fetched", never "empty": those columns are left untouched instead of being
 // overwritten with null (which once wiped owner/contacts/currency on every deal).
-const DEAL_DETAIL_INCLUDE = 'notes,owner,contacts,deal_reason,currency,deal_type,lead_source,campaign,deal_payment_status,sales_account'
+export const DEAL_DETAIL_INCLUDE = 'notes,owner,contacts,deal_reason,currency,deal_type,lead_source,campaign,deal_payment_status,sales_account'
 
-function dealDetailRow(d: Json) {
+export function dealDetailRow(d: Json) {
   const has = (k: string) => Object.prototype.hasOwnProperty.call(d, k)
   const row: Record<string, unknown> = {
     name: str(d.name) ?? `Deal ${d.id}`,
@@ -413,7 +448,7 @@ function targetsOf(a: Json) {
   return { contactFsIds: of('contact'), dealFsIds: of('deal') }
 }
 
-async function upsertActivity(db: PrismaClient, kind: FreshsalesActivityKind, a: Json, extra: { contactFsIds?: string[]; dealFsIds?: string[] } = {}) {
+export async function upsertActivity(db: PrismaClient, kind: FreshsalesActivityKind, a: Json, extra: { contactFsIds?: string[]; dealFsIds?: string[] } = {}) {
   const t = targetsOf(a)
   const statusVal = a.status
   const row = {
@@ -497,7 +532,7 @@ export async function crawlScopeCount(db: PrismaClient) {
   return { total: Number(r.total), conversationsLeft: Number(r.conv), timelineLeft: Number(r.tl) }
 }
 
-async function syncContactConversations(db: PrismaClient, fs: FreshsalesClient, contactId: string) {
+export async function syncContactConversations(db: PrismaClient, fs: FreshsalesClient, contactId: string) {
   let n = 0
   for (let page = 1, seen = 0; page <= 100; page++) {
     const data = await fs.get(`/api/contacts/${contactId}/conversations?include=email_conversation_recipients,targetable,note,user&per_page=${PAGE}&page=${page}`)
@@ -559,7 +594,7 @@ async function syncContactConversations(db: PrismaClient, fs: FreshsalesClient, 
   return n
 }
 
-async function syncContactTimeline(db: PrismaClient, fs: FreshsalesClient, contactId: string) {
+export async function syncContactTimeline(db: PrismaClient, fs: FreshsalesClient, contactId: string) {
   let n = 0
   for (let page = 1, seen = 0; page <= 100; page++) {
     const data = await fs.get(`/api/contacts/${contactId}/activities?page=${page}&per_page=${PAGE}`)

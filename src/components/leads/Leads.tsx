@@ -15,7 +15,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Skeleton } from '@/components/ui/skeleton'
-import { UserPlus, Plus, Edit, MessageCircle, Send, Search, Mail, Phone, ChevronRight, ChevronLeft, Trash2, X, Globe, RotateCw, Download, ArrowUp, ArrowDown, Target, AlertTriangle, Loader2, Ship, AtSign } from 'lucide-react'
+import { UserPlus, Plus, Edit, MessageCircle, Send, Search, Mail, Phone, ChevronRight, ChevronLeft, Trash2, X, Globe, RotateCw, Download, ArrowUp, ArrowDown, Target, AlertTriangle, Loader2, Ship, AtSign, Instagram, Facebook, Archive } from 'lucide-react'
 import LeadEditSheet from '@/components/leads/LeadEditSheet'
 import LostReasonDialog from '@/components/leads/LostReasonDialog'
 import { isHttpUrl } from '@/lib/url-safety'
@@ -25,6 +25,8 @@ import FreshsalesImportModal from '@/components/shared/FreshsalesImportModal'
 import { LEAD_STAGES, LEAD_STAGE_LABEL, LEAD_STAGE_COLOR, type LeadStage } from '@/lib/lead-pipeline'
 import { toast } from 'sonner'
 import { NewChatForm, type NewChatPayload } from '@/components/chat/UnifiedInbox'
+import DealBookingHistory from '@/components/leads/DealBookingHistory'
+import FreshsalesHistory from '@/components/freshsales/FreshsalesHistory'
 import { WHATSAPP_BRANDS, WHATSAPP_BRAND_LABELS, type WhatsappBrand } from '@/lib/whatsapp-brands'
 
 /* ─── Types ─────────────────────────────────────────────────────────────── */
@@ -57,6 +59,23 @@ interface Lead {
   // Only on the WhatsApp / Instagram tabs: the latest chat thread.
   whatsappConversations?: ChatThreadSummary[]
   instagramConversations?: ChatThreadSummary[]
+  // Where the lead first came in from (see resolveEntryChannels in /api/leads).
+  entryChannel?: LeadEntryChannel | null
+  // Detail only (GET /api/leads/[id]): deal name (src/lib/deal-name.ts) + the guest it became.
+  dealName?: string
+  guestId?: string | null
+  bookingId?: string | null
+}
+
+type LeadEntryChannel = 'WHATSAPP' | 'INSTAGRAM' | 'MESSENGER' | 'WEBSITE' | 'INSTANT_FORM' | 'FRESHSALES'
+// Entry channel shown as one small coloured icon in front of the contact details (label on hover).
+const ENTRY_CHANNEL_BADGE: Record<LeadEntryChannel, { label: string; icon: typeof Globe; className: string }> = {
+  WHATSAPP:     { label: 'WhatsApp',     icon: MessageCircle, className: 'bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300' },
+  INSTAGRAM:    { label: 'Instagram',    icon: Instagram,     className: 'bg-pink-100 text-pink-700 dark:bg-pink-950 dark:text-pink-300' },
+  MESSENGER:    { label: 'Messenger',    icon: Facebook,      className: 'bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-300' },
+  WEBSITE:      { label: 'Website Form', icon: Globe,         className: 'bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-300' },
+  INSTANT_FORM: { label: 'Instant Form', icon: Target,        className: 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300' },
+  FRESHSALES:   { label: 'Freshsales',   icon: Archive,       className: 'bg-muted text-muted-foreground' },
 }
 
 interface ChatThreadSummary {
@@ -163,10 +182,13 @@ const FAILURE_REASON_LABEL: Record<WebhookFailure['reason'], string> = {
 }
 
 /* ─── Main Component ─────────────────────────────────────────────────────── */
-export default function Leads({ onOpenWhatsapp, onOpenEmail }: {
+export default function Leads({ onOpenWhatsapp, onOpenEmail, onOpenBooking, onOpenGuest }: {
   // Hand-off to the Chat module once a follow-up is sent, so the rep lands in the thread.
   onOpenWhatsapp?: (conversationId: string) => void
   onOpenEmail?: (conversationId: string) => void
+  // Booking-history rows / guest profile link in the lead detail.
+  onOpenBooking?: (bookingId: string) => void
+  onOpenGuest?: (guestId: string) => void
 } = {}) {
   const { data: session } = useSession()
   const isAdmin = (session?.user as { role?: string })?.role === 'ADMIN'
@@ -312,6 +334,10 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail }: {
     fetch(`/api/leads/${l.id}/contacts`).then(r => r.ok ? r.json() : []).then(setContacts).catch(() => setContacts([]))
     setPageViews(null)
     fetch(`/api/leads/${l.id}/page-views`).then(r => r.ok ? r.json() : []).then(setPageViews).catch(() => setPageViews([]))
+    // Deal name + the guest/booking this lead is tied to (booking history section).
+    fetch(`/api/leads/${l.id}`).then(r => r.ok ? r.json() : null)
+      .then(d => d && setDetail(cur => cur?.id === l.id ? { ...cur, dealName: d.dealName, guestId: d.guestId, bookingId: d.bookingId } : cur))
+      .catch(() => {})
   }
 
   const closeDetail = () => { setDetailOpen(false); setDetail(null); setInquiries(null); setContacts(null); setPageViews(null) }
@@ -327,7 +353,7 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail }: {
       if (!res.ok) { toast.error(data?.error ?? 'Failed to update stage'); return }
       toast.success(`Stage updated to ${LEAD_STAGE_LABEL[stage]}`)
       setLostTarget(null)
-      setDetail(data)
+      setDetail(cur => cur ? { ...cur, ...data } : data)
       fetchLeads(page)
     } finally {
       setStageBusy(false)
@@ -717,10 +743,22 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail }: {
                       </>
                     })()}
                     <TableCell>
-                      <div className="space-y-0.5">
-                        {l.email && <div className="flex items-center gap-1 text-xs"><Mail className="h-3 w-3 text-muted-foreground" />{l.email}</div>}
-                        {l.phone && <div className="flex items-center gap-1 text-xs"><Phone className="h-3 w-3 text-muted-foreground" />{l.phone}</div>}
-                        {l.instagram && <div className="flex items-center gap-1 text-xs"><AtSign className="h-3 w-3 text-muted-foreground" />{l.instagram}</div>}
+                      <div className="flex items-start gap-2 max-w-[260px]">
+                        {l.entryChannel && (() => {
+                          const ch = ENTRY_CHANNEL_BADGE[l.entryChannel]
+                          return (
+                            <span title={`Came in via ${ch.label}`} aria-label={`Came in via ${ch.label}`}
+                              className={`mt-0.5 h-5 w-5 shrink-0 rounded-full flex items-center justify-center ${ch.className}`}>
+                              <ch.icon className="h-3 w-3" />
+                            </span>
+                          )
+                        })()}
+                        <div className="min-w-0 text-xs leading-5 text-muted-foreground">
+                          {l.email && <p className="flex items-center gap-1.5 truncate"><Mail className="h-3 w-3 shrink-0" /><span className="truncate text-foreground">{l.email}</span></p>}
+                          {l.phone && <p className="flex items-center gap-1.5 truncate"><Phone className="h-3 w-3 shrink-0" /><span className="truncate text-foreground">{l.phone}</span></p>}
+                          {l.instagram && <p className="flex items-center gap-1.5 truncate"><AtSign className="h-3 w-3 shrink-0" /><span className="truncate text-foreground">{l.instagram}</span></p>}
+                          {!l.email && !l.phone && !l.instagram && <p>{l.entryChannel ? ENTRY_CHANNEL_BADGE[l.entryChannel].label : '—'}</p>}
+                        </div>
                       </div>
                     </TableCell>
                     <TableCell>
@@ -839,8 +877,13 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail }: {
             <Button variant="outline" size="icon" onClick={closeDetail}>
               <ChevronLeft className="h-4 w-4" />
             </Button>
-            <div className="flex-1 flex items-start justify-between">
-              <h3 className="text-xl font-bold tracking-tight">{detail?.name}</h3>
+            <div className="flex-1 flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h3 className="text-xl font-bold tracking-tight">{detail?.name}</h3>
+                {detail?.dealName && detail.dealName !== detail.name && (
+                  <p className="text-sm font-medium text-primary break-words">{detail.dealName}</p>
+                )}
+              </div>
               {detail && (
                 <div className="flex items-center gap-2 flex-wrap justify-end">
                   {canFollowUp && detail.email && (
@@ -911,6 +954,12 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail }: {
                     <p className="font-medium mt-0.5 whitespace-pre-wrap">{detail.notes}</p>
                   </div>
                 )}
+                <div className="rounded-lg border px-4 py-3">
+                  <DealBookingHistory guestId={detail.guestId} currentBookingId={detail.bookingId} onOpenBooking={onOpenBooking} onOpenGuest={onOpenGuest} />
+                </div>
+                <div className="rounded-lg border px-4 py-3 empty:hidden">
+                  <FreshsalesHistory leadId={detail.id} />
+                </div>
                 <div className="text-sm">
                   <p className="text-xs text-muted-foreground uppercase tracking-wide mb-2">Contact History</p>
                   {inquiries === null || contacts === null ? (
