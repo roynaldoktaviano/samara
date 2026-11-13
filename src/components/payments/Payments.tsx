@@ -123,6 +123,11 @@ function netOfCommission(booking: {
   source?: string | null
   clawbackEntries?: { amount: number }[]
 }, commPct: number) {
+  return commissionBreakdown(booking, commPct).net
+}
+
+/** Published total → clawback → agent commission → net, for showing the deduction lines. */
+function commissionBreakdown(booking: Parameters<typeof netOfCommission>[0], commPct: number) {
   const svcTotal = booking.services.reduce((s, x) => s + x.price * (x.quantity ?? 1), 0)
   // totalPrice is already net of discount (see BookingWizard: total = max(0, base - discountAmt) + services)
   const trip = Math.max(0, booking.totalPrice - svcTotal)
@@ -133,7 +138,7 @@ function netOfCommission(booking: {
     ? Math.abs((booking.clawbackEntries ?? []).reduce((s, e) => s + Math.min(0, e.amount), 0))
     : 0
   const commAmt = commPct > 0 ? Math.max(0, trip - clawbackAmt) * commPct / 100 : 0
-  return trip - clawbackAmt - commAmt + svcTotal
+  return { published: booking.totalPrice, clawbackAmt, commAmt, net: trip - clawbackAmt - commAmt + svcTotal }
 }
 
 export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId?: string | null; onDeepLinkHandled?: () => void } = {}) {
@@ -1199,12 +1204,31 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                         <span className="text-xs font-semibold uppercase tracking-wide">{isClosingPayment ? 'Total Paid' : selected.status === 'confirmed' ? 'Total Deposit Paid' : 'Total Deposit Due'}</span>
                         <span className="font-bold text-sm">{formatMoney(grandTotal, { currency: 'USD' })}</span>
                       </div>
-                      {selected.booking.source === 'AGENT' && (
-                        <div className="flex justify-between items-center text-xs text-muted-foreground">
-                          <span>Agent total (net of commission{selected.booking.clawbackEntries.some(e => e.amount < 0) ? ' & clawback' : ''})</span>
-                          <span>{formatMoney(packageTotal, { currency: 'USD' })}</span>
-                        </div>
-                      )}
+                      {selected.booking.source === 'AGENT' && (() => {
+                        const bd = commissionBreakdown(selected.booking, commPct)
+                        return (
+                          <>
+                            <div className="flex justify-between items-center text-xs text-muted-foreground">
+                              <span>Total booking (published)</span>
+                              <span>{formatMoney(bd.published, { currency: 'USD' })}</span>
+                            </div>
+                            {bd.clawbackAmt > 0 && (
+                              <div className="flex justify-between items-center text-xs text-muted-foreground">
+                                <span>Less clawback</span>
+                                <span>−{formatMoney(bd.clawbackAmt, { currency: 'USD' })}</span>
+                              </div>
+                            )}
+                            <div className="flex justify-between items-center text-xs text-muted-foreground">
+                              <span>Less agent commission ({commPct}%{selected.booking.useB2BCommission ? ' B2B' : ''})</span>
+                              <span>−{formatMoney(bd.commAmt, { currency: 'USD' })}</span>
+                            </div>
+                            <div className="flex justify-between items-center text-xs text-muted-foreground">
+                              <span>Agent total (net of commission{bd.clawbackAmt > 0 ? ' & clawback' : ''})</span>
+                              <span>{formatMoney(packageTotal, { currency: 'USD' })}</span>
+                            </div>
+                          </>
+                        )
+                      })()}
                       <div className="flex justify-between items-center text-xs">
                         <span className={balanceAfterAll > 0.01 ? 'text-warning' : 'text-success'}>{balanceAfterAll > 0.01 ? 'Balance Due' : 'Fully Paid'}</span>
                         <span className={`font-medium ${balanceAfterAll > 0.01 ? 'text-warning' : 'text-success'}`}>{formatMoney(balanceAfterAll, { currency: 'USD' })}</span>
@@ -1298,6 +1322,15 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                     <div>
                       <p className="text-xs text-muted-foreground">Agent</p>
                       <p className="font-medium">{selected.booking.agent.name}</p>
+                      {selected.booking.source === 'AGENT' && (() => {
+                        const pct = getAgentCommissionPct(selected.booking.agent, selected.booking.tripType, selected.booking.useB2BCommission)
+                        const { commAmt } = commissionBreakdown(selected.booking, pct)
+                        return (
+                          <p className="text-xs text-muted-foreground">
+                            Commission {pct}%{selected.booking.useB2BCommission ? ' (B2B)' : ''} · {formatMoney(commAmt, { currency: 'USD' })}
+                          </p>
+                        )
+                      })()}
                     </div>
                   </div>
                 )}
