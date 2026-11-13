@@ -151,6 +151,14 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         },
       }))
 
+      // Discount line on the invoice is a booking-level switch (same field as Edit Booking).
+      if (body.showDiscountOnInvoice !== undefined) {
+        await db.booking.update({
+          where: { id: existing.booking.id },
+          data: { showDiscountOnInvoice: body.showDiscountOnInvoice === null ? null : !!body.showDiscountOnInvoice },
+        })
+      }
+
       // Bill To / Net / commission note are one setting per booking — changing it on this invoice
       // changes it on the booking's other invoices too, so DP and Pelunasan never disagree.
       if (billToType !== undefined || body.showNetAmount !== undefined || body.showCommissionNote !== undefined) {

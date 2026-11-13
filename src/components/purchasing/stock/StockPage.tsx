@@ -41,7 +41,27 @@ interface NonStockRow {
   receivedAt: string
 }
 type Row = StockRow | NonStockRow
-interface LocationStock { location: { id: string; name: string; type: string }; rows: Row[] }
+interface LocationStock { location: { id: string; name: string; type: string; groupId?: string; groupName?: string }; rows: Row[] }
+// A top-level location card: a warehouse, or a yacht with its sub-locations (Bar, Galley…) inside.
+interface LocationGroup { id: string; name: string; isVessel: boolean; members: LocationStock[] }
+const groupIdOf = (l: LocationStock) => l.location.groupId ?? l.location.id
+/** "Otium › Bar" for a sub-location, plain name for a top-level one. */
+const fullLocName = (l: LocationStock) => groupIdOf(l) !== l.location.id && l.location.groupName ? `${l.location.groupName} › ${l.location.name}` : l.location.name
+function groupLocations(locs: LocationStock[]): LocationGroup[] {
+  const groups = new Map<string, LocationGroup>()
+  for (const l of locs) {
+    const id = groupIdOf(l)
+    const g = groups.get(id) ?? { id, name: l.location.groupName ?? l.location.name, isVessel: false, members: [] }
+    g.members.push(l)
+    if (l.location.type === 'VESSEL') g.isVessel = true
+    groups.set(id, g)
+  }
+  for (const g of groups.values()) {
+    // The yacht's own stock first, then its sub-locations A→Z.
+    g.members.sort((a, b) => (a.location.id === g.id ? -1 : b.location.id === g.id ? 1 : a.location.name.localeCompare(b.location.name)))
+  }
+  return [...groups.values()].sort((a, b) => a.name.localeCompare(b.name))
+}
 interface StockData { locations: LocationStock[]; summary: { totalItems: number; lowStock: number } }
 // Detail panel sheet (user's layout): one block per PR / PO, a row per batch (warehouse check,
 // then each restock that shipped part of it). PR no. + PR qty merged per block, Min merged over all.
@@ -465,6 +485,8 @@ export default function StockPage({ onOpenPo, onOpenRequest, onOpenTransfer }: {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [openLoc, setOpenLoc] = useState<string | null>(null)
+  // Selected sub-location tab (General / Bar / Galley…) per yacht card.
+  const [subTab, setSubTab] = useState<Record<string, string>>({})
   const [filterLoc, setFilterLoc] = useState<string>('all')
   const [itemKind, setItemKind] = useState<ItemKindFilter>('all')
 
@@ -646,18 +668,28 @@ export default function StockPage({ onOpenPo, onOpenRequest, onOpenTransfer }: {
             </button>
           ))}
         </div>
-        {data && data.locations.length > 1 && (
-          <select
-            className="h-9 border rounded-md px-3 text-sm bg-background focus:ring-1 focus:ring-ring/50 focus:border-ring outline-none"
-            value={filterLoc}
-            onChange={e => setFilterLoc(e.target.value)}
-          >
-            <option value="all">All Locations</option>
-            {data.locations.map(({ location }) => (
-              <option key={location.id} value={location.id}>{location.name}</option>
-            ))}
-          </select>
-        )}
+        {data && data.locations.length > 1 && (() => {
+          const groups = groupLocations(data.locations)
+          const section = (vessel: boolean, label: string) => {
+            const opts = groups.filter(g => g.isVessel === vessel).flatMap(g => g.members)
+            return opts.length > 0 && (
+              <optgroup label={label}>
+                {opts.map(l => <option key={l.location.id} value={l.location.id}>{fullLocName(l)}</option>)}
+              </optgroup>
+            )
+          }
+          return (
+            <select
+              className="h-9 border rounded-md px-3 text-sm bg-background focus:ring-1 focus:ring-ring/50 focus:border-ring outline-none"
+              value={filterLoc}
+              onChange={e => setFilterLoc(e.target.value)}
+            >
+              <option value="all">All Locations</option>
+              {section(false, 'Warehouses')}
+              {section(true, 'Yachts')}
+            </select>
+          )
+        })()}
       </div>
 
       {!data || data.locations.length === 0 ? (
@@ -678,7 +710,7 @@ export default function StockPage({ onOpenPo, onOpenRequest, onOpenTransfer }: {
           if (filteredRows.length === 0) return <p className="text-sm text-muted-foreground text-center py-10">No items match.</p>
           return (
             <>
-              {stockRows.length > 0 && <StockTable rows={stockRows} locationId={loc.location.id} locationName={loc.location.name} onOpenLots={openLots} onRestock={openRestock} />}
+              {stockRows.length > 0 && <StockTable rows={stockRows} locationId={loc.location.id} locationName={fullLocName(loc)} onOpenLots={openLots} onRestock={openRestock} />}
               {stockRows.length > 0 && nonStockRows.length > 0 && (
                 <div className="px-5 py-2 bg-muted/30 border-y flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
                   <FileText className="h-3.5 w-3.5" /> Non-Stock Items
@@ -700,7 +732,7 @@ export default function StockPage({ onOpenPo, onOpenRequest, onOpenTransfer }: {
                 <div className="flex items-center gap-3">
                   <Icon className="h-4 w-4 text-muted-foreground" />
                   <div>
-                    <p className="font-semibold text-sm">{loc.location.name}</p>
+                    <p className="font-semibold text-sm">{fullLocName(loc)}</p>
                     <p className="text-xs text-muted-foreground">{loc.rows.length} item{loc.rows.length !== 1 ? 's' : ''}</p>
                   </div>
                 </div>
@@ -715,45 +747,102 @@ export default function StockPage({ onOpenPo, onOpenRequest, onOpenTransfer }: {
           )
         }
 
-        return (
-          <div className="space-y-3">
-            {visibleLocations.map(loc => {
-              const { location, rows } = loc
-              const filteredRows = filtered(rows)
-              if (filteredRows.length === 0 && (search || itemKind !== 'all')) return null
-              const isOpen = openLoc === location.id
-              const lowStockCount = rows.filter((r): r is StockRow => r.kind === 'stock' && isLowRow(r)).length
-              const Icon = location.type === 'VESSEL' ? Ship : Warehouse
-              return (
-                <div key={location.id} className="rounded-xl border overflow-clip">
-                  <button
-                    className="w-full flex items-center justify-between px-5 py-4 hover:bg-muted/30 transition-colors text-left"
-                    onClick={() => setOpenLoc(isOpen ? null : location.id)}
-                  >
-                    <div className="flex items-center gap-3">
-                      <Icon className="h-4 w-4 text-muted-foreground" />
-                      <div>
-                        <p className="font-semibold text-sm">{location.name}</p>
-                        <p className="text-xs text-muted-foreground">{rows.length} item{rows.length !== 1 ? 's' : ''}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      {lowStockCount > 0 && (
-                        <span className="flex items-center gap-1 text-xs text-destructive font-medium">
-                          <AlertTriangle className="h-3.5 w-3.5" /> {lowStockCount} low stock
+        const lowCount = (rows: Row[]) => rows.filter((r): r is StockRow => r.kind === 'stock' && isLowRow(r)).length
+        const lowBadge = (n: number) => n > 0 && (
+          <span className="flex items-center gap-1 text-xs text-destructive font-medium whitespace-nowrap">
+            <AlertTriangle className="h-3.5 w-3.5" /> {n} low stock
+          </span>
+        )
+        const groups = groupLocations(visibleLocations)
+          .map(g => ({ ...g, members: g.members.filter(m => filtered(m.rows).length > 0 || !(search || itemKind !== 'all')) }))
+          .filter(g => g.members.length > 0)
+
+        const groupCard = (g: LocationGroup) => {
+          const isOpen = openLoc === g.id
+          const total = g.members.reduce((n, m) => n + m.rows.length, 0)
+          const low = g.members.reduce((n, m) => n + lowCount(m.rows), 0)
+          const Icon = g.isVessel ? Ship : Warehouse
+          // A lone top-level location needs no sub-headers; a yacht shows each of its places.
+          const flat = g.members.length === 1 && g.members[0].location.id === g.id
+          const subName = (m: LocationStock) => m.location.id === g.id ? 'General' : m.location.name
+          return (
+            <div key={g.id} className="rounded-xl border bg-card overflow-clip">
+              <button
+                className="w-full flex items-center justify-between gap-4 px-5 py-3.5 hover:bg-muted/30 transition-colors text-left"
+                onClick={() => setOpenLoc(isOpen ? null : g.id)}
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="h-9 w-9 shrink-0 rounded-lg bg-muted flex items-center justify-center">
+                    <Icon className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="font-semibold text-sm">{g.name}</p>
+                    <div className="flex flex-wrap items-center gap-1.5 mt-0.5 text-xs text-muted-foreground">
+                      <span>{total} item{total !== 1 ? 's' : ''}</span>
+                      {!flat && g.members.map(m => (
+                        <span key={m.location.id} className="rounded-full border px-2 py-px bg-background">
+                          {subName(m)} · {m.rows.length}
                         </span>
-                      )}
-                      <span className="text-muted-foreground text-sm">{isOpen ? '▲' : '▼'}</span>
+                      ))}
                     </div>
-                  </button>
-                  {isOpen && (
-                    <div className="border-t">
-                      {locationBody(loc)}
-                    </div>
-                  )}
+                  </div>
                 </div>
-              )
-            })}
+                <div className="flex items-center gap-3 shrink-0">
+                  {lowBadge(low)}
+                  <span className="text-muted-foreground text-sm">{isOpen ? '▲' : '▼'}</span>
+                </div>
+              </button>
+              {isOpen && (
+                <div className="border-t">
+                  {flat ? locationBody(g.members[0]) : (() => {
+                    const active = g.members.find(m => m.location.id === subTab[g.id]) ?? g.members[0]
+                    return (
+                      <>
+                        <div role="tablist" className="flex gap-1 px-4 pt-2 border-b bg-muted/30 overflow-x-auto">
+                          {g.members.map(m => {
+                            const on = m.location.id === active.location.id
+                            const n = lowCount(m.rows)
+                            return (
+                              <button key={m.location.id} role="tab" aria-selected={on}
+                                onClick={() => setSubTab(t => ({ ...t, [g.id]: m.location.id }))}
+                                className={`-mb-px flex items-center gap-1.5 whitespace-nowrap px-3 py-2 text-sm border-b-2 transition-colors ${on ? 'border-primary text-foreground font-medium' : 'border-transparent text-muted-foreground hover:text-foreground'}`}>
+                                {subName(m)}
+                                <span className={`rounded-full px-1.5 text-xs ${on ? 'bg-primary/10 text-primary' : 'bg-muted'}`}>{m.rows.length}</span>
+                                {n > 0 && <AlertTriangle className="h-3.5 w-3.5 text-destructive" aria-label={`${n} low stock`} />}
+                              </button>
+                            )
+                          })}
+                        </div>
+                        {lowCount(active.rows) > 0 && (
+                          <div className="flex justify-end px-5 py-2 border-b">{lowBadge(lowCount(active.rows))}</div>
+                        )}
+                        {locationBody(active)}
+                      </>
+                    )
+                  })()}
+                </div>
+              )}
+            </div>
+          )
+        }
+
+        const section = (vessel: boolean, title: string) => {
+          const list = groups.filter(g => g.isVessel === vessel)
+          return list.length > 0 && (
+            <section className="space-y-2">
+              <h3 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground px-1">
+                {vessel ? <Ship className="h-3.5 w-3.5" /> : <Warehouse className="h-3.5 w-3.5" />} {title}
+                <span className="font-normal">({list.length})</span>
+              </h3>
+              <div className="space-y-2">{list.map(groupCard)}</div>
+            </section>
+          )
+        }
+
+        return (
+          <div className="space-y-6">
+            {section(false, 'Warehouses')}
+            {section(true, 'Yachts')}
           </div>
         )
       })()}

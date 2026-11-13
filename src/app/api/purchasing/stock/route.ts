@@ -20,7 +20,7 @@ export async function GET(req: Request) {
   const [lots, items, locations, placements] = await Promise.all([
     db.stockLot.findMany({ where: { quantity: { gt: 0 }, ...(locationId ? { locationId } : {}) } }),
     db.purchaseItem.findMany({ select: { id: true, sku: true, name: true, category: true, baseUnit: true, purchaseUnit: true, conversionFactor: true, minStock: true, valuationMethod: true } }),
-    db.stockLocation.findMany({ select: { id: true, name: true, type: true, yachtId: true } }),
+    db.stockLocation.findMany({ select: { id: true, name: true, type: true, yachtId: true, parentId: true } }),
     db.stockItemPlacement.findMany({ where: locationId ? { locationId } : {}, select: { itemId: true, locationId: true, room: true, bin: true } }),
   ])
   const placementMap = new Map(placements.map(p => [`${p.itemId}:${p.locationId}`, { room: p.room, bin: p.bin }]))
@@ -155,9 +155,16 @@ export async function GET(req: Request) {
     }
   }
 
+  // Top-level location each one sits under (a yacht's Bar/Galley → the yacht) so the page can
+  // show sub-locations inside their parent's card.
+  const rootOf = (id: string) => {
+    let l = locMap.get(id)
+    for (let i = 0; l?.parentId && locMap.has(l.parentId) && i < 10; i++) l = locMap.get(l.parentId)
+    return l
+  }
   const locationsOut = Array.from(byLocation.values())
     .map(({ location, rows, nonStockRows }) => ({
-      location,
+      location: { ...location, groupId: rootOf(location.id)?.id ?? location.id, groupName: rootOf(location.id)?.name ?? location.name },
       rows: [...Array.from(rows.values()), ...nonStockRows.sort((a, b) => b.receivedAt.getTime() - a.receivedAt.getTime())] as Row[],
     }))
     .sort((a, b) => a.location.name.localeCompare(b.location.name))

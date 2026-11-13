@@ -79,6 +79,9 @@ interface Payment {
     bookingCode: string
     totalPrice: number
     discount: number
+    discountType?: string | null
+    discountValue?: number | null
+    showDiscountOnInvoice?: boolean | null
     depositPaid: number
     services: { price: number; quantity: number }[]
     startDate: string
@@ -175,6 +178,7 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
   const [genInvPayLink,      setGenInvPayLink]     = useState('')
   const [genInvShowNet,      setGenInvShowNet]     = useState(false)
   const [genInvShowNote,     setGenInvShowNote]    = useState(false)
+  const [genInvShowDiscount, setGenInvShowDiscount] = useState(false)
   const [banks,              setBanks]             = useState<Bank[]>([])
   // Optional "what changed" note + evidence Finance can attach when editing an already-generated
   // invoice — shown to Sales on the booking instead of forcing them to resubmit proof of transfer.
@@ -429,6 +433,7 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
           billToType: genInvBillTo,
           showNetAmount: genInvShowNet,
           showCommissionNote: genInvShowNet && genInvShowNote,
+          ...(selected.booking.discount > 0 && { showDiscountOnInvoice: genInvShowDiscount }),
           bankId: genInvBankId || null,
           paymentLink: genInvUsePayLink ? (genInvPayLink || null) : null,
           silent: silent && !isFirstGeneration,
@@ -559,6 +564,7 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
     setGenInvPayLink(p.paymentLink ?? '')
     setGenInvShowNet(p.showNetAmount ?? false)
     setGenInvShowNote(p.showCommissionNote ?? false)
+    setGenInvShowDiscount(p.booking.showDiscountOnInvoice ?? p.booking.source !== 'AGENT')
     setGenInvEditing(false)
     setGenInvConfirmEdit(false)
     setChangeProofNote(p.changeProofNote ?? '')
@@ -1044,8 +1050,9 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                 ) : (() => {
                   const netParam = selected.booking.source === 'AGENT' ? `showNet=${genInvShowNet}` : null
                   const noteParam = selected.booking.source === 'AGENT' ? `showNote=${genInvShowNet && genInvShowNote}` : null
+                  const discParam = selected.booking.discount > 0 ? `showDiscount=${genInvShowDiscount}` : null
                   const invoiceUrl = (currency?: string) => {
-                    const params = [currency && `currency=${currency}`, netParam, noteParam].filter(Boolean)
+                    const params = [currency && `currency=${currency}`, netParam, noteParam, discParam].filter(Boolean)
                     return `/print/invoice/${selected.id}${params.length ? `?${params.join('&')}` : ''}`
                   }
                   const hasConverted = selected.currency !== 'USD' && !!selected.exchangeRate
@@ -1609,6 +1616,33 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                           className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${genInvShowNote ? 'bg-warning' : 'bg-muted-foreground/30'}`}
                         >
                           <span className={`pointer-events-none block h-4 w-4 rounded-full bg-background shadow-lg transition-transform ${genInvShowNote ? 'translate-x-4' : 'translate-x-0'}`} />
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Discount line disclosure — booking-level switch (same as Edit Booking) */}
+                    {selected.booking.discount > 0 && (
+                      <div className="flex items-center justify-between rounded-lg border px-3 py-2.5">
+                        <div>
+                          <p className="text-xs font-medium">
+                            Show Discount on Invoice
+                            <span className="ml-1.5 font-normal text-muted-foreground">
+                              ({selected.booking.discountType === 'PERCENT' && selected.booking.discountValue ? `${selected.booking.discountValue}% · ` : ''}{formatMoney(selected.booking.discount, { currency: 'USD' })})
+                            </span>
+                          </p>
+                          <p className="text-[11px] text-muted-foreground mt-0.5">
+                            {genInvShowDiscount ? 'Invoice shows the price before discount + a "Discount" line.' : 'Discount is folded into the price, no separate line.'}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={genInvShowDiscount}
+                          aria-label="Show Discount on Invoice"
+                          onClick={() => setGenInvShowDiscount(v => !v)}
+                          className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${genInvShowDiscount ? 'bg-success' : 'bg-muted-foreground/30'}`}
+                        >
+                          <span className={`pointer-events-none block h-4 w-4 rounded-full bg-background shadow-lg transition-transform ${genInvShowDiscount ? 'translate-x-4' : 'translate-x-0'}`} />
                         </button>
                       </div>
                     )}

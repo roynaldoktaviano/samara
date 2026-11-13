@@ -108,6 +108,8 @@ export default function InvoicePage() {
   const showNetOverride = showNetParam === null ? null : showNetParam === 'true'
   const showNoteParam = searchParams.get('showNote')
   const showNoteOverride = showNoteParam === null ? null : showNoteParam === 'true'
+  const showDiscountParam = searchParams.get('showDiscount')
+  const showDiscountOverride = showDiscountParam === null ? null : showDiscountParam === 'true'
   const [payment,   setPayment]   = useState<PaymentDetail | null>(null)
   const [company,   setCompany]   = useState<CompanyInfo | null>(null)
   const [loading,   setLoading]   = useState(true)
@@ -213,7 +215,7 @@ export default function InvoicePage() {
   // Discount line on/off is a per-booking choice (Edit Booking). Legacy bookings (null) keep the
   // old behaviour: shown for direct bookings, folded into the base for agent bookings. When shown,
   // the main line carries the pre-discount price so base − discount adds up on the page.
-  const showDiscount   = discountAmt > 0 && (b.showDiscountOnInvoice ?? !isAgentBooking)
+  const showDiscount   = discountAmt > 0 && (showDiscountOverride ?? b.showDiscountOnInvoice ?? !isAgentBooking)
   const discountPctLbl = b.discountType === 'PERCENT' && (b.discountValue ?? 0) > 0 ? ` (${b.discountValue}%)` : ''
   const mainLineAmt    = (showCommissionNote ? baseAfterDisc : displayBase) + (showDiscount ? discountAmt : 0)
 
