@@ -2246,8 +2246,8 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
                           )}
                         </div>
 
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                          {stat('On Hand', scHere?.onHand ?? null, '', 'On the shelf at this warehouse — same as Stock on Item by Location')}
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                          {/* {stat('On Hand', scHere?.onHand ?? null, '', 'On the shelf at this warehouse — same as Stock on Item by Location')} */}
                           {stat('Available', maxBase, maxBase === 0 ? 'text-destructive' : '', 'On hand − what other requests already reserved (pending transfers, approved Reserves). This is the most you can reserve.')}
                           {stat('Min. Stock', scHere?.minStock ?? null, 'text-muted-foreground')}
                           {stat('Requested', requestedBase)}
