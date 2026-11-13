@@ -30,7 +30,13 @@ export async function GET(req: NextRequest) {
   try {
     const contact = await db.freshsalesContact.findUnique({ where: { id: fsId } })
     if (!contact) return NextResponse.json({ linked: false })
-    return NextResponse.json({ linked: true, ...(await contactDetail(db, contact)) })
+    // Imported Freshchat conversations of this person (read-only WhatsApp / IG / Messenger / web chat)
+    const chats = await db.freshchatConversation.findMany({
+      where: { contactFsId: contact.id, messageCount: { gt: 0 }, erpThreadId: null },
+      orderBy: { lastMessageAt: { sort: 'desc', nulls: 'last' } },
+      select: { id: true, channelName: true, channelSource: true, lastMessageAt: true, lastMessagePreview: true, messageCount: true },
+    }).catch(() => [])
+    return NextResponse.json({ linked: true, ...(await contactDetail(db, contact)), chats })
   } catch (e) {
     if (isMissingTable(e)) return NextResponse.json({ linked: false })
     throw e

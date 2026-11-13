@@ -9,6 +9,8 @@ import { ChevronDown, ChevronRight, Briefcase } from 'lucide-react'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { formatDate, formatMoney } from '@/lib/format'
 import { TimelineView, type TimelineItem } from '@/components/freshsales/FreshsalesTimeline'
+import FreshchatThread, { freshchatSource } from '@/components/freshchat/FreshchatThread'
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 
 interface Deal {
   id: string; name: string; amount: number | null; currency: string | null; pipeline: string | null; stage: string | null
@@ -19,12 +21,14 @@ interface Payload {
   contact?: { id: string; owner: string | null; lastContactedAt: string | null; historySynced: boolean }
   deals?: Deal[]
   timeline?: TimelineItem[]
+  chats?: { id: string; channelName: string | null; channelSource: string | null; lastMessageAt: string | null; lastMessagePreview: string | null; messageCount: number }[]
 }
 
 export default function FreshsalesHistory({ leadId, customerId }: { leadId?: string | null; customerId?: string | null }) {
   const key = leadId ? `lead=${leadId}` : customerId ? `customer=${customerId}` : null
   const [res, setRes] = useState<{ key: string; data: Payload | null } | null>(null)
   const [open, setOpen] = useState(false)
+  const [chatId, setChatId] = useState<string | null>(null)
 
   useEffect(() => {
     if (!key) return
@@ -42,6 +46,7 @@ export default function FreshsalesHistory({ leadId, customerId }: { leadId?: str
 
   const deals = data.deals ?? []
   const timeline = data.timeline ?? []
+  const chats = data.chats ?? []
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between gap-2">
@@ -64,6 +69,31 @@ export default function FreshsalesHistory({ leadId, customerId }: { leadId?: str
             </li>
           ))}
         </ul>
+      )}
+      {chats.length > 0 && (
+        <div className="space-y-1.5">
+          <p className="text-[11px] font-medium text-muted-foreground">Chats from Freshchat ({chats.length})</p>
+          {chats.map(c => {
+            const src = freshchatSource(c.channelSource)
+            const Icon = src.icon
+            return (
+              <button key={c.id} type="button" onClick={() => setChatId(c.id)}
+                className="w-full text-left rounded-lg border px-3 py-2 text-xs hover:bg-muted/40 transition-colors">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-medium flex items-center gap-1.5"><Icon className="h-3.5 w-3.5" style={{ color: src.color }} />{c.channelName ?? src.label}</span>
+                  <span className="text-muted-foreground">{c.lastMessageAt ? formatDate(c.lastMessageAt) : ''} · {c.messageCount} msgs</span>
+                </div>
+                {c.lastMessagePreview && <p className="text-muted-foreground truncate mt-0.5">{c.lastMessagePreview}</p>}
+              </button>
+            )
+          })}
+          <Dialog open={!!chatId} onOpenChange={o => { if (!o) setChatId(null) }}>
+            <DialogContent className="max-w-2xl p-0 overflow-hidden" aria-describedby={undefined}>
+              <DialogTitle className="sr-only">Freshchat conversation</DialogTitle>
+              {chatId && <FreshchatThread conversationId={chatId} embedded />}
+            </DialogContent>
+          </Dialog>
+        </div>
       )}
       <button type="button" aria-expanded={open} onClick={() => setOpen(o => !o)}
         className="flex items-center gap-1 text-xs font-medium text-primary-strong hover:underline">

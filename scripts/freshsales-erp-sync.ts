@@ -13,6 +13,8 @@ import * as fsys from 'fs'
 import * as path from 'path'
 import { FreshsalesClient } from '../src/lib/freshsales-archive'
 import { pullFreshsalesDelta, reconcileFreshsalesToErp, runFreshsalesErpSync } from '../src/lib/freshsales-erp-sync'
+import { freshchatFromEnv, runFreshchatSync } from '../src/lib/freshchat-import'
+import { mirrorFreshchatToErpChats } from '../src/lib/freshchat-mirror'
 
 const db = new PrismaClient()
 
@@ -24,6 +26,8 @@ async function main() {
     if (cmd === 'pull') { console.log(await pullFreshsalesDelta(db, new FreshsalesClient(domain, key))); return }
     const r = await runFreshsalesErpSync(db, new FreshsalesClient(domain, key), `mac-${process.pid}`)
     console.log(r === 'locked' ? 'another process holds the sync lease' : JSON.stringify(r.counts, null, 1))
+    const fc = freshchatFromEnv()
+    if (fc && r !== 'locked') { console.log(await runFreshchatSync(db, fc)); await mirrorFreshchatToErpChats(db, { apply: true }) }
     return
   }
   const r = await reconcileFreshsalesToErp(db, { apply: cmd === 'apply' })

@@ -1,4 +1,5 @@
 import { Prisma, type MetaDmPlatform, type PrismaClient, type WhatsappBrand } from '@prisma/client'
+import { adoptFreshchatHistoryThread } from '@/lib/freshchat-mirror'
 import { getTenantSecret } from '@/lib/tenant-secrets'
 import type { TenantSecretKey } from '@/lib/tenant-secrets-definitions'
 import { WHATSAPP_BRANDS, WHATSAPP_BRAND_LABELS, WHATSAPP_GRAPH_VERSION } from '@/lib/whatsapp-brands'
@@ -377,7 +378,16 @@ export async function handleMetaMessagingEvents(db: PrismaClient, tenantId: stri
             ...(!isEcho && { lastInboundAt: now, unreadCount: { increment: 1 } }),
           },
         })
-        const before = await db.instagramConversation.findUnique({ where: key, select: { id: true, leadId: true, lastInboundAt: true } })
+        let before = await db.instagramConversation.findUnique({ where: key, select: { id: true, leadId: true, lastInboundAt: true } })
+        // First Meta message from someone whose history was copied over from Freshchat
+        // (src/lib/freshchat-mirror.ts) — continue that thread instead of opening a second one.
+        if (!before) {
+          const adopted = await adoptFreshchatHistoryThread(db, {
+            platform, brand, externalUserId: customerId, ourAccountId,
+            username: profile?.username ?? null, displayName: profile?.displayName ?? event.customerName ?? null, profilePicUrl: profile?.profilePicUrl ?? null,
+          }).catch(() => null)
+          if (adopted) before = await db.instagramConversation.findUnique({ where: key, select: { id: true, leadId: true, lastInboundAt: true } })
+        }
         let conversation = before && await touch(before.id)
         let isNew = false
         // Thread opened by our side (e.g. a private reply to a Page comment) — the customer's first

@@ -1,3 +1,4 @@
+import { DEAL_CARD_SOURCE } from '@/lib/freshsales-erp-sync'
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import type { Prisma } from '@prisma/client'
@@ -56,6 +57,9 @@ export async function GET(req: NextRequest) {
       { source: { not: null } },
       { bookingId: { not: null } },
     ] },
+    // Extra per-deal cards (a contact's 2nd+ deal / a deal with no contact) show only while they
+    // still mirror a deal — a retired one would otherwise linger in the Won column.
+    { OR: [{ source: null }, { source: { not: DEAL_CARD_SOURCE } }, { freshsalesDealId: { not: null } }] },
   ]
   // Sales only ever see their own leads — unowned ones are handed out by auto-distribution or an admin
   if (!isAdmin) filters.push({ ownerId: session.user.id })

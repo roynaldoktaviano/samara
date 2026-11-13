@@ -54,6 +54,10 @@ export interface StockHistoryRow {
   gr: number
   /** MOVEMENT: signed qty in (+) / out (−). */
   change?: number
+  /** MOVEMENT: the document behind it — a transfer shows its PR, or its TR when it has no PR. */
+  link?: { type: 'PR' | 'TR'; id: string }
+  /** MOVEMENT: what happened, for the tooltip only (the cell shows just the document number). */
+  note?: string
 }
 
 const round3 = (n: number) => Math.round(n * 1000) / 1000
@@ -297,7 +301,8 @@ export async function computeStockHistory(db: Db, itemId: string, locationId: st
   //   Ending  = Current − Reserve
   // Sending out stock a PR already reserved doesn't move free stock (the Reserve already took it),
   // so those TRANSFER_OUTs are skipped; transfers without a PR still count as stock going out.
-  const prTransferIds = new Set(transfersOut.filter(t => t.purchaseRequestId).map(t => t.id))
+  // Only when that PR is a block above — a closed PR isn't shown, so its transfer is stock going out.
+  const prTransferIds = new Set(transfersOut.filter(t => t.purchaseRequestId && rows.has(`PR:${t.purchaseRequestId}`)).map(t => t.id))
   const changes = movements
     .filter(m => !(m.type === 'TRANSFER_OUT' && m.referenceId && prTransferIds.has(m.referenceId)))
     .map(m => ({ m, id: m.id, at: m.createdAt.getTime(), qty: effect(m) }))
@@ -311,17 +316,34 @@ export async function computeStockHistory(db: Db, itemId: string, locationId: st
   if (firstDoc !== null) {
     const loose = changes.filter(c => c.at >= firstDoc && !docMoveIds.has(c.id))
     const locIds = [...new Set(loose.flatMap(c => [c.m.fromLocationId, c.m.toLocationId]).filter((x): x is string => !!x && x !== locationId))]
-    const locName = new Map((locIds.length ? await db.stockLocation.findMany({ where: { id: { in: locIds } }, select: { id: true, name: true } }) : []).map(l => [l.id, l.name]))
+    const refIds = (type: string) => [...new Set(loose.flatMap(c => c.m.referenceType === type && c.m.referenceId ? [c.m.referenceId] : []))]
+    const trIds = refIds('StockTransfer')
+    const grIds = refIds('GoodsReceipt')
+    const [locs, trs, grs] = await Promise.all([
+      db.stockLocation.findMany({ where: { id: { in: locIds } }, select: { id: true, name: true } }),
+      db.stockTransfer.findMany({ where: { id: { in: trIds } }, select: { id: true, transferNumber: true, purchaseRequest: { select: { id: true, prNumber: true } } } }),
+      db.goodsReceipt.findMany({ where: { id: { in: grIds } }, select: { id: true, grNumber: true } }),
+    ])
+    const locName = new Map(locs.map(l => [l.id, l.name]))
+    const trById = new Map(trs.map(t => [t.id, t]))
+    const grById = new Map(grs.map(g => [g.id, g.grNumber]))
     for (const c of loose) {
       const { m } = c
-      const label = movementLabel(m, n => locName.get(n) ?? null)
+      const note = movementLabel(m, n => locName.get(n) ?? null)
+      // The PR cell shows the document (user: a transfer always has its PR, else its TR) — never
+      // free text like "Transfer ke kapal · Otium"; that only goes in the tooltip.
+      const tr = m.referenceType === 'StockTransfer' && m.referenceId ? trById.get(m.referenceId) : undefined
+      const link: StockHistoryRow['link'] = tr ? (tr.purchaseRequest ? { type: 'PR', id: tr.purchaseRequest.id } : { type: 'TR', id: tr.id }) : undefined
+      const number = tr ? (tr.purchaseRequest?.prNumber ?? tr.transferNumber)
+        : m.referenceType === 'GoodsReceipt' && m.referenceId ? (grById.get(m.referenceId) ?? 'GR')
+        : docLabel(m)
       folded.push({
         key: `MV:${m.id}`, kind: 'MOVEMENT', date: m.createdAt.toISOString(),
-        doc: { id: m.id, number: label, status: m.type }, destination: null,
-        stage: m.referenceType === 'CariStokImport' ? '' : (m.notes ?? ''),
+        doc: { id: link?.id ?? m.id, number, status: m.type }, destination: null, stage: '',
         minStock: item.minStock, pr: 0,
-        batches: [{ date: m.createdAt.toISOString(), label, current: null, reserve: 0, ending: null, moves: [m.id] }],
+        batches: [{ date: m.createdAt.toISOString(), label: number, current: null, reserve: 0, ending: null, moves: [m.id] }],
         ordered: 0, po: 0, pending: 0, gr: 0, change: round(c.qty),
+        link, note: [note, m.referenceType === 'CariStokImport' ? '' : m.notes].filter(Boolean).join(' — '),
       })
     }
   }
@@ -356,6 +378,18 @@ export async function computeStockHistory(db: Db, itemId: string, locationId: st
     .map(r => ({ ...r, batches: r.batches.map(({ moves: _m, ...b }) => b) }))
     .sort((a, b) => a.batches[0].date.localeCompare(b.batches[0].date))
   return { rows: rowsOut, totalStock: round(stockNow) }
+}
+
+/** Short source for a movement with no PR / TR / GR document — legacy sheet rows have none. */
+function docLabel(m: { type: string; referenceType: string | null }): string {
+  switch (m.referenceType) {
+    case 'CariStokImport': case 'CariStokSync': return 'CariStok'
+    case 'ItemImport': case 'LinenImport': return 'Import'
+    case 'StockCount': return 'Stock count'
+    case 'CashierSale': return 'Cashier sale'
+    case 'ConvertToStock': return 'Converted to stock'
+  }
+  return m.type === 'INITIAL' ? 'Initial stock' : 'Adjustment'
 }
 
 /** "Transfer out → Mischief", "Stock count", "CariStok sync"… for a movement with no PR / PO. */

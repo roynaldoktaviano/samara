@@ -52,6 +52,7 @@ interface HistoryRow {
   minStock: number; pr: number
   batches: { date: string; label: string; current: number | null; reserve: number; ending: number | null }[]
   ordered: number; po: number; pending: number; gr: number
+  link?: { type: 'PR' | 'TR'; id: string }; note?: string
 }
 interface StockLot { id: string; quantity: number; costPerUnit: number; batch: string | null; expiresAt: string | null; createdAt: string }
 
@@ -456,7 +457,7 @@ function defaultRestockLine(row: StockRow): RestockLine {
   return { row, unit: item.baseUnit, qty: String(need > 0 ? Math.ceil(need * 100 - 1e-9) / 100 : 1) }
 }
 
-export default function StockPage({ onOpenPo, onOpenRequest }: { onOpenPo?: (poId: string) => void; onOpenRequest?: (requestId: string) => void; onOpenTransfer?: (transferId: string) => void } = {}) {
+export default function StockPage({ onOpenPo, onOpenRequest, onOpenTransfer }: { onOpenPo?: (poId: string) => void; onOpenRequest?: (requestId: string) => void; onOpenTransfer?: (transferId: string) => void } = {}) {
   const { data: session } = useSession()
   const canEditPlacement = roleMatches((session?.user as { role?: string })?.role ?? '', PLACEMENT_EDITORS)
   const hidePrices = useHidePrices()
@@ -904,6 +905,8 @@ export default function StockPage({ onOpenPo, onOpenRequest }: { onOpenPo?: (poI
                 const unit = stockQty(it, 0).unit
                 const cell = 'border px-3 py-2 text-center tabular-nums'
                 const head = 'border px-3 py-2 text-center font-medium bg-muted/50 whitespace-nowrap'
+                // Quantity header with the unit underneath so every number reads as e.g. "2 carton".
+                const qh = (label: string) => <>{label}<span className="block text-[11px] font-normal text-muted-foreground">({unit})</span></>
                 const totalRows = (history ?? []).reduce((t, h) => t + h.batches.length, 0)
                 const open = (h: HistoryRow) => h.kind === 'PO' ? onOpenPo?.(h.doc.id) : onOpenRequest?.(h.doc.id)
                 return (
@@ -923,18 +926,18 @@ export default function StockPage({ onOpenPo, onOpenRequest }: { onOpenPo?: (poI
                             <tr>
                               <th rowSpan={2} className={head}>Tanggal</th>
                               <th rowSpan={2} className={head}>PR</th>
-                              <th rowSpan={2} className={head}>Min Stock</th>
-                              <th rowSpan={2} className={head}>Current</th>
-                              <th rowSpan={2} className={head}>PR</th>
-                              <th rowSpan={2} className={head}>Reserve</th>
-                              <th rowSpan={2} className={head}>Ending Stock</th>
-                              <th rowSpan={2} className={head}>Ordered</th>
+                              <th rowSpan={2} className={head}>{qh('Min Stock')}</th>
+                              <th rowSpan={2} className={head}>{qh('Current')}</th>
+                              <th rowSpan={2} className={head}>{qh('PR')}</th>
+                              <th rowSpan={2} className={head}>{qh('Reserve')}</th>
+                              <th rowSpan={2} className={head}>{qh('Ending Stock')}</th>
+                              <th rowSpan={2} className={head}>{qh('Ordered')}</th>
                               <th colSpan={3} className={head}>STATUS</th>
                             </tr>
                             <tr>
-                              <th className={head}>P.O</th>
-                              <th className={head}>Pending</th>
-                              <th className={head}>GR</th>
+                              <th className={head}>{qh('P.O')}</th>
+                              <th className={head}>{qh('Pending')}</th>
+                              <th className={head}>{qh('GR')}</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -944,13 +947,16 @@ export default function StockPage({ onOpenPo, onOpenRequest }: { onOpenPo?: (poI
                                 {i === 0 && (
                                   <td rowSpan={h.batches.length} className={`${cell} align-middle`}>
                                     {h.kind === 'MOVEMENT' ? (
-                                      <div className="text-xs text-left">
-                                        <span className="text-muted-foreground">{h.doc.number}</span>{' '}
-                                        <span className={`font-medium tabular-nums ${(h.change ?? 0) < 0 ? 'text-destructive' : 'text-success'}`}>
-                                          {(h.change ?? 0) > 0 ? '+' : '−'}{n(Math.abs(h.change ?? 0))}
+                                      // Document number only (PR, else TR) — what happened is in the tooltip.
+                                      <span className="whitespace-nowrap" title={h.note || undefined}>
+                                        {h.link ? (
+                                          <button onClick={() => h.link!.type === 'PR' ? onOpenRequest?.(h.link!.id) : onOpenTransfer?.(h.link!.id)}
+                                            className="font-mono text-xs font-medium hover:text-primary hover:underline underline-offset-2">{h.doc.number}</button>
+                                        ) : <span className="text-xs text-muted-foreground">{h.doc.number}</span>}{' '}
+                                        <span className={`text-xs font-medium tabular-nums ${(h.change ?? 0) < 0 ? 'text-destructive' : 'text-success'}`}>
+                                          {(h.change ?? 0) > 0 ? '+' : '−'}{n(Math.abs(h.change ?? 0))} {unit}
                                         </span>
-                                        {h.stage && <p className="text-[11px] text-muted-foreground/80 truncate max-w-[14rem]" title={h.stage}>{h.stage}</p>}
-                                      </div>
+                                      </span>
                                     ) : (
                                       <button onClick={() => open(h)} title={[h.destination, h.stage].filter(Boolean).join(' · ')}
                                         className="font-mono text-xs font-medium hover:text-primary hover:underline underline-offset-2">{h.doc.number}</button>
@@ -974,7 +980,7 @@ export default function StockPage({ onOpenPo, onOpenRequest }: { onOpenPo?: (poI
                             <tr className="bg-muted/50 font-semibold">
                               <td colSpan={3} className="border px-3 py-2 text-center">Total Stock</td>
                               <td colSpan={8} className="border px-3 py-2 text-center tabular-nums">
-                                {n(historyTotal)}
+                                {n(historyTotal)} <span className="font-normal text-muted-foreground">{unit}</span>
                               </td>
                             </tr>
                           </tfoot>

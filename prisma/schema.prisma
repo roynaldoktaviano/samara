@@ -306,51 +306,52 @@ model TodoActivity {
 }
 
 model Customer {
-  id                    String               @id @default(cuid())
-  name                  String
-  firstName             String?
-  lastName              String?
-  gender                String?
-  email                 String?
-  phone                 String?
-  passport              String?
-  dateOfBirth           DateTime?
-  isChild               Boolean              @default(false)
-  address               String?
-  dietaryRequirements   String?
-  allergies             String?
-  equipmentSizes        String?
-  operationalNotes      String?
-  nationality           String?
-  passportExpiry        DateTime?
-  emergencyContact      String?
-  drinkPreferences      String?
-  guestFormToken        String?              @unique
-  guestFormExpiresAt    DateTime?
-  freshsalesContactId   String?              @unique
-  medicalData           Json?
-  foodData              Json?
-  drinksData            Json?
-  divingData            Json?
-  surfingData           Json?
+  id                     String                  @id @default(cuid())
+  name                   String
+  firstName              String?
+  lastName               String?
+  gender                 String?
+  email                  String?
+  phone                  String?
+  passport               String?
+  dateOfBirth            DateTime?
+  isChild                Boolean                 @default(false)
+  address                String?
+  dietaryRequirements    String?
+  allergies              String?
+  equipmentSizes         String?
+  operationalNotes       String?
+  nationality            String?
+  passportExpiry         DateTime?
+  emergencyContact       String?
+  drinkPreferences       String?
+  guestFormToken         String?                 @unique
+  guestFormExpiresAt     DateTime?
+  freshsalesContactId    String?                 @unique
+  medicalData            Json?
+  foodData               Json?
+  drinksData             Json?
+  divingData             Json?
+  surfingData            Json?
   // Comma-separated selections from a fixed checkbox set (Raja Ampat, Spice Islands, Other, Not yet) —
   // lives on the guest's own profile (not the booking) so it carries across future trips.
-  pastDestinations      String?
-  pastDestinationsOther String?
-  passportImage         String?
+  pastDestinations       String?
+  pastDestinationsOther  String?
+  passportImage          String?
   // Sales rep who owns this guest (mirrors the Freshsales contact owner; editable in Guest form)
-  ownerId               String?
-  owner                 User?                @relation("CustomerOwner", fields: [ownerId], references: [id], onDelete: SetNull)
-  deletedAt             DateTime?
-  createdAt             DateTime             @default(now())
-  updatedAt             DateTime             @updatedAt
-  bookings              Booking[]
-  guestOf               BookingGuest[]
-  waitingListItems      WaitingList[]
-  waitingListHistories  WaitingListHistory[] @relation("WaitingListHistoryCustomer")
-  inquiries             Inquiry[]
-  pageViews             PageView[]
-  freshsalesContacts    FreshsalesContact[]
+  ownerId                String?
+  owner                  User?                   @relation("CustomerOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  deletedAt              DateTime?
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
+  bookings               Booking[]
+  guestOf                BookingGuest[]
+  waitingListItems       WaitingList[]
+  waitingListHistories   WaitingListHistory[]    @relation("WaitingListHistoryCustomer")
+  inquiries              Inquiry[]
+  pageViews              PageView[]
+  freshsalesContacts     FreshsalesContact[]
+  freshchatConversations FreshchatConversation[]
 
   @@index([deletedAt])
   @@index([name])
@@ -473,6 +474,7 @@ model Lead {
   contacts               LeadContact[]
   assignmentLogs         LeadAssignmentLog[]
   freshsalesContacts     FreshsalesContact[]
+  freshchatConversations FreshchatConversation[]
 
   @@index([deletedAt])
   @@index([name])
@@ -5336,6 +5338,74 @@ model FreshsalesTimelineEvent {
 
 // One row per sync job (lookups, users, contacts, deals, activities, conversations, timeline)
 // so a long rate-limited pull can stop and resume where it left off.
+// Freshchat (the chat inbox inside Freshsales) conversations — WhatsApp +62 812-2701-3029,
+// Instagram / Messenger brand accounts and the website widget. READ-ONLY history pulled by
+// src/lib/freshchat-import.ts: those channels are still connected to Freshchat, so nothing here
+// can be replied to from the ERP. Shown in Chat › Freshchat and on Lead / Guest details.
+model FreshchatConversation {
+  // Freshchat's numeric conversation id — the one Freshsales timeline/activities reference
+  id                 String             @id
+  uuid               String?            @unique
+  channelId          String?
+  channelName        String?
+  // WHATSAPP | INSTA | FB_NATIVE | FRESHCHAT (website widget)
+  channelSource      String?
+  brand              WhatsappBrand?
+  status             String?
+  fcUserId           String?
+  userName           String?
+  userPhone          String?
+  contactFsId        String?
+  leadId             String?
+  lead               Lead?              @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  customerId         String?
+  customer           Customer?          @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  assignedAgentName  String?
+  fcCreatedAt        DateTime?
+  fcUpdatedAt        DateTime?
+  lastMessageAt      DateTime?
+  lastMessagePreview String?
+  messageCount       Int                @default(0)
+  // null = messages still to be pulled; re-pulled when Freshchat reports a newer update
+  messagesSyncedAt   DateTime?
+  // Copied into the ERP's own chat thread (src/lib/freshchat-mirror.ts): 'whatsapp' |
+  // 'instagram' (IG + Messenger) + that thread's id. Mirrored conversations are left out of
+  // Chat › Freshchat so the same history never shows twice.
+  erpThreadKind      String?
+  erpThreadId        String?
+  mirroredAt         DateTime?
+  lastError          String?
+  raw                Json?
+  syncedAt           DateTime           @default(now()) @updatedAt
+  messages           FreshchatMessage[]
+
+  @@index([leadId])
+  @@index([customerId])
+  @@index([contactFsId])
+  @@index([lastMessageAt])
+  @@index([channelSource])
+  @@index([messagesSyncedAt])
+  @@index([erpThreadId])
+}
+
+model FreshchatMessage {
+  id             String                @id
+  conversationId String
+  conversation   FreshchatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  // user (the customer) | agent | system | bot
+  actorType      String?
+  actorName      String?
+  // normal | private (internal note) | system
+  messageType    String?
+  text           String?
+  // [{kind: image|file|video|audio, name, contentType, size, url, storedUrl}] — storedUrl = copy in R2
+  attachments    Json?
+  createdAt      DateTime
+  raw            Json?
+
+  @@index([conversationId, createdAt])
+}
+
 model FreshsalesSyncState {
   entity     String    @id
   status     String    @default("IDLE") // IDLE | RUNNING | DONE | ERROR

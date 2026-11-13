@@ -167,6 +167,16 @@ export async function startNodeInstrumentation() {
         if (!apiKey || !domain) return
         const log = (m: string) => console.log(`[freshsales-erp-sync] ${m.trim()}`)
         await runFreshsalesErpSync(db, new FreshsalesClient(domain, apiKey, log), `server-${process.pid}`, log)
+        // Read-only Freshchat chat history (WhatsApp / IG / Messenger / web) — new + recently active
+        // conversations; needs FRESHCHAT_API_TOKEN + FRESHCHAT_API_URL in the server env.
+        const { freshchatFromEnv, runFreshchatSync } = await import('@/lib/freshchat-import')
+        const fc = freshchatFromEnv(log)
+        if (fc) {
+          await runFreshchatSync(db, fc, { log })
+          // …and copy new messages into the ERP's own WhatsApp / IG / Messenger threads
+          const { mirrorFreshchatToErpChats } = await import('@/lib/freshchat-mirror')
+          await mirrorFreshchatToErpChats(db, { apply: true, log })
+        }
       } catch (err) {
         console.error('[freshsales-erp-sync] tick failed:', err)
       } finally {

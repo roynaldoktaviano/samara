@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-import { Loader2, Search, MessageCircle, Instagram, Facebook, Mail, Plus, Clock, MessageSquarePlus, Sailboat, Ship, Anchor } from 'lucide-react'
+import { Loader2, Search, MessageCircle, Instagram, Facebook, Mail, Plus, Clock, MessageSquarePlus, Sailboat, Ship, Anchor, History } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { formatDate } from '@/lib/format'
 import type { ChatChannel, ChatPlatform, InboxView, UnifiedInboxItem } from '@/app/api/chat/inbox/route'
@@ -18,6 +18,8 @@ import { missingTemplateParams, renderWhatsappTemplateBody } from '@/lib/whatsap
 import { useWhatsappTemplates, templateKey } from '@/components/whatsapp/useWhatsappTemplates'
 import WhatsAppThread from '@/components/whatsapp/WhatsAppThread'
 import InstagramThread from '@/components/instagram/InstagramThread'
+import FreshchatList from '@/components/freshchat/FreshchatList'
+import FreshchatThread from '@/components/freshchat/FreshchatThread'
 
 interface SalesUser { id: string; name: string | null; email: string }
 
@@ -98,6 +100,10 @@ export default function UnifiedInbox({ onOpenEmail, onOpenBooking, initialWhatsa
     initialWhatsappId ? { channel: 'whatsapp', id: initialWhatsappId } : initialInstagramId ? { channel: 'instagram', id: initialInstagramId } : null,
   )
   const [newChatOpen, setNewChatOpen] = useState(false)
+  // Chat › Freshchat: read-only history imported from Freshchat (src/lib/freshchat-import.ts)
+  const [historyMode, setHistoryMode] = useState(false)
+  const [fcSelected, setFcSelected] = useState<string | null>(null)
+  const threadOpen = historyMode ? !!fcSelected : !!selected
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search.trim()), 300)
@@ -161,7 +167,7 @@ export default function UnifiedInbox({ onOpenEmail, onOpenBooking, initialWhatsa
   // leaving the ERP.
   const isMobile = () => typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches
   useEffect(() => {
-    const onPop = () => setSelected(null)
+    const onPop = () => { setSelected(null); setFcSelected(null) }
     window.addEventListener('popstate', onPop)
     return () => window.removeEventListener('popstate', onPop)
   }, [])
@@ -171,7 +177,11 @@ export default function UnifiedInbox({ onOpenEmail, onOpenBooking, initialWhatsa
   }
   function closeThread() {
     if ((window.history.state as { chatThread?: boolean } | null)?.chatThread) window.history.back()
-    else setSelected(null)
+    else { setSelected(null); setFcSelected(null) }
+  }
+  function selectHistory(id: string) {
+    if (isMobile() && !fcSelected) window.history.pushState({ chatThread: true }, '')
+    setFcSelected(id)
   }
 
   function openItem(item: UnifiedInboxItem) {
@@ -196,7 +206,7 @@ export default function UnifiedInbox({ onOpenEmail, onOpenBooking, initialWhatsa
     // Mobile: edge-to-edge (cancels page.tsx's p-3) and fills the screen under the 3rem top bar.
     <div className="-m-3 sm:m-0 h-[calc(100dvh-3rem)] sm:h-[calc(100vh-6rem)] flex sm:rounded-xl sm:border overflow-hidden bg-card">
       {/* Conversation list */}
-      <div className={cn('w-full md:w-80 shrink-0 md:border-r flex-col relative', selected ? 'hidden md:flex' : 'flex')}>
+      <div className={cn('w-full md:w-80 shrink-0 md:border-r flex-col relative', threadOpen ? 'hidden md:flex' : 'flex')}>
         <div className="px-4 pt-4 pb-2 md:py-4 md:border-b flex items-start justify-between gap-2">
           <div>
             <h2 className="text-2xl md:text-lg font-bold tracking-tight">
@@ -206,9 +216,9 @@ export default function UnifiedInbox({ onOpenEmail, onOpenBooking, initialWhatsa
             <div role="group" aria-label="Filter by platform" className="flex items-center gap-1 mt-1.5">
               {PLATFORM_FILTERS.map(p => {
                 const Icon = p.icon
-                const active = platformFilter === p.value
+                const active = !historyMode && platformFilter === p.value
                 return (
-                  <button key={p.value} type="button" aria-pressed={active} onClick={() => { setPlatformFilter(p.value); if (!waitingSupported(p.value) && view === 'waiting') setView('all') }}
+                  <button key={p.value} type="button" aria-pressed={active} onClick={() => { setHistoryMode(false); setPlatformFilter(p.value); if (!waitingSupported(p.value) && view === 'waiting') setView('all') }}
                     title={p.label} aria-label={p.label}
                     className={cn('h-7 inline-flex items-center gap-1 rounded-full border px-2 text-[11px] font-medium transition-colors',
                       active ? 'border-foreground bg-foreground text-background' : 'text-muted-foreground hover:bg-muted')}>
@@ -217,6 +227,13 @@ export default function UnifiedInbox({ onOpenEmail, onOpenBooking, initialWhatsa
                   </button>
                 )
               })}
+              <button type="button" aria-pressed={historyMode} onClick={() => setHistoryMode(true)}
+                title="Freshchat history (read-only)" aria-label="Freshchat history (read-only)"
+                className={cn('h-7 inline-flex items-center gap-1 rounded-full border px-2 text-[11px] font-medium transition-colors',
+                  historyMode ? 'border-foreground bg-foreground text-background' : 'text-muted-foreground hover:bg-muted')}>
+                <History className="h-3.5 w-3.5" />
+                {historyMode && <span>Freshchat</span>}
+              </button>
             </div>
           </div>
           <Dialog open={newChatOpen} onOpenChange={setNewChatOpen}>
@@ -233,6 +250,7 @@ export default function UnifiedInbox({ onOpenEmail, onOpenBooking, initialWhatsa
             </DialogContent>
           </Dialog>
         </div>
+        {historyMode ? <FreshchatList selectedId={fcSelected} onSelect={selectHistory} /> : (<>
         <div className="hidden md:block px-3 pt-3 border-b pb-3">
           <Tabs value={brandFilter} onValueChange={v => setBrandFilter(v as WhatsappBrand)}>
             <TabsList className="w-full">
@@ -352,8 +370,10 @@ export default function UnifiedInbox({ onOpenEmail, onOpenBooking, initialWhatsa
             })
           )}
         </div>
+        </>)}
 
         {/* Mobile: new-chat FAB + brand switcher as a floating bottom tab bar (desktop uses the Tabs above). */}
+        {!historyMode && <>
         <button type="button" onClick={() => setNewChatOpen(true)} title="Start a new WhatsApp chat" aria-label="Start a new WhatsApp chat"
           className="md:hidden absolute right-4 bottom-[6.5rem] h-14 w-14 rounded-2xl bg-[#1fa855] text-white shadow-lg flex items-center justify-center active:scale-95 transition-transform">
           <MessageSquarePlus className="h-6 w-6" />
@@ -374,10 +394,20 @@ export default function UnifiedInbox({ onOpenEmail, onOpenBooking, initialWhatsa
             )
           })}
         </nav>
+        </>}
       </div>
 
       {/* Thread */}
-      {!selected ? (
+      {historyMode ? (
+        fcSelected ? <FreshchatThread key={fcSelected} conversationId={fcSelected} onBack={closeThread} /> : (
+          <div className="hidden md:flex flex-1 items-center justify-center text-muted-foreground text-sm">
+            <div className="text-center">
+              <History className="h-10 w-10 mx-auto mb-2 opacity-30" />
+              Select a conversation to read its Freshchat history
+            </div>
+          </div>
+        )
+      ) : !selected ? (
         <div className="hidden md:flex flex-1 items-center justify-center text-muted-foreground text-sm">
           <div className="text-center">
             <MessageCircle className="h-10 w-10 mx-auto mb-2 opacity-30" />

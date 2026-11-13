@@ -11,11 +11,15 @@
  *
  * Mapping rules:
  *  - One pipeline card per Freshsales deal: a deal belongs to the first of its contacts, and a
- *    contact's lead mirrors its newest OPEN sales deal, else its newest deal (Won/Lost).
+ *    contact's lead mirrors its newest OPEN sales deal, else its newest deal (Won/Lost). Every
+ *    other deal of that contact, and a deal with no contact but with an owner, gets its own card:
+ *    a Lead with source FRESHSALES_DEAL and no freshsalesContactId (created while the deal is on
+ *    the board — open or closed in the last 90 days — and kept in sync after that).
  *    Agent Outreach deals are agents, not guests — ignored here.
  *  - Stage names are the same on both sides (Sales Pipeline); older pipelines map by meaning.
- *  - Owner = an open deal's owner; for Won/Lost the contact owner (else the deal owner). Philippe is skipped (Roy's
- *    call — he isn't a sales rep in the ERP); owners with no ERP user (Helena, no owner) → none.
+ *  - Owner = an open deal's owner (else the contact owner); for Won/Lost the contact owner (else
+ *    the deal owner). Philippe is passed over (Roy's call — he isn't a sales rep in the ERP, his
+ *    stale New Enquiry deals stay with the contact's sales rep); no ERP user (Helena) → none.
  *  - A Freshsales contact with a deal or an email and no ERP lead gets one (matched to an
  *    unlinked lead by email/phone first). Guests are linked by email/phone, owner only.
  *  - A lead's WhatsApp / Instagram chats follow its owner (chat owner = lead owner).
@@ -31,6 +35,11 @@ type Json = Record<string, any>
 type Log = (m: string) => void
 
 export const AGENT_PIPELINE = 'Agent Outreach Pipeline'
+/** Lead.source of an extra pipeline card for a contact's 2nd+ deal or a deal with no contact. */
+export const DEAL_CARD_SOURCE = 'FRESHSALES_DEAL'
+// Won/Lost cards stay on the Sales Pipeline board this long (matches CLOSED_LOOKBACK_DAYS there)
+const BOARD_CLOSED_DAYS = 90
+const DAY_MS = 86400000
 
 const STAGE_MAP: Record<string, LeadStage> = {
   'new enquiry': 'NEW', 'new': 'NEW',
@@ -167,24 +176,26 @@ export async function reconcileFreshsalesToErp(db: PrismaClient, opts: { apply: 
   const leadByFs = new Map(leads.filter(l => l.freshsalesContactId).map(l => [l.freshsalesContactId!, l]))
   const contactIds = new Set(contacts.map(c => c.id))
   const dealsByContact = new Map<string, ArchiveDeal[]>()
+  const dealHolder = new Map<string, string>()
   for (const d of deals) {
     if (pipelineName.get(d.pipelineFsId ?? '') === AGENT_PIPELINE) continue
     const holder = d.contactFsIds.find(id => leadByFs.has(id) && contactIds.has(id)) ?? d.contactFsIds.find(id => contactIds.has(id))
     if (!holder) continue
+    dealHolder.set(d.id, holder)
     dealsByContact.set(holder, [...(dealsByContact.get(holder) ?? []), d])
   }
   const mainDeal = (cid: string) => {
     const ds = dealsByContact.get(cid)
     if (!ds?.length) return null
     const open = ds.filter(isOpen)
-    if (open.length > 1) inc('contacts with >1 open deal (newest shown)')
+    if (open.length > 1) inc('contacts with >1 open deal (extra deals get their own card)')
     return [...(open.length ? open : ds)].sort((a, b) => +(b.fsCreatedAt ?? 0) - +(a.fsCreatedAt ?? 0))[0]
   }
 
   // Unlinked ERP records, for linking FS contacts that have no lead/guest yet
   const freeLeadByEmail = new Map<string, LeadRow[]>(), freeLeadByPhone = new Map<string, LeadRow[]>()
   for (const l of leads) {
-    if (l.freshsalesContactId || l.deletedAt) continue
+    if (l.freshsalesContactId || l.deletedAt || l.source === DEAL_CARD_SOURCE) continue
     const e = normEmail(l.email), p = normPhone(l.phone)
     if (e) freeLeadByEmail.set(e, [...(freeLeadByEmail.get(e) ?? []), l])
     if (p) freeLeadByPhone.set(p, [...(freeLeadByPhone.get(p) ?? []), l])
@@ -208,41 +219,98 @@ export async function reconcileFreshsalesToErp(db: PrismaClient, opts: { apply: 
   const ownerMoves: { leadId: string; from: string | null; to: string | null }[] = []
   const now = new Date()
 
+  const visibleOnBoard = (d: ArchiveDeal) => isOpen(d) || +(d.stageUpdatedAt ?? d.closedDate ?? 0) >= Date.now() - BOARD_CLOSED_DAYS * DAY_MS
+  // Open deal → its sales rep, else the contact owner. Won/Lost → the contact owner (who handles
+  // the person now), else the deal owner. Philippe (undefined) is passed over; if nobody usable
+  // is left and Philippe was one of them, the ERP owner is left alone.
+  const pickOwner = (d: ArchiveDeal | null, contactOwner: string | null | undefined): string | null | undefined => {
+    const dealOwner = d?.ownerFsId ? erpOwner(d.ownerFsId) : null
+    const order = d && isOpen(d) ? [dealOwner, contactOwner] : [contactOwner, dealOwner]
+    return order.find(o => !!o) ?? (order.some(o => o === undefined) ? undefined : null)
+  }
+  const dealWant = (deal: ArchiveDeal, want: Partial<LeadRow>) => {
+    const sn = stageOf.get(deal.stageFsId ?? '')?.name ?? ''
+    const stage = STAGE_MAP[sn.toLowerCase()]
+    if (!stage) inc(`unmapped FS stage "${sn}"`)
+    want.freshsalesDealId = deal.id
+    if (stage) {
+      want.stage = stage
+      want.stageUpdatedAt = deal.stageUpdatedAt ?? deal.closedDate ?? deal.fsCreatedAt ?? null
+      const reason = stage === 'CLOSED_LOST' ? name('DEAL_REASON', deal.lostReasonFsId) : null
+      want.lostReason = stage === 'CLOSED_LOST' && reason ? LOST_MAP[reason.toLowerCase()] ?? 'OTHER' : null
+      want.lostNote = want.lostReason === 'OTHER' ? reason : null
+    }
+    if (deal.amount !== null) { want.tripAmount = deal.amount; want.tripAmountCurrency = name('CURRENCY', deal.currencyFsId) }
+    const trip = dealTripInfo(deal)
+    if (trip.start) want.travelStartDate = trip.start
+    if (trip.end) want.travelEndDate = trip.end
+    if (trip.pax) want.guestCount = trip.pax
+    if (trip.tripType) want.tripType = trip.tripType
+  }
+  const createFrom = (want: Partial<LeadRow>, extra: Partial<Prisma.LeadCreateManyInput> & { name: string }): Prisma.LeadCreateManyInput => ({
+    firstName: want.firstName ?? null, lastName: want.lastName ?? null,
+    freshsalesDealId: want.freshsalesDealId ?? null,
+    ownerId: want.ownerId ?? null, ownerAssignedAt: want.ownerId ? now : null,
+    stage: want.stage ?? 'NEW', stageUpdatedAt: want.stageUpdatedAt ?? null,
+    lostReason: want.lostReason ?? null, lostNote: want.lostNote ?? null,
+    tripAmount: want.tripAmount ?? null, tripAmountCurrency: want.tripAmountCurrency ?? null,
+    travelStartDate: want.travelStartDate ?? null, travelEndDate: want.travelEndDate ?? null,
+    guestCount: want.guestCount ?? null, tripType: want.tripType ?? null,
+    ...extra,
+  })
+  // Queue the fields of `want` that differ from `lead`
+  const diffLead = (lead: LeadRow, want: Partial<LeadRow>, fsContactId: string) => {
+    const data: Prisma.LeadUncheckedUpdateInput = {}
+    const fields: Record<string, [unknown, unknown]> = {}
+    for (const [k, v] of Object.entries(want) as [keyof LeadRow, unknown][]) {
+      const cur = lead[k] as unknown
+      const same = v instanceof Date || cur instanceof Date
+        ? (k === 'stageUpdatedAt' || k === 'deletedAt' ? sameTime(cur as Date, v as Date) : sameDay(cur as Date, v as Date))
+        : (cur ?? null) === (v ?? null)
+      if (same) continue
+      ;(data as Json)[k] = v
+      fields[k] = [cur ?? null, v ?? null]
+    }
+    if ('ownerId' in data) {
+      data.ownerAssignedAt = now
+      ownerMoves.push({ leadId: lead.id, from: lead.ownerId, to: (data.ownerId as string | null) ?? null })
+      inc(!lead.ownerId ? 'lead owner: filled' : !data.ownerId ? 'lead owner: cleared (FS has none / no ERP user)' : 'lead owner: changed')
+    }
+    if ('stage' in data) inc(`lead stage → ${data.stage}`)
+    for (const k of ['freshsalesDealId', 'tripAmount', 'lostReason', 'travelStartDate', 'guestCount', 'tripType', 'name', 'email', 'phone']) if (k in data) inc(`lead field: ${k}`)
+    if (!Object.keys(data).length) { inc('lead: already in sync'); return }
+    leadUpdates.set(lead.id, { ...(leadUpdates.get(lead.id) ?? {}), ...data })
+    const ch = leadChange.get(lead.id)
+    if (ch) Object.assign(ch.fields, fields)
+    else leadChange.set(lead.id, { kind: 'lead', action: 'update', id: lead.id, fsContactId, name: lead.name, fields })
+    if (lead.deletedAt && !('deletedAt' in data)) inc('lead: updated but soft-deleted in ERP (left deleted)')
+  }
+
+  // Deals that need a card of their own: a contact's 2nd+ deals, and deals with no contact
+  type Extra = { deal: ArchiveDeal; contact: { id: string; name: string | null; email: string | null; phone: string | null; owner: string | null | undefined; raw: Json } | null }
+  const extras: Extra[] = []
+  const mainDealIds = new Set<string>()
+
   for (const c of contacts) {
     const emails = fsEmails(c), phones = fsPhones(c)
     const deal = mainDeal(c.id)
     const raw = (c.raw ?? {}) as Json
     const fsName = (c.name || [raw.first_name, raw.last_name].filter(Boolean).join(' ')).replace(/\s+/g, ' ').trim() || null
+    const cleanName = fsName && !fsName.includes('/') ? fsName : null
+    const contactOwner = erpOwner(c.ownerFsId)
 
     // ── desired lead state ──
     const want: Partial<LeadRow> = {}
     // A contact "name" that is really a deal title (PC/Mischief/Raja Ampat/Guest) isn't copied over
-    if (fsName && !fsName.includes('/')) { want.name = fsName; want.firstName = raw.first_name?.trim() || null; want.lastName = raw.last_name?.trim() || null }
-    const contactOwner = erpOwner(c.ownerFsId)
-    // An open deal's sales rep owns the card. Closed deals (Won/Lost) keep the contact owner —
-    // whoever handles the person now — and fall back to the deal owner when the contact has none.
-    const dealOwner = deal?.ownerFsId ? erpOwner(deal.ownerFsId) : null
-    const [primary, backup] = deal && isOpen(deal) ? [dealOwner, contactOwner] : [contactOwner, dealOwner]
-    const ownerWanted = primary === undefined ? undefined : primary ?? backup
+    if (cleanName) { want.name = cleanName; want.firstName = raw.first_name?.trim() || null; want.lastName = raw.last_name?.trim() || null }
+    const ownerWanted = pickOwner(deal, contactOwner)
     if (ownerWanted !== undefined) want.ownerId = ownerWanted
     if (deal) {
-      const sn = stageOf.get(deal.stageFsId ?? '')?.name ?? ''
-      const stage = STAGE_MAP[sn.toLowerCase()]
-      if (!stage) inc(`unmapped FS stage "${sn}"`)
-      want.freshsalesDealId = deal.id
-      if (stage) {
-        want.stage = stage
-        want.stageUpdatedAt = deal.stageUpdatedAt ?? deal.closedDate ?? deal.fsCreatedAt ?? null
-        const reason = stage === 'CLOSED_LOST' ? name('DEAL_REASON', deal.lostReasonFsId) : null
-        want.lostReason = stage === 'CLOSED_LOST' && reason ? LOST_MAP[reason.toLowerCase()] ?? 'OTHER' : null
-        want.lostNote = want.lostReason === 'OTHER' ? reason : null
+      dealWant(deal, want)
+      mainDealIds.add(deal.id)
+      for (const other of dealsByContact.get(c.id) ?? []) {
+        if (other.id !== deal.id) extras.push({ deal: other, contact: { id: c.id, name: cleanName, email: c.email ?? emails[0] ?? null, phone: c.phone ?? null, owner: contactOwner, raw } })
       }
-      if (deal.amount !== null) { want.tripAmount = deal.amount; want.tripAmountCurrency = name('CURRENCY', deal.currencyFsId) }
-      const trip = dealTripInfo(deal)
-      if (trip.start) want.travelStartDate = trip.start
-      if (trip.end) want.travelEndDate = trip.end
-      if (trip.pax) want.guestCount = trip.pax
-      if (trip.tripType) want.tripType = trip.tripType
     } else {
       want.freshsalesDealId = null
     }
@@ -258,19 +326,11 @@ export async function reconcileFreshsalesToErp(db: PrismaClient, opts: { apply: 
         leadChange.set(free.id, { kind: 'lead', action: 'link', id: free.id, fsContactId: c.id, name: free.name, fields: { freshsalesContactId: [null, c.id] } })
         inc('lead: linked existing ERP lead by email/phone')
       } else {
-        const data: Prisma.LeadCreateManyInput = {
+        const data = createFrom(want, {
           name: fsName ?? emails[0] ?? phones[0] ?? `Freshsales ${c.id}`,
-          firstName: want.firstName ?? null, lastName: want.lastName ?? null,
-          email: c.email ?? emails[0] ?? null, phone: c.phone ?? null,
-          freshsalesContactId: c.id, freshsalesDealId: want.freshsalesDealId ?? null,
-          ownerId: want.ownerId ?? null, ownerAssignedAt: want.ownerId ? now : null,
-          stage: want.stage ?? 'NEW', stageUpdatedAt: want.stageUpdatedAt ?? null,
-          lostReason: want.lostReason ?? null, lostNote: want.lostNote ?? null,
-          tripAmount: want.tripAmount ?? null, tripAmountCurrency: want.tripAmountCurrency ?? null,
-          travelStartDate: want.travelStartDate ?? null, travelEndDate: want.travelEndDate ?? null,
-          guestCount: want.guestCount ?? null, tripType: want.tripType ?? null,
+          email: c.email ?? emails[0] ?? null, phone: c.phone ?? null, freshsalesContactId: c.id,
           ...(c.fsCreatedAt ? { createdAt: c.fsCreatedAt } : {}),
-        }
+        })
         leadCreates.push(data)
         changes.push({ kind: 'lead', action: 'create', id: '', fsContactId: c.id, name: data.name, fields: { stage: [null, data.stage], owner: [null, data.ownerId], deal: [null, data.freshsalesDealId] } })
         inc(deal ? 'lead: created (has FS deal)' : 'lead: created (FS contact with email, no deal)')
@@ -285,32 +345,7 @@ export async function reconcileFreshsalesToErp(db: PrismaClient, opts: { apply: 
       // Email / phone: Freshsales wins when it has one and it really differs (not just formatting)
       if (emails.length && !emails.includes(normEmail(lead.email) ?? '')) want.email = c.email ?? emails[0]
       if (phones.length && !phones.includes(normPhone(lead.phone) ?? '')) want.phone = c.phone ?? raw.mobile_number ?? raw.work_number ?? null
-
-      const data: Prisma.LeadUncheckedUpdateInput = {}
-      const fields: Record<string, [unknown, unknown]> = {}
-      for (const [k, v] of Object.entries(want) as [keyof LeadRow, unknown][]) {
-        const cur = lead[k] as unknown
-        const same = v instanceof Date || cur instanceof Date
-          ? (k === 'stageUpdatedAt' ? sameTime(cur as Date, v as Date) : sameDay(cur as Date, v as Date))
-          : (cur ?? null) === (v ?? null)
-        if (same) continue
-        ;(data as Json)[k] = v
-        fields[k] = [cur ?? null, v ?? null]
-      }
-      if ('ownerId' in data) {
-        data.ownerAssignedAt = now
-        ownerMoves.push({ leadId: lead.id, from: lead.ownerId, to: (data.ownerId as string | null) ?? null })
-        inc(!lead.ownerId ? 'lead owner: filled' : !data.ownerId ? 'lead owner: cleared (FS has none / no ERP user)' : 'lead owner: changed')
-      }
-      if ('stage' in data) inc(`lead stage → ${data.stage}`)
-      for (const k of ['freshsalesDealId', 'tripAmount', 'lostReason', 'travelStartDate', 'guestCount', 'tripType', 'name', 'email', 'phone']) if (k in data) inc(`lead field: ${k}`)
-      if (Object.keys(data).length) {
-        leadUpdates.set(lead.id, { ...(leadUpdates.get(lead.id) ?? {}), ...data })
-        const ch = leadChange.get(lead.id)
-        if (ch) Object.assign(ch.fields, fields)
-        else leadChange.set(lead.id, { kind: 'lead', action: 'update', id: lead.id, fsContactId: c.id, name: lead.name, fields })
-        if (lead.deletedAt) inc('lead: updated but soft-deleted in ERP (left deleted)')
-      } else inc('lead: already in sync')
+      diffLead(lead, want, c.id)
     }
 
     // ── guest ──
@@ -333,6 +368,41 @@ export async function reconcileFreshsalesToErp(db: PrismaClient, opts: { apply: 
         changes.push({ kind: 'guest', action: 'freshsalesContactId' in cdata ? 'link' : 'update', id: cust.id, fsContactId: c.id, name: cust.name, fields: Object.fromEntries(Object.entries(cdata).map(([k, v]) => [k, [(cust as Json)[k] ?? null, v]])) })
       }
     }
+  }
+
+  // ── deal cards (one card per Freshsales deal, like the Freshsales board) ──
+  for (const d of deals) if (!dealHolder.has(d.id) && pipelineName.get(d.pipelineFsId ?? '') !== AGENT_PIPELINE) extras.push({ deal: d, contact: null })
+  const cardByDeal = new Map(leads.filter(l => l.source === DEAL_CARD_SOURCE && l.freshsalesDealId).map(l => [l.freshsalesDealId!, l]))
+  const extraIds = new Set(extras.map(e => e.deal.id))
+  // A card whose deal became its contact's main deal (or vanished) steps aside — no duplicate card
+  for (const l of leads) {
+    if (l.source !== DEAL_CARD_SOURCE || !l.freshsalesDealId) continue
+    if (extraIds.has(l.freshsalesDealId)) continue
+    leadUpdates.set(l.id, { ...(leadUpdates.get(l.id) ?? {}), freshsalesDealId: null, deletedAt: l.deletedAt ?? now })
+    inc('deal card: retired (deal is now a main card / gone)')
+  }
+  for (const { deal, contact } of extras) {
+    const want: Partial<LeadRow> = { deletedAt: null }
+    dealWant(deal, want)
+    const owner = pickOwner(deal, contact?.owner ?? null)
+    if (owner !== undefined) want.ownerId = owner
+    const existing = cardByDeal.get(deal.id)
+    if (existing) {
+      if (contact?.name) want.name = contact.name
+      diffLead(existing, want, contact?.id ?? '')
+      continue
+    }
+    if (!visibleOnBoard(deal)) continue
+    // A deal with no contact and no usable owner is form spam (random names, unassigned)
+    if (!contact && !owner) { inc('deal card: skipped (no contact, no owner)'); continue }
+    const data = createFrom(want, {
+      name: contact?.name ?? deal.name, email: contact?.email ?? null, phone: contact?.phone ?? null,
+      firstName: contact ? (contact.raw.first_name?.trim() || null) : null, lastName: contact ? (contact.raw.last_name?.trim() || null) : null,
+      source: DEAL_CARD_SOURCE, ...(deal.fsCreatedAt ? { createdAt: deal.fsCreatedAt } : {}),
+    })
+    leadCreates.push(data)
+    changes.push({ kind: 'lead', action: 'create', id: '', fsContactId: contact?.id ?? '', name: data.name, fields: { stage: [null, data.stage], owner: [null, data.ownerId], deal: [null, deal.id] } })
+    inc(contact ? 'deal card: created (contact\'s 2nd+ deal)' : 'deal card: created (deal without contact)')
   }
 
   // Leads pointing at a Freshsales contact that no longer exists (deleted/merged there) leave the board
@@ -390,7 +460,6 @@ export async function reconcileFreshsalesToErp(db: PrismaClient, opts: { apply: 
 
 const DELTA = 'erpSyncDelta'
 const OVERLAP_MS = 10 * 60_000
-const DAY_MS = 86400000
 
 async function deltaCursor(db: PrismaClient) {
   const s = await db.freshsalesSyncState.findUnique({ where: { entity: DELTA } })
