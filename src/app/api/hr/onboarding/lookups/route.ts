@@ -17,7 +17,7 @@ export async function GET() {
     db.employeeWorkLocation.findMany({ where: { isActive: true }, select: { id: true, name: true }, orderBy: { name: 'asc' } }),
     db.legalEntity.findMany({ where: { isActive: true }, select: { id: true, name: true }, orderBy: { name: 'asc' } }),
     db.businessUnit.findMany({ where: { isActive: true }, select: { id: true, name: true }, orderBy: { name: 'asc' } }),
-    db.employee.findMany({ where: { isActive: true }, select: { id: true, fullName: true }, orderBy: { fullName: 'asc' } }),
+    db.employee.findMany({ where: { isActive: true }, select: { id: true, fullName: true, employeeNumber: true, personalEmail: true }, orderBy: { fullName: 'asc' } }),
     db.yacht.findMany({ select: { name: true } }),
   ])
   // Lets the form tick "Crew" automatically when a yacht-named work location is picked.

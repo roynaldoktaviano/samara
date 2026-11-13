@@ -7,7 +7,7 @@ import { getDb } from '@/lib/get-db'
 import { sendPushToUsers } from '@/lib/push'
 import { emitTenantEvent } from '@/lib/realtime-bus'
 import { matchEmployeesToYachts } from '@/lib/payroll'
-import { sanitizeFreelanceRecommendations, crewLeaveStage, resolveCrewStageApprover, resolveYachtCrewApprovers, notifyLeaveReachedHr } from '@/lib/leave-request'
+import { sanitizeFreelanceRecommendations, crewLeaveStage, resolveCrewStageApprover, resolveYachtCrewApprovers, notifyLeaveReachedHr, leaveKind, LEAVE_TYPE_LABEL } from '@/lib/leave-request'
 
 // Crew-stage approval for a LeaveRequest (requiresCrewApproval) — distinct from the HR
 // final decision in ../route.ts. Two steps since 2026-11-09: Captain first, then the
@@ -78,12 +78,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (res.count === 0) return NextResponse.json({ error: 'This request was already updated — refresh and try again' }, { status: 409 })
   const updated = await db.leaveRequest.findUnique({ where: { id } })
 
-  const kind = existing.type === 'WFH' ? 'WFH' : 'leave'
+  const kind = leaveKind(existing.type)
   if (action === 'approve') {
     if (goesToCd) {
       const { cd } = yachtId ? await resolveYachtCrewApprovers(db, yachtId) : { cd: null }
       if (cd) {
-        const title = existing.type === 'WFH' ? 'Crew WFH request needs your approval' : 'Crew leave request needs your approval'
+        const title = `Crew ${kind} request needs your approval`
         const body = `${existing.employee.fullName} requested ${existing.days} day${existing.days !== 1 ? 's' : ''} ${kind}; approved by ${approver.name ? `Captain ${approver.name}` : 'the Captain'}, now waiting on you.`
         await db.notification.create({ data: { userId: cd.id, type: 'LEAVE_APPROVAL_NEEDED', title, body } }).catch(() => {})
         sendPushToUsers(db, [cd.id], { title, body }).catch(() => {})
@@ -96,7 +96,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       })
     }
   } else if (existing.employee.userId) {
-    const title = existing.type === 'WFH' ? 'WFH request rejected' : 'Leave request rejected'
+    const title = `${LEAVE_TYPE_LABEL[existing.type]} request rejected`
     const body = `Your ${kind} request (${existing.days} day${existing.days !== 1 ? 's' : ''}) was rejected by the ${approver.label}.`
     await db.notification.create({ data: { userId: existing.employee.userId, type: 'LEAVE_DECIDED', title, body } }).catch(() => {})
     sendPushToUsers(db, [existing.employee.userId], { title, body }).catch(() => {})

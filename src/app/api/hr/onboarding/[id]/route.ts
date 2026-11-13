@@ -29,7 +29,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   const { id } = await params
   const existing = await a.db.onboardingForm.findUnique({ where: { id }, select: { status: true } })
   if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-  if (existing.status === 'PROBATION_STARTED' || existing.status === 'CANCELLED') {
+  if (existing.status === 'PROBATION_STARTED' || existing.status === 'APPLIED' || existing.status === 'CANCELLED') {
     return NextResponse.json({ error: 'This onboarding form is closed — edit the employee record instead' }, { status: 409 })
   }
   const body = await req.json().catch(() => ({})) as Record<string, unknown>
@@ -45,8 +45,8 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   const { id } = await params
   const existing = await a.db.onboardingForm.findUnique({ where: { id }, select: { status: true } })
   if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-  if (existing.status === 'PROBATION_STARTED') {
-    return NextResponse.json({ error: 'This form already created an employee and is kept as their onboarding record' }, { status: 409 })
+  if (existing.status === 'PROBATION_STARTED' || existing.status === 'APPLIED') {
+    return NextResponse.json({ error: 'This form was already applied to an employee and is kept as their record' }, { status: 409 })
   }
   await a.db.onboardingForm.delete({ where: { id } })
   return NextResponse.json({ ok: true })

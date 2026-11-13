@@ -38,8 +38,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
   const hr = await db.user.findMany({ where: { role: 'HR' }, select: { id: true } })
   const recipients = hr.length ? hr : await db.user.findMany({ where: { role: { in: HR_NOTIFY_ROLES } }, select: { id: true } })
   if (recipients.length) {
-    const title = wasRevision ? 'Onboarding form resubmitted' : 'Onboarding form submitted'
-    const text = `${form.fullName} ${wasRevision ? 'updated and resubmitted' : 'submitted'} their onboarding form — ready for review in HR › Onboarding.`
+    const what = form.purpose === 'EMPLOYEE_UPDATE' ? 'employee data form' : 'onboarding form'
+    const title = `${what.charAt(0).toUpperCase()}${what.slice(1)} ${wasRevision ? 'resubmitted' : 'submitted'}`
+    const text = `${form.fullName} ${wasRevision ? 'updated and resubmitted' : 'submitted'} their ${what} — ready for review in HR › Onboarding.`
     await db.notification.createMany({ data: recipients.map(u => ({ userId: u.id, type: 'ONBOARDING_SUBMITTED', title, body: text })) }).catch(() => {})
     sendPushToUsers(db, recipients.map(u => u.id), { title, body: text }).catch(console.error)
   }

@@ -1084,6 +1084,15 @@ model Booking {
   totalPrice                    Float
   depositPaid                   Float                     @default(0)
   discount                      Float                     @default(0)
+  // How `discount` was entered. 'PERCENT' = discountValue is a % of the base price (cabins /
+  // charter price, before services) and `discount` is that % re-derived as USD whenever the
+  // base changes; null/FIXED = `discount` is a flat USD amount typed in directly.
+  discountType                  String?
+  discountValue                 Float                     @default(0)
+  // Whether the invoice PDF shows the discount as its own line (base shown pre-discount)
+  // or folds it silently into the base. null = legacy default (shown for direct bookings,
+  // hidden for agent bookings).
+  showDiscountOnInvoice         Boolean?
   // Surcharge added on top of (base + services - discount). null/FIXED means vatValue is a
   // flat USD amount; 'PERCENT' means vatValue is a percentage of that subtotal.
   vatType                       String?
@@ -3907,6 +3916,7 @@ model Employee {
   recruitmentReplacements   RecruitmentRequest[] @relation("RecruitmentReplacement")
   onboardingForm            OnboardingForm?      @relation("OnboardingEmployee")
   onboardingFormsManaged    OnboardingForm[]     @relation("OnboardingManager")
+  onboardingUpdateForms     OnboardingForm[]     @relation("OnboardingTargetEmployee")
 
   @@index([legalEntityId])
   @@index([businessUnitId])
@@ -4227,6 +4237,8 @@ model LeaveRequest {
   // LEAVE (cuti) deducts leaveBalance and syncs CUTI into Attendance Recap; WFH does
   // neither deduction nor balance check, and syncs WFH instead.
   type       LeaveRequestType   @default(LEAVE)
+  // SICK: doctor's letter (data URLs, image/PDF) — required on create. Empty for LEAVE/WFH.
+  attachments String[]          @default([])
 
   // See the model comment above — true when the employee's yacht had a Captain and/or
   // Cruise Director at request time, meaning the crew stage(s) must clear before HR's
@@ -4400,6 +4412,7 @@ model BusinessTripReimbursement {
 enum LeaveRequestType {
   LEAVE
   WFH
+  SICK // sick leave — needs a doctor's letter (attachments), never touches leaveBalance, syncs SAKIT
 }
 
 enum AttendanceStatus {
@@ -5431,7 +5444,13 @@ enum OnboardingStatus {
   REVISION_REQUESTED // HR sent it back with revisionNote; joiner can edit + resubmit
   APPROVED // HR accepted the data; HR-only fields can still be adjusted
   PROBATION_STARTED // Employee created (employeeId) — terminal, link locked
+  APPLIED // EMPLOYEE_UPDATE only: data written into targetEmployee — terminal, link locked
   CANCELLED // withdrawn by HR — terminal, link locked
+}
+
+enum OnboardingPurpose {
+  NEW_JOINER // new hire → Start Probation creates the Employee
+  EMPLOYEE_UPDATE // existing employee fills/updates their own personal data → applied to targetEmployee
 }
 
 enum OnboardingFormType {
@@ -5443,6 +5462,12 @@ model OnboardingForm {
   id       String             @id @default(cuid())
   status   OnboardingStatus   @default(INVITED)
   formType OnboardingFormType @default(STANDARD)
+  purpose  OnboardingPurpose  @default(NEW_JOINER)
+
+  // EMPLOYEE_UPDATE: the existing Employee this form updates (one active form per employee).
+  targetEmployeeId String?
+  targetEmployee   Employee? @relation("OnboardingTargetEmployee", fields: [targetEmployeeId], references: [id], onDelete: Cascade)
+  appliedAt        DateTime?
 
   // Public link access — token in the URL + a PIN given out by HR over a separate channel.
   // pinHash is bcrypt; the plain PIN is only ever shown to HR once (create / Reset PIN).
@@ -5531,4 +5556,5 @@ model OnboardingForm {
 
   @@index([status])
   @@index([candidateId])
+  @@index([targetEmployeeId])
 }

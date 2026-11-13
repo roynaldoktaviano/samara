@@ -6,7 +6,9 @@
 // Field keys match the OnboardingForm (and Employee) columns of the same name.
 
 export type OnboardingFormType = 'STANDARD' | 'FREELANCE'
-export type OnboardingStatus = 'INVITED' | 'SUBMITTED' | 'REVISION_REQUESTED' | 'APPROVED' | 'PROBATION_STARTED' | 'CANCELLED'
+export type OnboardingStatus = 'INVITED' | 'SUBMITTED' | 'REVISION_REQUESTED' | 'APPROVED' | 'PROBATION_STARTED' | 'APPLIED' | 'CANCELLED'
+/** NEW_JOINER = hire → Start Probation; EMPLOYEE_UPDATE = existing employee updates their own data. */
+export type OnboardingPurpose = 'NEW_JOINER' | 'EMPLOYEE_UPDATE'
 
 export const ONBOARDING_STATUS_LABEL: Record<OnboardingStatus, string> = {
   INVITED: 'Invited',
@@ -14,11 +16,14 @@ export const ONBOARDING_STATUS_LABEL: Record<OnboardingStatus, string> = {
   REVISION_REQUESTED: 'Revision Requested',
   APPROVED: 'Approved',
   PROBATION_STARTED: 'Probation Started',
+  APPLIED: 'Employee Updated',
   CANCELLED: 'Cancelled',
 }
 
 /** States in which the joiner may still edit their form via the public link. */
 export const ONBOARDING_EDITABLE: OnboardingStatus[] = ['INVITED', 'REVISION_REQUESTED']
+/** Terminal states — the form is frozen and the link no longer works. */
+export const ONBOARDING_CLOSED: OnboardingStatus[] = ['PROBATION_STARTED', 'APPLIED', 'CANCELLED']
 
 /**
  * `required`: true = always; 'indonesian' = only when nationality is Indonesian (KK only

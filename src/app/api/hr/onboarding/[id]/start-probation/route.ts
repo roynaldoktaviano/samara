@@ -30,6 +30,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     include: { candidate: { select: { id: true, convertedEmployeeId: true } } },
   })
   if (!form) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  if (form.purpose === 'EMPLOYEE_UPDATE') return NextResponse.json({ error: 'This is an employee data form — it updates an existing employee' }, { status: 400 })
   if (form.status !== 'APPROVED') return NextResponse.json({ error: 'Approve the form before starting probation' }, { status: 400 })
   if (!form.joinDate) return NextResponse.json({ error: 'Set the join date first' }, { status: 400 })
   if (!form.roleId) return NextResponse.json({ error: 'Set the position first' }, { status: 400 })

@@ -134,6 +134,8 @@ export async function sendOnboardingEmail(params: {
   expiresAt: Date
   kind: 'invite' | 'revision'
   revisionNote?: string | null
+  /** EMPLOYEE_UPDATE = an existing employee asked to check/complete their data. */
+  purpose?: 'NEW_JOINER' | 'EMPLOYEE_UPDATE'
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   if (!params.tenantId) return { ok: false, error: 'No tenant on this session' }
   const [apiKey, inboxFrom] = await Promise.all([
@@ -143,18 +145,23 @@ export async function sendOnboardingEmail(params: {
   if (!apiKey) return { ok: false, error: 'Email sending is not configured (Resend API key missing)' }
 
   const expires = params.expiresAt.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
+  const isUpdate = params.purpose === 'EMPLOYEE_UPDATE'
+  const formName = isUpdate ? 'employee data form' : 'onboarding form'
+  const title = isUpdate ? 'Employee Data Form' : 'Onboarding Form'
   const intro = params.kind === 'invite'
-    ? `<p style="margin:0 0 14px;">Welcome aboard! Before your first day${params.roleTitle ? ` as <strong>${esc(params.roleTitle)}</strong>` : ''}, please complete your onboarding form with your personal details and documents.</p>`
-    : `<p style="margin:0 0 14px;">Our HR team reviewed your onboarding form and needs a few changes:</p>
+    ? isUpdate
+      ? `<p style="margin:0 0 14px;">Our HR team is updating employee records. Please check your personal details and documents, correct anything that is out of date and fill in what is missing.</p>`
+      : `<p style="margin:0 0 14px;">Welcome aboard! Before your first day${params.roleTitle ? ` as <strong>${esc(params.roleTitle)}</strong>` : ''}, please complete your onboarding form with your personal details and documents.</p>`
+    : `<p style="margin:0 0 14px;">Our HR team reviewed your ${formName} and needs a few changes:</p>
        <div style="margin:0 0 14px;padding:12px 14px;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;white-space:pre-wrap;">${esc(params.revisionNote ?? '')}</div>
        <p style="margin:0 0 14px;">Please open the form again, update it and submit.</p>`
   const html = `
     <div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;color:#1a252f;line-height:1.5;">
-      <h2 style="color:#a8956a;margin:0 0 12px;">Onboarding Form</h2>
+      <h2 style="color:#a8956a;margin:0 0 12px;">${title}</h2>
       <p style="margin:0 0 14px;">Hi ${esc(params.fullName)},</p>
       ${intro}
       <p style="margin:22px 0;">
-        <a href="${esc(params.link)}" style="background:#d97706;color:#fff;text-decoration:none;padding:11px 20px;border-radius:8px;font-weight:600;">Open Onboarding Form</a>
+        <a href="${esc(params.link)}" style="background:#d97706;color:#fff;text-decoration:none;padding:11px 20px;border-radius:8px;font-weight:600;">Open ${title}</a>
       </p>
       <p style="margin:0 0 8px;">You will need the <strong>6-digit PIN</strong> our HR team sends you separately to open the form.</p>
       <p style="margin:0 0 8px;color:#5c5648;">This link is valid until ${expires}.</p>
@@ -165,7 +172,9 @@ export async function sendOnboardingEmail(params: {
 
   const res = await sendBulkEmail({
     apiKey, from: noreplyFrom(inboxFrom), fromName: 'Samara HR',
-    subject: params.kind === 'invite' ? 'Please complete your onboarding form' : 'Action needed: update your onboarding form',
+    subject: params.kind === 'invite'
+      ? (isUpdate ? 'Please update your employee data' : 'Please complete your onboarding form')
+      : `Action needed: update your ${formName}`,
     recipients: [{ email: params.to, htmlFor: html }],
   })
   const failure = res.failures[params.to]

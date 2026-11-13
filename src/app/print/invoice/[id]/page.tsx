@@ -54,6 +54,9 @@ interface PaymentDetail {
     totalPrice: number
     depositPaid: number
     discount: number
+    discountType?: string | null
+    discountValue?: number
+    showDiscountOnInvoice?: boolean | null
     vatType?: string | null
     vatValue?: number
     guestCount: number
@@ -207,6 +210,12 @@ export default function InvoicePage() {
   const commissionAmt  = commissionPct > 0 ? Math.max(0, baseAfterDisc - clawbackAmt) * commissionPct / 100 : 0
   const afterDiscount  = b.totalPrice - clawbackAmt - commissionAmt
   const displayBase    = baseAfterDisc - clawbackAmt - commissionAmt
+  // Discount line on/off is a per-booking choice (Edit Booking). Legacy bookings (null) keep the
+  // old behaviour: shown for direct bookings, folded into the base for agent bookings. When shown,
+  // the main line carries the pre-discount price so base − discount adds up on the page.
+  const showDiscount   = discountAmt > 0 && (b.showDiscountOnInvoice ?? !isAgentBooking)
+  const discountPctLbl = b.discountType === 'PERCENT' && (b.discountValue ?? 0) > 0 ? ` (${b.discountValue}%)` : ''
+  const mainLineAmt    = (showCommissionNote ? baseAfterDisc : displayBase) + (showDiscount ? discountAmt : 0)
 
   type HistoryEntry = NonNullable<PaymentDetail['history']>[number] & { ordinal: number; cumAfter: number }
   const historyRows = (payment.history ?? []).reduce<HistoryEntry[]>((acc, h, i) => {
@@ -530,9 +539,17 @@ export default function InvoicePage() {
               )}
             </div>
             <div style={{ fontWeight: 600, color: '#111827', whiteSpace: 'nowrap', marginLeft: 16, fontSize: 11 }}>
-              {fmtAmt(showCommissionNote ? baseAfterDisc : displayBase)}
+              {fmtAmt(mainLineAmt)}
             </div>
           </div>
+
+          {/* Discount — per-booking toggle (see showDiscount above) */}
+          {showDiscount && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 10px', borderBottom: '1px solid #f3f4f6' }}>
+              <span style={{ color: '#059669', fontSize: 10 }}>Discount{discountPctLbl}</span>
+              <span style={{ color: '#059669', fontSize: 10 }}>−{fmtAmt(discountAmt)}</span>
+            </div>
+          )}
 
           {/* Clawback breakdown — only when explicitly disclosed on the invoice */}
           {showCommissionNote && clawbackAmt > 0 && (
@@ -551,14 +568,6 @@ export default function InvoicePage() {
               <span style={{ fontSize: 10, color: '#9ca3af', whiteSpace: 'nowrap', marginLeft: 16 }}>
                 −{fmtAmt(commissionAmt)}
               </span>
-            </div>
-          )}
-
-          {/* Discount — only shown for non-agent bookings (agent bookings absorb it into base) */}
-          {!isAgentBooking && b.discount > 0 && (
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 10px', borderBottom: '1px solid #f3f4f6' }}>
-              <span style={{ color: '#059669', fontSize: 10 }}>Discount</span>
-              <span style={{ color: '#059669', fontSize: 10 }}>−{fmtAmt(discountAmt)}</span>
             </div>
           )}
 

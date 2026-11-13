@@ -6,7 +6,9 @@ import { roleMatches } from '@/lib/role-utils'
 import {
   appBaseUrl, newOnboardingExpiry, newOnboardingPin, newOnboardingToken, onboardingLink, sendOnboardingEmail,
 } from '@/lib/onboarding-access'
-import { LIST_OMIT, ONBOARDING_HR_ROLES, ONBOARDING_INCLUDE, addMonths, hrFieldsFromBody } from '@/lib/onboarding-hr'
+import {
+  LIST_OMIT, ONBOARDING_HR_ROLES, ONBOARDING_INCLUDE, addMonths, employeeUpdatePrefill, hrFieldsFromBody,
+} from '@/lib/onboarding-hr'
 import { DEFAULT_PROBATION_MONTHS } from '@/lib/onboarding-fields'
 import { matchEmployeesToYachts } from '@/lib/payroll'
 
@@ -25,7 +27,9 @@ export async function GET() {
 
 /**
  * Creates an Onboarding Form — from a Candidate (prefilled from it and its Recruitment
- * Request) or standalone. Returns the plain PIN exactly once; only its hash is stored.
+ * Request), standalone, or — with `employeeId` — an Employee Data Update form for an existing
+ * employee (prefilled with their current data/documents; applied back to them on approval).
+ * Returns the plain PIN exactly once; only its hash is stored.
  */
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions)
@@ -35,8 +39,18 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({})) as Record<string, unknown>
 
   const candidateId = typeof body.candidateId === 'string' && body.candidateId ? body.candidateId : null
+  const targetEmployeeId = typeof body.employeeId === 'string' && body.employeeId ? body.employeeId : null
   const prefill: Record<string, unknown> = {}
-  if (candidateId) {
+  if (targetEmployeeId) {
+    const employee = await db.employee.findUnique({ where: { id: targetEmployeeId } })
+    if (!employee) return NextResponse.json({ error: 'Employee not found' }, { status: 404 })
+    const active = await db.onboardingForm.findFirst({
+      where: { targetEmployeeId, status: { notIn: ['APPLIED', 'CANCELLED'] } },
+      select: { id: true },
+    })
+    if (active) return NextResponse.json({ error: 'This employee already has an open data form — open it in HR › Onboarding', existingId: active.id }, { status: 409 })
+    Object.assign(prefill, employeeUpdatePrefill(employee))
+  } else if (candidateId) {
     const candidate = await db.candidate.findUnique({
       where: { id: candidateId },
       include: { recruitmentRequest: { select: { locationId: true, requesterEmployeeId: true, employmentStatus: true } } },
@@ -74,7 +88,7 @@ export async function POST(req: NextRequest) {
     ])
     data.isCrew = matchEmployeesToYachts([{ id: 'x', locationName: loc?.name ?? null }], yachts).has('x')
   }
-  if (data.joinDate instanceof Date && !data.probationEndDate && data.formType !== 'FREELANCE') {
+  if (!targetEmployeeId && data.joinDate instanceof Date && !data.probationEndDate && data.formType !== 'FREELANCE') {
     data.probationEndDate = addMonths(data.joinDate, DEFAULT_PROBATION_MONTHS)
   }
 
@@ -84,7 +98,9 @@ export async function POST(req: NextRequest) {
     data: {
       ...data,
       fullName,
-      candidateId,
+      candidateId: targetEmployeeId ? null : candidateId,
+      purpose: targetEmployeeId ? 'EMPLOYEE_UPDATE' : 'NEW_JOINER',
+      targetEmployeeId,
       token,
       pinHash,
       expiresAt: newOnboardingExpiry(),
@@ -99,7 +115,7 @@ export async function POST(req: NextRequest) {
   if (body.sendEmail === true && form.inviteEmail) {
     email = await sendOnboardingEmail({
       tenantId: session.user.tenantId, to: form.inviteEmail, fullName: form.fullName, link,
-      roleTitle: form.role?.title, expiresAt: form.expiresAt, kind: 'invite',
+      roleTitle: form.role?.title, expiresAt: form.expiresAt, kind: 'invite', purpose: form.purpose,
     })
   }
 

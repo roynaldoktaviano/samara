@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import {
   Plus, Copy, Mail, KeyRound, CalendarPlus, Ban, CheckCircle2, Undo2, UserCheck, Trash2, ClipboardCheck,
-  Download, FileText, Anchor, ExternalLink,
+  Download, FileText, Anchor, ExternalLink, UserCog,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -23,7 +23,8 @@ import { formatDate } from '@/lib/format'
 import { downloadDataUrl, extFromDataUrl } from '@/lib/fileUpload'
 import {
   DEFAULT_PROBATION_MONTHS, ONBOARDING_DOCS, ONBOARDING_SECTIONS, ONBOARDING_STATUS_LABEL, isDocVisible, isFieldVisible,
-  missingOnboardingFields, type OnboardingDocField, type OnboardingFormType, type OnboardingStatus, type OnboardingTextField,
+  missingOnboardingFields, type OnboardingDocField, type OnboardingFormType, type OnboardingPurpose, type OnboardingStatus,
+  type OnboardingTextField,
 } from '@/lib/onboarding-fields'
 import { DEPARTMENTS } from './EmployeesPage'
 
@@ -33,13 +34,14 @@ interface Lookups {
   locations: { id: string; name: string; isYacht: boolean }[]
   legalEntities: Option[]
   businessUnits: Option[]
-  managers: { id: string; fullName: string }[]
+  managers: { id: string; fullName: string; employeeNumber: string; personalEmail: string | null }[]
 }
 
 interface OnboardingRow {
   id: string
   token: string
   status: OnboardingStatus
+  purpose: OnboardingPurpose
   formType: OnboardingFormType
   isCrew: boolean
   fullName: string
@@ -57,12 +59,13 @@ interface OnboardingRow {
   location: { id: string; name: string } | null
   candidate: { id: string; fullName: string; status: string } | null
   employee: { id: string; employeeNumber: string; fullName: string } | null
+  targetEmployee: { id: string; employeeNumber: string; fullName: string } | null
 }
 
 type OnboardingDetail = OnboardingRow & Record<OnboardingTextField, string | null> & Record<OnboardingDocField, string[]> & {
   roleId: string | null; locationId: string | null; legalEntityId: string | null; businessUnitId: string | null; managerId: string | null
   basicSalary: number | null; allowance: number | null; freelanceFee: number | null; freelanceFeeType: string | null
-  approvedAt: string | null; probationStartedAt: string | null; lastSavedAt: string | null
+  approvedAt: string | null; probationStartedAt: string | null; appliedAt: string | null; lastSavedAt: string | null
 }
 
 export interface ShareInfo { fullName: string; link: string; pin?: string; email?: { ok: boolean; error?: string } | null }
@@ -73,6 +76,7 @@ export const STATUS_TONE: Record<OnboardingStatus, StatusTone> = {
   REVISION_REQUESTED: 'pink',
   APPROVED: 'primary',
   PROBATION_STARTED: 'success',
+  APPLIED: 'success',
   CANCELLED: 'neutral',
 }
 const STATUSES = Object.keys(ONBOARDING_STATUS_LABEL) as OnboardingStatus[]
@@ -109,19 +113,19 @@ export function ShareDialog({ info, onClose }: { info: ShareInfo | null; onClose
       {info && (
         <DialogContent className="sm:max-w-md" onInteractOutside={e => e.preventDefault()}>
           <DialogHeader>
-            <DialogTitle>Onboarding link for {info.fullName}</DialogTitle>
+            <DialogTitle>Form link for {info.fullName}</DialogTitle>
             <DialogDescription>Send the link and the PIN through different channels (e.g. link by email, PIN by WhatsApp or phone).</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-1.5">
               <p className={labelCls}>Link</p>
               <div className="flex gap-2">
-                <Input readOnly value={info.link} onFocus={e => e.currentTarget.select()} aria-label="Onboarding link" />
+                <Input readOnly value={info.link} onFocus={e => e.currentTarget.select()} aria-label="Form link" />
                 <Button variant="outline" size="icon" onClick={() => copy(info.link, 'Link')} aria-label="Copy link"><Copy /></Button>
               </div>
               {info.email && (
                 info.email.ok
-                  ? <p className="text-xs text-success">Link emailed to the joiner.</p>
+                  ? <p className="text-xs text-success">Link emailed.</p>
                   : <p className="text-xs text-destructive">Email not sent: {info.email.error}</p>
               )}
             </div>
@@ -283,6 +287,86 @@ export function CreateOnboardingDialog({ open, candidate, onClose, onCreated }: 
   )
 }
 
+// ── Employee Data Form (existing employee updates their own data) ────────────
+export interface EmployeePrefill { id: string; fullName: string; personalEmail: string | null }
+
+export function EmployeeDataFormDialog({ open, employee, onClose, onCreated }: {
+  open: boolean
+  /** Fixed employee (from the Employees page); omitted = HR picks one. */
+  employee?: EmployeePrefill | null
+  onClose: () => void
+  onCreated: (share: ShareInfo) => void
+}) {
+  const lookups = useLookups(open && !employee)
+  const [employeeId, setEmployeeId] = useState('')
+  const [email, setEmail] = useState('')
+  const [sendEmail, setSendEmail] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    if (!open) return
+    setError(''); setSendEmail(true)
+    setEmployeeId(employee?.id ?? '')
+    setEmail(employee?.personalEmail ?? '')
+  }, [open, employee])
+
+  function pick(id: string) {
+    setEmployeeId(id)
+    setEmail(lookups?.managers.find(m => m.id === id)?.personalEmail ?? '')
+  }
+
+  async function submit() {
+    if (!employeeId) { setError('Pick an employee'); return }
+    if (sendEmail && !email.trim()) { setError('Enter an email to send the link to, or untick "Email the link"'); return }
+    setSaving(true); setError('')
+    const res = await fetch('/api/hr/onboarding', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ employeeId, inviteEmail: email.trim(), sendEmail }),
+    })
+    const data = await res.json().catch(() => ({}))
+    setSaving(false)
+    if (!res.ok) { setError(data.error ?? 'Failed to create the form'); return }
+    onCreated({ fullName: data.form.fullName, link: data.link, pin: data.pin, email: data.email })
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={o => { if (!o) onClose() }}>
+      <DialogContent className="sm:max-w-md p-0 gap-0 overflow-hidden" onInteractOutside={e => e.preventDefault()}>
+        <DialogHeader className="px-6 py-4 pr-12 border-b text-left">
+          <DialogTitle className="text-sm font-bold">Employee Data Form</DialogTitle>
+          <DialogDescription className="text-xs">
+            {employee ? <><span className="font-medium text-foreground">{employee.fullName}</span> gets</> : 'An existing employee gets'} a link + PIN to check and complete
+            their own personal data and documents. It starts with what&apos;s on file; after you approve it, their employee record is updated.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="px-6 py-5 space-y-4">
+          {error && <p className="text-xs text-destructive bg-destructive/10 border border-destructive/30 rounded-lg px-3 py-2">{error}</p>}
+          {!employee && (
+            <div className="space-y-1.5">
+              <Label htmlFor="edf-employee" className={labelCls}>Employee *</Label>
+              <SearchableSelect id="edf-employee" value={employeeId} onChange={pick}
+                options={(lookups?.managers ?? []).map(m => ({ value: m.id, label: `${m.fullName} · ${m.employeeNumber}` }))} placeholder="Select employee…" />
+            </div>
+          )}
+          <div className="space-y-1.5">
+            <Label htmlFor="edf-email" className={labelCls}>Email</Label>
+            <Input id="edf-email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Employee's personal email" />
+          </div>
+          <label className="flex items-start gap-2.5 text-sm cursor-pointer">
+            <Checkbox checked={sendEmail} onCheckedChange={v => setSendEmail(v === true)} className="mt-0.5" />
+            <span><span className="font-medium">Email the link</span><span className="block text-xs text-muted-foreground">The PIN is never emailed — you&apos;ll see it on the next screen.</span></span>
+          </label>
+        </div>
+        <DialogFooter className="px-6 py-4 border-t bg-muted/50">
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={submit} disabled={saving}>{saving ? 'Creating…' : 'Create & Get Link'}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 // ── Detail / review ──────────────────────────────────────────────────────────
 type DetailTab = 'review' | 'employment' | 'documents'
 
@@ -326,7 +410,8 @@ function DetailDialog({ id, onClose, onChanged, onShare }: {
   }, [id, apply])
 
   if (!id) return null
-  const closed = detail?.status === 'PROBATION_STARTED' || detail?.status === 'CANCELLED'
+  const closed = detail?.status === 'PROBATION_STARTED' || detail?.status === 'APPLIED' || detail?.status === 'CANCELLED'
+  const isUpdate = detail?.purpose === 'EMPLOYEE_UPDATE'
   const set = (k: string, v: unknown) => { setEdit(e => ({ ...e, [k]: v })); setDirty(true) }
   const val = (k: string) => (edit[k] as string) ?? ''
 
@@ -381,6 +466,26 @@ function DetailDialog({ id, onClose, onChanged, onShare }: {
     toast.success(`${detail.fullName} added to Employees (${data.employee.employeeNumber})`)
   }
 
+  async function applyToEmployee() {
+    if (!detail?.targetEmployee) return
+    if (missing.length) {
+      const ok = await confirm({ title: 'Update with missing data?', description: `Still missing: ${missing.join(', ')}. Fields left empty keep their current value on the employee.`, confirmLabel: 'Continue' })
+      if (!ok) return
+    }
+    const ok = await confirm({
+      title: 'Update employee record?',
+      description: <>
+        The personal data and documents in this form replace what&apos;s on file for{' '}
+        <span className="font-medium text-foreground">{detail.targetEmployee.fullName} ({detail.targetEmployee.employeeNumber})</span>.
+        Empty fields keep their current value. The link stops working.
+      </>,
+      confirmLabel: 'Approve & Update',
+    })
+    if (!ok) return
+    const d = await action('apply')
+    if (d) toast.success(`${detail.targetEmployee.fullName}'s employee record updated`)
+  }
+
   async function remove() {
     if (!detail) return
     const ok = await confirm({ title: 'Delete onboarding form?', description: <>The form for <span className="font-medium text-foreground">{detail.fullName}</span> and everything they uploaded will be deleted permanently.</>, confirmLabel: 'Delete', destructive: true })
@@ -408,16 +513,21 @@ function DetailDialog({ id, onClose, onChanged, onShare }: {
                 <div className="flex items-center gap-2 flex-wrap">
                   <DialogTitle className="text-lg font-bold">{detail.fullName}</DialogTitle>
                   <StatusBadge tone={STATUS_TONE[detail.status]}>{ONBOARDING_STATUS_LABEL[detail.status]}</StatusBadge>
+                  {isUpdate && <StatusBadge tone="info"><UserCog className="size-3" /> Data Update</StatusBadge>}
                   {detail.formType === 'FREELANCE' && <StatusBadge tone="purple">Freelance</StatusBadge>}
                   {detail.isCrew && <StatusBadge tone="cyan"><Anchor className="size-3" /> Crew</StatusBadge>}
                 </div>
                 <DialogDescription className="text-xs">
                   {detail.role?.title ?? 'No position'}{detail.location ? ` · ${detail.location.name}` : ''}
                   {detail.candidate ? ` · from candidate ${detail.candidate.fullName}` : ''}
+                  {detail.targetEmployee ? ` · updates employee ${detail.targetEmployee.employeeNumber}` : ''}
                   {detail.submittedAt ? ` · submitted ${formatDate(detail.submittedAt)}` : detail.lastSavedAt ? ` · draft saved ${formatDate(detail.lastSavedAt)}` : ' · not opened yet'}
                 </DialogDescription>
                 {detail.status === 'PROBATION_STARTED' && detail.employee && (
                   <p className="text-xs text-success mt-1.5 flex items-center gap-1"><UserCheck className="size-3.5" /> Employee {detail.employee.employeeNumber} created — further changes go in Employees.</p>
+                )}
+                {detail.status === 'APPLIED' && detail.targetEmployee && (
+                  <p className="text-xs text-success mt-1.5 flex items-center gap-1"><UserCheck className="size-3.5" /> Applied to employee {detail.targetEmployee.employeeNumber}{detail.appliedAt ? ` on ${formatDate(detail.appliedAt)}` : ''} — further changes go in Employees.</p>
                 )}
                 {detail.status === 'REVISION_REQUESTED' && detail.revisionNote && (
                   <p className="text-xs mt-1.5 rounded-md bg-pink-50 dark:bg-pink-500/10 border border-pink-200 dark:border-pink-500/30 px-2.5 py-1.5 whitespace-pre-wrap"><b>Revision asked:</b> {detail.revisionNote}</p>
@@ -431,7 +541,7 @@ function DetailDialog({ id, onClose, onChanged, onShare }: {
               </DialogHeader>
 
               <div className="flex gap-1 px-6 border-b">
-                {([['review', 'Joiner Data'], ['employment', 'Employment (HR)'], ['documents', 'Documents']] as const).map(([t, label]) => (
+                {([['review', isUpdate ? 'Employee Data' : 'Joiner Data'], ['employment', isUpdate ? 'Settings' : 'Employment (HR)'], ['documents', 'Documents']] as const).map(([t, label]) => (
                   <button key={t} type="button" onClick={() => setTab(t)}
                     className={`px-3 py-2.5 text-sm font-semibold border-b-2 -mb-px ${tab === t ? 'border-primary text-primary-strong' : 'border-transparent text-muted-foreground hover:text-foreground'}`}>
                     {label}
@@ -474,7 +584,30 @@ function DetailDialog({ id, onClose, onChanged, onShare }: {
                   )
                 })}
 
-                {tab === 'employment' && (
+                {tab === 'employment' && isUpdate && (
+                  <div className="space-y-5">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <Label htmlFor="onb-hr-type-u" className="text-xs text-muted-foreground">Form Type</Label>
+                        <NativeSelect id="onb-hr-type-u" disabled={closed} value={val('formType')} onChange={e => set('formType', e.target.value)}>
+                          <option value="STANDARD">Full form</option>
+                          <option value="FREELANCE">Short form (Freelance)</option>
+                        </NativeSelect>
+                      </div>
+                      <div className="space-y-1">
+                        <Label htmlFor="onb-hr-email-u" className="text-xs text-muted-foreground">Invite Email</Label>
+                        <Input id="onb-hr-email-u" type="email" disabled={closed} value={val('inviteEmail')} onChange={e => set('inviteEmail', e.target.value)} />
+                      </div>
+                    </div>
+                    <label className="flex items-start gap-2.5 text-sm cursor-pointer">
+                      <Checkbox disabled={closed} checked={edit.isCrew === true} onCheckedChange={v => set('isCrew', v === true)} className="mt-0.5" />
+                      <span><span className="font-medium">Crew</span><span className="block text-xs text-muted-foreground">Employee must upload Seaman Book, BST and Medical Check Up.</span></span>
+                    </label>
+                    <p className="text-xs text-muted-foreground">This form only updates personal data and documents. Position, location, contract and salary stay as they are — change those in Employees.</p>
+                  </div>
+                )}
+
+                {tab === 'employment' && !isUpdate && (
                   <div className="space-y-5">
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1">
@@ -624,10 +757,10 @@ function DetailDialog({ id, onClose, onChanged, onShare }: {
 
               <DialogFooter className="px-6 py-4 border-t bg-muted/50 sm:justify-between gap-2 flex-wrap">
                 <div className="flex gap-2 flex-wrap">
-                  {detail.status !== 'PROBATION_STARTED' && (
+                  {detail.status !== 'PROBATION_STARTED' && detail.status !== 'APPLIED' && (
                     <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={remove}><Trash2 /> Delete</Button>
                   )}
-                  {!closed && detail.status !== 'APPROVED' && (
+                  {!closed && (detail.status !== 'APPROVED' || isUpdate) && (
                     <Button variant="ghost" size="sm" disabled={!!busy} onClick={async () => {
                       const ok = await confirm({ title: 'Cancel onboarding?', description: 'The link stops working. The record is kept as Cancelled.', confirmLabel: 'Cancel Onboarding', destructive: true })
                       if (ok) await action('cancel')
@@ -651,7 +784,10 @@ function DetailDialog({ id, onClose, onChanged, onShare }: {
                     <Button variant="outline" size="sm" disabled={!!busy} onClick={() => { setRevisionNote(''); setRevisionOpen(true) }}><Undo2 /> Request Revision</Button>
                   )}
                   {!closed && dirty && <Button variant="outline" size="sm" disabled={!!busy} onClick={() => save()}>{busy === 'save' ? 'Saving…' : 'Save Changes'}</Button>}
-                  {detail.status === 'SUBMITTED' && (
+                  {isUpdate && (detail.status === 'SUBMITTED' || detail.status === 'APPROVED') && (
+                    <Button size="sm" disabled={!!busy} onClick={applyToEmployee}><UserCheck /> {busy === 'apply' ? 'Updating…' : 'Approve & Update Employee'}</Button>
+                  )}
+                  {!isUpdate && detail.status === 'SUBMITTED' && (
                     <Button size="sm" disabled={!!busy} onClick={async () => {
                       if (missing.length) {
                         const ok = await confirm({ title: 'Approve with missing data?', description: `Still missing: ${missing.join(', ')}.`, confirmLabel: 'Approve Anyway' })
@@ -660,7 +796,7 @@ function DetailDialog({ id, onClose, onChanged, onShare }: {
                       const d = await action('approve'); if (d) toast.success('Approved — complete the Employment tab, then Start Probation')
                     }}><CheckCircle2 /> Approve</Button>
                   )}
-                  {detail.status === 'APPROVED' && (
+                  {!isUpdate && detail.status === 'APPROVED' && (
                     <Button size="sm" disabled={!!busy} onClick={startProbation}><UserCheck /> {busy === 'start' ? 'Starting…' : 'Start Probation'}</Button>
                   )}
                 </div>
@@ -674,7 +810,7 @@ function DetailDialog({ id, onClose, onChanged, onShare }: {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Request Revision</DialogTitle>
-            <DialogDescription>The joiner sees this note on the form{detail?.inviteEmail ? ' and gets it by email' : ''}. Their link and PIN stay the same.</DialogDescription>
+            <DialogDescription>{isUpdate ? 'The employee' : 'The joiner'} sees this note on the form{detail?.inviteEmail ? ' and gets it by email' : ''}. Their link and PIN stay the same.</DialogDescription>
           </DialogHeader>
           <Textarea rows={4} autoFocus aria-label="What needs to change" placeholder="e.g. KTP photo is blurry — please re-upload. Bank account name must match your ID."
             value={revisionNote} onChange={e => setRevisionNote(e.target.value)} />
@@ -685,7 +821,7 @@ function DetailDialog({ id, onClose, onChanged, onShare }: {
               if (!d) return
               setRevisionOpen(false)
               if (d.email && !d.email.ok) toast.error(`Sent back, but email failed: ${d.email.error}`)
-              else toast.success('Sent back to the joiner')
+              else toast.success(isUpdate ? 'Sent back to the employee' : 'Sent back to the joiner')
             }}>Send Back</Button>
           </DialogFooter>
         </DialogContent>
@@ -699,7 +835,9 @@ export default function OnboardingPage() {
   const [rows, setRows] = useState<OnboardingRow[]>([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<OnboardingStatus | 'All'>('All')
+  const [purposeFilter, setPurposeFilter] = useState<OnboardingPurpose | 'All'>('All')
   const [createOpen, setCreateOpen] = useState(false)
+  const [employeeFormOpen, setEmployeeFormOpen] = useState(false)
   const [share, setShare] = useState<ShareInfo | null>(null)
   const [detailId, setDetailId] = useState<string | null>(null)
 
@@ -710,7 +848,8 @@ export default function OnboardingPage() {
   }, [])
   useEffect(() => { load() }, [load])
 
-  const filtered = filter === 'All' ? rows : rows.filter(r => r.status === filter)
+  const byPurpose = purposeFilter === 'All' ? rows : rows.filter(r => r.purpose === purposeFilter)
+  const filtered = filter === 'All' ? byPurpose : byPurpose.filter(r => r.status === filter)
   const toReview = rows.filter(r => r.status === 'SUBMITTED').length
 
   return (
@@ -719,15 +858,27 @@ export default function OnboardingPage() {
         <div>
           <h2 className="text-2xl font-bold tracking-tight">Onboarding</h2>
           <p className="text-muted-foreground text-sm mt-1">
-            New joiners fill in their own data and documents{toReview > 0 ? ` · ${toReview} waiting for review` : ''}
+            New joiners and existing employees fill in their own data and documents{toReview > 0 ? ` · ${toReview} waiting for review` : ''}
           </p>
         </div>
-        <Button onClick={() => setCreateOpen(true)}><Plus /> New Onboarding</Button>
+        <div className="flex gap-2 flex-wrap">
+          <Button variant="outline" onClick={() => setEmployeeFormOpen(true)}><UserCog /> Employee Data Form</Button>
+          <Button onClick={() => setCreateOpen(true)}><Plus /> New Onboarding</Button>
+        </div>
+      </div>
+
+      <div className="flex gap-1.5 flex-wrap" role="group" aria-label="Form type">
+        {([['All', 'All forms'], ['NEW_JOINER', 'New Joiners'], ['EMPLOYEE_UPDATE', 'Employee Data']] as const).map(([p, label]) => (
+          <button key={p} type="button" onClick={() => setPurposeFilter(p)} aria-pressed={purposeFilter === p}
+            className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${purposeFilter === p ? 'border-primary bg-primary/10 text-primary-strong' : 'text-muted-foreground hover:bg-muted/50'}`}>
+            {label}
+          </button>
+        ))}
       </div>
 
       <div className="flex gap-1 border-b overflow-x-auto">
         {(['All', ...STATUSES] as const).map(s => {
-          const count = s === 'All' ? rows.length : rows.filter(r => r.status === s).length
+          const count = s === 'All' ? byPurpose.length : byPurpose.filter(r => r.status === s).length
           return (
             <button key={s} onClick={() => setFilter(s)}
               className={`shrink-0 whitespace-nowrap px-3 py-2 text-sm font-medium border-b-2 transition-colors -mb-px flex items-center gap-1.5 ${
@@ -759,18 +910,19 @@ export default function OnboardingPage() {
               {filtered.length === 0 ? (
                 <tr><td colSpan={6} className="text-center py-12 text-muted-foreground text-sm">
                   <ClipboardCheck className="h-8 w-8 mx-auto mb-2 opacity-20" />
-                  {filter === 'All' ? 'No onboarding forms yet. Create one here or from a candidate at Offer/Hired.' : 'Nothing in this status.'}
+                  {filter === 'All' && purposeFilter === 'All' ? 'No onboarding forms yet. Create one here, from a candidate at Offer/Hired, or for an existing employee.' : 'Nothing here.'}
                 </td></tr>
               ) : filtered.map(r => (
                 <tr key={r.id} onClick={() => setDetailId(r.id)} className="hover:bg-muted/30 cursor-pointer transition-colors">
                   <td className="px-4 py-3">
                     <p className="font-medium">{r.fullName}</p>
-                    <p className="text-[11px] text-muted-foreground">{r.candidate ? 'From Candidates' : 'Direct'}{r.inviteEmail ? ` · ${r.inviteEmail}` : ''}</p>
+                    <p className="text-[11px] text-muted-foreground">{r.targetEmployee ? `Employee ${r.targetEmployee.employeeNumber}` : r.candidate ? 'From Candidates' : 'Direct'}{r.inviteEmail ? ` · ${r.inviteEmail}` : ''}</p>
                   </td>
                   <td className="px-4 py-3 text-muted-foreground text-xs">{r.role?.title ?? '—'}{r.location ? <span className="block">{r.location.name}</span> : null}</td>
                   <td className="px-4 py-3 text-xs whitespace-nowrap">{r.joinDate ? formatDate(r.joinDate) : '—'}</td>
                   <td className="px-4 py-3">
                     <div className="flex gap-1 flex-wrap">
+                      {r.purpose === 'EMPLOYEE_UPDATE' && <StatusBadge tone="info">Data Update</StatusBadge>}
                       <StatusBadge tone={r.formType === 'FREELANCE' ? 'purple' : 'neutral'}>{r.formType === 'FREELANCE' ? 'Freelance' : 'Employee'}</StatusBadge>
                       {r.isCrew && <StatusBadge tone="cyan">Crew</StatusBadge>}
                     </div>
@@ -793,6 +945,8 @@ export default function OnboardingPage() {
 
       <CreateOnboardingDialog open={createOpen} onClose={() => setCreateOpen(false)}
         onCreated={s => { setCreateOpen(false); setShare(s); load() }} />
+      <EmployeeDataFormDialog open={employeeFormOpen} onClose={() => setEmployeeFormOpen(false)}
+        onCreated={s => { setEmployeeFormOpen(false); setShare(s); load() }} />
       <ShareDialog info={share} onClose={() => setShare(null)} />
       <DetailDialog id={detailId} onClose={() => setDetailId(null)} onChanged={load} onShare={setShare} />
     </div>

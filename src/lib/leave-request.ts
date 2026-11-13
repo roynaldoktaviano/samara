@@ -5,6 +5,31 @@
 import type { PrismaClient } from '@prisma/client'
 import { sendPushToUsers } from '@/lib/push'
 
+export type LeaveType = 'LEAVE' | 'WFH' | 'SICK'
+
+/** Title-case label for notification titles / badges. */
+export const LEAVE_TYPE_LABEL: Record<LeaveType, string> = { LEAVE: 'Leave', WFH: 'WFH', SICK: 'Sick leave' }
+/** Lower-case noun for sentences: "your sick leave request". */
+export const leaveKind = (t: LeaveType) => (t === 'LEAVE' ? 'leave' : t === 'WFH' ? 'WFH' : 'sick leave')
+/** "requested 2 days off / WFH / sick leave". */
+export const leaveOffLabel = (t: LeaveType) => (t === 'LEAVE' ? 'off' : leaveKind(t))
+export function parseLeaveType(v: unknown): LeaveType {
+  return v === 'WFH' || v === 'SICK' ? v : 'LEAVE'
+}
+/** Only LEAVE (annual leave) is capped by / deducted from Employee.leaveBalance. */
+export const usesLeaveBalance = (t: LeaveType) => t === 'LEAVE'
+
+export const SICK_LETTER_MAX_FILES = 5
+/** Doctor's letter uploads: image/PDF data URLs, ~10 MB each, at most SICK_LETTER_MAX_FILES. */
+export function sanitizeLeaveAttachments(input: unknown): string[] {
+  if (!Array.isArray(input)) return []
+  return input
+    .filter((v): v is string => typeof v === 'string'
+      && /^data:(image\/(jpeg|png|webp|gif|heic|heif)|application\/pdf);base64,/.test(v)
+      && v.length <= 14_000_000)
+    .slice(0, SICK_LETTER_MAX_FILES)
+}
+
 export interface FreelanceRecommendation {
   id: string
   name: string
@@ -116,13 +141,13 @@ export const CREW_LEAVE_FYI_EMAILS = ['rosalina@samarayachting.com', 'galuh@sama
 // to HR with no earlier step.
 export async function notifyLeaveReachedHr(
   db: PrismaClient,
-  opts: { employeeName: string; type: 'LEAVE' | 'WFH'; days: number; startDate: Date; endDate: Date; approvedByLabel: string | null; isCrew: boolean },
+  opts: { employeeName: string; type: LeaveType; days: number; startDate: Date; endDate: Date; approvedByLabel: string | null; isCrew: boolean },
 ) {
-  const kind = opts.type === 'WFH' ? 'WFH' : 'leave'
+  const kind = leaveKind(opts.type)
   const range = `${opts.startDate.toISOString().slice(0, 10)} to ${opts.endDate.toISOString().slice(0, 10)}`
   const hrUsers = await db.user.findMany({ where: { role: { in: ['ADMIN', 'SUPER_ADMIN', 'HR'] as never[] } }, select: { id: true } })
   if (hrUsers.length) {
-    const title = opts.type === 'WFH' ? 'WFH request needs your final approval' : 'Leave request needs your final approval'
+    const title = `${LEAVE_TYPE_LABEL[opts.type]} request needs your final approval`
     const body = opts.approvedByLabel
       ? `${opts.employeeName}'s ${kind} request (${opts.days} day${opts.days !== 1 ? 's' : ''}, ${range}) was approved by ${opts.approvedByLabel} and now needs HR sign-off.`
       : `${opts.employeeName} requested ${opts.days} day${opts.days !== 1 ? 's' : ''} ${kind} (${range}) — needs HR approval.`
@@ -136,7 +161,7 @@ export async function notifyLeaveReachedHr(
     const hrIds = new Set(hrUsers.map(u => u.id))
     const fyi = (await db.user.findMany({ where: { email: { in: CREW_LEAVE_FYI_EMAILS } }, select: { id: true } })).filter(u => !hrIds.has(u.id))
     if (fyi.length) {
-      const title = opts.type === 'WFH' ? 'Crew WFH request — FYI' : 'Crew leave request — FYI'
+      const title = `Crew ${kind} request — FYI`
       const body = `${opts.employeeName} requested ${opts.days} day${opts.days !== 1 ? 's' : ''} ${kind} (${range})${opts.approvedByLabel ? `; approved by ${opts.approvedByLabel}` : ''}, now waiting on HR.`
       await db.notification.createMany({
         data: fyi.map(u => ({ id: crypto.randomUUID(), userId: u.id, type: 'LEAVE_FYI', title, body })),

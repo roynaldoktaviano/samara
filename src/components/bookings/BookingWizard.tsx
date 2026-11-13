@@ -662,6 +662,14 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
   }
 
   /* computed */
+  // Persist how the discount was entered so Edit Booking / the invoice can show it as a %.
+  const discountTypeFields = voucherApplied
+    ? (voucherApplied.type === 'PERCENTAGE'
+        ? { discountType: 'PERCENT', discountValue: voucherApplied.value }
+        : { discountType: 'FIXED', discountValue: 0 })
+    : discMode === 'percent'
+      ? { discountType: 'PERCENT', discountValue: parseFloat(discPct) || 0 }
+      : { discountType: 'FIXED', discountValue: 0 }
   const discountAmt = useMemo(() => {
     const b = parseFloat(basePrice) || 0
     if (voucherApplied) {
@@ -934,6 +942,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
           totalPrice:    total,
           depositPaid:   parseFloat(deposit) || 0,
           discount:      discountAmt,
+          ...discountTypeFields,
           vatType:       vatMode === 'amount' ? 'FIXED' : 'PERCENT',
           vatValue:      vatMode === 'amount' ? (parseFloat(vatFixed) || 0) : (parseFloat(vatPct) || 0),
           currency,
@@ -979,6 +988,7 @@ notes:         resolvedNotes,
         totalPrice:    total,
         depositPaid:   parseFloat(deposit) || 0,
         discount:      discountAmt,
+        ...discountTypeFields,
         vatType:       vatMode === 'amount' ? 'FIXED' : 'PERCENT',
         vatValue:      vatMode === 'amount' ? (parseFloat(vatFixed) || 0) : (parseFloat(vatPct) || 0),
         voucherCode:   voucherApplied?.code ?? undefined,

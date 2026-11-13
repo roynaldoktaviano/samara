@@ -22,6 +22,7 @@ async function joinerView(db: PrismaClient, form: OnboardingForm) {
   const docCounts = Object.fromEntries(ONBOARDING_DOC_KEYS.map(k => [k, form[k].length]))
   return {
     status: form.status,
+    purpose: form.purpose,
     formType: form.formType,
     isCrew: form.isCrew,
     revisionNote: form.status === 'REVISION_REQUESTED' ? form.revisionNote : null,
@@ -43,14 +44,14 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
   const { db, record: form } = found
 
   // Once handed in / closed, nothing about the person is shown — just where it stands.
-  if (form.status === 'SUBMITTED' || form.status === 'APPROVED' || form.status === 'PROBATION_STARTED' || form.status === 'CANCELLED') {
-    return NextResponse.json({ state: 'closed', status: form.status, fullName: form.fullName.split(' ')[0] })
+  if (form.status === 'SUBMITTED' || form.status === 'APPROVED' || form.status === 'PROBATION_STARTED' || form.status === 'APPLIED' || form.status === 'CANCELLED') {
+    return NextResponse.json({ state: 'closed', status: form.status, purpose: form.purpose, fullName: form.fullName.split(' ')[0] })
   }
   if (isOnboardingExpired(form)) return NextResponse.json({ error: 'This link has expired' }, { status: 410 })
 
   if (!(await hasOnboardingSession(req, form))) {
     const lockedUntil = form.pinLockedUntil && form.pinLockedUntil > new Date() ? form.pinLockedUntil : null
-    return NextResponse.json({ state: 'pin', lockedUntil })
+    return NextResponse.json({ state: 'pin', lockedUntil, purpose: form.purpose })
   }
   return NextResponse.json({ state: 'form', form: await joinerView(db, form) })
 }

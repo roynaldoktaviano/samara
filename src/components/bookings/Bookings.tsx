@@ -46,6 +46,9 @@ interface BookingRecord {
   totalPrice: number
   depositPaid: number
   discount: number
+  discountType?: string | null
+  discountValue?: number
+  showDiscountOnInvoice?: boolean | null
   vatType?: string | null
   vatValue?: number
   guestCount: number
@@ -252,7 +255,10 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
   const [editStatus,   setEditStatus]  = useState('')
   const [editTotal,    setEditTotal]   = useState('')
   const [editDeposit,  setEditDeposit] = useState('')
+  // editDiscount is what's typed: a USD amount, or a % of the base price when editDiscountType is PERCENT.
   const [editDiscount, setEditDiscount]= useState('')
+  const [editDiscountType, setEditDiscountType] = useState<VatType>('FIXED')
+  const [editShowDiscount, setEditShowDiscount] = useState(true)
   const [editVatType,  setEditVatType] = useState<VatType>('FIXED')
   const [editVatValue, setEditVatValue]= useState('0')
   // Admin-only manual override of Total Price — only takes effect while editTotalOverrideOn
@@ -475,13 +481,29 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
     return () => window.removeEventListener('payment-updated', handler)
   }, [fetchPayments, fetchBookings])
 
+  // Discount in USD as it'll be stored — a % discount is taken off the base price (not services).
+  const editDiscountAmt = editDiscountType === 'PERCENT'
+    ? editBasePrice * (parseFloat(editDiscount) || 0) / 100
+    : (parseFloat(editDiscount) || 0)
+  // Switching $ ↔ % keeps the same discount, just re-expressed in the other unit.
+  const switchEditDiscountType = (t: VatType) => {
+    if (t === editDiscountType) return
+    const v = parseFloat(editDiscount) || 0
+    if (t === 'PERCENT') setEditDiscount(editBasePrice > 0 && v > 0 ? String(Math.round(v / editBasePrice * 10000) / 100) : '0')
+    else setEditDiscount(v > 0 ? String(Math.round(editBasePrice * v) / 100) : '0')
+    setEditDiscountType(t)
+  }
+
   /* ── edit booking ── */
   const openEdit = (b: BookingRecord) => {
     setEditBooking(b)
     setEditStatus(b.status)
     setEditTotal(b.totalPrice.toString())
     setEditDeposit(b.depositPaid.toString())
-    setEditDiscount(b.discount.toString())
+    const discPct = b.discountType === 'PERCENT'
+    setEditDiscountType(discPct ? 'PERCENT' : 'FIXED')
+    setEditDiscount(discPct ? String(b.discountValue ?? 0) : b.discount.toString())
+    setEditShowDiscount(b.showDiscountOnInvoice ?? b.source !== 'AGENT')
     setEditVatType((b.vatType as VatType) || 'FIXED')
     setEditVatValue(String(b.vatValue ?? 0))
     setEditTotalOverrideOn(false)
@@ -530,13 +552,16 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
     const canEditTrip = editBooking.status === 'pending' && !hasInvoice
     try {
       const svcTotal  = editServices.reduce((s, x) => s + (parseFloat(x.price) || 0) * x.quantity, 0)
-      const autoTotal = calcAutoTotal(editBasePrice, svcTotal, parseFloat(editDiscount) || 0, editVatType, parseFloat(editVatValue) || 0)
+      const autoTotal = calcAutoTotal(editBasePrice, svcTotal, editDiscountAmt, editVatType, parseFloat(editVatValue) || 0)
       const useOverride = isAdmin && editTotalOverrideOn && editTotalOverride.trim() !== ''
       const finalTotal = useOverride ? (parseFloat(editTotalOverride) || 0) : autoTotal
 
       const body: Record<string, unknown> = {
         status: editStatus, totalPrice: String(finalTotal), depositPaid: editDeposit,
-        discount: editDiscount, vatType: editVatType, vatValue: editVatValue,
+        discount: String(editDiscountAmt), discountType: editDiscountType,
+        discountValue: editDiscountType === 'PERCENT' ? (parseFloat(editDiscount) || 0) : 0,
+        showDiscountOnInvoice: editShowDiscount,
+        vatType: editVatType, vatValue: editVatValue,
         ...(useOverride && { totalPriceManualOverride: true }),
         depositDueDate: editDepDue || null,
         finalDueDate: editFinalDue || null, notes: editNotes,
@@ -2161,7 +2186,21 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                 const isFullyPaid    = editBooking.status === 'fully_paid'
                 const isPartiallyPaid = editBooking.status === 'partially_paid'
                 const svcTotal = editServices.reduce((s, x) => s + (parseFloat(x.price) || 0) * x.quantity, 0)
-                const autoTotal = calcAutoTotal(editBasePrice, svcTotal, parseFloat(editDiscount) || 0, editVatType, parseFloat(editVatValue) || 0)
+                const autoTotal = calcAutoTotal(editBasePrice, svcTotal, editDiscountAmt, editVatType, parseFloat(editVatValue) || 0)
+                const discountLabel = editDiscountAmt > 0
+                  ? `${formatMoney(editDiscountAmt, { currency: 'USD' })}${editDiscountType === 'PERCENT' ? ` (${editDiscount}%)` : ''}`
+                  : '—'
+                const discountInvoiceToggle = editDiscountAmt > 0 && (
+                  <div className="flex items-center justify-between gap-3 rounded-md border px-3 py-2">
+                    <div>
+                      <p id="edit-show-discount-label" className="text-xs font-medium">Show Discount on Invoice</p>
+                      <p className="text-[11px] text-muted-foreground">
+                        {editShowDiscount ? 'Invoice shows the full price + a "Discount" line.' : 'Invoice shows the price already discounted, no discount line.'}
+                      </p>
+                    </div>
+                    <Switch aria-labelledby="edit-show-discount-label" checked={editShowDiscount} onCheckedChange={setEditShowDiscount} />
+                  </div>
+                )
                 const vatLabel = parseFloat(editVatValue) > 0
                   ? (editVatType === 'PERCENT' ? `${editVatValue}%` : formatMoney(parseFloat(editVatValue), { currency: 'USD' }))
                   : '—'
@@ -2184,7 +2223,7 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                         <div className="grid grid-cols-2 gap-3 text-xs">
                           <RoField label="Total Price" value={formatMoney(autoTotal, { currency: 'USD' })} />
                           <RoField label="Amount Paid" value={formatMoney(parseFloat(editDeposit), { currency: 'USD' })} />
-                          <RoField label="Discount" value={editDiscount ? formatMoney(parseFloat(editDiscount), { currency: 'USD' }) : '—'} />
+                          <RoField label="Discount" value={discountLabel} />
                           <RoField label="VAT" value={vatLabel} />
                           <RoField label="Payment Due" value={editDepDue || '—'} />
                           <RoField label="Final Balance Due" value={editFinalDue || '—'} />
@@ -2256,7 +2295,7 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                         )}
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div className="space-y-1"><p className="text-[10px] text-muted-foreground uppercase tracking-wide">Discount</p><p className="text-sm font-medium">{formatMoney(editDiscount ? parseFloat(editDiscount) : 0, { currency: 'USD' })}</p></div>
+                        <div className="space-y-1"><p className="text-[10px] text-muted-foreground uppercase tracking-wide">Discount</p><p className="text-sm font-medium">{discountLabel}</p>{discountInvoiceToggle}</div>
                         <div className="space-y-1"><p className="text-[10px] text-muted-foreground uppercase tracking-wide">VAT</p><p className="text-sm font-medium">{vatLabel}</p></div>
                         <div className="space-y-1.5">
                           <Label className="text-xs">Total Price (auto)</Label>
@@ -2422,11 +2461,33 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                         )}
                       </div>
                       <div className="space-y-1.5">
-                        <Label htmlFor="edit-discount">Discount ($)</Label>
-                        <div className="relative">
-                          <span className="absolute left-3 top-2.5 text-sm text-muted-foreground">$</span>
-                          <Input id="edit-discount" type="number" min="0" value={editDiscount} onChange={e => setEditDiscount(e.target.value)} className="pl-7" />
+                        <Label htmlFor="edit-discount">Discount</Label>
+                        <div className="flex gap-2">
+                          <div role="group" aria-label="Discount type" className="flex rounded-md border overflow-hidden shrink-0">
+                            <button type="button" onClick={() => switchEditDiscountType('FIXED')} aria-pressed={editDiscountType === 'FIXED'} aria-label="Discount as amount ($)"
+                              className={`px-2.5 text-sm font-medium transition-colors ${editDiscountType === 'FIXED' ? 'text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}
+                              style={editDiscountType === 'FIXED' ? { backgroundColor: ACCENT } : {}}>
+                              $
+                            </button>
+                            <button type="button" onClick={() => switchEditDiscountType('PERCENT')} aria-pressed={editDiscountType === 'PERCENT'} aria-label="Discount as percentage (%)"
+                              className={`px-2.5 text-sm font-medium border-l transition-colors ${editDiscountType === 'PERCENT' ? 'text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}
+                              style={editDiscountType === 'PERCENT' ? { backgroundColor: ACCENT } : {}}>
+                              %
+                            </button>
+                          </div>
+                          <div className="relative flex-1">
+                            <span className="absolute left-3 top-2.5 text-sm text-muted-foreground">{editDiscountType === 'PERCENT' ? '%' : '$'}</span>
+                            <Input id="edit-discount" type="number" min="0" max={editDiscountType === 'PERCENT' ? 100 : undefined} value={editDiscount} onChange={e => setEditDiscount(e.target.value)} className="pl-7" />
+                          </div>
                         </div>
+                        {editDiscountAmt > 0 && (
+                          <p className="text-xs text-muted-foreground">
+                            {editDiscountType === 'PERCENT'
+                              ? `= ${formatMoney(editDiscountAmt, { currency: 'USD' })} off base price`
+                              : editBasePrice > 0 ? `= ${(Math.round(editDiscountAmt / editBasePrice * 10000) / 100)}% of base price` : null}
+                          </p>
+                        )}
+                        {discountInvoiceToggle}
                       </div>
                       <div className="space-y-1.5">
                         <Label htmlFor="edit-vat-value">VAT</Label>
@@ -2476,7 +2537,7 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                         )}
                         {editServices.length > 0 && !editTotalOverrideOn && (
                           <p className="text-xs text-muted-foreground">
-                            (base {formatMoney(editBasePrice, { currency: 'USD' })} + services{parseFloat(editDiscount) > 0 ? ' - discount' : ''}{parseFloat(editVatValue) > 0 ? ' + VAT' : ''})
+                            (base {formatMoney(editBasePrice, { currency: 'USD' })} + services{editDiscountAmt > 0 ? ' - discount' : ''}{parseFloat(editVatValue) > 0 ? ' + VAT' : ''})
                           </p>
                         )}
                         {editCurrency !== 'USD' && (

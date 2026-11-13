@@ -8,7 +8,7 @@ import { roleMatches } from '@/lib/role-utils'
 import { sendPushToUsers } from '@/lib/push'
 import { emitTenantEvent } from '@/lib/realtime-bus'
 import { matchEmployeesToYachts, TRIP_BOOKING_STATUSES } from '@/lib/payroll'
-import { sanitizeFreelanceRecommendations, resolveYachtCrewApprovers, countLeaveDays, resolveLeaveWaitingOn, LEAVE_SKIP_MANAGER_ROLES, notifyLeaveReachedHr } from '@/lib/leave-request'
+import { sanitizeFreelanceRecommendations, resolveYachtCrewApprovers, countLeaveDays, resolveLeaveWaitingOn, LEAVE_SKIP_MANAGER_ROLES, notifyLeaveReachedHr, parseLeaveType, leaveKind, leaveOffLabel, LEAVE_TYPE_LABEL, usesLeaveBalance, sanitizeLeaveAttachments } from '@/lib/leave-request'
 
 const ALLOWED = ['ADMIN', 'SUPER_ADMIN', 'HR']
 
@@ -19,6 +19,8 @@ export async function GET() {
   const db = await getDb(session)
   const requests = await db.leaveRequest.findMany({
     orderBy: { requestedAt: 'desc' },
+    // Doctor's letters are loaded on demand (./[id]/attachments), not with every list.
+    omit: { attachments: true },
     include: {
       employee: { select: { id: true, fullName: true, employeeNumber: true, leaveBalance: true, managerId: true, manager: { select: { fullName: true } }, location: { select: { name: true } } } },
       requestedBy: { select: { id: true, name: true } },
@@ -79,9 +81,14 @@ export async function POST(req: NextRequest) {
   const role = (session?.user as { role?: string })?.role ?? ''
   if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
-  const { employeeId, startDate, endDate, reason, needsFreelance, freelanceRecommendations, type: rawType } = await req.json()
-  const type: 'LEAVE' | 'WFH' = rawType === 'WFH' ? 'WFH' : 'LEAVE'
-  const label = type === 'WFH' ? 'WFH' : 'off'
+  const { employeeId, startDate, endDate, reason, needsFreelance, freelanceRecommendations, attachments: rawAttachments, type: rawType } = await req.json()
+  const type = parseLeaveType(rawType)
+  const label = leaveOffLabel(type)
+  // Sick leave must come with the doctor's letter (surat sakit).
+  const attachments = type === 'SICK' ? sanitizeLeaveAttachments(rawAttachments) : []
+  if (type === 'SICK' && attachments.length === 0) {
+    return NextResponse.json({ error: "Please attach the doctor's letter (photo or PDF) for sick leave" }, { status: 400 })
+  }
 
   if (!employeeId) return NextResponse.json({ error: 'Please select an employee' }, { status: 400 })
   if (!startDate || !endDate) return NextResponse.json({ error: 'Please select a start and end date' }, { status: 400 })
@@ -128,9 +135,9 @@ export async function POST(req: NextRequest) {
     ? employee.manager.userId : null
 
   // Block over-requesting past what's left — leaveBalance can be null (no policy tracked
-  // for this employee yet), in which case there's nothing to cap against. WFH never
+  // for this employee yet), in which case there's nothing to cap against. WFH / sick leave never
   // touches the balance, so it's never capped.
-  if (type === 'LEAVE' && employee.leaveBalance != null && days > employee.leaveBalance) {
+  if (usesLeaveBalance(type) && employee.leaveBalance != null && days > employee.leaveBalance) {
     return NextResponse.json({ error: `${employee.fullName} only has ${employee.leaveBalance} day${employee.leaveBalance !== 1 ? 's' : ''} of leave remaining` }, { status: 400 })
   }
 
@@ -143,8 +150,9 @@ export async function POST(req: NextRequest) {
       days,
       reason: reason?.trim() || null,
       type,
-      needsFreelance: type === 'LEAVE' && !!needsFreelance,
-      freelanceRecommendations: (type === 'LEAVE' && needsFreelance ? sanitizeFreelanceRecommendations(freelanceRecommendations) : []) as unknown as Prisma.InputJsonValue,
+      attachments,
+      needsFreelance: type !== 'WFH' && !!needsFreelance,
+      freelanceRecommendations: (type !== 'WFH' && needsFreelance ? sanitizeFreelanceRecommendations(freelanceRecommendations) : []) as unknown as Prisma.InputJsonValue,
       requiresCrewApproval: !!crewApprover,
       requiresCaptainApproval: !!captainApprover,
       requiresCdApproval: !!cdApprover,
@@ -160,7 +168,7 @@ export async function POST(req: NextRequest) {
   if (crewApprover) {
     // Crew stage — only the first approver (Captain, or the CD if there's no Captain) is
     // notified; the CD/HR hear about it as each stage clears (see the crew-approval route).
-    const title = type === 'WFH' ? 'Crew WFH request needs your approval' : 'Crew leave request needs your approval'
+    const title = `Crew ${leaveKind(type)} request needs your approval`
     const body = `${employee.fullName} requested ${days} day${days !== 1 ? 's' : ''} ${label} (${startDate} to ${endDate}).`
     await db.notification.create({
       data: { userId: crewApprover.id, type: 'LEAVE_APPROVAL_NEEDED', title, body },
@@ -170,7 +178,7 @@ export async function POST(req: NextRequest) {
     // Route to the employee's manager if that manager has an ERP login; otherwise fall
     // back to every HR/Admin/Super Admin so it never sits unseen — same pattern as
     // PurchaseRequest's manager-approval routing.
-    const title = type === 'WFH' ? 'WFH request needs your approval' : 'Leave request needs your approval'
+    const title = `${LEAVE_TYPE_LABEL[type]} request needs your approval`
     const body = `${employee.fullName} requested ${days} day${days !== 1 ? 's' : ''} ${label} (${startDate} to ${endDate}).`
     if (managerUserId) {
       await db.notification.create({

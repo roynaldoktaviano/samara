@@ -14,6 +14,7 @@ export const ONBOARDING_INCLUDE = {
   manager: { select: { id: true, fullName: true } },
   candidate: { select: { id: true, fullName: true, status: true } },
   employee: { select: { id: true, employeeNumber: true, fullName: true } },
+  targetEmployee: { select: { id: true, employeeNumber: true, fullName: true } },
 } satisfies Prisma.OnboardingFormInclude
 
 /** Never leaves the server: the PIN hash and token-guessing counters. */
@@ -87,4 +88,45 @@ export function addMonths(date: Date, months: number) {
   d.setMonth(d.getMonth() + months)
   d.setDate(Math.min(day, new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()))
   return d
+}
+
+// ── Employee Data Update forms (purpose EMPLOYEE_UPDATE) ─────────────────────
+
+type FormRecord = Prisma.OnboardingFormGetPayload<object>
+type EmployeeRecord = Prisma.EmployeeGetPayload<object>
+
+/**
+ * What an EMPLOYEE_UPDATE form starts with: the employee's current personal data and
+ * documents (so they only correct/complete it, and don't re-upload what's on file), plus
+ * their position/location so the public form shows who it's for.
+ */
+export function employeeUpdatePrefill(emp: EmployeeRecord): Record<string, unknown> {
+  const out: Record<string, unknown> = {
+    roleId: emp.roleId, department: emp.department, locationId: emp.locationId,
+    legalEntityId: emp.legalEntityId, businessUnitId: emp.businessUnitId, managerId: emp.managerId,
+    joinDate: emp.joinDate?.toISOString() ?? null,
+    formType: emp.employmentStatus === 'Freelance' ? 'FREELANCE' : 'STANDARD',
+    inviteEmail: emp.personalEmail,
+  }
+  for (const key of ONBOARDING_TEXT_FIELDS) {
+    const v = emp[key]
+    out[key] = v instanceof Date ? v.toISOString() : v
+  }
+  for (const key of ONBOARDING_DOC_KEYS) out[key] = emp[key]
+  return out
+}
+
+/**
+ * The Employee update an EMPLOYEE_UPDATE form applies. Text fields the employee left empty
+ * keep the current value (never blanked). Documents are replaced as a whole — the form was
+ * prefilled with what was on file, so its lists are the employee's full, reviewed set.
+ */
+export function employeeUpdateFromForm(form: FormRecord): Prisma.EmployeeUncheckedUpdateInput {
+  const data: Record<string, unknown> = {}
+  for (const key of ONBOARDING_TEXT_FIELDS) {
+    const v = form[key]
+    if (v !== null && v !== '') data[key] = v
+  }
+  for (const key of ONBOARDING_DOC_KEYS) data[key] = form[key]
+  return { ...data, updatedAt: new Date() } as Prisma.EmployeeUncheckedUpdateInput
 }

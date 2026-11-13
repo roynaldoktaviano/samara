@@ -14,8 +14,12 @@ import {
 const LOGO = 'https://samaraliveaboard.com/wp-content/uploads/2025/08/Logo-Samara-icon-192x192-1.png'
 const MAX_FILE_BYTES = 10 * 1024 * 1024
 
+type Purpose = 'NEW_JOINER' | 'EMPLOYEE_UPDATE'
+const formTitle = (p: Purpose | undefined) => (p === 'EMPLOYEE_UPDATE' ? 'Employee Data Form' : 'Onboarding Form')
+
 interface FormView {
   status: 'INVITED' | 'REVISION_REQUESTED'
+  purpose: Purpose
   formType: OnboardingFormType
   isCrew: boolean
   revisionNote: string | null
@@ -32,10 +36,10 @@ interface FormView {
 type State =
   | { kind: 'loading' }
   | { kind: 'error'; message: string }
-  | { kind: 'closed'; status: string; firstName: string }
-  | { kind: 'pin'; lockedUntil: string | null }
+  | { kind: 'closed'; status: string; firstName: string; purpose?: Purpose }
+  | { kind: 'pin'; lockedUntil: string | null; purpose?: Purpose }
   | { kind: 'form'; form: FormView }
-  | { kind: 'done' }
+  | { kind: 'done'; purpose?: Purpose }
 
 const inputCls = 'w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500'
 
@@ -55,7 +59,7 @@ function Centered({ icon, title, children }: { icon?: React.ReactNode; title: st
   )
 }
 
-function PinScreen({ token, lockedUntil, onUnlocked }: { token: string; lockedUntil: string | null; onUnlocked: () => void }) {
+function PinScreen({ token, lockedUntil, purpose, onUnlocked }: { token: string; lockedUntil: string | null; purpose?: Purpose; onUnlocked: () => void }) {
   const [pin, setPin] = useState('')
   const [error, setError] = useState(lockedUntil ? `Too many wrong PINs. Try again after ${new Date(lockedUntil).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}, or ask HR to reset your PIN.` : '')
   const [busy, setBusy] = useState(false)
@@ -75,7 +79,7 @@ function PinScreen({ token, lockedUntil, onUnlocked }: { token: string; lockedUn
     <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
       <form onSubmit={submit} className="w-full max-w-sm bg-white rounded-2xl border p-6 text-center">
         <img src={LOGO} alt="Samara" className="w-12 h-12 mx-auto mb-3 opacity-80" />
-        <h1 className="text-lg font-bold text-gray-900">Onboarding Form</h1>
+        <h1 className="text-lg font-bold text-gray-900">{formTitle(purpose)}</h1>
         <p className="text-sm text-gray-500 mt-1 mb-5">Enter the 6-digit PIN you received from our HR team.</p>
         <label htmlFor="onboarding-pin" className="sr-only">PIN</label>
         <input id="onboarding-pin" inputMode="numeric" autoComplete="one-time-code" maxLength={6} autoFocus
@@ -176,8 +180,8 @@ export default function OnboardingFormPage() {
     const res = await fetch(`/api/onboarding/${token}`, { cache: 'no-store' })
     const data = await res.json().catch(() => ({}))
     if (!res.ok) { setState({ kind: 'error', message: data.error ?? 'Invalid link' }); return }
-    if (data.state === 'closed') { setState({ kind: 'closed', status: data.status, firstName: data.fullName }); return }
-    if (data.state === 'pin') { setState({ kind: 'pin', lockedUntil: data.lockedUntil }); return }
+    if (data.state === 'closed') { setState({ kind: 'closed', status: data.status, firstName: data.fullName, purpose: data.purpose }); return }
+    if (data.state === 'pin') { setState({ kind: 'pin', lockedUntil: data.lockedUntil, purpose: data.purpose }); return }
     setValues(data.form.values); setDocCounts(data.form.docCounts); setLastSavedAt(data.form.lastSavedAt)
     dirty.current = false
     setState({ kind: 'form', form: data.form })
@@ -194,7 +198,7 @@ export default function OnboardingFormPage() {
 
   const sessionLost = useCallback(() => {
     setMessage({ tone: 'error', text: 'Your session expired — please enter your PIN again. Unsaved changes on this page are kept.' })
-    setState({ kind: 'pin', lockedUntil: null })
+    setState(s => ({ kind: 'pin', lockedUntil: null, purpose: s.kind === 'form' ? s.form.purpose : undefined }))
   }, [])
 
   if (state.kind === 'loading') return (
@@ -209,18 +213,18 @@ export default function OnboardingFormPage() {
   )
   if (state.kind === 'done' || (state.kind === 'closed' && state.status === 'SUBMITTED')) return (
     <Centered icon={<CheckCircle2 className="h-16 w-16 text-green-600 mx-auto mb-4" />} title="Thank you!">
-      Your onboarding form has been submitted. Our HR team will review it and contact you if anything needs to change.
+      Your {formTitle(state.purpose).toLowerCase()} has been submitted. Our HR team will review it and contact you if anything needs to change.
     </Centered>
   )
   if (state.kind === 'closed') return (
     <Centered icon={<CheckCircle2 className="h-16 w-16 text-green-600 mx-auto mb-4" />} title={state.status === 'CANCELLED' ? 'Form Closed' : 'All Done'}>
       {state.status === 'CANCELLED'
-        ? 'This onboarding form is no longer active. Please contact our HR team if you think this is a mistake.'
-        : 'Your onboarding form has been reviewed and accepted. Nothing more is needed here.'}
+        ? `This ${formTitle(state.purpose).toLowerCase()} is no longer active. Please contact our HR team if you think this is a mistake.`
+        : `Your ${formTitle(state.purpose).toLowerCase()} has been reviewed and accepted. Nothing more is needed here.`}
     </Centered>
   )
   if (state.kind === 'pin') return (
-    <PinScreen token={token} lockedUntil={state.lockedUntil} onUnlocked={async () => {
+    <PinScreen token={token} lockedUntil={state.lockedUntil} purpose={state.purpose} onUnlocked={async () => {
       // Keep whatever was typed before the session expired.
       const typed = dirty.current ? values : null
       await load()
@@ -229,6 +233,7 @@ export default function OnboardingFormPage() {
   )
 
   const form = state.form
+  const isUpdate = form.purpose === 'EMPLOYEE_UPDATE'
   const ctx = { formType: form.formType, isCrew: form.isCrew, nationality: values.nationality }
 
   function set(key: string, v: string) {
@@ -261,7 +266,7 @@ export default function OnboardingFormPage() {
       setMessage({ tone: 'error', text: data.error ?? 'Could not save' }); return
     }
     dirty.current = false
-    if (kind === 'submit') { setState({ kind: 'done' }); return }
+    if (kind === 'submit') { setState({ kind: 'done', purpose: form.purpose }); return }
     setLastSavedAt(data.lastSavedAt ?? new Date().toISOString())
     setMessage(stillMissing.length
       ? { tone: 'error', text: 'Draft saved, but some required fields are still empty.' }
@@ -274,15 +279,19 @@ export default function OnboardingFormPage() {
     <Shell>
       <div className="text-center mb-6">
         <img src={LOGO} alt="Samara" className="w-12 h-12 mx-auto mb-2 opacity-80" />
-        <h1 className="text-xl font-bold text-gray-900">Onboarding Form</h1>
-        <p className="text-sm text-gray-500 mt-1">Welcome to the team! Please fill in your details and upload your documents.</p>
+        <h1 className="text-xl font-bold text-gray-900">{formTitle(form.purpose)}</h1>
+        <p className="text-sm text-gray-500 mt-1">
+          {isUpdate
+            ? 'Please check the details we have on file, correct anything out of date and complete what is missing.'
+            : 'Welcome to the team! Please fill in your details and upload your documents.'}
+        </p>
       </div>
 
       {(form.position || form.location || form.joinDate) && (
         <div className="bg-white rounded-2xl border p-4 mb-4 grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
           <div className="flex items-start gap-2"><Briefcase className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" /><div><p className="text-xs text-gray-500">Position</p><p className="font-semibold text-gray-900">{form.position ?? '—'}{form.department ? ` · ${form.department}` : ''}</p></div></div>
           <div className="flex items-start gap-2"><MapPin className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" /><div><p className="text-xs text-gray-500">Location</p><p className="font-semibold text-gray-900">{form.location ?? '—'}</p></div></div>
-          <div className="flex items-start gap-2"><CalendarDays className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" /><div><p className="text-xs text-gray-500">Join Date</p><p className="font-semibold text-gray-900">{form.joinDate ? formatDate(form.joinDate) : '—'}</p></div></div>
+          <div className="flex items-start gap-2"><CalendarDays className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" /><div><p className="text-xs text-gray-500">{isUpdate ? 'Joined' : 'Join Date'}</p><p className="font-semibold text-gray-900">{form.joinDate ? formatDate(form.joinDate) : '—'}</p></div></div>
         </div>
       )}
 
@@ -335,7 +344,7 @@ export default function OnboardingFormPage() {
 
       <section className="bg-white rounded-2xl border p-4 sm:p-5 mb-4">
         <h2 className="text-base font-bold text-gray-900">Documents</h2>
-        <p className="text-xs text-gray-500 mt-0.5">Photos or PDF, max 10 MB each. Uploads are saved right away. For your privacy, uploaded files can&apos;t be viewed again from this page.</p>
+        <p className="text-xs text-gray-500 mt-0.5">Photos or PDF, max 10 MB each. Uploads are saved right away. For your privacy, uploaded files can&apos;t be viewed again from this page.{isUpdate ? ' Files already on file with HR are listed — remove one only if it is outdated, then upload the new one.' : ''}</p>
         <div className="grid grid-cols-1 gap-3 mt-4">
           {ONBOARDING_DOCS.filter(d => isDocVisible(d, ctx)).map(d => (
             <div key={d.key} className={missingSet.has(d.label) && !(docCounts[d.key] ?? 0) ? 'rounded-xl ring-2 ring-red-300' : ''}>

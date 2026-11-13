@@ -65,11 +65,12 @@ export async function GET() {
   // Crew leave requests waiting on this user specifically — only those whose *current*
   // crew step (Captain, then Cruise Director — see crewLeaveStage) resolves to this user
   // for their assigned yacht, never every CD/Captain-role user in the company.
-  const crewLeaveRequests: Awaited<ReturnType<typeof db.leaveRequest.findMany>> = []
+  const crewLeaveRequests: Omit<Awaited<ReturnType<typeof db.leaveRequest.findMany>>[number], 'attachments'>[] = []
   if (user?.assignedYachtId && (user.role === 'CRUISE_DIRECTOR' || user.role === 'BOAT_CAPTAIN')) {
     const pending = await db.leaveRequest.findMany({
       where: { status: 'PENDING', requiresCrewApproval: true },
       orderBy: { requestedAt: 'asc' },
+      omit: { attachments: true },
       include: {
         employee: { select: { id: true, fullName: true, employeeNumber: true, leaveBalance: true, location: { select: { name: true } } } },
         captainApprovedBy: { select: { id: true, name: true } },
@@ -93,6 +94,7 @@ export async function GET() {
     ? await db.leaveRequest.findMany({
         where: { status: 'PENDING', requiresManagerApproval: true, employee: { managerId: employee.id } },
         orderBy: { requestedAt: 'asc' },
+        omit: { attachments: true },
         include: { employee: { select: { id: true, fullName: true, employeeNumber: true, leaveBalance: true } } },
       })
     : []

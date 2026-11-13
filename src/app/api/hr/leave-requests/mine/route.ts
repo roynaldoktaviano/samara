@@ -7,7 +7,7 @@ import { getDb } from '@/lib/get-db'
 import { sendPushToUsers } from '@/lib/push'
 import { emitTenantEvent } from '@/lib/realtime-bus'
 import { matchEmployeesToYachts, TRIP_BOOKING_STATUSES } from '@/lib/payroll'
-import { sanitizeFreelanceRecommendations, resolveYachtCrewApprovers, countLeaveDays, resolveLeaveWaitingOn, LEAVE_SKIP_MANAGER_ROLES, notifyLeaveReachedHr } from '@/lib/leave-request'
+import { sanitizeFreelanceRecommendations, resolveYachtCrewApprovers, countLeaveDays, resolveLeaveWaitingOn, LEAVE_SKIP_MANAGER_ROLES, notifyLeaveReachedHr, parseLeaveType, leaveKind, leaveOffLabel, LEAVE_TYPE_LABEL, usesLeaveBalance, sanitizeLeaveAttachments } from '@/lib/leave-request'
 
 // Who a leave request falls back to notifying when the requester's Employee record has
 // no manager (or no manager with a login) — same list HR/Admin already see the full
@@ -30,6 +30,7 @@ export async function GET() {
   const requests = await db.leaveRequest.findMany({
     where: { employeeId: employee.id },
     orderBy: { requestedAt: 'desc' },
+    omit: { attachments: true },
     include: { decidedBy: { select: { id: true, name: true } }, crewApprovedBy: { select: { id: true, name: true } }, captainApprovedBy: { select: { id: true, name: true } }, managerApprovedBy: { select: { id: true, name: true } } },
   })
 
@@ -79,9 +80,14 @@ export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions)
   if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
-  const { startDate, endDate, reason, needsFreelance, freelanceRecommendations, type: rawType } = await req.json()
-  const type: 'LEAVE' | 'WFH' = rawType === 'WFH' ? 'WFH' : 'LEAVE'
-  const label = type === 'WFH' ? 'WFH' : 'off'
+  const { startDate, endDate, reason, needsFreelance, freelanceRecommendations, attachments: rawAttachments, type: rawType } = await req.json()
+  const type = parseLeaveType(rawType)
+  const label = leaveOffLabel(type)
+  // Sick leave must come with the doctor's letter (surat sakit).
+  const attachments = type === 'SICK' ? sanitizeLeaveAttachments(rawAttachments) : []
+  if (type === 'SICK' && attachments.length === 0) {
+    return NextResponse.json({ error: "Please attach the doctor's letter (photo or PDF) for sick leave" }, { status: 400 })
+  }
 
   const employee = await db.employee.findUnique({
     where: { userId: session.user.id },
@@ -127,9 +133,9 @@ export async function POST(req: NextRequest) {
     ? employee.manager.userId : null
 
   // Block over-requesting past what's left — leaveBalance can be null (no policy tracked
-  // for this employee yet), in which case there's nothing to cap against. WFH never
+  // for this employee yet), in which case there's nothing to cap against. WFH / sick leave never
   // touches the balance, so it's never capped.
-  if (type === 'LEAVE' && employee.leaveBalance != null && days > employee.leaveBalance) {
+  if (usesLeaveBalance(type) && employee.leaveBalance != null && days > employee.leaveBalance) {
     return NextResponse.json({ error: `You only have ${employee.leaveBalance} day${employee.leaveBalance !== 1 ? 's' : ''} of leave remaining` }, { status: 400 })
   }
 
@@ -142,8 +148,9 @@ export async function POST(req: NextRequest) {
       days,
       reason: reason?.trim() || null,
       type,
-      needsFreelance: type === 'LEAVE' && !!needsFreelance,
-      freelanceRecommendations: (type === 'LEAVE' && needsFreelance ? sanitizeFreelanceRecommendations(freelanceRecommendations) : []) as unknown as Prisma.InputJsonValue,
+      attachments,
+      needsFreelance: type !== 'WFH' && !!needsFreelance,
+      freelanceRecommendations: (type !== 'WFH' && needsFreelance ? sanitizeFreelanceRecommendations(freelanceRecommendations) : []) as unknown as Prisma.InputJsonValue,
       requiresCrewApproval: !!crewApprover,
       requiresCaptainApproval: !!captainApprover,
       requiresCdApproval: !!cdApprover,
@@ -156,7 +163,7 @@ export async function POST(req: NextRequest) {
   if (crewApprover) {
     // Crew stage — only the first approver (Captain, or the CD if there's no Captain) is
     // notified; the CD/HR hear about it as each stage clears (see the crew-approval route).
-    const title = type === 'WFH' ? 'Crew WFH request needs your approval' : 'Crew leave request needs your approval'
+    const title = `Crew ${leaveKind(type)} request needs your approval`
     const body = `${employee.fullName} requested ${days} day${days !== 1 ? 's' : ''} ${label} (${startDate} to ${endDate}).`
     await db.notification.create({
       data: { userId: crewApprover.id, type: 'LEAVE_APPROVAL_NEEDED', title, body },
@@ -165,7 +172,7 @@ export async function POST(req: NextRequest) {
   } else {
     // Same routing as the HR-filed flow: notify the employee's manager if they have a
     // login, otherwise every HR/Admin/Super Admin so it never sits unseen.
-    const title = type === 'WFH' ? 'WFH request needs your approval' : 'Leave request needs your approval'
+    const title = `${LEAVE_TYPE_LABEL[type]} request needs your approval`
     const body = `${employee.fullName} requested ${days} day${days !== 1 ? 's' : ''} ${label} (${startDate} to ${endDate}).`
     if (managerUserId) {
       await db.notification.create({

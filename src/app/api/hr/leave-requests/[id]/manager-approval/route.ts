@@ -5,7 +5,7 @@ import { getDb } from '@/lib/get-db'
 
 import { sendPushToUsers } from '@/lib/push'
 import { emitTenantEvent } from '@/lib/realtime-bus'
-import { notifyLeaveReachedHr } from '@/lib/leave-request'
+import { notifyLeaveReachedHr, leaveKind, LEAVE_TYPE_LABEL } from '@/lib/leave-request'
 
 // Stage-1 approval for a non-crew LeaveRequest (requiresManagerApproval) — distinct from
 // the HR final decision in ../route.ts. Identity-based: must be the employee's current
@@ -44,14 +44,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         },
   })
 
-  const kind = existing.type === 'WFH' ? 'WFH' : 'leave'
+  const kind = leaveKind(existing.type)
   if (action === 'approve') {
     await notifyLeaveReachedHr(db, {
       employeeName: existing.employee.fullName, type: existing.type, days: existing.days,
       startDate: existing.startDate, endDate: existing.endDate, approvedByLabel: 'their manager', isCrew: false,
     })
   } else if (existing.employee.userId) {
-    const title = existing.type === 'WFH' ? 'WFH request rejected' : 'Leave request rejected'
+    const title = `${LEAVE_TYPE_LABEL[existing.type]} request rejected`
     const body = `Your ${kind} request (${existing.days} day${existing.days !== 1 ? 's' : ''}) was rejected by your manager.`
     await db.notification.create({ data: { userId: existing.employee.userId, type: 'LEAVE_DECIDED', title, body } }).catch(() => {})
     sendPushToUsers(db, [existing.employee.userId], { title, body }).catch(() => {})

@@ -58,7 +58,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   try {
     const { id } = await params
     const body   = await request.json()
-    const { status, totalPrice, totalPriceManualOverride, depositPaid, discount, vatType, vatValue, notes, destination, destinationId, depositDueDate, finalDueDate, syncDepositDueToInvoice, syncFinalDueToInvoice, holdUntil, salesperson, startDate, endDate, guestCount, hasDiving, hasSurfing, hasPhotoPackage, rescheduleReason, openTripId, newCabinId, yachtId, agentContactId, useB2BCommission, services, currency, exchangeRate } = body
+    const { status, totalPrice, totalPriceManualOverride, depositPaid, discount, discountType, discountValue, showDiscountOnInvoice, vatType, vatValue, notes, destination, destinationId, depositDueDate, finalDueDate, syncDepositDueToInvoice, syncFinalDueToInvoice, holdUntil, salesperson, startDate, endDate, guestCount, hasDiving, hasSurfing, hasPhotoPackage, rescheduleReason, openTripId, newCabinId, yachtId, agentContactId, useB2BCommission, services, currency, exchangeRate } = body
 
     // A manual total-price override (bypassing the auto-calculated base+services-discount+VAT
     // total, and — for Open Trip — skipping the cabin-derived recalc below) is Admin-only.
@@ -127,6 +127,9 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         ...(totalPrice     !== undefined && { totalPrice:     newTotal }),
         ...(depositPaid    !== undefined && { depositPaid:    newDeposit }),
         ...(discount       !== undefined && { discount:       parseFloat(discount) }),
+        ...(discountType   !== undefined && { discountType:   discountType === 'PERCENT' ? 'PERCENT' : null }),
+        ...(discountValue  !== undefined && { discountValue:  parseFloat(discountValue) || 0 }),
+        ...(showDiscountOnInvoice !== undefined && { showDiscountOnInvoice: showDiscountOnInvoice === null ? null : Boolean(showDiscountOnInvoice) }),
         ...(vatType        !== undefined && { vatType:        vatType || null }),
         ...(vatValue       !== undefined && { vatValue:       parseFloat(vatValue) || 0 }),
         ...(notes          !== undefined && { notes:          notes || null }),
@@ -232,7 +235,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     const { id }  = await params
     const body    = await request.json()
     const { status, cancelReason, completeBooking, guests, totalPrice, depositPaid,
-            discount, vatType, vatValue, depositDueDate, finalDueDate, currency, exchangeRate, services,
+            discount, discountType, discountValue, vatType, vatValue, depositDueDate, finalDueDate, currency, exchangeRate, services,
             hasDiving, hasSurfing, hasPhotoPackage, notes, crewRequired } = body
 
     const existing = await db.booking.findUnique({
@@ -277,6 +280,8 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
             totalPrice:    total,
             depositPaid:   paid,
             discount:      parseFloat(discount) || 0,
+            discountType:  discountType === 'PERCENT' ? 'PERCENT' : null,
+            discountValue: parseFloat(discountValue) || 0,
             vatType:       vatType || null,
             vatValue:      parseFloat(vatValue) || 0,
             depositDueDate: depositDueDate ? new Date(depositDueDate) : null,

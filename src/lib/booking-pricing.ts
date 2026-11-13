@@ -18,7 +18,7 @@ export async function recalcOpenTripPrice(db: Db, bookingId: string) {
   const booking = await db.booking.findUnique({
     where: { id: bookingId },
     select: {
-      tripType: true, status: true, isComplimentary: true, depositPaid: true, discount: true, vatType: true, vatValue: true,
+      tripType: true, status: true, isComplimentary: true, depositPaid: true, discount: true, discountType: true, discountValue: true, vatType: true, vatValue: true,
       openTrip: { select: { startDate: true, endDate: true, pricePerCabin: true, destinationId: true } },
       guests:   { select: { cabinId: true } },
       services: { select: { price: true, quantity: true } },
@@ -55,7 +55,12 @@ export async function recalcOpenTripPrice(db: Db, bookingId: string) {
   if (cabinTotal <= 0) return
 
   const servicesTotal = booking.services.reduce((sum, s) => sum + s.price * s.quantity, 0)
-  const subtotal = Math.max(0, cabinTotal - (booking.discount ?? 0)) + servicesTotal
+  // A % discount follows the cabin total (e.g. a cabin added later is discounted too);
+  // a flat discount stays the USD amount typed in.
+  const discount = booking.discountType === 'PERCENT'
+    ? cabinTotal * (booking.discountValue ?? 0) / 100
+    : (booking.discount ?? 0)
+  const subtotal = Math.max(0, cabinTotal - discount) + servicesTotal
   const vatAmount = booking.vatType === 'PERCENT' ? subtotal * ((booking.vatValue ?? 0) / 100) : (booking.vatValue ?? 0)
   const newTotal = subtotal + vatAmount
   if (newTotal <= 0) return
@@ -63,6 +68,6 @@ export async function recalcOpenTripPrice(db: Db, bookingId: string) {
   const newStatus = calcPaymentStatus(booking.depositPaid, newTotal)
   await db.booking.update({
     where: { id: bookingId },
-    data: { totalPrice: newTotal, status: newStatus },
+    data: { totalPrice: newTotal, status: newStatus, ...(booking.discountType === 'PERCENT' && { discount }) },
   })
 }

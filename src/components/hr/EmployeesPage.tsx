@@ -1,7 +1,9 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Plus, Pencil, Trash2, ToggleLeft, ToggleRight, X, IdCard, AlertTriangle, Search, Download, Upload, FileDown, CheckCircle2, AlertCircle, UserX, ChevronLeft, ChevronRight, ChevronsUpDown, Phone, MapPin, Cake, ImageIcon, FileText, Eye, EyeOff } from 'lucide-react'
+import { Plus, Pencil, Trash2, ToggleLeft, ToggleRight, X, IdCard, AlertTriangle, Search, Download, Upload, FileDown, CheckCircle2, AlertCircle, UserX, ChevronLeft, ChevronRight, ChevronsUpDown, Phone, MapPin, Cake, ImageIcon, FileText, Eye, EyeOff, UserCog } from 'lucide-react'
+import { useSession } from 'next-auth/react'
+import { roleMatches } from '@/lib/role-utils'
 import { toast } from 'sonner'
 import { useFileDrop } from '@/hooks/useFileDrop'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -20,6 +22,8 @@ import { formatDate, formatMoney } from '@/lib/format'
 import { downloadDataUrl, extFromDataUrl } from '@/lib/fileUpload'
 import type { OtherIncomeItem } from '@/lib/payroll'
 import AddFreelanceModal, { type FreelanceEmployee } from './AddFreelanceModal'
+// OnboardingPage imports DEPARTMENTS from here — the cycle is safe, both are only read at render time.
+import { EmployeeDataFormDialog, ShareDialog, type EmployeePrefill, type ShareInfo } from './OnboardingPage'
 
 interface LegalEntity { id: string; name: string; code: string | null }
 interface BusinessUnit { id: string; name: string }
@@ -370,7 +374,7 @@ function DocFileRow({ name, onDownload }: { name: string; onDownload: () => void
 // review rather than data entry, with Leave/Reviews pulled in from their own modules.
 // The Edit button in the footer hands off to the existing edit modal for changes.
 function EmployeeDetailModal({
-  employee, leaveRequests, performanceReviews, compensationBand, tab, onTabChange, onClose, onEdit,
+  employee, leaveRequests, performanceReviews, compensationBand, tab, onTabChange, onClose, onEdit, onSendDataForm,
 }: {
   employee: Employee
   leaveRequests: LeaveRequestRow[]
@@ -380,6 +384,8 @@ function EmployeeDetailModal({
   onTabChange: (t: DetailTab) => void
   onClose: () => void
   onEdit: () => void
+  /** HR only — sends the employee a link to fill in their own personal data. */
+  onSendDataForm?: () => void
 }) {
   const years = formatServiceYear(employee.joinDate, employee.resignedAt)
   const otherIncomeTotal = employee.otherIncome.reduce((sum, i) => sum + (i.amount || 0), 0)
@@ -640,6 +646,11 @@ function EmployeeDetailModal({
           <Button variant="outline" onClick={onClose} className="text-muted-foreground">
             Close
           </Button>
+          {onSendDataForm && (
+            <Button variant="outline" onClick={onSendDataForm} title="Send a link so the employee fills in their own personal data and documents">
+              <UserCog className="size-3.5" /> Send Data Form
+            </Button>
+          )}
           <Button onClick={onEdit}>
             <Pencil className="size-3.5" /> Edit
           </Button>
@@ -663,6 +674,10 @@ export default function EmployeesPage() {
   const [search, setSearch] = useState('')
 
   const [detailEmployee, setDetailEmployee] = useState<Employee | null>(null)
+  const { data: session } = useSession()
+  const canSendDataForm = roleMatches((session?.user as { role?: string })?.role, ['ADMIN', 'SUPER_ADMIN', 'HR'])
+  const [dataFormFor, setDataFormFor] = useState<EmployeePrefill | null>(null)
+  const [dataFormShare, setDataFormShare] = useState<ShareInfo | null>(null)
   const [detailTab, setDetailTab] = useState<DetailTab>('overview')
 
   const [viewMode, setViewMode] = useState<'table' | 'location'>('table')
@@ -1843,6 +1858,10 @@ export default function EmployeesPage() {
         </DialogContent>
       </Dialog>
 
+      <EmployeeDataFormDialog open={!!dataFormFor} employee={dataFormFor} onClose={() => setDataFormFor(null)}
+        onCreated={s => { setDataFormFor(null); setDataFormShare(s) }} />
+      <ShareDialog info={dataFormShare} onClose={() => setDataFormShare(null)} />
+
       {/* ── Employee Detail (read-only) ── */}
       {detailEmployee && (
         <EmployeeDetailModal
@@ -1853,6 +1872,7 @@ export default function EmployeesPage() {
           tab={detailTab}
           onTabChange={setDetailTab}
           onClose={() => setDetailEmployee(null)}
+          onSendDataForm={canSendDataForm ? () => setDataFormFor({ id: detailEmployee.id, fullName: detailEmployee.fullName, personalEmail: detailEmployee.personalEmail }) : undefined}
           onEdit={() => {
             const emp = detailEmployee
             setDetailEmployee(null)
