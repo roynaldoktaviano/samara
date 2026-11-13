@@ -10,6 +10,8 @@ import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { formatDate, formatDateRange } from '@/lib/format'
 import { FreelanceRecommendationsField, type FreelanceRecommendation } from './FreelanceRecommendationsField'
+import { MultiFilePicker } from '@/components/ui/file-preview'
+import { LEAVE_TYPE_OPTIONS, LeaveTypeBadge, SickLetterButton, leaveDaysHint, type LeaveType } from './leave-shared'
 
 interface EmployeeLite { id: string; fullName: string; employeeNumber: string; leaveBalance: number | null; employmentStatus: string | null; isCrew: boolean }
 interface Trip { bookingCode: string; destination: string | null; startDate: string; endDate: string }
@@ -18,7 +20,7 @@ interface LeaveRequest {
   employee: EmployeeLite
   startDate: string; endDate: string; days: number
   reason: string | null
-  type: 'LEAVE' | 'WFH'
+  type: LeaveType
   status: 'PENDING' | 'PENDING_HR_APPROVAL' | 'APPROVED' | 'REJECTED'
   requestedBy: { id: string; name: string | null } | null
   requestedAt: string
@@ -124,8 +126,8 @@ export default function LeaveRequestsPage() {
   const [statusFilter, setStatusFilter] = useState<'All' | 'PENDING' | 'APPROVED' | 'REJECTED'>('All')
 
   const [modal, setModal] = useState(false)
-  const [form, setForm] = useState<{ type: 'LEAVE' | 'WFH'; employeeId: string; startDate: string; endDate: string; reason: string; needsFreelance: boolean; freelanceRecommendations: FreelanceRecommendation[] }>({
-    type: 'LEAVE', employeeId: '', startDate: '', endDate: '', reason: '', needsFreelance: false, freelanceRecommendations: [],
+  const [form, setForm] = useState<{ type: LeaveType; employeeId: string; startDate: string; endDate: string; reason: string; needsFreelance: boolean; freelanceRecommendations: FreelanceRecommendation[]; attachments: string[] }>({
+    type: 'LEAVE', employeeId: '', startDate: '', endDate: '', reason: '', needsFreelance: false, freelanceRecommendations: [], attachments: [],
   })
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState('')
@@ -170,15 +172,17 @@ export default function LeaveRequestsPage() {
   })() : 0
   const overBalance = form.type === 'LEAVE' && selectedEmployee?.leaveBalance != null && days > selectedEmployee.leaveBalance
 
-  function openAdd() { setForm({ type: 'LEAVE', employeeId: '', startDate: '', endDate: '', reason: '', needsFreelance: false, freelanceRecommendations: [] }); setFormError(''); setModal(true) }
+  function openAdd() { setForm({ type: 'LEAVE', employeeId: '', startDate: '', endDate: '', reason: '', needsFreelance: false, freelanceRecommendations: [], attachments: [] }); setFormError(''); setModal(true) }
 
   async function save() {
     if (!form.employeeId) { setFormError('Please select an employee'); return }
     if (!form.startDate || !form.endDate) { setFormError('Please select a date range'); return }
     if (overBalance) { setFormError(`${selectedEmployee!.fullName} only has ${selectedEmployee!.leaveBalance} day${selectedEmployee!.leaveBalance !== 1 ? 's' : ''} of leave remaining`); return }
+    if (form.type === 'SICK' && form.attachments.length === 0) { setFormError("Please attach the doctor's letter (surat sakit)"); return }
     setSaving(true); setFormError('')
     const res = await fetch('/api/hr/leave-requests', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form),
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...form, attachments: form.type === 'SICK' ? form.attachments : [] }),
     })
     const data = await res.json()
     if (!res.ok) { setFormError(data.error ?? 'An error occurred'); setSaving(false); return }
@@ -197,9 +201,10 @@ export default function LeaveRequestsPage() {
     setSelected(prev => (prev && list.find(r => r.id === prev.id)) ?? null)
   }
 
-  // HR re-classifies a pending request (Leave ↔ WFH) — see action 'convert' in
-  // /api/hr/leave-requests/[id]. Nothing is applied to balance/attendance until approve.
-  async function convertType(type: 'LEAVE' | 'WFH') {
+  // HR re-classifies a pending request (Leave ↔ WFH, or Sick → Leave when the letter
+  // doesn't hold up) — see action 'convert' in /api/hr/leave-requests/[id]. Nothing is
+  // applied to balance/attendance until approve.
+  async function convertType(type: LeaveType) {
     if (!selected) return
     setConverting(true); setConvertError('')
     const res = await fetch(`/api/hr/leave-requests/${selected.id}`, {
@@ -237,7 +242,8 @@ export default function LeaveRequestsPage() {
             <div className="flex items-center justify-between px-5 py-4 border-b">
               <div>
                 <h2 className="text-xl font-bold tracking-tight">{selected.employee.fullName}</h2>
-                <p className="text-sm text-muted-foreground mt-0.5 font-mono">{selected.employee.employeeNumber} · <span className="font-sans font-medium">{selected.type === 'WFH' ? 'Work From Home' : 'Leave'}</span></p>
+                <p className="text-sm text-muted-foreground mt-0.5 font-mono">{selected.employee.employeeNumber} · <span className="font-sans font-medium">{selected.type === 'WFH' ? 'Work From Home' : selected.type === 'SICK' ? 'Sick Leave' : 'Leave'}</span></p>
+                {selected.type === 'SICK' && <div className="mt-2"><SickLetterButton requestId={selected.id} employeeName={selected.employee.fullName} /></div>}
               </div>
               <div className="flex flex-col items-end gap-1 text-right">
                 <StatusBadge tone={STATUS_TONE[selected.status]} className="px-2.5 py-1">{statusLabel(selected)}</StatusBadge>
@@ -349,8 +355,9 @@ export default function LeaveRequestsPage() {
             {(selected.status === 'PENDING' || selected.status === 'PENDING_HR_APPROVAL') && (
               <div className="flex flex-wrap items-center gap-2 px-5 py-4 border-t">
                 {convertError && <p className="w-full text-xs text-destructive">{convertError}</p>}
-                <Button variant="outline" onClick={() => convertType(selected.type === 'WFH' ? 'LEAVE' : 'WFH')} loading={converting}>
-                  {selected.type === 'WFH' ? <CalendarDays /> : <Home />} {selected.type === 'WFH' ? 'Convert to Leave' : 'Convert to WFH'}
+                <Button variant="outline" onClick={() => convertType(selected.type === 'LEAVE' ? 'WFH' : 'LEAVE')} loading={converting}
+                  title={selected.type === 'SICK' ? 'Counts against annual leave instead' : undefined}>
+                  {selected.type === 'LEAVE' ? <Home /> : <CalendarDays />} {selected.type === 'LEAVE' ? 'Convert to WFH' : 'Convert to Leave'}
                 </Button>
                 {(selected.status === 'PENDING_HR_APPROVAL' || (!selected.requiresCrewApproval && !selected.requiresManagerApproval)) && (
                   <div className="flex gap-2 ml-auto">
@@ -427,7 +434,7 @@ export default function LeaveRequestsPage() {
                         <p className="font-medium">{r.employee.fullName}</p>
                         <p className="text-xs text-muted-foreground font-mono">{r.employee.employeeNumber}</p>
                       </td>
-                      <td className="px-4 py-3"><span className={`inline-block mb-0.5 px-1.5 py-0.5 rounded text-[10px] font-semibold ${r.type === 'WFH' ? 'bg-info/15 text-info' : 'bg-purple-100 text-purple-700 dark:bg-purple-500/15 dark:text-purple-300'}`}>{r.type === 'WFH' ? 'WFH' : 'Leave'}</span></td>
+                      <td className="px-4 py-3"><LeaveTypeBadge type={r.type} className="mb-0.5" /></td>
                       <td className="px-4 py-3 text-muted-foreground text-xs whitespace-nowrap">{formatDateRange(r.startDate, r.endDate)}</td>
                       <td className="px-4 py-3 text-center font-semibold">{r.days}</td>
                       <td className="px-4 py-3 text-xs">
@@ -459,15 +466,15 @@ export default function LeaveRequestsPage() {
         <DialogContent className="sm:max-w-md p-0 gap-0 overflow-hidden" aria-describedby={undefined} onInteractOutside={e => e.preventDefault()}>
           <DialogHeader className="flex-row items-center gap-2 px-6 py-4 pr-12 border-b text-left">
             <CalendarDays className="h-4 w-4 text-primary-strong" />
-            <DialogTitle className="text-sm font-bold">{form.type === 'WFH' ? 'New WFH Request' : 'New Leave Request'}</DialogTitle>
+            <DialogTitle className="text-sm font-bold">{form.type === 'WFH' ? 'New WFH Request' : form.type === 'SICK' ? 'New Sick Leave Request' : 'New Leave Request'}</DialogTitle>
           </DialogHeader>
           <div className="px-6 py-5 space-y-4">
             {formError && <p className="text-xs text-destructive bg-destructive/10 border border-destructive/30 rounded-lg px-3 py-2">{formError}</p>}
-            <div role="group" aria-label="Request type" className="grid grid-cols-2 gap-1 p-1 rounded-lg bg-muted">
-              {(['LEAVE', 'WFH'] as const).map(t => (
+            <div role="group" aria-label="Request type" className="grid grid-cols-3 gap-1 p-1 rounded-lg bg-muted">
+              {LEAVE_TYPE_OPTIONS.map(({ value: t, label }) => (
                 <button key={t} type="button" aria-pressed={form.type === t} onClick={() => setForm(f => ({ ...f, type: t, needsFreelance: t === 'WFH' ? false : f.needsFreelance, freelanceRecommendations: t === 'WFH' ? [] : f.freelanceRecommendations }))}
                   className={`h-8 rounded-md text-sm font-medium transition-colors ${form.type === t ? 'bg-card shadow-sm text-primary-strong' : 'text-muted-foreground hover:text-foreground'}`}>
-                  {t === 'LEAVE' ? 'Leave' : 'Work From Home'}
+                  {t === 'WFH' ? 'Work From Home' : label}
                 </button>
               ))}
             </div>
@@ -492,7 +499,7 @@ export default function LeaveRequestsPage() {
             </div>
             {days > 0 && (
               <p className={`text-xs ${overBalance ? 'text-destructive font-medium' : 'text-muted-foreground'}`}>
-                {days} day{days !== 1 ? 's' : ''} {form.type === 'WFH' ? 'of WFH — does not use leave balance' : 'of leave'}
+                {leaveDaysHint(form.type, days, 'their')}
                 {overBalance && ' — exceeds remaining balance'}
               </p>
             )}
@@ -501,7 +508,13 @@ export default function LeaveRequestsPage() {
               <Textarea id="leave-reason" rows={2} className="resize-none"
                 value={form.reason} onChange={e => setForm(f => ({ ...f, reason: e.target.value }))} />
             </div>
-            {form.type === 'LEAVE' && <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+            {form.type === 'SICK' && (
+              <div className="space-y-1.5">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Doctor&apos;s Letter (Surat Sakit) <span className="text-destructive">*</span></p>
+                <MultiFilePicker files={form.attachments} onChange={files => setForm(f => ({ ...f, attachments: files.slice(0, 5) }))} />
+              </div>
+            )}
+            {form.type !== 'WFH' && <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
               <input type="checkbox" className="h-4 w-4 accent-primary" checked={form.needsFreelance}
                 onChange={e => setForm(f => ({ ...f, needsFreelance: e.target.checked, freelanceRecommendations: e.target.checked ? f.freelanceRecommendations : [] }))} />
               Need a freelance replacement for the trips missed?
@@ -526,7 +539,7 @@ export default function LeaveRequestsPage() {
             <div className="px-6 py-5 space-y-3">
               <DialogTitle className="text-sm font-bold flex items-center gap-2">
                 {decision.action === 'approve' ? <Check className="h-4 w-4 text-success" /> : <X className="h-4 w-4 text-destructive" />}
-                {decision.action === 'approve' ? 'Approve' : 'Reject'} {decision.req.type === 'WFH' ? 'WFH' : 'leave'} request
+                {decision.action === 'approve' ? 'Approve' : 'Reject'} {decision.req.type === 'WFH' ? 'WFH' : decision.req.type === 'SICK' ? 'sick leave' : 'leave'} request
               </DialogTitle>
               <DialogDescription className="text-sm text-muted-foreground">
                 {decision.req.employee.fullName} — {decision.req.days} day{decision.req.days !== 1 ? 's' : ''} ({formatDateRange(decision.req.startDate, decision.req.endDate)})
@@ -534,7 +547,10 @@ export default function LeaveRequestsPage() {
               {decision.action === 'approve' && decision.req.type === 'WFH' && (
                 <p className="text-xs text-muted-foreground">Marked as WFH in Attendance Recap — leave balance is not affected.</p>
               )}
-              {decision.action === 'approve' && decision.req.type !== 'WFH' && (
+              {decision.action === 'approve' && decision.req.type === 'SICK' && (
+                <p className="text-xs text-muted-foreground">Marked as Sick (SAKIT) in Attendance Recap — annual leave balance is not affected.</p>
+              )}
+              {decision.action === 'approve' && decision.req.type === 'LEAVE' && (
                 <p className="text-xs text-muted-foreground">Leave balance will go from {decision.req.employee.leaveBalance ?? 0} to {(decision.req.employee.leaveBalance ?? 0) - decision.req.days} days.</p>
               )}
               <Textarea rows={2} placeholder={decision.action === 'reject' ? 'Reason (optional)' : 'Note (optional)'}

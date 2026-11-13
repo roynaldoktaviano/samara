@@ -13,6 +13,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { type RecruitmentRequestBase, PriorityBadge, RecruitmentRequestDetails } from '@/components/hr/recruitment-shared'
+import { LeaveTypeBadge, SickLetterButton, type LeaveType } from '@/components/hr/leave-shared'
 
 interface ApprovalRequest {
   id: string
@@ -61,7 +62,7 @@ interface QuotationApprovalItem {
 
 interface CrewLeaveApproval {
   id: string
-  type: 'LEAVE' | 'WFH'
+  type: LeaveType
   startDate: string; endDate: string; days: number
   reason: string | null
   needsFreelance: boolean
@@ -360,12 +361,13 @@ export default function MyApprovalsPage() {
               <div key={r.id} className="rounded-lg border p-4 space-y-3">
                 <div className="flex items-start justify-between gap-2">
                   <div>
-                    <p className="font-semibold text-sm">{r.employee.fullName} <span className={`ml-1 px-1.5 py-0.5 rounded text-[10px] font-semibold ${r.type === 'WFH' ? 'bg-info/15 text-info' : 'bg-purple-100 text-purple-700 dark:bg-purple-500/15 dark:text-purple-300'}`}>{r.type === 'WFH' ? 'WFH' : 'Leave'}</span></p>
+                    <p className="font-semibold text-sm">{r.employee.fullName} <LeaveTypeBadge type={r.type} className="ml-1" /></p>
                     <p className="text-xs text-muted-foreground font-mono">{r.employee.employeeNumber}</p>
                   </div>
                   <span className="text-xs text-muted-foreground shrink-0 text-right">{formatDate(r.startDate)} – {formatDate(r.endDate)}<br />{r.days} day{r.days !== 1 ? 's' : ''}</span>
                 </div>
                 {r.reason && <p className="text-sm text-muted-foreground">{r.reason}</p>}
+                {r.type === 'SICK' && <SickLetterButton requestId={r.id} employeeName={r.employee.fullName} />}
                 {r.captainApprovedAt && (
                   <p className="text-xs text-success">
                     Approved by Captain{r.captainApprovedBy?.name ? ` ${r.captainApprovedBy.name}` : ''} · {formatDate(r.captainApprovedAt)}

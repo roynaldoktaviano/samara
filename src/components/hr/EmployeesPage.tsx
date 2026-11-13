@@ -58,6 +58,7 @@ interface LeaveRequestRow {
   id: string; employee: { id: string }
   startDate: string; endDate: string; days: number; reason: string | null
   status: 'PENDING' | 'PENDING_HR_APPROVAL' | 'APPROVED' | 'REJECTED'
+  type?: 'LEAVE' | 'WFH' | 'SICK'
   requiresCrewApproval: boolean
   requiresManagerApproval?: boolean
   requiresCaptainApproval?: boolean
@@ -393,7 +394,8 @@ function EmployeeDetailModal({
   const rangePosition = compensationBand && employee.basicSalary != null
     ? Math.min(100, Math.max(0, ((employee.basicSalary - compensationBand.minSalary) / Math.max(1, compensationBand.maxSalary - compensationBand.minSalary)) * 100))
     : null
-  const approvedDays = leaveRequests.filter(r => r.status === 'APPROVED').reduce((sum, r) => sum + r.days, 0)
+  // Annual leave only — WFH and sick leave don't use the leave balance.
+  const approvedDays = leaveRequests.filter(r => r.status === 'APPROVED' && (r.type ?? 'LEAVE') === 'LEAVE').reduce((sum, r) => sum + r.days, 0)
   const pendingCount = leaveRequests.filter(r => r.status === 'PENDING' || r.status === 'PENDING_HR_APPROVAL').length
 
   return (

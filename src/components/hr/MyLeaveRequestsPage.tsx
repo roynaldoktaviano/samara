@@ -10,13 +10,15 @@ import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { formatDateRange } from '@/lib/format'
 import { FreelanceRecommendationsField, type FreelanceRecommendation } from './FreelanceRecommendationsField'
+import { MultiFilePicker } from '@/components/ui/file-preview'
+import { LEAVE_TYPE_OPTIONS, LeaveTypeBadge, SickLetterButton, leaveDaysHint, type LeaveType } from './leave-shared'
 
 interface Trip { bookingCode: string; destination: string | null; startDate: string; endDate: string }
 interface LeaveRequest {
   id: string
   startDate: string; endDate: string; days: number
   reason: string | null
-  type: 'LEAVE' | 'WFH'
+  type: LeaveType
   status: 'PENDING' | 'PENDING_HR_APPROVAL' | 'APPROVED' | 'REJECTED'
   requestedAt: string
   decidedBy: { id: string; name: string | null } | null
@@ -77,8 +79,8 @@ export default function MyLeaveRequestsPage() {
   const [requests, setRequests] = useState<LeaveRequest[]>([])
 
   const [modal, setModal] = useState(false)
-  const [form, setForm] = useState<{ type: 'LEAVE' | 'WFH'; startDate: string; endDate: string; reason: string; needsFreelance: boolean; freelanceRecommendations: FreelanceRecommendation[] }>({
-    type: 'LEAVE', startDate: '', endDate: '', reason: '', needsFreelance: false, freelanceRecommendations: [],
+  const [form, setForm] = useState<{ type: LeaveType; startDate: string; endDate: string; reason: string; needsFreelance: boolean; freelanceRecommendations: FreelanceRecommendation[]; attachments: string[] }>({
+    type: 'LEAVE', startDate: '', endDate: '', reason: '', needsFreelance: false, freelanceRecommendations: [], attachments: [],
   })
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState('')
@@ -115,14 +117,16 @@ export default function MyLeaveRequestsPage() {
   })() : 0
   const overBalance = form.type === 'LEAVE' && leaveBalance != null && days > leaveBalance
 
-  function openAdd() { setForm({ type: 'LEAVE', startDate: '', endDate: '', reason: '', needsFreelance: false, freelanceRecommendations: [] }); setFormError(''); setModal(true) }
+  function openAdd() { setForm({ type: 'LEAVE', startDate: '', endDate: '', reason: '', needsFreelance: false, freelanceRecommendations: [], attachments: [] }); setFormError(''); setModal(true) }
 
   async function save() {
     if (!form.startDate || !form.endDate) { setFormError('Please select a date range'); return }
     if (overBalance) { setFormError(`You only have ${leaveBalance} day${leaveBalance !== 1 ? 's' : ''} of leave remaining`); return }
+    if (form.type === 'SICK' && form.attachments.length === 0) { setFormError("Please attach your doctor's letter (surat sakit)"); return }
     setSaving(true); setFormError('')
     const res = await fetch('/api/hr/leave-requests/mine', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form),
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...form, attachments: form.type === 'SICK' ? form.attachments : [] }),
     })
     const data = await res.json()
     if (!res.ok) { setFormError(data.error ?? 'An error occurred'); setSaving(false); return }
@@ -206,11 +210,14 @@ export default function MyLeaveRequestsPage() {
             {requests.length === 0 ? (
               <tr><td colSpan={8} className="text-center py-12 text-muted-foreground text-sm">
                 <ClipboardList className="h-8 w-8 mx-auto mb-2 opacity-20" />
-                You haven&apos;t requested any leave or WFH yet.
+                You haven&apos;t requested any leave, sick leave or WFH yet.
               </td></tr>
             ) : requests.map(r => (
               <tr key={r.id} className="hover:bg-muted/30 transition-colors">
-                <td className="px-4 py-3"><span className={`inline-block mb-0.5 px-1.5 py-0.5 rounded text-[10px] font-semibold ${r.type === 'WFH' ? 'bg-info/15 text-info' : 'bg-purple-100 text-purple-700 dark:bg-purple-500/15 dark:text-purple-300'}`}>{r.type === 'WFH' ? 'WFH' : 'Leave'}</span></td>
+                <td className="px-4 py-3">
+                  <LeaveTypeBadge type={r.type} className="mb-0.5" />
+                  {r.type === 'SICK' && <div><SickLetterButton requestId={r.id} employeeName="my sick leave" size="xs" /></div>}
+                </td>
                 <td className="px-4 py-3 text-muted-foreground text-xs whitespace-nowrap">{formatDateRange(r.startDate, r.endDate)}</td>
                 <td className="px-4 py-3 text-center font-semibold">{r.days}</td>
                 <td className="px-4 py-3 text-xs">
@@ -262,15 +269,15 @@ export default function MyLeaveRequestsPage() {
         <DialogContent aria-describedby={undefined} className="sm:max-w-md p-0 gap-0 overflow-hidden max-h-[90vh] flex flex-col" onInteractOutside={e => e.preventDefault()}>
           <DialogHeader className="flex-row items-center gap-2 text-left px-6 py-4 border-b shrink-0">
             <CalendarDays className="h-4 w-4 text-primary-strong" />
-            <DialogTitle className="font-bold text-sm">{form.type === 'WFH' ? 'Request WFH' : 'Request Leave'}</DialogTitle>
+            <DialogTitle className="font-bold text-sm">{form.type === 'WFH' ? 'Request WFH' : form.type === 'SICK' ? 'Request Sick Leave' : 'Request Leave'}</DialogTitle>
           </DialogHeader>
           <div className="px-6 py-5 space-y-4 overflow-y-auto">
             {formError && <p className="text-xs text-destructive bg-destructive/10 border border-destructive/30 rounded-lg px-3 py-2">{formError}</p>}
-            <div className="grid grid-cols-2 gap-1 p-1 rounded-lg bg-muted">
-              {(['LEAVE', 'WFH'] as const).map(t => (
+            <div className="grid grid-cols-3 gap-1 p-1 rounded-lg bg-muted">
+              {LEAVE_TYPE_OPTIONS.map(({ value: t, label }) => (
                 <button key={t} type="button" aria-pressed={form.type === t} onClick={() => setForm(f => ({ ...f, type: t, needsFreelance: t === 'WFH' ? false : f.needsFreelance, freelanceRecommendations: t === 'WFH' ? [] : f.freelanceRecommendations }))}
                   className={`h-8 rounded-md text-sm font-medium transition-colors ${form.type === t ? 'bg-card shadow-sm text-primary-strong' : 'text-muted-foreground hover:text-foreground'}`}>
-                  {t === 'LEAVE' ? 'Leave' : 'Work From Home'}
+                  {t === 'WFH' ? 'Work From Home' : label}
                 </button>
               ))}
             </div>
@@ -294,7 +301,7 @@ export default function MyLeaveRequestsPage() {
             </div>
             {days > 0 && (
               <p className={`text-xs ${overBalance ? 'text-destructive font-medium' : 'text-muted-foreground'}`}>
-                {days} day{days !== 1 ? 's' : ''} {form.type === 'WFH' ? 'of WFH — does not use your leave balance' : 'of leave'}
+                {leaveDaysHint(form.type, days)}
                 {overBalance && ' — exceeds your remaining balance'}
               </p>
             )}
@@ -303,7 +310,14 @@ export default function MyLeaveRequestsPage() {
               <Textarea id="my-leave-reason" rows={2} className="resize-none"
                 value={form.reason} onChange={e => setForm(f => ({ ...f, reason: e.target.value }))} />
             </div>
-            {form.type === 'LEAVE' && <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+            {form.type === 'SICK' && (
+              <div className="space-y-1.5">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Doctor&apos;s Letter (Surat Sakit) <span className="text-destructive">*</span></p>
+                <MultiFilePicker files={form.attachments} onChange={files => setForm(f => ({ ...f, attachments: files.slice(0, 5) }))} />
+                <p className="text-[11px] text-muted-foreground">Photo or PDF, up to 5 files. Required for sick leave.</p>
+              </div>
+            )}
+            {form.type !== 'WFH' && <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
               <input type="checkbox" className="h-4 w-4 accent-primary" checked={form.needsFreelance}
                 onChange={e => setForm(f => ({ ...f, needsFreelance: e.target.checked, freelanceRecommendations: e.target.checked ? f.freelanceRecommendations : [] }))} />
               Need a freelance replacement for the trips I&apos;ll miss?
