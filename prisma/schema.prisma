@@ -466,6 +466,11 @@ model Lead {
   // Where the lead came from when created by the app itself, e.g. "WHATSAPP_SAMARA".
   // Website-form leads leave this null — their source lives on Inquiry.utm*.
   source          String?
+  // Channel the lead first came in through (WEBSITE_FORM, INSTANT_FORM, WHATSAPP, INSTAGRAM,
+  // MESSENGER, LIVE_CHAT, EMAIL, OTHER) — derived from forms/chats/Freshsales data by
+  // src/lib/lead-entry-source.ts and kept fresh by the 15-min Freshsales job. Drives the
+  // source tabs on the Leads page.
+  entrySource     String?
 
   inquiries              Inquiry[]
   pageViews              PageView[]
@@ -484,6 +489,7 @@ model Lead {
   @@index([ownerId])
   @@index([bookingId])
   @@index([freshsalesDealId])
+  @@index([entrySource])
 }
 
 // One row per hand-over of a Lead between sales reps (history for the Sales Pipeline and
@@ -2581,11 +2587,13 @@ model StockMovement {
   @@index([tripBookingId])
 }
 
-// How an item is treated once it reaches a ship (set on the item master; per PO line for
-// custom lines). CONSUMABLE = used up → trip usage. ASSET = durable equipment → becomes an
-// InventoryItem in the PO line's Room/Category, never trip cost. SPARE_PART = maintenance
-// cost of the ship (usageType MAINTENANCE), also kept out of trip cost.
+// An item's "Type" in the UI (set on the item master; per PO line for custom lines).
+// TRADING = bought to resell (bar beverages) — same ship flow as CONSUMABLE. CONSUMABLE = used
+// up → trip usage. ASSET = durable equipment → becomes an InventoryItem in the PO line's
+// Room/Category, never trip cost. SPARE_PART = retired 2026-11-16 (merged into CONSUMABLE,
+// data migrated by scripts/migrate-item-type-trading.ts); kept only so old rows never break.
 enum ItemTreatment {
+  TRADING
   CONSUMABLE
   ASSET
   SPARE_PART
@@ -2593,7 +2601,7 @@ enum ItemTreatment {
 
 enum StockUsageType {
   SHIP_USAGE // received at an EXPENSE_ON_RECEIVE location (ship/galley/deck/engine)
-  MAINTENANCE // a SPARE_PART item arriving on a ship — ship upkeep, not charged to a trip
+  MAINTENANCE // legacy: SPARE_PART items received before 2026-11-16 — no longer written
   BAR_COGS // sold at the POS bar (recipe cost)
   COMPLIMENTARY // given free at the POS bar
   SHRINKAGE // stock-count variance at a HOLD_AS_STOCK location

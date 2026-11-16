@@ -1349,7 +1349,7 @@ export default function OrdersPage({ warehouseView = false, openPoId, onOpenPoHa
                 <th className="text-left px-3 py-2.5 font-medium w-28">Unit</th>
                 <th className="text-left px-3 py-2.5 font-medium w-36">Unit Price</th>
                 <th className="text-left px-3 py-2.5 font-medium w-44">Discount</th>
-                {isVesselDelivery && <th className="text-left px-3 py-2.5 font-medium w-36" title="Consumable = trip usage · Asset = ship Inventory (needs Room/Category) · Spare part = maintenance">On the ship</th>}
+                {isVesselDelivery && <th className="text-left px-3 py-2.5 font-medium w-36" title="Trading / Consumable = trip usage · Asset = ship Inventory (needs Room/Category)">Type</th>}
                 {isVesselDelivery && <th className="text-left px-3 py-2.5 font-medium w-36">Room / Category</th>}
                 <th className="text-right px-4 py-2.5 font-medium w-36">Subtotal</th>
                 <th className="w-10" />

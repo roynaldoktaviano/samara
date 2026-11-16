@@ -72,7 +72,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         valuationMethod: valuationMethod || 'FIFO',
         minStock: perBase(minStock, prev.minStock, r),
         minStockUnit: minStockUnit === 'PURCHASE' ? 'PURCHASE' : 'BASE',
-        ...(treatment !== undefined && { treatment: ['CONSUMABLE', 'ASSET', 'SPARE_PART'].includes(treatment) ? treatment : defaultTreatmentForType(type) }),
+        ...(treatment !== undefined && { treatment: ['TRADING', 'CONSUMABLE', 'ASSET'].includes(treatment) ? treatment : defaultTreatmentForType(type) }),
         reorderQty: Number(reorderQty) || 0,
         isActive: isActive !== undefined ? Boolean(isActive) : undefined,
         isSoldInPos: isSoldInPos !== undefined ? Boolean(isSoldInPos) : undefined,

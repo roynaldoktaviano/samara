@@ -288,7 +288,7 @@ export default function InstagramThread({ conversationId, onConversationUpdate, 
         )}
       </div>
 
-      <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-y-auto px-3 md:px-6 py-4 space-y-1.5">
+      <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-y-auto px-3 md:px-6 py-4 space-y-2.5">
         {detailLoading ? (
           <div className="flex flex-col items-center gap-2 pt-10 text-xs text-muted-foreground">
             <Loader2 className="h-5 w-5 animate-spin" />Loading messages…
@@ -344,11 +344,19 @@ export default function InstagramThread({ conversationId, onConversationUpdate, 
               <p className="flex items-center gap-1 text-[10px] text-muted-foreground mt-0.5 px-1">
                 <Loader2 className="h-3 w-3 animate-spin" />{isPending && m.uploading ? 'Uploading…' : 'Sending…'}
               </p>
-            ) : m.direction === 'OUT' && m.sentByName ? (
-              <p className="text-[10px] text-muted-foreground mt-0.5 px-1">{m.sentByName}{m.status === 'READ' ? ' · Seen' : ''}</p>
-            ) : m.direction === 'IN' && m.errorMessage ? (
-              <p className="text-[11px] text-muted-foreground mt-0.5 px-1">{m.errorMessage}</p>
-            ) : null}
+            ) : (
+              <>
+                {/* Date + time right under every bubble (plus who sent it / Seen on ours). */}
+                <p className="text-[10px] text-muted-foreground mt-0.5 px-1 tabular-nums">
+                  {formatDate(m.createdAt, 'datetime')}
+                  {m.direction === 'OUT' && m.sentByName ? ` · ${m.sentByName}` : ''}
+                  {m.direction === 'OUT' && m.status === 'READ' ? ' · Seen' : ''}
+                </p>
+                {m.direction === 'IN' && m.errorMessage && (
+                  <p className="text-[11px] text-muted-foreground px-1">{m.errorMessage}</p>
+                )}
+              </>
+            )}
             </div>
             {m.direction === 'IN' && (
               <button onClick={() => setReplyTo(m)} title="Reply"
@@ -359,11 +367,6 @@ export default function InstagramThread({ conversationId, onConversationUpdate, 
           </div>
           )
         })}
-        {!detailLoading && messages.length ? (
-          <p className="text-[10px] text-muted-foreground text-right pr-1 pt-1">
-            {formatDate(messages[messages.length - 1].createdAt, 'time')}
-          </p>
-        ) : null}
       </div>
 
       <div className="border-t bg-card shrink-0">

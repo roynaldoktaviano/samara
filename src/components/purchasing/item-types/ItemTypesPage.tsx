@@ -106,7 +106,7 @@ export default function ItemTypesPage() {
       const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'Failed to save')
-      toast.success(editType ? 'Type updated' : 'Type added')
+      toast.success(editType ? 'Category updated' : 'Category added')
       setDialogOpen(false)
       fetchTypes()
     } catch (e) {
@@ -122,7 +122,7 @@ export default function ItemTypesPage() {
       const res = await fetch(`/api/purchasing/item-types/${t.id}`, { method: 'DELETE' })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.error ?? 'Failed to delete')
-      toast.success('Type deleted')
+      toast.success('Category deleted')
       setConfirmDeleteType(null)
       fetchTypes()
     } catch (e) {
@@ -149,7 +149,7 @@ export default function ItemTypesPage() {
   async function handleSaveCat() {
     if (!categoriesFor) return
     if (!catForm.skuPrefix.trim() || (!editCat && !catForm.name.trim())) {
-      toast.error('Category name and SKU prefix are required')
+      toast.error('Sub-category name and SKU prefix are required')
       return
     }
     setCatSaving(true)
@@ -164,7 +164,7 @@ export default function ItemTypesPage() {
       const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'Failed to save')
-      toast.success(editCat ? 'Category updated' : 'Category added')
+      toast.success(editCat ? 'Sub-category updated' : 'Sub-category added')
       setCatDialogOpen(false)
       refreshKeepingCategoriesPanel()
     } catch (e) {
@@ -180,7 +180,7 @@ export default function ItemTypesPage() {
       const res = await fetch(`/api/purchasing/item-types/${t.id}/categories/${c.id}`, { method: 'DELETE' })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.error ?? 'Failed to delete')
-      toast.success('Category deleted')
+      toast.success('Sub-category deleted')
       setConfirmDeleteCat(null)
       refreshKeepingCategoriesPanel()
     } catch (e) {
@@ -197,14 +197,14 @@ export default function ItemTypesPage() {
           <div className="flex items-center justify-between">
             <div>
               <CardTitle className="flex items-center gap-2 text-base">
-                <Tags className="h-4 w-4" /> Item Types
+                <Tags className="h-4 w-4" /> Item Categories
               </CardTitle>
               <CardDescription className="text-xs mt-0.5">
                 Manage item types and their categories used across Item Master
               </CardDescription>
             </div>
             <Button size="sm" onClick={openAdd} className="gap-1.5 bg-primary text-primary-foreground hover:bg-primary-hover">
-              <Plus className="h-4 w-4" /> Add Type
+              <Plus className="h-4 w-4" /> Add Category
             </Button>
           </div>
         </CardHeader>
@@ -239,12 +239,12 @@ export default function ItemTypesPage() {
                           {!t.isActive && <Badge variant="outline" className="text-[10px] text-muted-foreground">Inactive</Badge>}
                         </div>
                         <p className="text-xs text-muted-foreground mt-1">
-                          {t.categories.length} categories · {t.itemCount} items
+                          {t.categories.length} sub-categories · {t.itemCount} items
                         </p>
                       </div>
                       <div className="flex items-center gap-1.5 shrink-0">
                         <Button size="sm" variant="outline" className="h-7 gap-1.5 text-xs" onClick={() => setCategoriesFor(t)}>
-                          <FolderOpen className="h-3.5 w-3.5" /> Categories
+                          <FolderOpen className="h-3.5 w-3.5" /> Sub-Categories
                         </Button>
                         <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => openEdit(t)}>
                           <Pencil className="h-3.5 w-3.5" />
@@ -279,7 +279,7 @@ export default function ItemTypesPage() {
       <Dialog open={dialogOpen} onOpenChange={v => !saving && setDialogOpen(v)}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>{editType ? 'Edit Type' : 'Add Type'}</DialogTitle>
+            <DialogTitle>{editType ? 'Edit Category' : 'Add Category'}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 py-1">
             {!editType && (
@@ -312,7 +312,7 @@ export default function ItemTypesPage() {
             <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={saving}>Cancel</Button>
             <Button onClick={handleSave} disabled={saving} className="bg-primary text-primary-foreground hover:bg-primary-hover">
               {saving && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
-              {editType ? 'Save Changes' : 'Add Type'}
+              {editType ? 'Save Changes' : 'Add Category'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -322,7 +322,7 @@ export default function ItemTypesPage() {
       <Dialog open={!!confirmDeleteType} onOpenChange={v => !v && setConfirmDeleteType(null)}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle>Delete Type</DialogTitle>
+            <DialogTitle>Delete Category</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
             Are you sure you want to delete <span className="font-semibold text-foreground">{confirmDeleteType?.label}</span>?
@@ -342,11 +342,11 @@ export default function ItemTypesPage() {
       <Dialog open={!!categoriesFor} onOpenChange={v => !v && setCategoriesFor(null)}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Categories · {categoriesFor?.label}</DialogTitle>
+            <DialogTitle>Sub-Categories · {categoriesFor?.label}</DialogTitle>
           </DialogHeader>
           <div className="space-y-2 py-1 max-h-96 overflow-y-auto">
             {categoriesFor?.categories.length === 0 && (
-              <p className="text-sm text-muted-foreground text-center py-6">No categories yet</p>
+              <p className="text-sm text-muted-foreground text-center py-6">No sub-categories yet</p>
             )}
             {categoriesFor?.categories.map(c => (
               <div key={c.id} className={`flex items-center justify-between rounded-lg border px-3 py-2 ${!c.isActive ? 'opacity-50' : ''}`}>
@@ -383,7 +383,7 @@ export default function ItemTypesPage() {
           </div>
           <DialogFooter className="sm:justify-between">
             <Button variant="outline" size="sm" className="gap-1.5" onClick={() => categoriesFor && openAddCat(categoriesFor)}>
-              <Plus className="h-4 w-4" /> Add Category
+              <Plus className="h-4 w-4" /> Add Sub-Category
             </Button>
             <Button variant="outline" onClick={() => setCategoriesFor(null)}>Close</Button>
           </DialogFooter>
@@ -394,7 +394,7 @@ export default function ItemTypesPage() {
       <Dialog open={catDialogOpen} onOpenChange={v => !catSaving && setCatDialogOpen(v)}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle>{editCat ? `Edit Category · ${editCat.name}` : 'Add Category'}</DialogTitle>
+            <DialogTitle>{editCat ? `Edit Sub-Category · ${editCat.name}` : 'Add Sub-Category'}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 py-1">
             {!editCat && (
@@ -406,7 +406,7 @@ export default function ItemTypesPage() {
             <div className="space-y-1.5">
               <Label className="text-xs">SKU Prefix <span className="text-destructive">*</span></Label>
               <Input placeholder="e.g. GEN" className="uppercase font-mono" value={catForm.skuPrefix} onChange={e => setCatForm(f => ({ ...f, skuPrefix: e.target.value }))} />
-              <p className="text-xs text-muted-foreground">Used to auto-generate SKUs for items in this category, e.g. {catForm.skuPrefix || 'GEN'}-01</p>
+              <p className="text-xs text-muted-foreground">Used to auto-generate SKUs for items in this sub-category, e.g. {catForm.skuPrefix || 'GEN'}-01</p>
             </div>
             {editCat && (
               <div className="flex items-center justify-between">
@@ -419,7 +419,7 @@ export default function ItemTypesPage() {
             <Button variant="outline" onClick={() => setCatDialogOpen(false)} disabled={catSaving}>Cancel</Button>
             <Button onClick={handleSaveCat} disabled={catSaving} className="bg-primary text-primary-foreground hover:bg-primary-hover">
               {catSaving && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
-              {editCat ? 'Save Changes' : 'Add Category'}
+              {editCat ? 'Save Changes' : 'Add Sub-Category'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -429,7 +429,7 @@ export default function ItemTypesPage() {
       <Dialog open={!!confirmDeleteCat} onOpenChange={v => !v && setConfirmDeleteCat(null)}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle>Delete Category</DialogTitle>
+            <DialogTitle>Delete Sub-Category</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
             Are you sure you want to delete <span className="font-semibold text-foreground">{confirmDeleteCat?.name}</span>? This cannot be undone.

@@ -2680,7 +2680,7 @@ export default function RequestsPage({ onOpenPo, onOpenTransfer, deepLinkId, onD
 
                     {detail.status === 'ON_PROCESS' && !isWarehouse && detail.deliveryLocation?.type === 'VESSEL' && !item.restockLocationId && (
                       <div>
-                        <p className={sectionLabel} title="Consumable = trip usage · Asset = ship Inventory (needs Room/Category) · Spare part = maintenance">On the ship</p>
+                        <p className={sectionLabel} title="Trading / Consumable = trip usage · Asset = ship Inventory (needs Room/Category)">Type</p>
                         {onShipContent(item)}
                       </div>
                     )}

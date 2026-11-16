@@ -177,6 +177,10 @@ export async function startNodeInstrumentation() {
           const { mirrorFreshchatToErpChats } = await import('@/lib/freshchat-mirror')
           await mirrorFreshchatToErpChats(db, { apply: true, log })
         }
+        // Re-derive each lead's source (Leads page tabs) now that new chats / details are in.
+        const { refreshLeadEntrySources } = await import('@/lib/lead-entry-source')
+        const changed = await refreshLeadEntrySources(db)
+        if (changed) log(`lead entry source: ${changed} updated`)
       } catch (err) {
         console.error('[freshsales-erp-sync] tick failed:', err)
       } finally {

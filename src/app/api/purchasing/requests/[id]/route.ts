@@ -11,7 +11,7 @@ import { createOrAppendTransfer, toBaseQty } from '@/lib/purchasing/transferActi
 import { computeStockChecks } from '@/lib/purchasing/stockCheck'
 import { freeStock } from '@/lib/purchasing/warehouseProcess'
 import { warehouseHomeLocationId } from '@/lib/purchasing/warehouseHome'
-import { effectiveTreatment, type Treatment } from '@/lib/purchasing/treatment'
+import { effectiveTreatment, normalizeTreatment, type Treatment } from '@/lib/purchasing/treatment'
 import { routePrLines, initialPrStatus, notifyPrRouted } from '@/lib/purchasing/requestItems'
 import { resolveTripLink, tripBookingSelect, openTripSelect, tripOf } from '@/lib/purchasing/tripLink'
 import { nextSeq } from '@/lib/purchasing/docNumber'
@@ -119,7 +119,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const [requesterUser, lots, purchaseItems, warehouses, { checks: stockChecks, reservedMap }, restockLinks, restockLines] = await Promise.all([
     db.user.findUnique({ where: { id: request.requestedById }, select: { id: true, name: true } }),
     itemIds.length ? db.stockLot.findMany({ where: { itemId: { in: itemIds }, quantity: { gt: 0 } }, select: { itemId: true, locationId: true, quantity: true } }) : ([] as { itemId: string | null; locationId: string; quantity: number }[]),
-    itemIds.length ? db.purchaseItem.findMany({ where: { id: { in: itemIds } }, select: { id: true, minStock: true, baseUnit: true, purchaseUnit: true, conversionFactor: true, treatment: true } }) : ([] as { id: string; minStock: number; baseUnit: string; purchaseUnit: string; conversionFactor: number; treatment: Treatment }[]),
+    itemIds.length ? db.purchaseItem.findMany({ where: { id: { in: itemIds } }, select: { id: true, minStock: true, baseUnit: true, purchaseUnit: true, conversionFactor: true, treatment: true } }) : ([] as { id: string; minStock: number; baseUnit: string; purchaseUnit: string; conversionFactor: number; treatment: import('@prisma/client').ItemTreatment }[]),
     db.stockLocation.findMany({ where: { type: 'WAREHOUSE', isActive: true }, select: { id: true, name: true } }),
     computeStockChecks(db, request, { preferredSourceId: homeLocationId }),
     // Restock PRs this one triggered, or the vessel PR this Restock PR was created for.
@@ -321,7 +321,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       purchaseUnit: master?.purchaseUnit ?? null,
       conversionFactor: master?.conversionFactor ?? 1,
       // How the item master says it's treated on a ship — custom lines pick one at convert.
-      itemTreatment: master?.treatment ?? null,
+      itemTreatment: normalizeTreatment(master?.treatment),
       warehouseStock,
       transferEligible: warehouseStock.length > 0,
       sentFromStock: processed ? (isFirst ? sentFromStock.get(item.itemId!) ?? 0 : 0) : null,

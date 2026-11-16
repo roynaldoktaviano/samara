@@ -7,6 +7,16 @@ import { leadWebsiteWhere } from '@/lib/lead-website'
 import { leadOwnerScope } from '@/lib/lead-access'
 import { classifyLeadOrigin, LEAD_ORIGINS, LEAD_ORIGIN_SELECT, sourceLabel, type LeadOrigin } from '@/lib/lead-origin'
 import { WHATSAPP_BRANDS, type WhatsappBrand } from '@/lib/whatsapp-brands'
+import { isLeadEntrySource, refreshLeadEntrySources } from '@/lib/lead-entry-source'
+
+// New leads (webhooks, chats, the Freshsales sync) arrive without Lead.entrySource; classify them
+// before listing. Throttled per process — the 15-min Freshsales job re-checks every lead anyway.
+let lastEntrySourceRefresh = 0
+async function classifyNewLeads(db: Parameters<typeof refreshLeadEntrySources>[0]) {
+  if (Date.now() - lastEntrySourceRefresh < 20_000) return
+  lastEntrySourceRefresh = Date.now()
+  try { await refreshLeadEntrySources(db, { onlyMissing: true }) } catch (err) { console.error('[leads] entry source refresh failed:', err) }
+}
 
 export async function GET(request: NextRequest) {
   const session = await getServerSession(authOptions)
@@ -19,9 +29,10 @@ export async function GET(request: NextRequest) {
     const source  = searchParams.get('source')
     const origin  = searchParams.get('origin')
     const stage   = searchParams.get('stage')
-    // Tab on the Leads page: 'form' = website CF7 form, 'meta' = Meta Lead Ads instant form,
-    // 'whatsapp' / 'instagram' = leads that came in by chat (Instagram tab covers Messenger too).
-    const channel = searchParams.get('channel')
+    // Source tab on the Leads page — one of LEAD_ENTRY_SOURCES (src/lib/lead-entry-source.ts),
+    // i.e. where the lead first came in from. Every lead sits in exactly one tab.
+    const channelParam = searchParams.get('channel')
+    const channel = isLeadEntrySource(channelParam) ? channelParam : null
     const brandParam = searchParams.get('brand')
     const brand = WHATSAPP_BRANDS.includes(brandParam as WhatsappBrand) ? brandParam as WhatsappBrand : null
     const dateFrom = searchParams.get('dateFrom')
@@ -31,6 +42,8 @@ export async function GET(request: NextRequest) {
     const limit  = Math.min(parseInt(searchParams.get('limit') ?? '500') || 500, 2000)
     const page   = Math.max(1, parseInt(searchParams.get('page') ?? '1') || 1)
     const sort   = searchParams.get('sort') === 'asc' ? 'asc' : 'desc'
+
+    await classifyNewLeads(db)
 
     const where: Record<string, unknown> = { deletedAt: null, ...leadOwnerScope((session.user as { role?: string }).role, session.user.id) }
     if (stage) where.stage = stage
@@ -67,8 +80,10 @@ export async function GET(request: NextRequest) {
       const leadIds = [...new Set(rows.filter(r => classifyLeadOrigin(r) === (origin as LeadOrigin)).map(r => r.leadId as string))]
       inquiryFilters.push({ id: { in: leadIds } })
     }
-    if (channel === 'form') inquiryFilters.push({ inquiries: { some: { source: 'CF7' } } })
-    if (channel === 'meta') {
+    // Tab counts use everything except the tab itself (search / stage / owner scope / filters).
+    const countWhere = { ...where, ...(inquiryFilters.length > 0 && { AND: [...inquiryFilters] }) }
+    if (channel) where.entrySource = channel
+    if (channel === 'INSTANT_FORM' && (dateFrom || dateTo || campaign || yacht)) {
       // Date/campaign/yacht must all hold on the same Meta inquiry. Date is the Meta lead's
       // own time (the webhook stores it as the inquiry's createdAt), days in WIB.
       const createdAt: Record<string, Date> = {}
@@ -81,12 +96,12 @@ export async function GET(request: NextRequest) {
         ...(yacht && { tripType: yacht }),
       } } })
     }
-    // A WhatsApp chat only counts while it's triaged SALES (vendor/spam/guest chats aren't leads).
-    if (channel === 'whatsapp') inquiryFilters.push({ whatsappConversations: { some: { category: 'SALES', ...(brand && { brand }) } } })
-    if (channel === 'instagram') inquiryFilters.push({ instagramConversations: { some: { ...(brand && { brand }) } } })
+    // Brand filter on the chat tabs — the ERP's own thread or the imported Freshchat history.
+    if (brand && channel === 'WHATSAPP') inquiryFilters.push({ OR: [{ whatsappConversations: { some: { brand } } }, { freshchatConversations: { some: { brand } } }] })
+    if (brand && (channel === 'INSTAGRAM' || channel === 'MESSENGER')) inquiryFilters.push({ OR: [{ instagramConversations: { some: { brand } } }, { freshchatConversations: { some: { brand } } }] })
     if (inquiryFilters.length > 0) where.AND = inquiryFilters
 
-    const [leads, total] = await Promise.all([
+    const [leads, total, grouped] = await Promise.all([
       db.lead.findMany({
         where,
         orderBy: { createdAt: sort },
@@ -95,20 +110,19 @@ export async function GET(request: NextRequest) {
         include: {
           owner: { select: { id: true, name: true } },
           // Meta tab shows the latest instant-form answer (yacht, campaign, trip date) per row.
-          ...(channel === 'meta' && { inquiries: {
+          ...(channel === 'INSTANT_FORM' && { inquiries: {
             where: { source: 'META_LEAD_AD' },
             orderBy: { createdAt: 'desc' as const },
             take: 1,
             select: { createdAt: true, utmSource: true, utmCampaign: true, tripType: true, checkInDate: true, checkOutDate: true, guestCount: true },
           } }),
           // Chat tabs show the latest thread's brand + last message per row.
-          ...(channel === 'whatsapp' && { whatsappConversations: {
-            where: { category: 'SALES' },
+          ...(channel === 'WHATSAPP' && { whatsappConversations: {
             orderBy: { lastMessageAt: 'desc' as const },
             take: 1,
             select: { brand: true, lastMessageAt: true, lastMessagePreview: true },
           } }),
-          ...(channel === 'instagram' && { instagramConversations: {
+          ...((channel === 'INSTAGRAM' || channel === 'MESSENGER') && { instagramConversations: {
             orderBy: { lastMessageAt: 'desc' as const },
             take: 1,
             select: { platform: true, brand: true, lastMessageAt: true, lastMessagePreview: true },
@@ -116,21 +130,22 @@ export async function GET(request: NextRequest) {
         },
       }),
       db.lead.count({ where }),
+      db.lead.groupBy({ by: ['entrySource'], where: countWhere, _count: { _all: true } }),
     ])
+    const sourceCounts: Record<string, number> = {}
+    for (const g of grouped) sourceCounts[g.entrySource ?? 'OTHER'] = (sourceCounts[g.entrySource ?? 'OTHER'] ?? 0) + g._count._all
 
     const unsubscribed = await db.emailUnsubscribe.findMany({ select: { email: true } })
     const unsubscribedSet = new Set(unsubscribed.map(u => u.email.toLowerCase()))
-    const entryChannels = await resolveEntryChannels(db, leads)
     const result = leads.map(l => ({
       ...l,
       isSubscribed: l.email ? !unsubscribedSet.has(l.email.toLowerCase()) : null,
-      entryChannel: entryChannels.get(l.id) ?? null,
     }))
 
     // Body stays a plain array for existing callers; the true count (which
     // can exceed the capped `take`) rides along as a header for callers that
     // display it, e.g. the "N registered" label on the Leads page.
-    return NextResponse.json(result, { headers: { 'X-Total-Count': String(total) } })
+    return NextResponse.json(result, { headers: { 'X-Total-Count': String(total), 'X-Source-Counts': JSON.stringify(sourceCounts) } })
   } catch (error) {
     console.error('Error fetching leads:', error)
     return NextResponse.json({ error: 'Failed to fetch leads' }, { status: 500 })
@@ -188,37 +203,4 @@ export async function POST(request: NextRequest) {
     console.error('Error creating lead:', error)
     return NextResponse.json({ error: 'Failed to create lead' }, { status: 500 })
   }
-}
-
-// Where a lead first came in from — shown as a small badge in the Leads table's Contact column.
-// Chat-created leads carry it on Lead.source ("MESSENGER_OTIUM"); otherwise it's the oldest
-// form inquiry, then any linked chat thread, then a Freshsales import.
-type LeadEntryChannel = 'WHATSAPP' | 'INSTAGRAM' | 'MESSENGER' | 'WEBSITE' | 'INSTANT_FORM' | 'FRESHSALES'
-
-async function resolveEntryChannels(
-  db: Awaited<ReturnType<typeof getDb>>,
-  leads: { id: string; source: string | null }[],
-): Promise<Map<string, LeadEntryChannel>> {
-  const out = new Map<string, LeadEntryChannel>()
-  for (const l of leads) {
-    const prefix = l.source?.split('_')[0]
-    if (prefix === 'WHATSAPP' || prefix === 'INSTAGRAM' || prefix === 'MESSENGER') out.set(l.id, prefix)
-  }
-  const ids = leads.map(l => l.id).filter(id => !out.has(id))
-  if (ids.length === 0) return out
-
-  const [inquiries, waConvs, igConvs, fsContacts] = await Promise.all([
-    db.inquiry.findMany({ where: { leadId: { in: ids } }, orderBy: { createdAt: 'asc' }, select: { leadId: true, source: true } }),
-    db.whatsappConversation.findMany({ where: { leadId: { in: ids } }, select: { leadId: true } }),
-    db.instagramConversation.findMany({ where: { leadId: { in: ids } }, orderBy: { createdAt: 'asc' }, select: { leadId: true, platform: true } }),
-    db.freshsalesContact.findMany({ where: { leadId: { in: ids } }, select: { leadId: true } }),
-  ])
-  const setOnce = (id: string | null, ch: LeadEntryChannel) => { if (id && !out.has(id)) out.set(id, ch) }
-  for (const i of inquiries) {
-    setOnce(i.leadId, i.source === 'CF7' ? 'WEBSITE' : i.source === 'META_LEAD_AD' ? 'INSTANT_FORM' : 'FRESHSALES')
-  }
-  for (const c of waConvs) setOnce(c.leadId, 'WHATSAPP')
-  for (const c of igConvs) setOnce(c.leadId, c.platform === 'MESSENGER' ? 'MESSENGER' : 'INSTAGRAM')
-  for (const c of fsContacts) setOnce(c.leadId, 'FRESHSALES')
-  return out
 }

@@ -277,7 +277,7 @@ export async function receiveGoods(db: Db, params: {
         const dest = route?.(it.itemId ? itemDataMap.get(it.itemId)?.type : null) ?? receivingLoc
         const destId = dest?.id ?? effectiveLocationId
         const usage = dest ? shipUsageOnArrival(null, dest) : null
-        // CONSUMABLE → trip usage, SPARE_PART → ship maintenance, ASSET (no Room/Category to land
+        // TRADING/CONSUMABLE → trip usage (legacy SPARE_PART reads as CONSUMABLE), ASSET (no Room/Category to land
         // in) → no usage at all — it's still equipment, just held as stock until registered.
         const usageType = usageTypeForTreatment(treatment)
         const incomingCost = baseCostPerUnit || (it.itemId ? itemDataMap.get(it.itemId)?.standardCost ?? 0 : 0)

@@ -90,7 +90,7 @@ export default function FreshchatThread({ conversationId, onBack, embedded = fal
 }
 
 function Bubble({ m }: { m: Message }) {
-  const time = formatDate(m.createdAt, 'time')
+  const time = formatDate(m.createdAt, 'datetime')
   if (m.messageType === 'system' || m.actorType === 'system') {
     return <p className="text-center text-[11px] text-muted-foreground px-6 py-0.5 whitespace-pre-line">{m.text} <span className="opacity-60">· {time}</span></p>
   }

@@ -6,7 +6,7 @@ import { sortByMethod, computeStockValue, type ValuationMethod } from '@/lib/val
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { renderLocationOptions } from '@/components/purchasing/LocationOptions'
 import { ItemFormFields, EMPTY_ITEM_FORM, newItemForm, getTypeIcon, type ItemForm, type ItemTypeConfig } from './ItemFormFields'
-import type { Treatment } from '@/lib/purchasing/treatment'
+import { TREATMENTS, TREATMENT_LABEL, normalizeTreatment, type Treatment } from '@/lib/purchasing/treatment'
 import { baseUnitRatio } from '@/lib/purchasing/rescaleItemUnits'
 import { displayQty, displayUnitCost, hasPurchaseUnit, type UnitInfo } from '@/lib/purchasing/units'
 import { StockQty } from '@/components/purchasing/StockQty'
@@ -62,7 +62,8 @@ interface HistoryEntry {
 interface StockEntry { locationId: string; locationName: string; locationType: string; qty: number; costPerUnit: number }
 interface LotEntry { id: string; locationId: string; locationName: string; quantity: number; costPerUnit: number; batch: string | null; expiresAt: string | null; createdAt: string }
 
-const CSV_HEADERS = ['SKU', 'Name', 'Type', 'Category', 'Base Unit', 'Purchase Unit', 'Conversion', 'Standard Cost', 'Selling Price', 'Valuation Method', 'Min Stock', 'Reorder Qty', 'Stock', 'Location']
+// Type = treatment (Trading/Consumable/Asset), Category = PurchaseItem.type, Sub-Category = .category.
+const CSV_HEADERS = ['SKU', 'Name', 'Type', 'Category', 'Sub-Category', 'Base Unit', 'Purchase Unit', 'Conversion', 'Standard Cost', 'Selling Price', 'Valuation Method', 'Min Stock', 'Reorder Qty', 'Stock', 'Location']
 
 function buildCSV(rows: string[][]): string {
   return rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n')
@@ -84,6 +85,7 @@ export default function ItemsPage() {
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState<'All' | PurchaseItemType>('All')
   const [catFilter, setCatFilter] = useState('All')
+  const [treatmentFilter, setTreatmentFilter] = useState<'All' | Treatment>('All')
   const [trackedFilter, setTrackedFilter] = useState<'stock' | 'non-stock'>('stock')
   const [page, setPage] = useState(0)
   const [pageSize, setPageSize] = useState(10)
@@ -277,7 +279,7 @@ export default function ItemsPage() {
       valuationMethod: item.valuationMethod,
       minStock: item.minStock,
       minStockUnit: item.minStockUnit === 'PURCHASE' ? 'PURCHASE' : 'BASE',
-      treatment: item.treatment ?? 'CONSUMABLE',
+      treatment: normalizeTreatment(item.treatment) ?? 'CONSUMABLE',
       reorderQty: item.reorderQty,
       imageKey: item.imageKey,
       isSoldInPos: item.isSoldInPos,
@@ -356,7 +358,7 @@ export default function ItemsPage() {
 
     const rows: string[][] = []
     for (const i of items) {
-      const base = [i.sku, i.name, i.type, i.category, i.baseUnit, i.purchaseUnit, String(i.conversionFactor), String(i.standardCost), String(i.sellingPrice), i.valuationMethod, String(i.minStock), String(i.reorderQty)]
+      const base = [i.sku, i.name, TREATMENT_LABEL[normalizeTreatment(i.treatment) ?? 'CONSUMABLE'], typeLabelByCode[i.type] ?? i.type, i.category, i.baseUnit, i.purchaseUnit, String(i.conversionFactor), String(i.standardCost), String(i.sellingPrice), i.valuationMethod, String(i.minStock), String(i.reorderQty)]
       const stockRows = byItem.get(i.id) ?? []
       if (stockRows.length === 0) {
         rows.push([...base, '0', ''])
@@ -368,7 +370,7 @@ export default function ItemsPage() {
   }
 
   function downloadTemplate() {
-    const sample = ['FOOD-001', 'Premium Rice', 'FOOD', 'Dry Food', 'kg', 'sack', '25', '22000', '0', 'FIFO', '12', '50', '100', 'Bajo Central Gudang']
+    const sample = ['CH 01', 'Billiecart Salmon Brut', 'Trading', 'Beverage', 'Champagne', 'kg', 'sack', '25', '22000', '0', 'FIFO', '12', '50', '100', 'Bajo Central Gudang']
     downloadFile(buildCSV([CSV_HEADERS, sample]), 'template-item-master.csv')
   }
 
@@ -391,12 +393,13 @@ export default function ItemsPage() {
   const filtered = items.filter(i => {
     const matchTracked = trackedFilter === 'stock' ? i.isStockTracked : !i.isStockTracked
     const matchType = typeFilter === 'All' || i.type === typeFilter
+    const matchTreatment = treatmentFilter === 'All' || (normalizeTreatment(i.treatment) ?? 'CONSUMABLE') === treatmentFilter
     const matchCat = catFilter === 'All' || i.category === catFilter
     const matchSearch = !search || i.name.toLowerCase().includes(search.toLowerCase()) || i.sku.toLowerCase().includes(search.toLowerCase())
-    return matchTracked && matchType && matchCat && matchSearch
+    return matchTracked && matchType && matchTreatment && matchCat && matchSearch
   })
 
-  useEffect(() => { setPage(0) }, [search, typeFilter, catFilter, trackedFilter])
+  useEffect(() => { setPage(0) }, [search, typeFilter, treatmentFilter, catFilter, trackedFilter])
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize))
   const safePage = Math.min(page, totalPages - 1)
@@ -470,9 +473,24 @@ export default function ItemsPage() {
 
         <div className="h-6 w-px bg-border hidden sm:block" />
 
-        {/* Type tabs */}
+        {/* Type (Trading/Consumable/Asset) */}
         <div className="flex items-center gap-2">
           <span className="text-xs font-medium text-muted-foreground shrink-0">Type</span>
+          <div className="flex gap-1 bg-muted rounded-md p-1">
+            {(['All', ...TREATMENTS.map(t => t.value)] as const).map(v => (
+              <button key={v} onClick={() => setTreatmentFilter(v)}
+                className={`px-2.5 py-1 rounded text-xs font-medium transition-colors whitespace-nowrap ${treatmentFilter === v ? 'bg-card shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
+                {v === 'All' ? 'All' : TREATMENT_LABEL[v]}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="h-6 w-px bg-border hidden sm:block" />
+
+        {/* Category tabs (PurchaseItem.type) */}
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-medium text-muted-foreground shrink-0">Category</span>
           <div className="flex gap-1 bg-muted rounded-md p-1">
             <button
               onClick={() => { setTypeFilter('All'); setCatFilter('All') }}
@@ -495,18 +513,18 @@ export default function ItemsPage() {
           </div>
         </div>
 
-        {/* Category — scoped to selected type */}
+        {/* Sub-Category — scoped to the selected Category (PurchaseItem.type) */}
         {typeFilter !== 'All' && (
           <>
             <div className="h-6 w-px bg-border hidden sm:block" />
             <div className="flex items-center gap-2">
-              <span className="text-xs font-medium text-muted-foreground shrink-0">Category</span>
+              <span className="text-xs font-medium text-muted-foreground shrink-0">Sub-Category</span>
               <Select value={catFilter} onValueChange={setCatFilter}>
                 <SelectTrigger className="h-9 w-44 text-sm">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="All">All Categories</SelectItem>
+                  <SelectItem value="All">All Sub-Categories</SelectItem>
                   {(categoriesByType[typeFilter] ?? []).map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                 </SelectContent>
               </Select>
@@ -514,9 +532,9 @@ export default function ItemsPage() {
           </>
         )}
 
-        {(search || typeFilter !== 'All') && (
+        {(search || typeFilter !== 'All' || treatmentFilter !== 'All') && (
           <button
-            onClick={() => { setSearch(''); setTypeFilter('All'); setCatFilter('All') }}
+            onClick={() => { setSearch(''); setTypeFilter('All'); setTreatmentFilter('All'); setCatFilter('All') }}
             className="text-xs text-muted-foreground hover:text-foreground transition-colors ml-auto"
           >
             Reset
@@ -574,6 +592,7 @@ export default function ItemsPage() {
                       <div className="min-w-0">
                         <p className="font-medium truncate">{item.name}</p>
                         <div className="flex items-center gap-1">
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full border text-foreground/80">{TREATMENT_LABEL[normalizeTreatment(item.treatment) ?? 'CONSUMABLE']}</span>
                           <span className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full bg-warning/10 text-warning">
                             {(() => { const Icon = getTypeIcon(item.type); return <Icon className="h-2.5 w-2.5" /> })()} {typeLabelByCode[item.type] ?? item.type}
                           </span>

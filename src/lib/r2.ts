@@ -5,7 +5,19 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 // storage, zero egress fees). One shared client/bucket for every upload feature
 // in the app (media kit, WhatsApp chat, campaign images).
 const BUCKET = process.env.R2_BUCKET_NAME!
-const PUBLIC_URL = (process.env.R2_PUBLIC_URL ?? '').replace(/\/$/, '')
+// Our own host for the bucket (Cloudflare Worker, cloudflare/r2-files-worker.js).
+const FILES_HOST = 'https://files.samarayachting.com'
+// Guard: *.r2.dev is DNS-blocked by Indonesian ISPs, so a stale R2_PUBLIC_URL on a server
+// (happened 2026-11-10 → every new upload stored a broken link) must never leak into
+// stored URLs again — same bucket, same keys, just served from our domain instead.
+const PUBLIC_URL = (() => {
+  const raw = (process.env.R2_PUBLIC_URL ?? '').replace(/\/$/, '')
+  if (/^https:\/\/pub-[a-f0-9]+\.r2\.dev$/.test(raw)) {
+    console.warn(`[r2] R2_PUBLIC_URL is the ISP-blocked r2.dev host — using ${FILES_HOST}. Fix the server .env.`)
+    return FILES_HOST
+  }
+  return raw
+})()
 
 function client() {
   return new S3Client({

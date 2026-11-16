@@ -107,7 +107,7 @@ export async function POST(req: NextRequest) {
       valuationMethod: valuationMethod || 'FIFO',
       minStock: Number(minStock) || 0,
       minStockUnit: minStockUnit === 'PURCHASE' ? 'PURCHASE' : 'BASE',
-      treatment: ['CONSUMABLE', 'ASSET', 'SPARE_PART'].includes(treatment) ? treatment : defaultTreatmentForType(type),
+      treatment: ['TRADING', 'CONSUMABLE', 'ASSET'].includes(treatment) ? treatment : defaultTreatmentForType(type),
       reorderQty: Number(reorderQty) || 0,
       imageKey: imageKey || null,
       isSoldInPos: isSoldInPos !== undefined ? Boolean(isSoldInPos) : true,

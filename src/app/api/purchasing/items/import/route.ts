@@ -4,7 +4,7 @@ import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 
 import { roleMatches } from '@/lib/role-utils'
-import { defaultTreatmentForType } from '@/lib/purchasing/treatment'
+import { defaultTreatmentForType, normalizeTreatment } from '@/lib/purchasing/treatment'
 
 const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN']
 
@@ -59,8 +59,14 @@ export async function POST(req: NextRequest) {
   const headers = rows[0]
   const iSKU      = col(headers, 'SKU', 'sku')
   const iName     = col(headers, 'Nama', 'name', 'nama barang')
-  const iType     = col(headers, 'Tipe', 'type', 'jenis')
-  const iCat      = col(headers, 'Kategori', 'category')
+  // Two layouts: new (Type = Trading/Consumable/Asset, Category = Beverage/Food…, Sub-Category =
+  // Champagne…) and legacy (Type = Beverage/Food…, Category = Champagne…). A Sub-Category column
+  // means the new one. DB: Category → PurchaseItem.type, Sub-Category → .category, Type → .treatment.
+  const iSubCat   = col(headers, 'Sub-Category', 'Sub Category', 'Subcategory', 'Sub Kategori')
+  const newLayout = iSubCat >= 0
+  const iTreat    = newLayout ? col(headers, 'Type', 'Tipe', 'jenis') : -1
+  const iType     = newLayout ? col(headers, 'Category', 'Kategori') : col(headers, 'Tipe', 'type', 'jenis')
+  const iCat      = newLayout ? iSubCat : col(headers, 'Kategori', 'category')
   const iBase     = col(headers, 'Satuan Dasar', 'baseUnit', 'satuan dasar')
   const iPurch    = col(headers, 'Satuan Beli', 'purchaseUnit', 'satuan beli')
   const iConv     = col(headers, 'Konversi', 'conversionFactor', 'konversi')
@@ -77,8 +83,10 @@ export async function POST(req: NextRequest) {
   const locations = await db.stockLocation.findMany({ where: { isActive: true }, select: { id: true, name: true } })
   const locationByName = new Map(locations.map(l => [l.name.trim().toLowerCase(), l.id]))
 
-  const activeTypes = await db.purchaseItemTypeConfig.findMany({ where: { isActive: true }, select: { code: true } })
+  const activeTypes = await db.purchaseItemTypeConfig.findMany({ where: { isActive: true }, select: { code: true, label: true } })
   const activeTypeCodes = new Set(activeTypes.map(t => t.code))
+  // Category cells may hold the code (BEVERAGE) or the label (Beverage).
+  const typeCodeByLabel = new Map(activeTypes.map(t => [t.label.trim().toUpperCase(), t.code]))
 
   const userId = session.user.id
 
@@ -132,7 +140,9 @@ export async function POST(req: NextRequest) {
     }
 
     const typeRaw        = ((iType >= 0   ? row[iType]   : '') || '').trim().toUpperCase()
-    const type           = activeTypeCodes.has(typeRaw) ? typeRaw : 'MAINTENANCE'
+    const type           = activeTypeCodes.has(typeRaw) ? typeRaw : (typeCodeByLabel.get(typeRaw) ?? 'MAINTENANCE')
+    // Type column (new layout only): Trading/Consumable/Asset; blank/unknown → the category's default.
+    const treatmentCell  = normalizeTreatment(((iTreat >= 0 ? row[iTreat] : '') || '').trim().toUpperCase())
     const category       = (iCat >= 0     ? row[iCat]    : '') || 'Other'
     const baseUnit       = (iBase >= 0    ? row[iBase]   : '') || 'pcs'
     const purchaseUnit   = (iPurch >= 0   ? row[iPurch]  : '') || baseUnit
@@ -150,7 +160,7 @@ export async function POST(req: NextRequest) {
       if (existing) {
         await db.purchaseItem.update({
           where: { sku },
-          data: { name, type, category, baseUnit, purchaseUnit, conversionFactor, standardCost, minStock, reorderQty, updatedAt: new Date() },
+          data: { name, type, category, baseUnit, purchaseUnit, conversionFactor, standardCost, minStock, reorderQty, ...(treatmentCell && { treatment: treatmentCell }), updatedAt: new Date() },
         })
         updated++
 
@@ -160,7 +170,7 @@ export async function POST(req: NextRequest) {
         }
       } else {
         const item = await db.purchaseItem.create({
-          data: { id: crypto.randomUUID(), sku, name, type, category, baseUnit, purchaseUnit, conversionFactor, standardCost, minStock, reorderQty, treatment: defaultTreatmentForType(type), updatedAt: new Date() },
+          data: { id: crypto.randomUUID(), sku, name, type, category, baseUnit, purchaseUnit, conversionFactor, standardCost, minStock, reorderQty, treatment: treatmentCell ?? defaultTreatmentForType(type), updatedAt: new Date() },
         })
         imported++
 

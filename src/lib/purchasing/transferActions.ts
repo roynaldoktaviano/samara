@@ -235,7 +235,7 @@ export async function receiveTransferLeg(db: Db, transferId: string, params: {
             ...(it.itemId ? { itemId: it.itemId } : { itemName: it.itemName }),
             unitCost: incomingCost,
             totalCost: qty * incomingCost * (usage?.sign ?? 1),
-            // CONSUMABLE → trip usage, SPARE_PART → ship maintenance, ASSET → none (equipment).
+            // TRADING/CONSUMABLE → trip usage, ASSET → none (equipment). Legacy SPARE_PART = CONSUMABLE.
             ...(usage && usageTypeForTreatment(effectiveTreatment(null, it.itemId ? treatmentMap.get(it.itemId) : null)) && {
               usageType: usageTypeForTreatment(effectiveTreatment(null, it.itemId ? treatmentMap.get(it.itemId) : null))!,
               yachtId: usage.yachtId,

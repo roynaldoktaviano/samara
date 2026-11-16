@@ -13,6 +13,7 @@ import { Loader2, Search, MessageCircle, Instagram, Facebook, Mail, Plus, Clock,
 import { cn } from '@/lib/utils'
 import { formatDate } from '@/lib/format'
 import type { ChatChannel, ChatPlatform, InboxView, UnifiedInboxItem } from '@/app/api/chat/inbox/route'
+import type { InboxUnreadCounts } from '@/app/api/chat/inbox/unread/route'
 import { WHATSAPP_BRANDS, WHATSAPP_BRAND_LABELS, type WhatsappBrand } from '@/lib/whatsapp-brands'
 import { missingTemplateParams, renderWhatsappTemplateBody } from '@/lib/whatsapp-templates'
 import { useWhatsappTemplates, templateKey } from '@/components/whatsapp/useWhatsappTemplates'
@@ -37,11 +38,13 @@ const PLATFORM_FILTERS: { value: ChatPlatform; label: string; icon: typeof Messa
   { value: 'messenger', label: 'Messenger',     icon: Facebook,      color: '#0866FF' },
 ]
 
+// Time of the chat's LAST message — "06:53" today, else "15 Nov, 06:53" so it's clearly the
+// latest activity rather than a day the chat started.
 function timeLabel(iso: string) {
   const d = new Date(iso)
   const now = new Date()
   const sameDay = d.toDateString() === now.toDateString()
-  return sameDay ? formatDate(d, 'time') : formatDate(d, 'short')
+  return sameDay ? formatDate(d, 'time') : formatDate(d, 'datetimeShort')
 }
 
 // "Waiting 12m" on a chat whose customer hasn't been answered yet — amber, then red once it's
@@ -59,6 +62,16 @@ const BRAND_TAB_ICON: Record<WhatsappBrand, typeof MessageCircle> = {
 const VIEW_LABELS: Record<InboxView, string> = { all: 'All', unread: 'Unread', waiting: 'Needs reply' }
 // "Needs reply" relies on reply timestamps only WhatsApp tracks — hidden for Instagram/Messenger-only views.
 const waitingSupported = (p: ChatPlatform) => p === 'whatsapp'
+
+// Red unread pill pinned to a chip/tab corner — shows where the sidebar's unread count lives.
+function UnreadDot({ count, className }: { count: number; className?: string }) {
+  if (count <= 0) return null
+  return (
+    <span aria-label={`${count} unread`} className={cn('pointer-events-none absolute -top-1.5 -right-1.5 min-w-4 h-4 px-1 rounded-full bg-destructive text-white text-[10px] font-semibold leading-4 text-center ring-2 ring-card', className)}>
+      {count > 99 ? '99+' : count}
+    </span>
+  )
+}
 
 function initials(name: string) {
   return name.trim().split(/\s+/).slice(0, 2).map(w => w[0]?.toUpperCase() ?? '').join('') || '?'
@@ -96,6 +109,7 @@ export default function UnifiedInbox({ onOpenEmail, onOpenBooking, initialWhatsa
   const [platformFilter, setPlatformFilter] = useState<ChatPlatform>('whatsapp')
   const [salesFilter, setSalesFilter] = useState('all')
   const [salesUsers, setSalesUsers] = useState<SalesUser[]>([])
+  const [unread, setUnread] = useState<InboxUnreadCounts | null>(null)
   const [selected, setSelected] = useState<{ channel: 'whatsapp' | 'instagram'; id: string } | null>(
     initialWhatsappId ? { channel: 'whatsapp', id: initialWhatsappId } : initialInstagramId ? { channel: 'instagram', id: initialInstagramId } : null,
   )
@@ -124,6 +138,8 @@ export default function UnifiedInbox({ onOpenEmail, onOpenBooking, initialWhatsa
     params.set('platform', platformFilter)
     if (salesFilter !== 'all') params.set('assignee', salesFilter)
     if (view !== 'all') params.set('view', view)
+    // Badge counts ride along on every refresh (same realtime/poll triggers as the list).
+    fetch('/api/chat/inbox/unread').then(r => r.ok ? r.json() : null).then(c => { if (c) setUnread(c) }).catch(() => {})
     try {
       const res = await fetch(`/api/chat/inbox?${params}`)
       if (res.ok && seq === requestSeq.current) setItems(await res.json())
@@ -187,7 +203,17 @@ export default function UnifiedInbox({ onOpenEmail, onOpenBooking, initialWhatsa
   function openItem(item: UnifiedInboxItem) {
     if (item.channel === 'email') { onOpenEmail(item.id); return }
     select({ channel: item.channel, id: item.id })
-    if (item.unreadCount > 0) setItems(prev => prev.map(p => p.id === item.id && p.channel === item.channel ? { ...p, unreadCount: 0 } : p))
+    if (item.unreadCount > 0) {
+      setItems(prev => prev.map(p => p.id === item.id && p.channel === item.channel ? { ...p, unreadCount: 0 } : p))
+      // Optimistically clear this chat from the badges too; the next refresh confirms it.
+      const platform: ChatPlatform = item.channel === 'whatsapp' ? 'whatsapp' : item.metaPlatform === 'MESSENGER' ? 'messenger' : 'instagram'
+      setUnread(prev => {
+        if (!prev) return prev
+        const p = prev[platform]
+        const byBrand = item.brand ? { ...p.byBrand, [item.brand]: Math.max(0, p.byBrand[item.brand] - item.unreadCount) } : p.byBrand
+        return { ...prev, [platform]: { total: Math.max(0, p.total - item.unreadCount), byBrand } }
+      })
+    }
   }
 
   async function startChat(payload: NewChatPayload) {
@@ -220,10 +246,11 @@ export default function UnifiedInbox({ onOpenEmail, onOpenBooking, initialWhatsa
                 return (
                   <button key={p.value} type="button" aria-pressed={active} onClick={() => { setHistoryMode(false); setPlatformFilter(p.value); if (!waitingSupported(p.value) && view === 'waiting') setView('all') }}
                     title={p.label} aria-label={p.label}
-                    className={cn('h-7 inline-flex items-center gap-1 rounded-full border px-2 text-[11px] font-medium transition-colors',
+                    className={cn('relative h-7 inline-flex items-center gap-1 rounded-full border px-2 text-[11px] font-medium transition-colors',
                       active ? 'border-foreground bg-foreground text-background' : 'text-muted-foreground hover:bg-muted')}>
                     <Icon className="h-3.5 w-3.5" style={!active && p.color ? { color: p.color } : undefined} />
                     {active && <span>{p.label}</span>}
+                    <UnreadDot count={unread?.[p.value].total ?? 0} />
                   </button>
                 )
               })}
@@ -255,7 +282,10 @@ export default function UnifiedInbox({ onOpenEmail, onOpenBooking, initialWhatsa
           <Tabs value={brandFilter} onValueChange={v => setBrandFilter(v as WhatsappBrand)}>
             <TabsList className="w-full">
               {WHATSAPP_BRANDS.map(b => (
-                <TabsTrigger key={b} value={b} className="text-xs">{WHATSAPP_BRAND_LABELS[b]}</TabsTrigger>
+                <TabsTrigger key={b} value={b} className="relative text-xs overflow-visible">
+                  {WHATSAPP_BRAND_LABELS[b]}
+                  <UnreadDot count={unread?.[platformFilter].byBrand[b] ?? 0} className="-top-1 -right-1" />
+                </TabsTrigger>
               ))}
             </TabsList>
           </Tabs>
@@ -384,8 +414,9 @@ export default function UnifiedInbox({ onOpenEmail, onOpenBooking, initialWhatsa
             const active = brandFilter === b
             return (
               <button key={b} type="button" aria-pressed={active} onClick={() => setBrandFilter(b)} className="flex flex-col items-center gap-1">
-                <span className={cn('h-8 w-14 rounded-full flex items-center justify-center transition-colors', active ? 'bg-[#d9fdd3] text-[#0a6b3c] dark:bg-[#1fa855]/20 dark:text-[#25D366]' : 'text-muted-foreground')}>
+                <span className={cn('relative h-8 w-14 rounded-full flex items-center justify-center transition-colors', active ? 'bg-[#d9fdd3] text-[#0a6b3c] dark:bg-[#1fa855]/20 dark:text-[#25D366]' : 'text-muted-foreground')}>
                   <Icon className="h-5 w-5" />
+                  <UnreadDot count={unread?.[platformFilter].byBrand[b] ?? 0} className="-top-1 -right-0.5" />
                 </span>
                 <span className={cn('text-xs', active ? 'font-semibold text-foreground' : 'text-muted-foreground')}>
                   {WHATSAPP_BRAND_LABELS[b]}

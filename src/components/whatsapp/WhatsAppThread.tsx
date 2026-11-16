@@ -604,7 +604,7 @@ export default function WhatsAppThread({ conversationId, onConversationUpdate, s
                       {m.body && <p className="whitespace-pre-wrap break-words">{m.body}</p>}
                       <div className={`flex items-center gap-1 mt-1 justify-end ${m.direction === 'OUT' ? 'text-white/70' : 'text-muted-foreground'}`}>
                         {m.direction === 'OUT' && m.sentByName && isAdmin && <span className="text-[10px] mr-1">{m.sentByName}</span>}
-                        <span className="text-[10px]">{formatDate(m.createdAt, 'time')}</span>
+                        <span className="text-[10px] tabular-nums">{formatDate(m.createdAt, 'datetime')}</span>
                         {m.direction === 'OUT' && <StatusIcon status={m.status} />}
                       </div>
                       {m.direction === 'OUT' && failed && (m.errorMessage || canRetry) && (

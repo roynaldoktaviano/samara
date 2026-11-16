@@ -15,13 +15,14 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Skeleton } from '@/components/ui/skeleton'
-import { UserPlus, Plus, Edit, MessageCircle, Send, Search, Mail, Phone, ChevronRight, ChevronLeft, Trash2, X, Globe, RotateCw, Download, ArrowUp, ArrowDown, Target, AlertTriangle, Loader2, Ship, AtSign, Instagram, Facebook, Archive } from 'lucide-react'
+import { UserPlus, Plus, Edit, MessageCircle, Send, Search, Mail, Phone, ChevronRight, ChevronLeft, Trash2, X, Globe, RotateCw, Download, ArrowUp, ArrowDown, Target, AlertTriangle, Loader2, Ship, AtSign, Instagram, Facebook, MessagesSquare, HelpCircle } from 'lucide-react'
 import LeadEditSheet from '@/components/leads/LeadEditSheet'
 import LostReasonDialog from '@/components/leads/LostReasonDialog'
 import { isHttpUrl } from '@/lib/url-safety'
 import { WebsiteJourney } from '@/components/shared/WebsiteJourney'
 import { LEAD_ORIGINS, LEAD_ORIGIN_LABEL, LEAD_ORIGIN_COLOR, INQUIRY_FORM_LABEL, classifyLeadOrigin, formPageLabel, type LeadOrigin } from '@/lib/lead-origin'
 import FreshsalesImportModal from '@/components/shared/FreshsalesImportModal'
+import { LEAD_ENTRY_SOURCES, LEAD_ENTRY_SOURCE_LABEL, type LeadEntrySource } from '@/lib/lead-entry-source'
 import { LEAD_STAGES, LEAD_STAGE_LABEL, LEAD_STAGE_COLOR, type LeadStage } from '@/lib/lead-pipeline'
 import { toast } from 'sonner'
 import { NewChatForm, type NewChatPayload } from '@/components/chat/UnifiedInbox'
@@ -59,23 +60,24 @@ interface Lead {
   // Only on the WhatsApp / Instagram tabs: the latest chat thread.
   whatsappConversations?: ChatThreadSummary[]
   instagramConversations?: ChatThreadSummary[]
-  // Where the lead first came in from (see resolveEntryChannels in /api/leads).
-  entryChannel?: LeadEntryChannel | null
+  // Where the lead first came in from (src/lib/lead-entry-source.ts).
+  entrySource?: LeadEntrySource | null
   // Detail only (GET /api/leads/[id]): deal name (src/lib/deal-name.ts) + the guest it became.
   dealName?: string
   guestId?: string | null
   bookingId?: string | null
 }
 
-type LeadEntryChannel = 'WHATSAPP' | 'INSTAGRAM' | 'MESSENGER' | 'WEBSITE' | 'INSTANT_FORM' | 'FRESHSALES'
-// Entry channel shown as one small coloured icon in front of the contact details (label on hover).
-const ENTRY_CHANNEL_BADGE: Record<LeadEntryChannel, { label: string; icon: typeof Globe; className: string }> = {
-  WHATSAPP:     { label: 'WhatsApp',     icon: MessageCircle, className: 'bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300' },
-  INSTAGRAM:    { label: 'Instagram',    icon: Instagram,     className: 'bg-pink-100 text-pink-700 dark:bg-pink-950 dark:text-pink-300' },
-  MESSENGER:    { label: 'Messenger',    icon: Facebook,      className: 'bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-300' },
-  WEBSITE:      { label: 'Website Form', icon: Globe,         className: 'bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-300' },
-  INSTANT_FORM: { label: 'Instant Form', icon: Target,        className: 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300' },
-  FRESHSALES:   { label: 'Freshsales',   icon: Archive,       className: 'bg-muted text-muted-foreground' },
+// Entry source shown as one small coloured icon in front of the contact details (label on hover).
+const ENTRY_SOURCE_BADGE: Record<LeadEntrySource, { icon: typeof Globe; className: string }> = {
+  WEBSITE_FORM: { icon: Globe,           className: 'bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-300' },
+  INSTANT_FORM: { icon: Target,          className: 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300' },
+  WHATSAPP:     { icon: MessageCircle,   className: 'bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300' },
+  INSTAGRAM:    { icon: Instagram,       className: 'bg-pink-100 text-pink-700 dark:bg-pink-950 dark:text-pink-300' },
+  MESSENGER:    { icon: Facebook,        className: 'bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-300' },
+  LIVE_CHAT:    { icon: MessagesSquare,  className: 'bg-teal-100 text-teal-700 dark:bg-teal-950 dark:text-teal-300' },
+  EMAIL:        { icon: Mail,            className: 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300' },
+  OTHER:        { icon: HelpCircle,      className: 'bg-muted text-muted-foreground' },
 }
 
 interface ChatThreadSummary {
@@ -95,16 +97,14 @@ interface MetaInquiry {
   guestCount?: number | null
 }
 
-type LeadChannel = 'all' | 'form' | 'meta' | 'whatsapp' | 'instagram'
+// One tab per entry source — every lead sits in exactly one (where it first came in from).
+type LeadChannel = 'all' | LeadEntrySource
 const CHANNEL_TABS: { value: LeadChannel; label: string; title: string }[] = [
-  { value: 'all',       label: 'All Leads',    title: 'All Leads' },
-  { value: 'form',      label: 'Website Form', title: 'Website Form Leads' },
-  { value: 'meta',      label: 'Instant Form', title: 'Instant Form Leads' },
-  { value: 'whatsapp',  label: 'WhatsApp',     title: 'WhatsApp Leads' },
-  { value: 'instagram', label: 'Instagram',    title: 'Instagram & Messenger Leads' },
+  { value: 'all', label: 'All Leads', title: 'All Leads' },
+  ...LEAD_ENTRY_SOURCES.map(src => ({ value: src, label: LEAD_ENTRY_SOURCE_LABEL[src], title: `${LEAD_ENTRY_SOURCE_LABEL[src]} Leads` })),
 ]
 // Tabs listing leads that came in by chat — filtered by brand instead of website/origin/source.
-const isChatChannel = (c: LeadChannel) => c === 'whatsapp' || c === 'instagram'
+const isChatChannel = (c: LeadChannel) => c === 'WHATSAPP' || c === 'INSTAGRAM' || c === 'MESSENGER'
 
 
 // One chat contact — see src/lib/lead-contact.ts.
@@ -202,6 +202,7 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail, onOpenBooking, onOp
 
   const [leads, setLeads] = useState<Lead[]>([])
   const [totalLeads, setTotalLeads] = useState(0)
+  const [sourceCounts, setSourceCounts] = useState<Record<string, number>>({})
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -274,11 +275,11 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail, onOpenBooking, onOp
       } else {
         if (websiteFilter !== 'all') params.set('website', websiteFilter)
         if (sourceFilter !== 'all') params.set('source', sourceFilter)
-        if (originFilter !== 'all' && channel !== 'meta') params.set('origin', originFilter)
+        if (originFilter !== 'all' && channel !== 'INSTANT_FORM') params.set('origin', originFilter)
       }
       if (stageFilter !== 'all') params.set('stage', stageFilter)
       if (channel !== 'all') params.set('channel', channel)
-      if (channel === 'meta') {
+      if (channel === 'INSTANT_FORM') {
         if (dateFrom) params.set('dateFrom', dateFrom)
         if (dateTo) params.set('dateTo', dateTo)
         if (campaignFilter !== 'all') params.set('campaign', campaignFilter)
@@ -288,6 +289,7 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail, onOpenBooking, onOp
       if (res.ok) {
         setLeads(await res.json())
         setTotalLeads(Number(res.headers.get('X-Total-Count')) || 0)
+        try { setSourceCounts(JSON.parse(res.headers.get('X-Source-Counts') || '{}')) } catch { setSourceCounts({}) }
       }
     } finally {
       setLoading(false)
@@ -482,6 +484,9 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail, onOpenBooking, onOp
             className={`px-4 py-2 text-sm font-medium whitespace-nowrap border-b-2 -mb-px transition-colors ${channel === t.value ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
           >
             {t.label}
+            <span className="ml-1.5 text-xs tabular-nums text-muted-foreground">
+              {(t.value === 'all' ? Object.values(sourceCounts).reduce((a, b) => a + b, 0) : sourceCounts[t.value] ?? 0).toLocaleString()}
+            </span>
           </button>
         ))}
       </div>
@@ -503,7 +508,7 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail, onOpenBooking, onOp
             />
             {search && <button onClick={() => setSearch('')}><X className="h-4 w-4 text-muted-foreground" /></button>}
 
-            {channel === 'meta' ? <>
+            {channel === 'INSTANT_FORM' ? <>
               <Input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className={`w-[150px] ${dateFrom ? 'border-primary text-primary font-medium' : ''}`} title="Lead date from" />
               <span className="text-muted-foreground text-xs">–</span>
               <Input type="date" value={dateTo} min={dateFrom || undefined} onChange={e => setDateTo(e.target.value)} className={`w-[150px] ${dateTo ? 'border-primary text-primary font-medium' : ''}`} title="Lead date to" />
@@ -565,7 +570,7 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail, onOpenBooking, onOp
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Origins</SelectItem>
-                {LEAD_ORIGINS.filter(o => channel !== 'form' || o !== 'META_LEAD_AD').map(o => <SelectItem key={o} value={o}>{LEAD_ORIGIN_LABEL[o]}</SelectItem>)}
+                {LEAD_ORIGINS.filter(o => channel !== 'WEBSITE_FORM' || o !== 'META_LEAD_AD').map(o => <SelectItem key={o} value={o}>{LEAD_ORIGIN_LABEL[o]}</SelectItem>)}
               </SelectContent>
             </Select>
 
@@ -627,7 +632,7 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail, onOpenBooking, onOp
                   <TableHead>Name</TableHead>
                   <TableHead>Stage</TableHead>
                   <TableHead>Sales</TableHead>
-                  {channel === 'meta' && <>
+                  {channel === 'INSTANT_FORM' && <>
                     <TableHead>Yacht</TableHead>
                     <TableHead>Campaign</TableHead>
                     <TableHead>Trip</TableHead>
@@ -664,7 +669,7 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail, onOpenBooking, onOp
                       </TableCell>
                       <TableCell><Skeleton className="h-4 w-20 rounded-full" /></TableCell>
                       <TableCell><Skeleton className="h-3 w-16" /></TableCell>
-                      {channel === 'meta' && <>
+                      {channel === 'INSTANT_FORM' && <>
                         <TableCell><Skeleton className="h-3 w-16" /></TableCell>
                         <TableCell><Skeleton className="h-3 w-32" /></TableCell>
                         <TableCell><Skeleton className="h-3 w-20" /></TableCell>
@@ -682,7 +687,7 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail, onOpenBooking, onOp
                   ))
                 ) : leads.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={(isAdmin ? 9 : 8) + (channel === 'meta' ? 3 : isChatChannel(channel) ? 2 : 0)} className="py-12 text-center text-muted-foreground">No leads found</TableCell>
+                    <TableCell colSpan={(isAdmin ? 9 : 8) + (channel === 'INSTANT_FORM' ? 3 : isChatChannel(channel) ? 2 : 0)} className="py-12 text-center text-muted-foreground">No leads found</TableCell>
                   </TableRow>
                 ) : leads.map(l => (
                   <TableRow
@@ -713,7 +718,7 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail, onOpenBooking, onOp
                     <TableCell>
                       {l.owner ? <span className="text-xs whitespace-nowrap">{l.owner.name}</span> : <span className="text-muted-foreground text-xs">—</span>}
                     </TableCell>
-                    {channel === 'meta' && (() => {
+                    {channel === 'INSTANT_FORM' && (() => {
                       const mi = l.inquiries?.[0]
                       return <>
                         <TableCell>
@@ -730,7 +735,7 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail, onOpenBooking, onOp
                       </>
                     })()}
                     {isChatChannel(channel) && (() => {
-                      const chat = (channel === 'whatsapp' ? l.whatsappConversations : l.instagramConversations)?.[0]
+                      const chat = (channel === 'WHATSAPP' ? l.whatsappConversations : l.instagramConversations)?.[0]
                       return <>
                         <TableCell>
                           {chat?.brand ? <Badge variant="outline" className="whitespace-nowrap">{WHATSAPP_BRAND_LABELS[chat.brand]}</Badge> : <span className="text-muted-foreground text-xs">—</span>}
@@ -744,10 +749,11 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail, onOpenBooking, onOp
                     })()}
                     <TableCell>
                       <div className="flex items-start gap-2 max-w-[260px]">
-                        {l.entryChannel && (() => {
-                          const ch = ENTRY_CHANNEL_BADGE[l.entryChannel]
+                        {l.entrySource && (() => {
+                          const ch = ENTRY_SOURCE_BADGE[l.entrySource]
+                          const label = LEAD_ENTRY_SOURCE_LABEL[l.entrySource]
                           return (
-                            <span title={`Came in via ${ch.label}`} aria-label={`Came in via ${ch.label}`}
+                            <span title={`Came in via ${label}`} aria-label={`Came in via ${label}`}
                               className={`mt-0.5 h-5 w-5 shrink-0 rounded-full flex items-center justify-center ${ch.className}`}>
                               <ch.icon className="h-3 w-3" />
                             </span>
@@ -757,7 +763,7 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail, onOpenBooking, onOp
                           {l.email && <p className="flex items-center gap-1.5 truncate"><Mail className="h-3 w-3 shrink-0" /><span className="truncate text-foreground">{l.email}</span></p>}
                           {l.phone && <p className="flex items-center gap-1.5 truncate"><Phone className="h-3 w-3 shrink-0" /><span className="truncate text-foreground">{l.phone}</span></p>}
                           {l.instagram && <p className="flex items-center gap-1.5 truncate"><AtSign className="h-3 w-3 shrink-0" /><span className="truncate text-foreground">{l.instagram}</span></p>}
-                          {!l.email && !l.phone && !l.instagram && <p>{l.entryChannel ? ENTRY_CHANNEL_BADGE[l.entryChannel].label : '—'}</p>}
+                          {!l.email && !l.phone && !l.instagram && <p>{l.entrySource ? LEAD_ENTRY_SOURCE_LABEL[l.entrySource] : '—'}</p>}
                         </div>
                       </div>
                     </TableCell>
