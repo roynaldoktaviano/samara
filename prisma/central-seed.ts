@@ -5,10 +5,14 @@ const db = new PrismaClient()
 
 async function main() {
   // Super admin
-  const hashed = await bcrypt.hash('superadmin123', 12)
+  // Password only used when the account is first created — never reset on re-seed.
+  // Change it afterwards with scripts/set-superadmin-password.ts.
+  const initialPassword = process.env.SUPERADMIN_INITIAL_PASSWORD
+  if (!initialPassword || initialPassword.length < 14) throw new Error('Set SUPERADMIN_INITIAL_PASSWORD (min 14 chars) to run the central seed')
+  const hashed = await bcrypt.hash(initialPassword, 12)
   const superAdmin = await db.centralUser.upsert({
     where: { email: 'superadmin@samarayachting.com' },
-    update: { password: hashed, isSuperAdmin: true, name: 'Super Admin', isActive: true },
+    update: { isSuperAdmin: true, name: 'Super Admin', isActive: true },
     create: { email: 'superadmin@samarayachting.com', password: hashed, name: 'Super Admin', isSuperAdmin: true },
   })
   console.log('✅ Super admin:', superAdmin.email)

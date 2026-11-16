@@ -4,7 +4,8 @@ import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { roleMatches } from '@/lib/role-utils'
 
-const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE']
+// WAREHOUSE removed 2026-11-16 at Roy's request — Usage Stats is not part of the warehouse role.
+const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN']
 const DAY = 24 * 60 * 60 * 1000
 
 // Usage = stock issued from a warehouse to a ship, minus returns from a ship. History before the

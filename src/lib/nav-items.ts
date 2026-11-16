@@ -117,7 +117,7 @@ export const navigationItems: NavItem[] = [
   { id: 'purchasing-suppliers',     label: 'Suppliers',        icon: Building2,   roles: ['ADMIN', 'PURCHASING'], group: 'purchasing', feature: 'purchasing' },
   { id: 'purchasing-exceptions',   label: 'Exceptions',        icon: Bell,        roles: ['ADMIN', 'PURCHASING'], group: 'purchasing', feature: 'purchasing' },
   { id: 'purchasing-withdrawals',  label: 'Withdrawal Report', icon: TrendingDown, roles: ['ADMIN', 'PURCHASING'], group: 'purchasing', feature: 'purchasing' },
-  { id: 'purchasing-usage-stats',  label: 'Usage Stats',       icon: LineChart,   roles: ['ADMIN', 'PURCHASING', 'WAREHOUSE'], group: 'purchasing', feature: 'purchasing' },
+  { id: 'purchasing-usage-stats',  label: 'Usage Stats',       icon: LineChart,   roles: ['ADMIN', 'PURCHASING'], group: 'purchasing', feature: 'purchasing' },
   { id: 'purchasing-trip-usage',   label: 'Trip Usage',        icon: Ship,        roles: ['ADMIN', 'PURCHASING', 'WAREHOUSE', 'FINANCE'], group: 'purchasing', feature: 'purchasing' },
   { id: 'purchasing-reports',      label: 'Reports',           icon: TrendingUp,  roles: ['ADMIN', 'PURCHASING'], group: 'purchasing', feature: 'purchasing' },
   { id: 'inventory-items',  label: 'Items',              icon: Package, roles: ['ADMIN', 'PURCHASING', 'WAREHOUSE'], group: 'inventory', feature: 'purchasing' },
