@@ -6,16 +6,50 @@ import { StatusBadge } from '@/components/ui/status-badge'
 import { formatMoney } from '@/lib/format'
 
 interface Yacht { id: string; name: string }
-interface CatalogItem { id: string; sku: string; name: string; category: string; baseUnit: string; sellingPrice: number }
+interface CatalogItem { id: string; sku: string; name: string; category: string; baseUnit: string; avgPrice?: number; standardCost?: number }
 interface MenuRow {
   id: string; itemId: string; categoryId: string; yachtId: string | null; price: number; isActive: boolean; isOverride: boolean
-  item: { id: string; sku: string; name: string; baseUnit: string; sellingPrice: number }
+  // Current moving-average cost per base unit — one sale deducts one base unit.
+  unitCost: number
+  item: { id: string; sku: string; name: string; baseUnit: string }
   category: { id: string; name: string }
   yacht: { id: string; name: string } | null
 }
 interface Category { id: string; name: string; isActive: boolean }
 
 const inp = 'w-full h-9 border rounded-md px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring bg-card transition-colors'
+
+const catalogCost = (c: CatalogItem) => (c.avgPrice && c.avgPrice > 0 ? c.avgPrice : c.standardCost ?? 0)
+/** Gross margin % of the selling price. */
+const marginPct = (cost: number, price: number) => (price > 0 ? ((price - cost) / price) * 100 : null)
+const priceFromMargin = (cost: number, margin: number) => (margin >= 100 ? 0 : Math.round(cost / (1 - margin / 100)))
+const marginTone = (m: number) => (m >= 40 ? 'text-success' : m >= 20 ? 'text-warning' : 'text-destructive')
+
+/** Selling price + gross margin %, kept in sync both ways (margin only when the cost is known). */
+function PriceMarginFields({ cost, unit, price, setPrice }: { cost: number; unit: string; price: string; setPrice: (v: string) => void }) {
+  const m = marginPct(cost, Number(price))
+  return (
+    <>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1.5">
+          <label className="text-sm font-medium">Selling Price <span className="text-destructive">*</span> <span className="text-muted-foreground font-normal">/ {unit}</span></label>
+          <input className={inp} type="number" min="0" value={price} onChange={e => setPrice(e.target.value)} />
+        </div>
+        <div className="space-y-1.5">
+          <label className="text-sm font-medium">Gross Margin %</label>
+          <input className={inp} type="number" step="0.1" min="0" max="99.9" disabled={!cost}
+            placeholder={cost ? '0' : 'No cost yet'}
+            value={m != null && cost ? +m.toFixed(1) : ''}
+            onChange={e => setPrice(e.target.value === '' ? '' : String(priceFromMargin(cost, Number(e.target.value))))} />
+        </div>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Cost {cost ? <span className="font-medium text-foreground">{formatMoney(cost)}</span> : '—'} / {unit} (current average purchase cost).
+        {cost ? ' Price and margin update each other.' : ' Margin shows once the item has a purchase cost.'}
+      </p>
+    </>
+  )
+}
 
 export default function PosMenuPage() {
   const [yachts, setYachts] = useState<Yacht[]>([])
@@ -110,7 +144,7 @@ export default function PosMenuPage() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h2 className="text-2xl font-bold tracking-tight">POS Menu &amp; Pricing</h2>
-          <p className="text-muted-foreground text-sm mt-1">Products sold in the Cashier app, per yacht or Global (all yachts)</p>
+          <p className="text-muted-foreground text-sm mt-1">Selling prices of products sold in the Cashier app, per yacht or Global (all yachts). Each sale deducts 1 unit from the bar stock.</p>
         </div>
         <button onClick={openPicker} className="flex items-center gap-1.5 h-9 px-4 bg-primary hover:bg-primary-hover text-primary-foreground text-sm font-medium rounded-md transition-colors">
           <Plus className="h-3.5 w-3.5" /> Add Product
@@ -147,7 +181,9 @@ export default function PosMenuPage() {
               <th className="text-left px-4 py-3 font-medium">Product</th>
               <th className="text-left px-4 py-3 font-medium">POS Category</th>
               <th className="text-left px-4 py-3 font-medium">Scope</th>
-              <th className="text-right px-4 py-3 font-medium">Price</th>
+              <th className="text-right px-4 py-3 font-medium" title="Current average purchase cost per unit">Cost</th>
+              <th className="text-right px-4 py-3 font-medium">Selling Price</th>
+              <th className="text-right px-4 py-3 font-medium" title="(Price − Cost) ÷ Price">Gross Margin</th>
               <th className="text-center px-4 py-3 font-medium">Status</th>
               <th className="px-4 py-3" />
             </tr>
@@ -155,10 +191,10 @@ export default function PosMenuPage() {
           <tbody className="divide-y">
             {loading ? (
               [...Array(4)].map((_, i) => (
-                <tr key={i}><td className="px-4 py-3.5" colSpan={6}><div className="h-3.5 w-full rounded bg-muted animate-pulse" /></td></tr>
+                <tr key={i}><td className="px-4 py-3.5" colSpan={8}><div className="h-3.5 w-full rounded bg-muted animate-pulse" /></td></tr>
               ))
             ) : filteredRows.length === 0 ? (
-              <tr><td colSpan={6} className="text-center py-12 text-muted-foreground text-sm">
+              <tr><td colSpan={8} className="text-center py-12 text-muted-foreground text-sm">
                 <Receipt className="h-8 w-8 mx-auto mb-2 opacity-30" />
                 No products on this menu yet.
               </td></tr>
@@ -177,7 +213,22 @@ export default function PosMenuPage() {
                   )}
                   {r.isOverride && <span className="ml-1.5 text-xs text-muted-foreground italic">overridden here</span>}
                 </td>
-                <td className="px-4 py-3 text-right font-medium tabular-nums">{formatMoney(r.price)}</td>
+                <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">{r.unitCost ? formatMoney(r.unitCost) : '—'}</td>
+                <td className="px-4 py-3 text-right font-medium tabular-nums">
+                  {formatMoney(r.price)}
+                  <span className="block text-[11px] font-normal text-muted-foreground">/ {r.item.baseUnit}</span>
+                </td>
+                <td className="px-4 py-3 text-right tabular-nums">
+                  {(() => {
+                    const m = r.unitCost ? marginPct(r.unitCost, r.price) : null
+                    return m == null ? <span className="text-muted-foreground text-xs">—</span> : (
+                      <>
+                        <span className={`text-xs font-semibold ${marginTone(m)}`}>{m.toFixed(1)}%</span>
+                        <span className="block text-[11px] text-muted-foreground">{formatMoney(r.price - r.unitCost)}</span>
+                      </>
+                    )
+                  })()}
+                </td>
                 <td className="px-4 py-3 text-center">
                   <StatusBadge tone={r.isActive ? 'success' : 'neutral'}>
                     {r.isActive ? 'Active' : 'Inactive'}
@@ -221,13 +272,13 @@ export default function PosMenuPage() {
                       {filteredCatalog.length === 0 ? (
                         <div className="py-6 text-center text-xs text-muted-foreground">No items found</div>
                       ) : filteredCatalog.slice(0, 50).map(c => (
-                        <button key={c.id} type="button" onClick={() => { setPickItem(c); setPickPrice(String(c.sellingPrice || '')) }}
+                        <button key={c.id} type="button" onClick={() => { setPickItem(c); setPickPrice('') }}
                           className="w-full text-left px-3 py-2.5 flex items-center justify-between gap-3 hover:bg-muted/40 transition-colors border-b last:border-b-0">
                           <div className="min-w-0">
                             <p className="text-sm font-medium truncate">{c.name}</p>
                             <p className="text-xs text-muted-foreground">{c.sku} · Item Master: {c.category}</p>
                           </div>
-                          <span className="text-xs text-muted-foreground shrink-0">{formatMoney(c.sellingPrice)}</span>
+                          <span className="text-xs text-muted-foreground shrink-0" title="Current average cost">{catalogCost(c) ? `cost ${formatMoney(catalogCost(c))}` : ''}</span>
                         </button>
                       ))}
                     </div>
@@ -249,10 +300,7 @@ export default function PosMenuPage() {
                       </select>
                       <p className="text-[11px] text-muted-foreground">This is where it's grouped in the Cashier app — separate from its Item Master category.</p>
                     </div>
-                    <div className="space-y-1.5">
-                      <label className="text-sm font-medium">Price <span className="text-destructive">*</span></label>
-                      <input className={inp} type="number" min="0" value={pickPrice} onChange={e => setPickPrice(e.target.value)} />
-                    </div>
+                    <PriceMarginFields cost={catalogCost(pickItem)} unit={pickItem.baseUnit} price={pickPrice} setPrice={setPickPrice} />
                   </>
                 )}
               </div>
@@ -285,10 +333,7 @@ export default function PosMenuPage() {
                     {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                   </select>
                 </div>
-                <div className="space-y-1.5">
-                  <label className="text-sm font-medium">Price</label>
-                  <input className={inp} type="number" min="0" value={editPrice} onChange={e => setEditPrice(e.target.value)} />
-                </div>
+                <PriceMarginFields cost={editRow.unitCost} unit={editRow.item.baseUnit} price={editPrice} setPrice={setEditPrice} />
               </div>
               <div className="flex justify-end gap-2 px-5 py-4 border-t">
                 <button onClick={() => setEditRow(null)} className="px-4 py-2 text-sm border rounded-lg hover:bg-muted transition-colors">Cancel</button>

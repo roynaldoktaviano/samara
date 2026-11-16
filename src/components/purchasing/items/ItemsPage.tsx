@@ -48,10 +48,6 @@ interface PurchaseItem {
   migratedInventoryItem: { id: string; itemNumber: string } | null
 }
 
-function calcMargin(cost: number, price: number) {
-  return price > 0 ? ((price - cost) / price) * 100 : 0
-}
-
 interface HistoryEntry {
   id: string; date: string; type: string; qty: number; unit: string
   fromLocation: string | null; toLocation: string | null
@@ -404,7 +400,7 @@ export default function ItemsPage() {
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize))
   const safePage = Math.min(page, totalPages - 1)
   const paginated = filtered.slice(safePage * pageSize, safePage * pageSize + pageSize)
-  const colCount = trackedFilter === 'stock' ? 8 : 6
+  const colCount = trackedFilter === 'stock' ? 7 : 6
 
   return (
     <div className="space-y-4">
@@ -551,7 +547,6 @@ export default function ItemsPage() {
               <th className="text-left px-4 py-3 font-medium">Name</th>
               <th className="text-left px-4 py-3 font-medium w-28">Unit</th>
               <th className="text-right px-4 py-3 font-medium w-36">Cost / Price</th>
-              {trackedFilter === 'stock' && <th className="text-right px-4 py-3 font-medium w-20">Margin</th>}
               <th className="text-right px-4 py-3 font-medium w-40">{trackedFilter === 'stock' ? 'Stock' : 'Location'}</th>
               {trackedFilter === 'stock' && <th className="text-center px-4 py-3 font-medium w-16">Status</th>}
               <th className="px-4 py-3 w-20" />
@@ -576,7 +571,6 @@ export default function ItemsPage() {
               // Moving-average cost across all locations holding stock; falls back to the last
               // purchase price for items with no stock on hand.
               const avgCost = item.avgPrice > 0 ? item.avgPrice : item.standardCost
-              const margin = calcMargin(avgCost, item.sellingPrice)
               return (
                 <tr key={item.id} onClick={() => openHistory(item)} className={`hover:bg-warning/5 cursor-pointer transition-colors ${!item.isActive ? 'opacity-50' : ''}`}>
                   <td className="px-4 py-3 font-mono text-xs text-muted-foreground whitespace-nowrap">{item.sku}</td>
@@ -615,15 +609,7 @@ export default function ItemsPage() {
                     {item.avgPrice > 0 && item.standardCost > 0 && Math.round(item.standardCost) !== Math.round(item.avgPrice) && (
                       <p className="text-[10px] text-muted-foreground">last {formatNumber(displayUnitCost(item, item.standardCost))}</p>
                     )}
-                    {item.sellingPrice > 0 && <p className="text-xs text-muted-foreground">sell {formatNumber(item.sellingPrice)}</p>}
                   </td>
-                  {trackedFilter === 'stock' && (
-                    <td className="px-4 py-3 text-right">
-                      {item.sellingPrice > 0
-                        ? <span className={`text-xs font-semibold ${margin >= 40 ? 'text-success' : margin >= 20 ? 'text-warning' : 'text-destructive'}`}>{margin.toFixed(1)}%</span>
-                        : <span className="text-muted-foreground text-xs">—</span>}
-                    </td>
-                  )}
                   <td className="px-4 py-3 text-right">
                     {item.isStockTracked ? (
                       item.totalQty > 0

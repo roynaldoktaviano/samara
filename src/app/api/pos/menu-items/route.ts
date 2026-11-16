@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { roleMatches } from '@/lib/role-utils'
+import { itemBaseCosts } from '@/lib/pos-recipe'
 
 const ALLOWED = ['ADMIN', 'SUPER_ADMIN']
 
@@ -31,14 +32,18 @@ export async function GET(req: NextRequest) {
     orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
   })
 
+  // Current moving-average cost per base unit (one sale = one base unit) for the margin column.
+  const costs = await itemBaseCosts(db, rows.map(r => r.itemId))
+  const withCost = rows.map(r => ({ ...r, unitCost: costs.get(r.itemId) ?? 0 }))
+
   if (yachtId && yachtId !== 'global') {
     const overriddenItemIds = new Set(rows.filter(r => r.yachtId === yachtId).map(r => r.itemId))
-    return NextResponse.json(rows
+    return NextResponse.json(withCost
       .filter(r => r.yachtId === yachtId || !overriddenItemIds.has(r.itemId))
       .map(r => ({ ...r, isOverride: r.yachtId === null && overriddenItemIds.has(r.itemId) })))
   }
 
-  return NextResponse.json(rows.map(r => ({ ...r, isOverride: false })))
+  return NextResponse.json(withCost.map(r => ({ ...r, isOverride: false })))
 }
 
 export async function POST(req: NextRequest) {

@@ -46,13 +46,6 @@ export function generateSku(prefix: string, existingItems: { sku: string }[]): s
   return `${prefix}-${String(next).padStart(2, '0')}`
 }
 
-function calcMargin(cost: number, price: number) {
-  return price > 0 ? ((price - cost) / price) * 100 : 0
-}
-function calcPriceFromMargin(cost: number, margin: number) {
-  return margin >= 100 ? 0 : cost / (1 - margin / 100)
-}
-
 function categoriesFor(typeConfigs: ItemTypeConfig[], type: string) {
   return typeConfigs.find(t => t.code === type)?.categories.filter(c => c.isActive).map(c => c.name) ?? []
 }
@@ -244,6 +237,7 @@ export function ItemFormFields({ form, setForm, isEditing, typeConfigs, existing
       </div>
       {/* Pricing section */}
       <div className="border-t pt-4">
+        {/* Selling price lives on the POS menu now, not on the item. */}
         <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Pricing & Valuation</p>
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-1.5">
@@ -254,30 +248,6 @@ export function ItemFormFields({ form, setForm, isEditing, typeConfigs, existing
               value={form.standardCost || ''} placeholder="—" />
             <p className="text-xs text-muted-foreground">Auto-updated from actual received price (GR). Stock is valued at moving average cost.</p>
           </div>
-          {form.treatment === 'TRADING' && (
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium">Selling Price <span className="text-muted-foreground font-normal">/ {form.baseUnit}</span></label>
-              <input type="number" min={0} className={num} placeholder="0"
-                value={form.sellingPrice}
-                onChange={e => {
-                  const sellingPrice = Number(e.target.value)
-                  setForm(f => ({ ...f, sellingPrice }))
-                }} />
-            </div>
-          )}
-          {form.treatment === 'TRADING' && (
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium">Gross Margin %</label>
-              <input type="number" step="0.1" min={0} max={99.9} className={num} placeholder="0"
-                value={form.sellingPrice > 0 ? +calcMargin(form.standardCost, form.sellingPrice).toFixed(1) : ''}
-                onChange={e => {
-                  const margin = Number(e.target.value)
-                  const sellingPrice = calcPriceFromMargin(form.standardCost, margin)
-                  setForm(f => ({ ...f, sellingPrice: Math.round(sellingPrice) }))
-                }} />
-              <p className="text-xs text-muted-foreground">Auto-synced with Selling Price</p>
-            </div>
-          )}
         </div>
       </div>
 
@@ -313,10 +283,6 @@ export function ItemFormFields({ form, setForm, isEditing, typeConfigs, existing
                   </>
                 )
               })()}
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium">Reorder Qty</label>
-              <input type="number" min={0} className={num} placeholder="0" value={form.reorderQty} onChange={e => setForm(f => ({ ...f, reorderQty: Number(e.target.value) }))} />
             </div>
           </div>
         </div>
