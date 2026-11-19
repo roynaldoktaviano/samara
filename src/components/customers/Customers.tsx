@@ -19,7 +19,7 @@ import FreshsalesImportModal from '@/components/shared/FreshsalesImportModal'
 import { isHttpUrl } from '@/lib/url-safety'
 import { WebsiteJourney } from '@/components/shared/WebsiteJourney'
 import { AdConsentBadge } from '@/components/shared/AdConsentBadge'
-import { InquiryAttributionDialog, WaMatchBadge, hasAttribution, type AttributionInquiry } from '@/components/shared/InquiryAttributionDialog'
+import { InquiryAttributionDialog, WaMatchBadge, hasAttribution, hasWaBadge, type AttributionInquiry } from '@/components/shared/InquiryAttributionDialog'
 import { formatDate, formatDateRange, formatMoney } from '@/lib/format'
 import { LEAD_STAGE_COLOR, LEAD_STAGE_LABEL, type LeadStage } from '@/lib/lead-pipeline'
 
@@ -748,7 +748,7 @@ export default function Guests({ deepLinkId, onDeepLinkHandled, onOpenBooking }:
                                 {isHttpUrl(inq.url) ? <a href={inq.url} target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground">{inq.website}</a> : inq.website}
                               </p>
                             )}
-                            {(inq.adConsent || inq.waRef || inq.matchConfidence) && (
+                            {(inq.adConsent || hasWaBadge(inq)) && (
                             <div className="flex flex-wrap gap-1">
                               <WaMatchBadge inquiry={inq} />
                               <AdConsentBadge consent={inq.adConsent} region={inq.consentRegion} />

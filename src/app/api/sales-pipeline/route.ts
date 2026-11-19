@@ -8,6 +8,7 @@ import { roleMatches } from '@/lib/role-utils'
 import { LEAD_STAGES, type LeadStage } from '@/lib/lead-pipeline'
 import { WHATSAPP_BRANDS, type WhatsappBrand } from '@/lib/whatsapp-brands'
 import { inquiryBrandWhere } from '@/lib/whatsapp-lead'
+import { WEBSITE_INQUIRY_WHERE } from '@/lib/lead-origin'
 
 const DAY = 24 * 60 * 60 * 1000
 // ~28k historical Freshsales imports all sit at NEW — the board's NEW column only shows
@@ -65,15 +66,16 @@ export async function GET(req: NextRequest) {
   if (!isAdmin) filters.push({ ownerId: session.user.id })
   else if (ownerParam === 'unassigned') filters.push({ ownerId: null })
   else if (ownerParam && ownerParam !== 'all') filters.push({ ownerId: ownerParam })
-  if (channel === 'website') filters.push({ inquiries: { some: {} } })
+  // WhatsApp direct / Click-to-WhatsApp inquiries aren't website forms (src/lib/wa-chat-attribution.ts).
+  if (channel === 'website') filters.push({ inquiries: { some: WEBSITE_INQUIRY_WHERE } })
   else if (channel === 'whatsapp') filters.push({ whatsappConversations: { some: salesChat } })
   else if (channel === 'instagram') filters.push({ instagramConversations: { some: {} } })
-  else if (channel === 'manual') filters.push({ inquiries: { none: {} }, whatsappConversations: { none: salesChat }, instagramConversations: { none: {} } })
+  else if (channel === 'manual') filters.push({ inquiries: { none: WEBSITE_INQUIRY_WHERE }, whatsappConversations: { none: salesChat }, instagramConversations: { none: {} } })
   // Brand = a SALES chat on that brand's number, an IG/Messenger DM to that brand, or a website inquiry for that brand.
   if (brand) filters.push({ OR: [
     { whatsappConversations: { some: { ...salesChat, brand } } },
     { instagramConversations: { some: { brand } } },
-    { inquiries: { some: inquiryBrandWhere(brand) } },
+    { inquiries: { some: { AND: [WEBSITE_INQUIRY_WHERE, inquiryBrandWhere(brand)] } } },
   ] })
   if (q) filters.push({ OR: [
     { name: { contains: q, mode: 'insensitive' } },
@@ -116,7 +118,7 @@ export async function GET(req: NextRequest) {
     },
     owner: { select: { id: true, name: true, email: true } },
     destination: { select: { name: true } },
-    _count: { select: { inquiries: true, instagramConversations: true } },
+    _count: { select: { inquiries: { where: WEBSITE_INQUIRY_WHERE }, instagramConversations: true } },
     whatsappConversations: {
       where: salesChat,
       orderBy: { lastMessageAt: 'desc' as const },

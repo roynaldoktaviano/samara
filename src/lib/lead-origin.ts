@@ -46,10 +46,21 @@ export const LEAD_ORIGIN_COLOR: Record<LeadOrigin, string> = {
   UNKNOWN: 'bg-muted text-muted-foreground',
 }
 
+// Inquiry.source of a WhatsApp chat session (src/lib/wa-chat-attribution.ts): 'WHATSAPP' = matched
+// to a website button tap; these two = no website tap — opened from a Click-to-WhatsApp ad / FB-IG
+// post (Meta's `referral`), or typed straight to the number. They aren't website forms, so
+// "came from the website" filters and counts leave them out (WEBSITE_INQUIRY_WHERE).
+export const WA_AD_INQUIRY_SOURCE = 'WHATSAPP_AD'
+export const WA_DIRECT_INQUIRY_SOURCE = 'WHATSAPP_DIRECT'
+export const CHAT_ONLY_INQUIRY_SOURCES = [WA_AD_INQUIRY_SOURCE, WA_DIRECT_INQUIRY_SOURCE]
+export const WEBSITE_INQUIRY_WHERE = { source: { notIn: CHAT_ONLY_INQUIRY_SOURCES } }
+
 export const INQUIRY_FORM_LABEL: Record<string, string> = {
   CF7: 'Website Form',
   META_LEAD_AD: 'Meta Instant Form',
   WHATSAPP: 'WhatsApp button',
+  WHATSAPP_AD: 'Click-to-WhatsApp',
+  WHATSAPP_DIRECT: 'WhatsApp direct chat',
   freshsales: 'Freshsales Import',
 }
 
@@ -79,7 +90,8 @@ export interface LeadOriginInput {
 interface Touch { source: string; medium: string; googleClick: boolean; metaClick: boolean }
 
 const GOOGLE_SOURCES = /^(google|goolge|gads|google-ads|goolge-ads|adwords)/
-const META_SOURCES = /^(fb|ig|an|msg|facebook|instagram|meta|threads)\b/
+// "wa" = Meta ad placed on WhatsApp (Meta's {{site_source_name}}), not a WhatsApp chat (those say "whatsapp").
+const META_SOURCES = /^(fb|ig|an|msg|wa|facebook|instagram|meta|threads)\b/
 const SEARCH_ENGINES = /(google|bing|yahoo|duckduckgo|yandex|baidu|ecosia|naver)/
 const AI_SOURCES = /(chatgpt|openai|perplexity|gemini|claude|copilot|bard)/
 const PAID_MEDIUMS = /^(cpc|ppc|paid|paid[-_ ]?social|paidsocial|cpm|display|ads?|lead-google|google)$|^\d{6,}$/

@@ -25,14 +25,24 @@ export interface AttributionInquiry {
   ipAddress?: string | null; userAgent?: string | null; sessionAttributes?: string | null
   adConsent?: string | null; consentRegion?: string | null
   waRef?: string | null; matchConfidence?: string | null; matchConfidenceById?: string | null
+  // Click-to-WhatsApp ad / post (Meta's `referral`, src/lib/wa-chat-attribution.ts)
+  ctwaClid?: string | null; adSourceId?: string | null; adSourceType?: string | null; adSourceUrl?: string | null
+  adHeadline?: string | null; adBody?: string | null; adMediaType?: string | null; adMediaUrl?: string | null
 }
 
 /** Whether an inquiry has anything worth opening the dialog for. */
 export function hasAttribution(i: AttributionInquiry): boolean {
   return !!(i.utmSource || i.utmMedium || i.utmCampaign || i.lastSource || i.gclid || i.gbraid || i.wbraid || i.fbclid || i.msclkid
     || i.lastGclid || i.lastMsclkid || i.fbc || i.fbp || i.firstLandingUrl || i.landingUrl || i.referrer || i.ipAddress || i.userAgent
-    || i.sessionAttributes || i.waRef)
+    || i.sessionAttributes || i.waRef || i.adSourceId || i.ctwaClid || i.adSourceUrl)
 }
+
+/** Whether the card should show a WhatsApp chip (button match / ad / direct chat). */
+export function hasWaBadge(i: AttributionInquiry): boolean {
+  return !!(i.waRef || i.matchConfidence || i.adSourceId || i.ctwaClid || i.adSourceUrl || i.source === 'WHATSAPP_DIRECT')
+}
+
+const isPost = (i: AttributionInquiry) => (i.adSourceType ?? '').toLowerCase() === 'post'
 
 const CONFIDENCE_COLOR: Record<string, string> = {
   CONFIDENT: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300',
@@ -42,6 +52,21 @@ const CONFIDENCE_COLOR: Record<string, string> = {
 
 /** Small "WhatsApp click · Ref SL-XXXXX · Medium" chip for an inquiry card. */
 export function WaMatchBadge({ inquiry }: { inquiry: AttributionInquiry }) {
+  if (inquiry.adSourceId || inquiry.ctwaClid || inquiry.adSourceUrl) {
+    const label = isPost(inquiry) ? 'From FB/IG post' : 'Click-to-WhatsApp ad'
+    return (
+      <span title={inquiry.adHeadline ?? label} className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300 max-w-full truncate">
+        {label}{inquiry.adHeadline ? ` · ${inquiry.adHeadline}` : ''}
+      </span>
+    )
+  }
+  if (inquiry.source === 'WHATSAPP_DIRECT') {
+    return (
+      <span title="Messaged the WhatsApp number directly — no ad or website button behind it" className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium bg-muted text-muted-foreground">
+        WhatsApp direct
+      </span>
+    )
+  }
   if (!inquiry.waRef && !inquiry.matchConfidence) return null
   const c = inquiry.matchConfidence
   return (
@@ -128,6 +153,19 @@ export function InquiryAttributionDialog({ inquiry, onClose, onUpdated }: {
                   Confident = the chat carried this ref. Medium = the only button tap in the 30 min before the chat. Low = several taps in that window — never sent to Google/Meta until you raise it.
                   {inquiry.matchConfidenceById ? ' Set by hand.' : ''}
                 </p>
+              </div>
+            )}
+            {(inquiry.adSourceId || inquiry.ctwaClid || inquiry.adSourceUrl) && (
+              <div className="space-y-2">
+                <Section title={isPost(inquiry) ? 'Facebook / Instagram Post' : 'Click-to-WhatsApp Ad'} note="sent by Meta with the first message" rows={[
+                  ['Type', inquiry.adSourceType], [isPost(inquiry) ? 'Post ID' : 'Ad ID', inquiry.adSourceId],
+                  ['Headline', inquiry.adHeadline], ['Text', inquiry.adBody], ['Link', inquiry.adSourceUrl],
+                  ['Media', inquiry.adMediaType], ['CTWA Click ID', inquiry.ctwaClid],
+                ]} />
+                {inquiry.adMediaUrl && inquiry.adMediaType !== 'video' && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={inquiry.adMediaUrl} alt="Ad creative" className="max-h-40 rounded-lg border object-contain" />
+                )}
               </div>
             )}
             {inquiry.adConsent && <AdConsentBadge consent={inquiry.adConsent} region={inquiry.consentRegion} />}

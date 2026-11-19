@@ -8,7 +8,7 @@ import { emitTenantEvent } from '@/lib/realtime-bus'
 import { pickNextSalesUserId } from '@/lib/whatsapp-distribution'
 import { autoLinkNewConversation } from '@/lib/whatsapp-lead'
 import { fillLeadContactFromText, isNewContactSession, recordLeadContact } from '@/lib/lead-contact'
-import { matchWhatsappSession } from '@/lib/wa-tap'
+import { recordWhatsappChatAttribution, type WhatsappReferral } from '@/lib/wa-chat-attribution'
 import { recordLeadInbound } from '@/lib/lead-stage-auto'
 import { sendPushToUser } from '@/lib/push'
 import { isViewing } from '@/lib/chat-presence'
@@ -110,6 +110,8 @@ export function createWhatsappWebhookHandlers(endpointBrand?: WhatsappBrand) {
     // Present when this message is a "swipe to reply" quote of an earlier message —
     // `id` is the WAMID (providerMessageId) of the message being replied to.
     context?: { id: string }
+    // Only on a message sent from a Click-to-WhatsApp ad / a FB-IG post's WhatsApp button.
+    referral?: WhatsappReferral
   }
   interface CloudApiStatus {
     id: string; status: string; timestamp: string; recipient_id: string
@@ -336,13 +338,14 @@ export function createWhatsappWebhookHandlers(endpointBrand?: WhatsappBrand) {
             console.error('[whatsapp webhook] lead link/history failed', e)
           }
 
-          // A chat session just started → match it to the website WhatsApp-button tap it came
-          // from ("Ref SL-XXXXX", else the 30-min timing rule) — src/lib/wa-tap.ts.
-          if (isNewConversation || !existing || isNewContactSession(existing.lastInboundAt)) {
+          // A chat session just started (or the message came from an ad) → record where it came
+          // from as an inquiry on the lead: Click-to-WhatsApp ad, website button tap ("Ref SL-XXXXX",
+          // else the 30-min timing rule) or direct — src/lib/wa-chat-attribution.ts.
+          const isSessionStart = isNewConversation || !existing || isNewContactSession(existing.lastInboundAt)
+          if (isSessionStart || msg.referral) {
             const sentAt = Number(msg.timestamp) * 1000
             const startedAt = Number.isFinite(sentAt) && sentAt > 0 ? new Date(sentAt) : new Date()
-            await matchWhatsappSession(db, { conversationId: conversation.id, startedAt, text })
-              .catch(e => console.error('[whatsapp webhook] WA tap match failed', e))
+            await recordWhatsappChatAttribution(db, { conversationId: conversation.id, startedAt, text, isSessionStart, referral: msg.referral })
           }
 
           // Notice for whichever sales rep this chat is assigned to — in-app bell (toast +

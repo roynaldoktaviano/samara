@@ -69,7 +69,7 @@ function channelFrom(src: string, med: string, mediumCustom: string, gclid: bool
   const s = lower(src), m = lower(med), mc = lower(mediumCustom)
   if (inquirySource === 'META_LEAD_AD') return 'Meta Ads'
   if (gclid || /google-ads|goolge-ads|adwords/.test(s) || /^google\|/.test(m) || (/google/.test(s) && /cpc|paid|ads|lead/.test(m))) return 'Google Ads'
-  if (fbclid || /meta-ads/.test(s) || (/^(fb|ig|an|meta|facebook|instagram)\b/.test(s) && /paid|cpc|lead|ads/.test(m))) return 'Meta Ads'
+  if (fbclid || /meta-ads/.test(s) || (/^(fb|ig|an|wa|meta|facebook|instagram)\b/.test(s) && /paid|cpc|lead|ads/.test(m))) return 'Meta Ads'
   if (/organic search/.test(m) || /^(google|bing|yahoo|duckduckgo|ecosia|search\.brave|chatgpt|copilot|perplexity)/.test(s) || /^(google|bing|yahoo|duckduckgo|www\.ecosia)/.test(mc)) return 'Organic search'
   if (/social/.test(m) || /facebook|instagram|linktr|youtube|reddit/.test(s) || /facebook|instagram|linktr|youtube|^ig$/.test(mc)) return 'Organic social'
   if (/newsletter|email/.test(s + ' ' + m)) return 'Email newsletter'

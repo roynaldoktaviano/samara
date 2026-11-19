@@ -48,7 +48,7 @@ export function channelGroup(t: Touch, ids: { gclid?: boolean; fbclid?: boolean 
   const both = `${src} ${med}`
   if (med === 'agent') return 'Agent'
   if (!src && !med) return ids.gclid ? 'Paid Search' : ids.fbclid ? 'Paid Social' : 'Not tracked'
-  const social = /facebook|instagram|\bfb\b|\big\b|meta|tiktok|linkedin|pinterest|twitter|\bx\.com/.test(both)
+  const social = /facebook|instagram|\bfb\b|\big\b|\bwa\b|meta|tiktok|linkedin|pinterest|twitter|\bx\.com/.test(both)
   const paid = /cpc|ppc|paid|\bads?\b|-ads|ads-|adwords|display|sem\b/.test(both)
   if (social) return paid || ids.fbclid ? 'Paid Social' : 'Organic Social'
   if (paid || ids.gclid) return 'Paid Search'

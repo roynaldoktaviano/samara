@@ -33,6 +33,16 @@ export function normalizeAdConsent(raw: unknown): AdConsent | null {
   return (AD_CONSENT_VALUES as readonly string[]).includes(v) ? (v as AdConsent) : null
 }
 
+/** consent_region from a payload — first non-empty of `keys`. Read raw (not via pickClean): "none"
+ *  is a real value here (visitor outside every banner region), not a blank. */
+export function consentRegionFrom(data: Record<string, unknown>, keys: string[]): string | null {
+  for (const k of keys) {
+    const v = normalizeConsentRegion(data[k])
+    if (v) return v
+  }
+  return null
+}
+
 export function normalizeConsentRegion(raw: unknown): string | null {
   if (typeof raw !== 'string') return null
   const v = raw.trim().toLowerCase()

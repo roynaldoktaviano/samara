@@ -21,7 +21,7 @@ import LostReasonDialog from '@/components/leads/LostReasonDialog'
 import { isHttpUrl } from '@/lib/url-safety'
 import { WebsiteJourney } from '@/components/shared/WebsiteJourney'
 import { AdConsentBadge } from '@/components/shared/AdConsentBadge'
-import { InquiryAttributionDialog, WaMatchBadge, hasAttribution, type AttributionInquiry } from '@/components/shared/InquiryAttributionDialog'
+import { InquiryAttributionDialog, WaMatchBadge, hasAttribution, hasWaBadge, type AttributionInquiry } from '@/components/shared/InquiryAttributionDialog'
 import { LEAD_ORIGINS, LEAD_ORIGIN_LABEL, LEAD_ORIGIN_COLOR, INQUIRY_FORM_LABEL, classifyLeadOrigin, formPageLabel, type LeadOrigin } from '@/lib/lead-origin'
 import FreshsalesImportModal from '@/components/shared/FreshsalesImportModal'
 import { LEAD_ENTRY_SOURCES, LEAD_ENTRY_SOURCE_LABEL, type LeadEntrySource } from '@/lib/lead-entry-source'
@@ -1025,7 +1025,7 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail, onOpenBooking, onOp
                               {isHttpUrl(inq.url) ? <a href={inq.url} target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground">{formPageLabel(inq.url, inq.website)}</a> : inq.website}
                             </p>
                           )}
-                          {(inq.adConsent || inq.waRef || inq.matchConfidence) && (
+                          {(inq.adConsent || hasWaBadge(inq)) && (
                             <div className="flex flex-wrap gap-1">
                               <WaMatchBadge inquiry={inq} />
                               <AdConsentBadge consent={inq.adConsent} region={inq.consentRegion} />

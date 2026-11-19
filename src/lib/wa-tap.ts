@@ -1,9 +1,10 @@
 import type { Prisma, PrismaClient, WaTap, WhatsappBrand } from '@prisma/client'
-import { normalizeAdConsent, normalizeConsentRegion } from '@/lib/ad-consent'
+import { consentRegionFrom, correctLegacyConsent, normalizeAdConsent } from '@/lib/ad-consent'
 import { cleanValue, dropMetaCookies, pickClean } from '@/lib/inquiry-tracking'
 import { findCustomerIdByPhone, toE164 } from '@/lib/contact-identity'
 import { isHttpUrl } from '@/lib/url-safety'
 import type { MatchConfidence } from '@/lib/wa-match-confidence'
+import { WA_AD_INQUIRY_SOURCE, WA_DIRECT_INQUIRY_SOURCE } from '@/lib/lead-origin'
 
 // WhatsApp click → chat attribution, the rule the Freshsales deal maker used (handover 17 Nov):
 //  • Every tap on a website WhatsApp button is logged with a ref code that the site also puts
@@ -36,6 +37,17 @@ type Db = PrismaClient
 
 // ── Ingest ───────────────────────────────────────────────────────────────────────
 
+// Some taps log UTMs straight from the query string, still URL-encoded ("Samara+1+/+Australia+++Singapure"),
+// others already decoded ("Samara 1 / Bali + Jakarta/ 50%"). A value with a space is already decoded —
+// its '+' is a real plus. Otherwise '+' is a space, and "+++" was " + " (a literal plus between spaces);
+// a stray '%' ("50%") can't be URI-decoded, so that value keeps the '+' fix only.
+function utmValue(p: Record<string, unknown>, keys: string[]): string | null {
+  const v = pickClean(p, keys, 300)
+  if (!v || v.includes(' ') || !/[+%]/.test(v)) return v
+  const spaced = v.replace(/\+\+\+/g, ' \u0000 ').replace(/\+/g, ' ').replace(/\u0000/g, '+')
+  try { return decodeURIComponent(spaced).trim() || null } catch { return spaced.trim() || null }
+}
+
 function parseTime(v: unknown): Date | null {
   if (typeof v === 'number') return new Date(v < 1e12 ? v * 1000 : v)
   const s = cleanValue(v)
@@ -50,14 +62,16 @@ function parseTime(v: unknown): Date | null {
 export function tapFromPayload(p: Record<string, unknown>): Omit<Prisma.WaTapCreateInput, 'rawPayload'> | null {
   const parsed = parseWaRef(pickClean(p, ['ref', 'wa_ref', 'code']))
   if (!parsed) return null
-  const adConsent = normalizeAdConsent(pickClean(p, ['ad_consent', 'consent']))
-  const consentRegion = normalizeConsentRegion(pickClean(p, ['consent_region', 'region']))
+  const tappedAt = parseTime(p.tapped_at ?? p.ts ?? p.time ?? p.created_at ?? p.createdAt) ?? new Date()
+  const consentRegion = consentRegionFrom(p, ['consent_region', 'region'])
+  // Same pre-15-Nov fix as the website forms: "granted" without a banner was really "not_required".
+  const adConsent = correctLegacyConsent(normalizeAdConsent(pickClean(p, ['ad_consent', 'consent'])), consentRegion, tappedAt)
   const dropMeta = dropMetaCookies(adConsent, consentRegion)
   const page = pickClean(p, ['page', 'page_url', 'url', 'landing_url'], 2000)
   return {
     ref: parsed.ref,
     brand: parsed.brand,
-    tappedAt: parseTime(p.tapped_at ?? p.ts ?? p.time ?? p.created_at ?? p.createdAt) ?? new Date(),
+    tappedAt,
     pageUrl: page && isHttpUrl(page) ? page : null,
     lang: pickClean(p, ['lang', 'language'], 16),
     visitorId: pickClean(p, ['vid', 'visitorId', 'visitor_id'], 64),
@@ -68,14 +82,14 @@ export function tapFromPayload(p: Record<string, unknown>): Omit<Prisma.WaTapCre
     msclkid: pickClean(p, ['msclkid'], 500),
     fbc: dropMeta ? null : pickClean(p, ['_fbc', 'fbc'], 500),
     fbp: dropMeta ? null : pickClean(p, ['_fbp', 'fbp'], 500),
-    utmSource: pickClean(p, ['utm_source'], 300),
-    utmMedium: pickClean(p, ['utm_medium'], 300),
-    utmCampaign: pickClean(p, ['utm_campaign'], 300),
-    utmTerm: pickClean(p, ['utm_term'], 300),
-    utmContent: pickClean(p, ['utm_content'], 300),
-    ftUtmSource: pickClean(p, ['ft_utm_source'], 300),
-    ftUtmMedium: pickClean(p, ['ft_utm_medium'], 300),
-    ftUtmCampaign: pickClean(p, ['ft_utm_campaign'], 300),
+    utmSource: utmValue(p, ['utm_source']),
+    utmMedium: utmValue(p, ['utm_medium']),
+    utmCampaign: utmValue(p, ['utm_campaign']),
+    utmTerm: utmValue(p, ['utm_term']),
+    utmContent: utmValue(p, ['utm_content']),
+    ftUtmSource: utmValue(p, ['ft_utm_source']),
+    ftUtmMedium: utmValue(p, ['ft_utm_medium']),
+    ftUtmCampaign: utmValue(p, ['ft_utm_campaign']),
     ftGclid: pickClean(p, ['ft_gclid'], 500),
     referrer: pickClean(p, ['referrer', 'ref_url'], 2000),
     adConsent,
@@ -112,7 +126,32 @@ export async function recordWaTap(db: Db, payload: Record<string, unknown>): Pro
 
 // ── Matching ─────────────────────────────────────────────────────────────────────
 
-interface Session { conversationId: string; startedAt: Date; text: string | null }
+export interface Session { conversationId: string; startedAt: Date; text: string | null }
+
+/** Who a chat's attribution inquiry belongs to: its Lead, else the Guest with that exact number. */
+export async function chatInquiryOwner(db: Db, conversationId: string): Promise<{ leadId: string } | { customerId: string } | null> {
+  const conv = await db.whatsappConversation.findUnique({ where: { id: conversationId }, select: { leadId: true, phone: true } })
+  if (!conv) return null
+  if (conv.leadId) return { leadId: conv.leadId }
+  const customerId = await findCustomerIdByPhone(db, toE164(conv.phone, { international: true }))
+  return customerId ? { customerId } : null
+}
+
+// The webhook stamps a session's inquiry with the message's own timestamp, the tap side with the
+// row's createdAt — both the same first message, so a few minutes either way is the same session.
+const SESSION_START_SLACK_MS = 10 * 60_000
+
+/** This session's attribution inquiry of `source` (direct placeholder / ad), if any. */
+export function sessionInquiry(db: Db, conversationId: string, startedAt: Date, source: string) {
+  return db.inquiry.findFirst({
+    where: {
+      whatsappConversationId: conversationId, source,
+      createdAt: { gte: new Date(startedAt.getTime() - SESSION_START_SLACK_MS), lte: new Date(startedAt.getTime() + SESSION_START_SLACK_MS) },
+    },
+    orderBy: { createdAt: 'desc' },
+    select: { id: true },
+  })
+}
 
 /** Taps of `brand` not matched to any chat yet, tapped in the 30 min up to `at`. */
 function unmatchedTapsBefore(db: Db, brand: WhatsappBrand, at: Date) {
@@ -164,13 +203,13 @@ export async function matchTapToChat(db: Db, tapId: string): Promise<boolean> {
   const tap = await db.waTap.findUnique({ where: { id: tapId } })
   if (!tap || tap.matchedConversationId) return !!tap?.matchedConversationId
 
-  // 1. The ref in an inbound message of that brand (up to 24h after the tap).
+  // 1. The ref in an inbound message (up to 24h after the tap). Any of our numbers: the ref is unique,
+  //    and a site's button may open another brand's number (otiumyacht.com opens Samara's, Nov 2026).
   const byRef = await db.whatsappMessage.findFirst({
     where: {
       direction: 'IN',
       body: { contains: tap.ref, mode: 'insensitive' },
       createdAt: { gte: new Date(tap.tappedAt.getTime() - 5 * 60_000), lte: new Date(tap.tappedAt.getTime() + SESSION_GAP_MS) },
-      conversation: { brand: tap.brand },
     },
     orderBy: { createdAt: 'asc' },
     select: { conversationId: true, createdAt: true, body: true },
@@ -201,6 +240,8 @@ export async function matchTapToChat(db: Db, tapId: string): Promise<boolean> {
   const open: typeof starts = []
   for (const s of starts) {
     if (parseWaRef(s.body)) continue // carries its own ref — matched by that, not by timing
+    // Opened from a Click-to-WhatsApp ad/post — Meta told us the source, a website tap didn't start it.
+    if (await sessionInquiry(db, s.conversationId, s.createdAt, WA_AD_INQUIRY_SOURCE)) continue
     if (!(await sessionMatch(db, s.conversationId, s.createdAt))) open.push(s)
   }
   // Two chats started after this tap — can't tell whose it was.
@@ -266,26 +307,28 @@ async function linkTap(db: Db, tap: WaTap, session: Session, confidence: MatchCo
   })
   if (count === 0) return // matched to another chat a moment ago
 
-  const conv = await db.whatsappConversation.findUnique({ where: { id: session.conversationId }, select: { leadId: true, phone: true } })
-  if (!conv) return
-  const customerId = conv.leadId ? null : await findCustomerIdByPhone(db, toE164(conv.phone, { international: true }))
-  if (!conv.leadId && !customerId) return // nobody to attach to yet — the tap stays marked as this chat's
+  const owner = await chatInquiryOwner(db, session.conversationId)
+  if (!owner) return // nobody to attach to yet — the tap stays marked as this chat's
 
   const data = {
     ...tapAttribution(tap),
     waTapId: tap.id,
+    whatsappConversationId: session.conversationId,
     matchConfidence: confidence,
     matchConfidenceById: null,
     matchConfidenceAt: new Date(),
   }
-  if (reuseInquiryId) {
-    await db.inquiry.update({ where: { id: reuseInquiryId }, data })
+  // The tap reached us after the chat started, which then got a "direct chat" inquiry — that
+  // row becomes this tap's rather than leaving a second, wrong one (src/lib/wa-chat-attribution.ts).
+  const inquiryId = reuseInquiryId ?? (await sessionInquiry(db, session.conversationId, session.startedAt, WA_DIRECT_INQUIRY_SOURCE))?.id
+  if (inquiryId) {
+    await db.inquiry.update({ where: { id: inquiryId }, data: { ...data, source: 'WHATSAPP', rawPayload: (tap.rawPayload ?? undefined) as Prisma.InputJsonValue | undefined } })
     return
   }
   await db.inquiry.create({
     data: {
       source: 'WHATSAPP',
-      ...(conv.leadId ? { leadId: conv.leadId } : { customerId }),
+      ...owner,
       message: session.text?.slice(0, 2000) || null,
       ...data,
       rawPayload: (tap.rawPayload ?? undefined) as Prisma.InputJsonValue | undefined,

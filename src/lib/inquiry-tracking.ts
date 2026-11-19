@@ -1,5 +1,5 @@
 import type { Prisma } from '@prisma/client'
-import { CONSENT_BANNER_REGIONS, normalizeAdConsent, normalizeConsentRegion } from '@/lib/ad-consent'
+import { CONSENT_BANNER_REGIONS, consentRegionFrom, normalizeAdConsent } from '@/lib/ad-consent'
 import { isHttpUrl } from '@/lib/url-safety'
 
 // Everything the website sends about where a visitor came from, read off a raw form/tap payload
@@ -51,7 +51,7 @@ export type InquiryTracking = Pick<Prisma.InquiryUncheckedCreateInput,
  */
 export function trackingFromPayload(data: Record<string, unknown>, fallback: { ip?: string | null; userAgent?: string | null } = {}): InquiryTracking {
   const adConsent = normalizeAdConsent(pickClean(data, ['ad_consent']))
-  const consentRegion = normalizeConsentRegion(pickClean(data, ['consent_region']))
+  const consentRegion = consentRegionFrom(data, ['consent_region'])
   const dropMeta = dropMetaCookies(adConsent, consentRegion)
   const ftMsclkid = pickClean(data, ['ft_msclkid'], 500)
   const msclkid = pickClean(data, ['msclkid'], 500)

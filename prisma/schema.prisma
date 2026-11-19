@@ -697,6 +697,19 @@ model Inquiry {
   matchConfidence     String?
   matchConfidenceById String?
   matchConfidenceAt   DateTime?
+  // Every WhatsApp chat session gets an inquiry (src/lib/wa-chat-attribution.ts): the website
+  // tap above ("WHATSAPP"), Meta's Click-to-WhatsApp `referral` ("WHATSAPP_AD"), or neither
+  // ("WHATSAPP_DIRECT"). whatsappConversationId ties it to its thread so a tap that arrives
+  // late upgrades the direct one instead of adding a second row.
+  whatsappConversationId String?
+  ctwaClid               String? // Meta's Click-to-WhatsApp click ID (needed for Conversions API for messaging)
+  adSourceId             String? // ad or post ID
+  adSourceType           String? // "ad" | "post"
+  adSourceUrl            String?
+  adHeadline             String?
+  adBody                 String?
+  adMediaType            String? // "image" | "video"
+  adMediaUrl             String?
   rawPayload          Json?
   createdAt           DateTime  @default(now())
 
@@ -706,6 +719,8 @@ model Inquiry {
   @@index([leadId])
   @@index([customerId])
   @@index([createdAt])
+  @@index([whatsappConversationId])
+  @@index([ctwaClid])
 }
 
 model Agent {

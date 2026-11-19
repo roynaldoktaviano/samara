@@ -1,4 +1,5 @@
 import type { Prisma } from '@prisma/client'
+import { WEBSITE_INQUIRY_WHERE } from '@/lib/lead-origin'
 
 // Pseudo-website for leads whose inquiries carry no website at all (mostly old Freshsales
 // imports) — offered alongside the real sites in the Leads "Website" filter and the email
@@ -12,6 +13,6 @@ export function leadWebsiteWhere(websites: string[]): Prisma.LeadWhereInput {
   const sites = websites.filter(w => w !== ANONYMOUS_WEBSITE)
   const or: Prisma.LeadWhereInput[] = []
   if (sites.length) or.push({ inquiries: { some: { website: { in: sites } } } })
-  if (websites.includes(ANONYMOUS_WEBSITE)) or.push({ inquiries: { some: {}, none: { website: { not: null } } } })
+  if (websites.includes(ANONYMOUS_WEBSITE)) or.push({ inquiries: { some: WEBSITE_INQUIRY_WHERE, none: { website: { not: null } } } })
   return or.length === 1 ? or[0] : { OR: or }
 }

@@ -117,6 +117,13 @@ export async function mirrorFreshchatToErpChats(db: PrismaClient, opts: { apply:
   for (const m of await db.instagramMessage.findMany({ where: { NOT: { providerMessageId: { startsWith: 'freshchat:' } }, body: { not: null } }, select: { conversationId: true, direction: true, body: true, createdAt: true } })) {
     native.set(m.conversationId, [...(native.get(m.conversationId) ?? []), { direction: m.direction, body: norm(m.body), at: +m.createdAt }])
   }
+  // Same for WhatsApp: Freshchat's Samara number (+62 812-2701-3029) is also connected to the ERP
+  // (both get Meta's webhook), so the customer's messages are already in the ERP thread — only the
+  // agents' replies sent from Freshchat are new (Meta never echoes those to the ERP).
+  const nativeWa = new Map<string, { direction: string; body: string; media: boolean; at: number }[]>()
+  for (const m of await db.whatsappMessage.findMany({ where: { OR: [{ providerMessageId: null }, { NOT: { providerMessageId: { startsWith: 'freshchat:' } } }] }, select: { conversationId: true, direction: true, body: true, mediaType: true, createdAt: true } })) {
+    nativeWa.set(m.conversationId, [...(nativeWa.get(m.conversationId) ?? []), { direction: m.direction, body: norm(m.body), media: !!m.mediaType, at: +m.createdAt }])
+  }
 
   // Per-thread summary updates, applied once at the end
   type Upd = { kind: 'whatsapp' | 'instagram'; first: Date; last: Row; lastIn: Date | null; lastOut: Date | null; leadId: string | null }
@@ -168,7 +175,12 @@ export async function mirrorFreshchatToErpChats(db: PrismaClient, opts: { apply:
             : { id: `dry-${++fakeId}`, phone, leadId: data.leadId, lastMessageAt: data.lastMessageAt, lastInboundAt: null, lastOutboundAt: null, createdAt: data.createdAt }
           addWa(thread); waById.set(thread.id, thread)
         } else if (!upd.has(thread.id)) inc('whatsapp: existing threads extended')
-        const fresh = rows.filter(r => !copied.has(r.key))
+        const nat = nativeWa.get(thread.id) ?? []
+        // Text: same direction + text within 3 min. Media without caption: same direction, both media, within 3 min.
+        const isNativeDup = (r: Row) => nat.some(x => x.direction === r.direction && Math.abs(x.at - +r.createdAt) <= DUP_WINDOW_MS
+          && (r.body ? x.body === norm(r.body) : !!r.mediaType && x.media && !x.body))
+        const fresh = rows.filter(r => !copied.has(r.key) && !isNativeDup(r))
+        inc('whatsapp: skipped (already in ERP from Meta)', rows.filter(r => !copied.has(r.key) && isNativeDup(r)).length)
         fresh.forEach(r => copied.add(r.key))
         waRows.push(...fresh.map(r => ({ conversationId: thread!.id, direction: r.direction, body: r.body, mediaUrl: r.mediaUrl, mediaType: r.mediaType, status: 'READ' as const, providerMessageId: r.key, sentByName: r.sentByName, createdAt: r.createdAt })))
         inc('whatsapp: messages copied', fresh.length)
