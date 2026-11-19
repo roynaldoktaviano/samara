@@ -32,6 +32,10 @@ const digits = (p: string | null | undefined) => {
   return d.length >= 8 ? d : null
 }
 const norm = (s: string | null | undefined) => (s ?? '').trim().toLowerCase().replace(/\s+/g, ' ')
+// Labels the ERP puts in front of a Meta-delivered DM (src/lib/meta-dm.ts describeMessage) —
+// Freshchat's copy of the same message has only the customer's text, so compare without them.
+const META_LABEL_LINE = /^(↩️ Replied to your story|📣 Mentioned you in their story)$/
+const normNative = (s: string | null | undefined) => norm((s ?? '').split('\n').filter(l => !META_LABEL_LINE.test(l.trim())).join('\n'))
 
 type Row = { key: string; direction: 'IN' | 'OUT'; body: string | null; mediaUrl: string | null; mediaType: string | null; sentByName: string | null; createdAt: Date }
 
@@ -125,7 +129,7 @@ export async function mirrorFreshchatToErpChats(db: PrismaClient, opts: { apply:
   // Native (Meta-delivered) IG/Messenger messages, for the "already received by the ERP" check
   const native = new Map<string, { direction: string; body: string; at: number }[]>()
   for (const m of await db.instagramMessage.findMany({ where: { NOT: { providerMessageId: { startsWith: 'freshchat:' } }, body: { not: null } }, select: { conversationId: true, direction: true, body: true, createdAt: true } })) {
-    native.set(m.conversationId, [...(native.get(m.conversationId) ?? []), { direction: m.direction, body: norm(m.body), at: +m.createdAt }])
+    native.set(m.conversationId, [...(native.get(m.conversationId) ?? []), { direction: m.direction, body: normNative(m.body), at: +m.createdAt }])
   }
   // Same for WhatsApp: Freshchat's Samara number (+62 812-2701-3029) is also connected to the ERP
   // (both get Meta's webhook), so the customer's messages are already in the ERP thread — only the

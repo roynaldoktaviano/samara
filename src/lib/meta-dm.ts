@@ -250,11 +250,19 @@ async function storeAttachment(url: string, key: string): Promise<{ url: string;
 
 const GUESSED_MIME: Record<string, string> = { image: 'image/jpeg', video: 'video/mp4', audio: 'audio/mpeg', file: 'application/octet-stream', story_mention: 'image/jpeg' }
 
+/** First body line of a DM that replied to one of our stories — the thread shows the story under it. */
+export const STORY_REPLY_LABEL = '↩️ Replied to your story'
+
 /** One stored row per attachment: text, plus a media URL to fetch (or a link folded into the text). */
 function describeMessage(msg: NonNullable<MetaMessagingEvent['message']>): { text: string | null; media: { url: string; mediaType: string }[] } {
   const lines: string[] = []
   const media: { url: string; mediaType: string }[] = []
-  if (msg.reply_to?.story) lines.push('↩️ Replied to your story')
+  if (msg.reply_to?.story) {
+    lines.push(STORY_REPLY_LABEL)
+    // The story itself (photo or video — the real type comes from the download) rides on the
+    // message so the rep can see which story they answered. Stories expire after 24h on Meta's side.
+    if (msg.reply_to.story.url) media.push({ url: msg.reply_to.story.url, mediaType: 'image/jpeg' })
+  }
   for (const a of msg.attachments ?? []) {
     const url = a.payload?.url
     if (a.type === 'story_mention') lines.push('📣 Mentioned you in their story')
@@ -446,6 +454,10 @@ export async function handleMetaMessagingEvents(db: PrismaClient, tenantId: stri
               .then(stored => db.instagramMessage.update({ where: { id: saved.id }, data: { mediaUrl: stored.url, ...(stored.mimeType && { mediaType: stored.mimeType }) } }))
               .catch(e => {
                 console.error('[meta-dm] attachment store failed', saved.id, e)
+                // An expired story isn't worth an error under the bubble — just drop the preview.
+                if (i === 0 && msg?.reply_to?.story?.url === media.url) {
+                  return db.instagramMessage.update({ where: { id: saved.id }, data: { mediaType: null } })
+                }
                 return db.instagramMessage.update({ where: { id: saved.id }, data: { errorMessage: 'Attachment could not be downloaded from Meta' } })
               })
               .then(() => emitTenantEvent(tenantId, 'chat'), () => {})

@@ -207,7 +207,9 @@ function getInitials(name: string) {
 
 function Field({ label, htmlFor, hint, children, col2 }: { label: string; htmlFor?: string; hint?: string; children: React.ReactNode; col2?: boolean }) {
   return (
-    <div className={col2 ? 'sm:col-span-2' : ''}>
+    // col-span-full, not col-span-2: in the single-column (narrow) grid a span-2 item would
+    // create a phantom second column and squeeze/overlap every other field.
+    <div className={col2 ? 'col-span-full' : 'min-w-0'}>
       <Label htmlFor={htmlFor} className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</Label>
       <div className="mt-1.5">{children}</div>
       {hint && <p className="text-[10px] text-muted-foreground/60 mt-1 leading-relaxed">{hint}</p>}

@@ -15,6 +15,9 @@ const IG_BLUE = '#3897F0'
 const MESSENGER_BLUE = '#0866FF'
 const DAY_MS = 24 * 60 * 60 * 1000
 
+// Must match src/lib/meta-dm.ts STORY_REPLY_LABEL (that module is server-only).
+const STORY_REPLY_LABEL = '↩️ Replied to your story'
+
 interface QuotedMessage { id: string; body: string | null; direction: 'IN' | 'OUT'; mediaType: string | null }
 interface Message {
   id: string
@@ -299,6 +302,9 @@ export default function InstagramThread({ conversationId, onConversationUpdate, 
           // Blob preview of an image still uploading from this browser.
           const rawUrl: string | null = m.mediaUrl
           const mediaSrc = (isPending && rawUrl?.startsWith('blob:')) || isHttpUrl(rawUrl) ? rawUrl : null
+          // Reply to one of our stories: label, then the story itself, then their text (src/lib/meta-dm.ts).
+          const storyReply = m.direction === 'IN' && !!m.body?.startsWith(STORY_REPLY_LABEL)
+          const bodyText = storyReply ? m.body!.slice(STORY_REPLY_LABEL.length).replace(/^\n/, '') : m.body
           return (
           <div key={m.id} className={`group flex items-center gap-1.5 ${m.direction === 'OUT' ? 'justify-end' : 'justify-start'}`}>
             {m.direction === 'OUT' && !isPending && (
@@ -316,15 +322,22 @@ export default function InstagramThread({ conversationId, onConversationUpdate, 
                   <p className="truncate">{quoteSnippet(m.replyTo)}</p>
                 </div>
               )}
+              {storyReply && (
+                <p className="flex items-center gap-1 text-xs text-muted-foreground mb-1 pl-2 border-l-2 border-[#3897F0]">Replied to your story</p>
+              )}
               {mediaSrc && (
                 m.mediaType?.startsWith('image/')
-                  ? <img src={mediaSrc} alt="Attachment" className="rounded-2xl mb-1 max-h-80 max-w-[280px] w-full object-cover" />
-                  : <a href={mediaSrc} target="_blank" rel="noopener noreferrer" className="underline text-xs">Attachment</a>
+                  ? <a href={mediaSrc} target="_blank" rel="noopener noreferrer"><img src={mediaSrc} alt={storyReply ? 'Story' : 'Attachment'} className={`rounded-2xl mb-1 w-full object-cover ${storyReply ? 'max-h-64 max-w-[160px]' : 'max-h-80 max-w-[280px]'}`} /></a>
+                  : m.mediaType?.startsWith('video/')
+                    ? <video src={mediaSrc} controls playsInline preload="metadata" className={`rounded-2xl mb-1 w-full bg-black ${storyReply ? 'max-h-64 max-w-[160px]' : 'max-h-80 max-w-[280px]'}`} />
+                    : m.mediaType?.startsWith('audio/')
+                      ? <audio src={mediaSrc} controls className="mb-1 max-w-[260px]" />
+                      : <a href={mediaSrc} target="_blank" rel="noopener noreferrer" className="underline text-xs">Attachment</a>
               )}
               {!mediaSrc && m.mediaType && m.direction === 'IN' && !m.errorMessage && (
-                <p className="flex items-center gap-1.5 text-xs text-muted-foreground"><Loader2 className="h-3 w-3 animate-spin" />Loading attachment…</p>
+                <p className="flex items-center gap-1.5 text-xs text-muted-foreground"><Loader2 className="h-3 w-3 animate-spin" />Loading {storyReply ? 'story' : 'attachment'}…</p>
               )}
-              {m.body && <p className="whitespace-pre-wrap break-words">{m.body}</p>}
+              {bodyText && <p className="whitespace-pre-wrap break-words">{bodyText}</p>}
             </div>
             {failed ? (
               <p className="flex items-center gap-1 text-[10px] text-destructive mt-0.5 px-1">
