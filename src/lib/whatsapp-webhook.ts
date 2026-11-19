@@ -292,10 +292,29 @@ export function createWhatsappWebhookHandlers(endpointBrand?: WhatsappBrand) {
             ? await db.whatsappMessage.findUnique({ where: { providerMessageId: msg.context.id }, select: { id: true } })
             : null
 
-          const saved = await db.whatsappMessage.create({
-            data: { conversationId: conversation.id, direction: 'IN', body: text, mediaUrl: null, mediaType, status: 'DELIVERED', providerMessageId: msg.id, replyToId: quoted?.id ?? null, receiveOnlyPhoneNumberId },
+          // Stamped with Meta's own send time, so a message Meta re-delivers late (e.g. after a
+          // deploy/outage) still sits where the customer wrote it.
+          const sentAtMs = Number(msg.timestamp) * 1000
+          const sentAt = Number.isFinite(sentAtMs) && sentAtMs > 0 && sentAtMs <= Date.now() + 60_000 ? new Date(sentAtMs) : new Date()
+          // The same message already copied in from Freshchat (which shares this number and may have
+          // got it first — src/lib/freshchat-mirror.ts) → that row becomes this message, no double bubble.
+          const mirroredCopy = text ? await db.whatsappMessage.findFirst({
+            where: {
+              conversationId: conversation.id, direction: 'IN', body: text, providerMessageId: { startsWith: 'freshchat:' },
+              createdAt: { gte: new Date(sentAt.getTime() - 5 * 60_000), lte: new Date(sentAt.getTime() + 5 * 60_000) },
+            },
             select: { id: true },
-          })
+          }) : null
+          const saved = mirroredCopy
+            ? await db.whatsappMessage.update({
+              where: { id: mirroredCopy.id },
+              data: { providerMessageId: msg.id, status: 'DELIVERED', receiveOnlyPhoneNumberId, ...(quoted ? { replyToId: quoted.id } : {}) },
+              select: { id: true },
+            })
+            : await db.whatsappMessage.create({
+              data: { conversationId: conversation.id, direction: 'IN', body: text, mediaUrl: null, mediaType, status: 'DELIVERED', providerMessageId: msg.id, replyToId: quoted?.id ?? null, receiveOnlyPhoneNumberId, createdAt: sentAt },
+              select: { id: true },
+            })
           emitTenantEvent(tenant.id, 'chat')
 
           // Media is fetched from Meta and re-hosted on R2 in the background — a big video
@@ -343,9 +362,7 @@ export function createWhatsappWebhookHandlers(endpointBrand?: WhatsappBrand) {
           // else the 30-min timing rule) or direct — src/lib/wa-chat-attribution.ts.
           const isSessionStart = isNewConversation || !existing || isNewContactSession(existing.lastInboundAt)
           if (isSessionStart || msg.referral) {
-            const sentAt = Number(msg.timestamp) * 1000
-            const startedAt = Number.isFinite(sentAt) && sentAt > 0 ? new Date(sentAt) : new Date()
-            await recordWhatsappChatAttribution(db, { conversationId: conversation.id, startedAt, text, isSessionStart, referral: msg.referral })
+            await recordWhatsappChatAttribution(db, { conversationId: conversation.id, startedAt: sentAt, text, isSessionStart, referral: msg.referral })
           }
 
           // Notice for whichever sales rep this chat is assigned to — in-app bell (toast +

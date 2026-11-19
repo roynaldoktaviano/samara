@@ -2,7 +2,7 @@
  * Freshchat chat history → ERP (src/lib/freshchat-import.ts). Read-only copy, attachments → R2.
  *   npx tsx scripts/freshchat-import.ts full [--limit=N] [--concurrency=N]   every conversation not pulled yet
  *   npx tsx scripts/freshchat-import.ts delta                                 new + recently active (15-min job)
- *   npx tsx scripts/freshchat-import.ts mirror [--apply] [--limit=N]          copy into ERP WA / IG / Messenger threads (dry run without --apply)
+ *   npx tsx scripts/freshchat-import.ts mirror [--apply] [--limit=N] [--since=DAYS]  copy into ERP WA / IG / Messenger threads (dry run without --apply)
  *   npx tsx scripts/freshchat-import.ts status
  * Needs FRESHCHAT_API_TOKEN + FRESHCHAT_API_URL in .env.
  */
@@ -25,7 +25,7 @@ async function main() {
     console.log({ conversations: total, synced: done, messages: msgs, withError: failed, bySource: bySource.map(b => `${b.channelSource}: ${b._count}`) })
     return
   }
-  if (cmd === 'mirror') { await mirrorFreshchatToErpChats(db, { apply: args.includes('--apply'), limit: num('limit') }); return }
+  if (cmd === 'mirror') { await mirrorFreshchatToErpChats(db, { apply: args.includes('--apply'), limit: num('limit'), sinceDays: num('since') }); return }
   const fc = freshchatFromEnv()
   if (!fc) throw new Error('FRESHCHAT_API_TOKEN / FRESHCHAT_API_URL missing from env')
   console.log(await runFreshchatSync(db, fc, { full: cmd === 'full', limit: num('limit'), concurrency: num('concurrency') }))

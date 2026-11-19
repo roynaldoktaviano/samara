@@ -57,7 +57,9 @@ function rowsOf(messages: { id: string; actorType: string | null; actorName: str
 }
 const previewOf = (r: Row) => r.body?.slice(0, 200) ?? (r.mediaType?.startsWith('image/') ? '📷 Photo' : r.mediaType?.startsWith('video/') ? '🎥 Video' : r.mediaType?.startsWith('audio/') ? '🎤 Audio' : '📎 File')
 
-export async function mirrorFreshchatToErpChats(db: PrismaClient, opts: { apply: boolean; log?: Log; limit?: number } = { apply: false }) {
+// sinceDays: only conversations with a message in the last N days (catch up on live chats without
+// copying the whole old backlog at once).
+export async function mirrorFreshchatToErpChats(db: PrismaClient, opts: { apply: boolean; log?: Log; limit?: number; sinceDays?: number } = { apply: false }) {
   const log = opts.log ?? console.log
   const counts: Record<string, number> = {}
   const inc = (k: string, n = 1) => { if (n) counts[k] = (counts[k] ?? 0) + n }
@@ -68,6 +70,7 @@ export async function mirrorFreshchatToErpChats(db: PrismaClient, opts: { apply:
     WHERE "messagesSyncedAt" IS NOT NULL AND "messageCount" > 0 AND brand IS NOT NULL
       AND "channelSource" IN ('WHATSAPP', 'INSTA', 'FB_NATIVE')
       AND ("mirroredAt" IS NULL OR "messagesSyncedAt" > "mirroredAt")
+      ${opts.sinceDays ? `AND "lastMessageAt" >= now() - interval '${Math.max(1, Math.floor(Number(opts.sinceDays)))} days'` : ''}
     ORDER BY "fcCreatedAt" ASC NULLS FIRST ${opts.limit ? `LIMIT ${Number(opts.limit)}` : ''}`)).map(r => r.id)
   log(`freshchat mirror: ${ids.length} conversations to copy into ERP chats${opts.apply ? '' : ' (dry run)'}`)
   if (!ids.length) return counts
