@@ -15,7 +15,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const contacts = await db.leadContact.findMany({
     where: { leadId: id },
     orderBy: { createdAt: 'desc' },
-    select: { id: true, channel: true, brand: true, message: true, isFirstContact: true, createdAt: true },
+    select: { id: true, channel: true, brand: true, message: true, isFirstContact: true, whatsappConversationId: true, instagramConversationId: true, createdAt: true },
   })
   return NextResponse.json(contacts)
 }

@@ -118,7 +118,35 @@ interface LeadContact {
   brand?: string | null
   message?: string | null
   isFirstContact: boolean
+  whatsappConversationId?: string | null
+  instagramConversationId?: string | null
   createdAt: string
+}
+
+// A WhatsApp chat is logged twice: once as the LeadContact (the chat itself) and once as the
+// Inquiry carrying its attribution (ad referral / website tap / direct — src/lib/wa-tap.ts,
+// src/lib/wa-chat-attribution.ts). Pair them so the timeline shows one card per chat.
+const CONTACT_PAIR_WINDOW_MS = 24 * 60 * 60 * 1000
+function pairChatInquiries(contacts: LeadContact[], inquiries: Inquiry[]) {
+  const used = new Set<string>()
+  const chatEntries = contacts.map(chat => {
+    let match: Inquiry | null = null
+    if (chat.whatsappConversationId) {
+      const at = new Date(chat.createdAt).getTime()
+      let best = Infinity
+      for (const inq of inquiries) {
+        if (used.has(inq.id) || inq.whatsappConversationId !== chat.whatsappConversationId) continue
+        const d = Math.abs(new Date(inq.createdAt).getTime() - at)
+        if (d < CONTACT_PAIR_WINDOW_MS && d < best) { best = d; match = inq }
+      }
+      if (match) used.add(match.id)
+    }
+    return { at: chat.createdAt, chat, inq: match }
+  })
+  return [
+    ...chatEntries,
+    ...inquiries.filter(i => !used.has(i.id)).map(inq => ({ at: inq.createdAt, chat: null, inq })),
+  ].sort((a, b) => b.at.localeCompare(a.at))
 }
 
 const CONTACT_CHANNEL_LABEL: Record<LeadContact['channel'], string> = { WHATSAPP: 'WhatsApp', INSTAGRAM: 'Instagram DM', MESSENGER: 'Messenger' }
@@ -138,6 +166,7 @@ interface Inquiry extends AttributionInquiry {
   message?: string | null
   website?: string | null
   url?: string | null
+  whatsappConversationId?: string | null
   // First touch — visitor's very first-ever session (Freshsales "Original" touch)
   utmSource?: string | null
   utmMedium?: string | null
@@ -188,9 +217,11 @@ const FAILURE_REASON_LABEL: Record<WebhookFailure['reason'], string> = {
 }
 
 /* ─── Main Component ─────────────────────────────────────────────────────── */
-export default function Leads({ onOpenWhatsapp, onOpenEmail, onOpenBooking, onOpenGuest }: {
+export default function Leads({ onOpenWhatsapp, onOpenMetaChat, onOpenEmail, onOpenBooking, onOpenGuest }: {
   // Hand-off to the Chat module once a follow-up is sent, so the rep lands in the thread.
   onOpenWhatsapp?: (conversationId: string) => void
+  // Instagram / Messenger thread (Contact History card click).
+  onOpenMetaChat?: (conversationId: string) => void
   onOpenEmail?: (conversationId: string) => void
   // Booking-history rows / guest profile link in the lead detail.
   onOpenBooking?: (bookingId: string) => void
@@ -981,22 +1012,59 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail, onOpenBooking, onOp
                   ) : (
                     <div className="space-y-2">
                       {/* Website/Instant-form inquiries and chat contacts on one timeline, newest first. */}
-                      {[
-                        ...inquiries.map(inq => ({ at: inq.createdAt, inq, chat: null })),
-                        ...contacts.map(chat => ({ at: chat.createdAt, inq: null, chat })),
-                      ].sort((a, b) => b.at.localeCompare(a.at)).map(({ inq, chat }) => chat ? (
-                        <div key={chat.id} className="rounded-lg border px-3 py-2 space-y-1">
+                      {pairChatInquiries(contacts, inquiries).map(({ inq, chat }) => {
+                        if (chat) {
+                        const openChat = chat.whatsappConversationId && onOpenWhatsapp
+                          ? () => onOpenWhatsapp(chat.whatsappConversationId!)
+                          : chat.instagramConversationId && onOpenMetaChat
+                            ? () => onOpenMetaChat(chat.instagramConversationId!)
+                            : null
+                        return (
+                        <div
+                          key={chat.id}
+                          {...(openChat && {
+                            role: 'button', tabIndex: 0, title: 'Open chat',
+                            onClick: openChat,
+                            onKeyDown: (e: React.KeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openChat() } },
+                          })}
+                          className={`rounded-lg border px-3 py-2 space-y-1 ${openChat ? 'cursor-pointer hover:bg-muted/40 transition-colors' : ''}`}
+                        >
                           <div className="flex items-center justify-between gap-2">
-                            <span className="flex items-center gap-1.5 min-w-0">
+                            <span className="flex flex-wrap items-center gap-1.5 min-w-0">
                               <span className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${CONTACT_CHANNEL_COLOR[chat.channel]}`}>{CONTACT_CHANNEL_LABEL[chat.channel]}</span>
                               {chat.brand && <span className="text-[11px] text-muted-foreground truncate">to {chat.brand.charAt(0) + chat.brand.slice(1).toLowerCase()}</span>}
                               {chat.isFirstContact && <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">First contact</span>}
+                              {inq && (() => {
+                                const origin = classifyLeadOrigin(inq)
+                                return <span className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${LEAD_ORIGIN_COLOR[origin]}`}>{LEAD_ORIGIN_LABEL[origin]}</span>
+                              })()}
                             </span>
-                            <span className="text-[11px] text-muted-foreground">{formatDate(chat.createdAt, 'datetime')}</span>
+                            <span className="text-[11px] text-muted-foreground shrink-0">{formatDate(chat.createdAt, 'datetime')}</span>
                           </div>
-                          {chat.message && <p className="text-xs whitespace-pre-wrap line-clamp-4">{chat.message}</p>}
+                          {(chat.message || inq?.message) && <p className="text-xs whitespace-pre-wrap line-clamp-4">{chat.message || inq?.message}</p>}
+                          {inq?.website && (
+                            <p className="text-xs text-muted-foreground">
+                              {isHttpUrl(inq.url) ? <a href={inq.url} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="underline hover:text-foreground">{formPageLabel(inq.url, inq.website)}</a> : inq.website}
+                            </p>
+                          )}
+                          {inq && (inq.adConsent || hasWaBadge(inq)) && (
+                            <div className="flex flex-wrap gap-1">
+                              <WaMatchBadge inquiry={inq} />
+                              <AdConsentBadge consent={inq.adConsent} region={inq.consentRegion} />
+                            </div>
+                          )}
+                          {inq && hasAttribution(inq) && (
+                            <button
+                              onClick={e => { e.stopPropagation(); setAttributionInquiry(inq) }}
+                              className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground pt-0.5 transition-colors"
+                            >
+                              <Target className="h-3 w-3" /> View attribution
+                            </button>
+                          )}
                         </div>
-                      ) : inq && (
+                        )
+                        }
+                        return inq && (
                         <div key={inq.id} className="rounded-lg border px-3 py-2 space-y-1">
                           <div className="flex items-center justify-between gap-2">
                             {(() => {
@@ -1040,7 +1108,8 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail, onOpenBooking, onOp
                             </button>
                           )}
                         </div>
-                      ))}
+                        )
+                      })}
                     </div>
                   )}
                 </div>
