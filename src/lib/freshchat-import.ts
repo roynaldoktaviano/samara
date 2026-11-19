@@ -125,6 +125,18 @@ async function copyAttachment(convId: string, msgId: string, i: number, a: { url
   }
 }
 
+/** Freshchat text as sent: HTML entities ("Kelor &amp; Kanawa"), \r\n, runs of blank lines, or only
+ *  whitespace (an image sent with an empty caption). → plain text, or null when nothing's left. */
+export function cleanChatText(t: string | null | undefined): string | null {
+  if (!t) return null
+  const s = t
+    .replace(/&nbsp;/g, ' ').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"')
+    .replace(/&#0?39;|&apos;/g, "'").replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n))).replace(/&amp;/g, '&')
+    .replace(/\r\n?/g, '\n').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n')
+    .trim()
+  return s || null
+}
+
 function partsOf(m: Json) {
   const texts: string[] = []
   const atts: { kind: string; name: string | null; contentType: string | null; size: number | null; url: string }[] = []
@@ -142,7 +154,7 @@ function partsOf(m: Json) {
   for (const p of (m.reply_parts ?? []) as Json[]) {
     if (p.collection?.sub_parts) for (const s of p.collection.sub_parts) if (s.quick_reply_button?.label) texts.push(`[${s.quick_reply_button.label}]`)
   }
-  return { text: texts.join('\n') || null, atts }
+  return { text: cleanChatText(texts.join('\n')), atts }
 }
 
 /**

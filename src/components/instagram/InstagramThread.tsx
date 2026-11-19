@@ -318,7 +318,7 @@ export default function InstagramThread({ conversationId, onConversationUpdate, 
               )}
               {mediaSrc && (
                 m.mediaType?.startsWith('image/')
-                  ? <img src={mediaSrc} alt="Attachment" className="rounded-2xl mb-1 max-h-60 object-cover" />
+                  ? <img src={mediaSrc} alt="Attachment" className="rounded-2xl mb-1 max-h-80 max-w-[280px] w-full object-cover" />
                   : <a href={mediaSrc} target="_blank" rel="noopener noreferrer" className="underline text-xs">Attachment</a>
               )}
               {!mediaSrc && m.mediaType && m.direction === 'IN' && !m.errorMessage && (

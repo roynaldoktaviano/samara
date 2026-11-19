@@ -22,10 +22,36 @@ async function getGuest(db: PrismaClient, token: string) {
   return customer
 }
 
+// A per-guest link whose token was regenerated still carries ?bg=<bookingGuestId>.
+// Resolve that guest's *current* valid token so the page can redirect instead of
+// dead-ending on "Link Not Valid". The bg id (unguessable cuid) is only ever
+// handed out inside that guest's own link, so it's as much a secret as the token.
+async function currentTokenForBookingGuest(bgId: string): Promise<string | null> {
+  const found = await resolveTenantByLookup(client =>
+    client.bookingGuest.findUnique({
+      where: { id: bgId },
+      select: { customer: { select: { guestFormToken: true, guestFormExpiresAt: true } } },
+    }),
+  )
+  const c = found?.record?.customer
+  if (!c?.guestFormToken) return null
+  if (c.guestFormExpiresAt && c.guestFormExpiresAt < new Date()) return null
+  return c.guestFormToken
+}
+
 export async function GET(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
   const { token } = await params
   const found = await resolveTenantByLookup(client => getGuest(client, token))
-  if (!found) return NextResponse.json({ error: 'Invalid link' }, { status: 404 })
+  if (!found) {
+    const staleBg = req.nextUrl.searchParams.get('bg')
+    if (staleBg && /^[0-9a-f]{64}$/.test(token)) {
+      const newToken = await currentTokenForBookingGuest(staleBg)
+      if (newToken && newToken !== token) {
+        return NextResponse.json({ error: 'Invalid link', redirectToken: newToken }, { status: 404 })
+      }
+    }
+    return NextResponse.json({ error: 'Invalid link' }, { status: 404 })
+  }
   const { db, record: customer } = found
   if (customer.guestFormExpiresAt && new Date(customer.guestFormExpiresAt) < new Date()) {
     return NextResponse.json({ error: 'This link has expired' }, { status: 410 })

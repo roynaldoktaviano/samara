@@ -34,6 +34,7 @@ export class FreshsalesClient {
 
   async get(path: string) { return this.call('GET', path) }
   async post(path: string, body: unknown) { return this.call('POST', path, body) }
+  async put(path: string, body: unknown) { return this.call('PUT', path, body) }
 
   private async call(method: string, path: string, body?: unknown): Promise<Json | null> {
     for (let attempt = 0; ; attempt++) {

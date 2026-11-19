@@ -14,7 +14,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const customer = await db.customer.findUnique({ where: { id } })
   if (!customer) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-  const token = crypto.randomBytes(32).toString('hex')
+  // Reuse the existing token while it's still valid — regenerating used to
+  // mint a fresh token every click, silently killing links already sent to
+  // guests ("Link Not Valid"). Re-generating now just extends the expiry.
+  const stillValid = customer.guestFormToken
+    && (!customer.guestFormExpiresAt || customer.guestFormExpiresAt > new Date())
+  const token = stillValid ? customer.guestFormToken! : crypto.randomBytes(32).toString('hex')
   const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) // 30 days
 
   await db.customer.update({

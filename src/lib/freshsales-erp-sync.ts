@@ -22,6 +22,9 @@
  *    stale New Enquiry deals stay with the contact's sales rep); no ERP user (Helena) → none.
  *  - A Freshsales contact with a deal or an email and no ERP lead gets one (matched to an
  *    unlinked lead by email/phone first). Guests are linked by email/phone, owner only.
+ *  - Except: a lead a Sales rep is actively chatting with keeps that rep as owner — the ERP owner is
+ *    whoever chats (src/lib/lead-chat-owner.ts); Freshsales' owner never overrides it, and nothing
+ *    is written back to Freshsales.
  *  - A lead's WhatsApp / Instagram chats follow its owner (chat owner = lead owner).
  *  - No notifications are sent; owner moves are logged as MANUAL assignments.
  */
@@ -30,6 +33,7 @@ import {
   DEAL_DETAIL_INCLUDE, FreshsalesClient, contactRow, dealDetailRow, dealIndexRow, linkContacts, retryDb,
   syncContactConversations, syncContactTimeline, upsertActivity, upsertContactRows,
 } from './freshsales-archive'
+import { OWNER_EMAIL_OVERRIDE, chatOwnersByLead } from './lead-chat-owner'
 
 type Json = Record<string, any>
 type Log = (m: string) => void
@@ -58,7 +62,6 @@ const LOST_MAP: Record<string, LeadLostReason> = {
   'no response': 'NO_RESPONSE',
 }
 // FS user email → ERP user email where they differ (Efrinda logs into Freshsales as indah@)
-const OWNER_EMAIL_OVERRIDE: Record<string, string> = { 'indah@samarayachting.com': 'efrinda@samarayachting.com' }
 const SKIP_OWNER = /philippe/i
 
 // ─── small helpers ──────────────────────────────────────────────────────────
@@ -145,6 +148,8 @@ export async function reconcileFreshsalesToErp(db: PrismaClient, opts: { apply: 
     db.lead.findMany({ select: LEAD_SELECT }),
     db.customer.findMany({ select: { id: true, name: true, email: true, phone: true, freshsalesContactId: true, ownerId: true, deletedAt: true } }),
   ]))
+  // Leads a Sales rep is chatting with: that rep is the owner, whatever Freshsales says
+  const chatOwners = await retryDb(db, () => chatOwnersByLead(db))
 
   const name = (kind: string, id?: string | null) => (id ? lookups.find(l => l.kind === kind && l.fsId === id)?.name ?? null : null)
   const stageOf = new Map(lookups.filter(l => l.kind === 'DEAL_STAGE').map(l => [l.fsId, l]))
@@ -260,6 +265,10 @@ export async function reconcileFreshsalesToErp(db: PrismaClient, opts: { apply: 
   })
   // Queue the fields of `want` that differ from `lead`
   const diffLead = (lead: LeadRow, want: Partial<LeadRow>, fsContactId: string) => {
+    if (chatOwners.has(lead.id)) {
+      if ('ownerId' in want && want.ownerId !== chatOwners.get(lead.id)) inc('lead owner: kept (rep who chats)')
+      want = { ...want, ownerId: chatOwners.get(lead.id) }
+    }
     const data: Prisma.LeadUncheckedUpdateInput = {}
     const fields: Record<string, [unknown, unknown]> = {}
     for (const [k, v] of Object.entries(want) as [keyof LeadRow, unknown][]) {

@@ -557,9 +557,16 @@ function GuestFormInner() {
   }
 
   useEffect(() => {
+    let redirecting = false
     fetch(`/api/guest-form/${token}${bgId ? `?bg=${bgId}` : ''}`)
       .then(r => r.json())
       .then(data => {
+        if (data.redirectToken) {
+          // Old link (token regenerated since) — jump to the guest's current link.
+          redirecting = true
+          window.location.replace(`/guest-form/${data.redirectToken}${bgId ? `?bg=${encodeURIComponent(bgId)}` : ''}`)
+          return
+        }
         if (data.error) { setError(data.error); return }
         setGuest(data)
         setProfileData({
@@ -582,7 +589,7 @@ function GuestFormInner() {
         setSurfingData(data.surfingData ?? {})
       })
       .catch(() => setError('Failed to load form'))
-      .finally(() => setLoading(false))
+      .finally(() => { if (!redirecting) setLoading(false) })
   }, [token, bgId])
 
   const showDiving  = guest?.hasDiving

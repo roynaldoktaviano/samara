@@ -39,6 +39,9 @@ function rowsOf(messages: { id: string; actorType: string | null; actorName: str
   const out: Row[] = []
   for (const m of messages) {
     if (m.messageType === 'system' || m.messageType === 'private' || m.actorType === 'system') continue
+    // Freshchat also logs assignment notices as an *agent's* message with no type
+    // ("Conversation was unassigned as Wiwin Ayo Lestari was inactive") — never sent to the customer.
+    if (m.actorType !== 'user' && m.text && SYSTEM_NOTICE.test(m.text)) continue
     const direction = m.actorType === 'user' ? 'IN' : 'OUT'
     const atts = ((m.attachments as Att[] | null) ?? [])
     const sentByName = direction === 'OUT' ? m.actorName ?? 'Freshchat' : null
@@ -47,14 +50,18 @@ function rowsOf(messages: { id: string; actorType: string | null; actorName: str
       out.push({ key: `freshchat:${m.id}`, direction, body: m.text, mediaUrl: null, mediaType: null, sentByName, createdAt: m.createdAt })
       continue
     }
+    // Freshchat repeats a file's name as the message text — the bubble already shows the file.
+    const sameAsName = (t: string | null, n: string | null) => !!t && !!n && alnum(t) === alnum(n)
     atts.forEach((a, i) => out.push({
       key: i ? `freshchat:${m.id}:${i}` : `freshchat:${m.id}`,
-      direction, body: i ? null : m.text ?? (a.kind === 'file' ? a.name : null),
+      direction, body: i || sameAsName(m.text, a.name) ? null : m.text,
       mediaUrl: a.storedUrl ?? a.url, mediaType: a.contentType ?? `${a.kind}/*`, sentByName, createdAt: m.createdAt,
     }))
   }
   return out
 }
+const SYSTEM_NOTICE = /^Conversation (was|is|has been) /
+const alnum = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '')
 const previewOf = (r: Row) => r.body?.slice(0, 200) ?? (r.mediaType?.startsWith('image/') ? '📷 Photo' : r.mediaType?.startsWith('video/') ? '🎥 Video' : r.mediaType?.startsWith('audio/') ? '🎤 Audio' : '📎 File')
 
 // sinceDays: only conversations with a message in the last N days (catch up on live chats without

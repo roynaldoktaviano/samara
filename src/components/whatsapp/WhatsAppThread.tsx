@@ -92,11 +92,19 @@ function quoteSnippet(q: QuotedMessage) {
   if (q.mediaType?.startsWith('audio/')) return '🎤 Audio'
   return '📎 Attachment'
 }
-// Our upload paths are `whatsapp/<conv>/<timestamp>-<name>` — show just the name.
+// Our upload paths are `whatsapp/<conv>/<timestamp>-<name>`, Freshchat copies
+// `freshchat/<conv>/<message uuid>-<n>-<name>` — show just the name.
 function attachmentName(url: string) {
   const last = decodeURIComponent(url.split('/').pop() ?? '')
-  return last.replace(/^\d{10,}-/, '') || 'Attachment'
+  return last.replace(/^\d{10,}-/, '').replace(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-\d+-/i, '') || 'Attachment'
 }
+const alnum = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '')
+// A caption that only repeats the attached file's name adds nothing under the file link.
+function captionOf(m: { body: string | null; mediaUrl: string | null }) {
+  if (!m.body || !m.body.trim()) return null
+  return m.mediaUrl && alnum(m.body) === alnum(attachmentName(m.mediaUrl)) ? null : m.body
+}
+const isVisualMedia = (t: string | null | undefined) => !!t && (t.startsWith('image/') || t.startsWith('video/'))
 function byCreatedAt(a: Message, b: Message) { return a.createdAt.localeCompare(b.createdAt) }
 
 // The thread is refreshed as "newest page" snapshots — keep anything older the rep already
@@ -580,7 +588,7 @@ export default function WhatsAppThread({ conversationId, onConversationUpdate, s
                         <Reply className="h-3.5 w-3.5" />
                       </button>
                     )}
-                    <div className={`max-w-[85%] md:max-w-[70%] min-w-0 [overflow-wrap:anywhere] rounded-lg px-3 py-2 shadow-sm text-sm ${m.direction === 'OUT' ? 'text-white' : 'bg-card text-foreground'} ${isPending && !failed ? 'opacity-80' : ''}`}
+                    <div className={`${m.mediaUrl && isVisualMedia(m.mediaType) ? 'w-[min(85%,320px)]' : 'max-w-[85%] md:max-w-[70%]'} min-w-0 [overflow-wrap:anywhere] rounded-lg px-3 py-2 shadow-sm text-sm ${m.direction === 'OUT' ? 'text-white' : 'bg-card text-foreground'} ${isPending && !failed ? 'opacity-80' : ''}`}
                       style={m.direction === 'OUT' ? { backgroundColor: '#005c4b' } : undefined}>
                       {m.replyTo && (
                         <div className={`rounded px-2 py-1 mb-1.5 border-l-2 text-xs ${m.direction === 'OUT' ? 'bg-black/15 border-white/50 text-white/80' : 'bg-foreground/5 border-success text-muted-foreground'}`}>
@@ -603,7 +611,7 @@ export default function WhatsAppThread({ conversationId, onConversationUpdate, s
                           <FileText className="h-2.5 w-2.5" /> Template: {m.templateName}
                         </p>
                       )}
-                      {m.body && <p className="whitespace-pre-wrap break-words">{m.body}</p>}
+                      {captionOf(m) && <p className="whitespace-pre-wrap break-words">{captionOf(m)}</p>}
                       {m.direction === 'IN' && m.receiveOnlyPhoneNumberId && (
                         <p className="text-[10px] mt-1 text-warning" title="The customer wrote to a number the ERP only receives on — replies go out from the main number">Sent to the old number</p>
                       )}
@@ -751,11 +759,11 @@ function MediaBlock({ url, type, out }: { url: string; type: string | null; out:
   if (type?.startsWith('image/')) {
     return (
       <a href={url} target="_blank" rel="noopener noreferrer" title="Open full size">
-        <img src={url} alt="Attachment" className="rounded-md mb-1.5 max-h-60 object-cover" />
+        <img src={url} alt="Attachment" className="rounded-md mb-1.5 w-full max-h-80 object-cover" />
       </a>
     )
   }
-  if (type?.startsWith('video/')) return <video src={url} controls preload="metadata" className="rounded-md mb-1.5 max-h-60 max-w-full" />
+  if (type?.startsWith('video/')) return <video src={url} controls preload="metadata" className="rounded-md mb-1.5 w-full max-h-80" />
   if (type?.startsWith('audio/')) return <audio src={url} controls preload="metadata" className="mb-1.5 max-w-full" />
   return (
     <a href={url} target="_blank" rel="noopener noreferrer"
