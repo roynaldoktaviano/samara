@@ -7,6 +7,8 @@ import { isHttpUrl } from '@/lib/url-safety'
 import { logWebhookFailure } from '@/lib/webhook-log'
 import { getClientIp, countryFromIp } from '@/lib/geo-country'
 import { providedWebhookSecret, webhookSecretMatches } from '@/lib/webhook-secret'
+import { cleanValue, trackingFromPayload } from '@/lib/inquiry-tracking'
+import { fillEmptyOnly, findContactByIdentity, isPlaceholderName, normalizeEmail, toE164 } from '@/lib/contact-identity'
 
 // Called server-to-server only, by the WordPress site (a PHP hook on
 // wpcf7_mail_sent) with the secret in the X-Webhook-Secret header, so the
@@ -16,10 +18,12 @@ function json(body: unknown, status = 200) {
   return NextResponse.json(body, { status })
 }
 
+// First non-blank of the given keys. The site's JS sends the literal "undefined" for hidden
+// inputs it never filled — treated as blank (see cleanValue).
 function pick(data: Record<string, unknown>, ...keys: string[]): string {
   for (const key of keys) {
-    const val = data[key]
-    if (typeof val === 'string' && val.trim()) return val.trim()
+    const val = cleanValue(data[key], 5000)
+    if (val) return val
   }
   return ''
 }
@@ -101,8 +105,12 @@ export async function POST(request: NextRequest) {
     // 'field_*' aliases are the Samara "Request Quote" CF7 form's actual tag names.
     const firstName = pick(data, 'field_FirstName', 'first-name', 'first_name', 'firstName', 'your-first-name')
     const lastName  = pick(data, 'field_LastName',  'last-name',  'last_name',  'lastName',  'your-last-name')
-    const email     = pick(data, 'field_Email',     'email',       'your-email', 'Email')
-    const phone     = pick(data, 'field_PhoneWA',   'phone',       'phone-wa',   'phone_wa',  'your-phone', 'Phone')
+    // Identity: email normalised (trim + lowercase); phone kept in E.164 when it carries a
+    // country code (+ / 00 — never guessed), else as typed. Matching uses the E.164 only.
+    const email     = normalizeEmail(pick(data, 'field_Email', 'email', 'your-email', 'Email')) ?? ''
+    const rawPhone  = pick(data, 'field_PhoneWA',   'phone',       'phone-wa',   'phone_wa',  'your-phone', 'Phone')
+    const phoneE164 = toE164(rawPhone)
+    const phone     = phoneE164 ?? rawPhone
     const numGuests = pick(data, 'field_NumbGuests', 'number-of-guests', 'num-guests', 'number_of_guests', 'guests', 'guest-count')
     const checkIn   = pick(data, 'field_CheckIn',  'check-in-date',  'checkin',  'check_in',  'start-date', 'check-in')
     const checkOut  = pick(data, 'field_CheckOut', 'check-out-date', 'checkout', 'check_out', 'end-date',   'check-out')
@@ -135,7 +143,13 @@ export async function POST(request: NextRequest) {
     const gbraid = pick(data, 'gbraid')
     const wbraid = pick(data, 'wbraid')
     const fbclid = pick(data, 'fbclid')
-    const rawUrl = pick(data, 'page-url', 'page_url', 'url', 'form-url')
+    // Consent, Microsoft click ID, Meta cookies, landing pages, referrer, IP, UA, session
+    // attributes — all stored for every lead (src/lib/inquiry-tracking.ts); consent only
+    // decides what may later be sent to Google/Meta.
+    // No request-IP/UA fallback: the caller is the WordPress server, so those would be the
+    // site's own — the plugin forwards the visitor's as visitor_ip / user_agent.
+    const tracking = trackingFromPayload(data)
+    const rawUrl = pick(data, 'page-url', 'page_url', 'form_page_url', 'url', 'form-url')
     const url = isHttpUrl(rawUrl) ? rawUrl : ''
     const website = (() => { try { return url ? new URL(url).hostname : '' } catch { return '' } })()
     // Anonymous visitor-id cookie set by the same client-side tracker that reports
@@ -165,7 +179,7 @@ export async function POST(request: NextRequest) {
     // submission can arrive twice within milliseconds (double-click, or the site firing
     // the webhook twice), and without the lock both requests miss each other's "find
     // existing" check and each create a Lead.
-    const lockKeys = [email && `cf7:email:${email.toLowerCase()}`, phone && `cf7:phone:${phone}`]
+    const lockKeys = [email && `cf7:email:${email}`, phone && `cf7:phone:${phone}`]
       .filter((k): k is string => !!k)
       .sort() // fixed order so two requests locking the same pair can't deadlock
 
@@ -177,61 +191,44 @@ export async function POST(request: NextRequest) {
       let ownerType: 'customer' | 'lead'
       let ownerId: string
 
-      const existingCustomer = await (email
-        ? tx.customer.findFirst({ where: { email, deletedAt: null } })
-        : Promise.resolve(null))
-      const matchedCustomer = existingCustomer ?? (phone ? await tx.customer.findFirst({ where: { phone, deletedAt: null } }) : null)
+      // Guest first, then Lead — normalised email, else exact E.164 (src/lib/contact-identity.ts).
+      // "Never overwrite": the form only fills fields that are still empty; the name is only
+      // replaced when the current one is a stand-in (an email / number / chat handle).
+      const match = await findContactByIdentity(tx, { email, phoneE164 })
+      const incoming = { firstName: firstName || null, lastName: lastName || null, email: email || null, phone: phone || null }
 
-      if (matchedCustomer) {
+      if (match?.type === 'customer') {
         ownerType = 'customer'
-        const updated = await tx.customer.update({
-          where: { id: matchedCustomer.id },
+        const cur = await tx.customer.findUniqueOrThrow({ where: { id: match.id }, select: { name: true, firstName: true, lastName: true, email: true, phone: true } })
+        const fill = fillEmptyOnly(cur, incoming)
+        if (Object.keys(fill).length) await tx.customer.update({ where: { id: match.id }, data: fill })
+        ownerId = match.id
+      } else if (match?.type === 'lead') {
+        ownerType = 'lead'
+        const cur = await tx.lead.findUniqueOrThrow({ where: { id: match.id }, select: { name: true, firstName: true, lastName: true, email: true, phone: true, nationality: true } })
+        const fill = fillEmptyOnly(cur, { ...incoming, nationality: ipCountry || null })
+        const realName = [firstName, lastName].filter(Boolean).join(' ')
+        const rename = realName && isPlaceholderName(cur.name, cur)
+          ? { name: realName, firstName: firstName || null, lastName: lastName || null }
+          : {}
+        if (Object.keys(fill).length || Object.keys(rename).length) {
+          await tx.lead.update({ where: { id: match.id }, data: { ...fill, ...rename } })
+        }
+        ownerId = match.id
+      } else {
+        ownerType = 'lead'
+        const created = await tx.lead.create({
           data: {
-            name: fullName,
-            ...(firstName && { firstName }),
-            ...(lastName  && { lastName  }),
-            ...(email     && { email     }),
-            ...(phone     && { phone     }),
+            name:        fullName,
+            firstName:   firstName || null,
+            lastName:    lastName  || null,
+            email:       email     || null,
+            phone:       phone     || null,
+            nationality: ipCountry || null,
           },
           select: { id: true },
         })
-        ownerId = updated.id
-      } else {
-        const existingLead = await (email
-          ? tx.lead.findFirst({ where: { email, deletedAt: null }, select: { id: true, nationality: true } })
-          : Promise.resolve(null))
-        const matchedLead = existingLead ?? (phone ? await tx.lead.findFirst({ where: { phone, deletedAt: null }, select: { id: true, nationality: true } }) : null)
-
-        if (matchedLead) {
-          ownerType = 'lead'
-          const updated = await tx.lead.update({
-            where: { id: matchedLead.id },
-            data: {
-              name: fullName,
-              ...(firstName && { firstName }),
-              ...(lastName  && { lastName  }),
-              ...(email     && { email     }),
-              ...(phone     && { phone     }),
-              ...(!matchedLead.nationality && ipCountry && { nationality: ipCountry }),
-            },
-            select: { id: true },
-          })
-          ownerId = updated.id
-        } else {
-          ownerType = 'lead'
-          const created = await tx.lead.create({
-            data: {
-              name:        fullName,
-              firstName:   firstName || null,
-              lastName:    lastName  || null,
-              email:       email     || null,
-              phone:       phone     || null,
-              nationality: ipCountry || null,
-            },
-            select: { id: true },
-          })
-          ownerId = created.id
-        }
+        ownerId = created.id
       }
 
       // Same submission already recorded moments ago → don't store a second copy.
@@ -279,6 +276,7 @@ export async function POST(request: NextRequest) {
           lastGbraid:   gbraid      || null,
           lastWbraid:   wbraid      || null,
           lastFbclid:   fbclid      || null,
+          ...tracking,
           rawPayload:   toJsonSafe(data),
         },
       })

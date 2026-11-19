@@ -49,6 +49,7 @@ export const LEAD_ORIGIN_COLOR: Record<LeadOrigin, string> = {
 export const INQUIRY_FORM_LABEL: Record<string, string> = {
   CF7: 'Website Form',
   META_LEAD_AD: 'Meta Instant Form',
+  WHATSAPP: 'WhatsApp button',
   freshsales: 'Freshsales Import',
 }
 

@@ -8,10 +8,11 @@ import { emitTenantEvent } from '@/lib/realtime-bus'
 import { pickNextSalesUserId } from '@/lib/whatsapp-distribution'
 import { autoLinkNewConversation } from '@/lib/whatsapp-lead'
 import { fillLeadContactFromText, isNewContactSession, recordLeadContact } from '@/lib/lead-contact'
+import { matchWhatsappSession } from '@/lib/wa-tap'
 import { recordLeadInbound } from '@/lib/lead-stage-auto'
 import { sendPushToUser } from '@/lib/push'
 import { isViewing } from '@/lib/chat-presence'
-import { WHATSAPP_BRANDS, WHATSAPP_BRAND_SECRET_KEYS, WHATSAPP_BRAND_WEBHOOK_SECRET_KEYS, WHATSAPP_GRAPH_VERSION, type WhatsappBrand } from '@/lib/whatsapp-brands'
+import { WHATSAPP_BRANDS, WHATSAPP_BRAND_RECEIVE_ONLY_KEYS, WHATSAPP_BRAND_SECRET_KEYS, WHATSAPP_BRAND_WEBHOOK_SECRET_KEYS, WHATSAPP_GRAPH_VERSION, type WhatsappBrand } from '@/lib/whatsapp-brands'
 
 // WhatsApp Cloud API (Meta) webhook — handles both the one-time GET verification
 // handshake and the actual POST event deliveries. Samara Yachting has 3 separate
@@ -32,14 +33,20 @@ import { WHATSAPP_BRANDS, WHATSAPP_BRAND_SECRET_KEYS, WHATSAPP_BRAND_WEBHOOK_SEC
 
 const GRAPH_VERSION = WHATSAPP_GRAPH_VERSION
 
-// Matches an inbound value's phone_number_id against each brand's configured one.
-async function resolveBrand(tenantId: string, phoneNumberId: string | undefined, fallbackBrand?: WhatsappBrand): Promise<WhatsappBrand | null> {
-  if (!phoneNumberId) return fallbackBrand ?? null
+// Matches an inbound value's phone_number_id against each brand's configured one, then
+// against each brand's receive-only numbers (receiveOnly = arrived on a number we never send from).
+async function resolveBrand(tenantId: string, phoneNumberId: string | undefined, fallbackBrand?: WhatsappBrand): Promise<{ brand: WhatsappBrand; receiveOnly: boolean } | null> {
+  if (!phoneNumberId) return fallbackBrand ? { brand: fallbackBrand, receiveOnly: false } : null
   for (const brand of WHATSAPP_BRANDS) {
     const configured = await getTenantSecret(tenantId, WHATSAPP_BRAND_SECRET_KEYS[brand].phoneNumberId)
-    if (configured && configured === phoneNumberId) return brand
+    if (configured && configured === phoneNumberId) return { brand, receiveOnly: false }
   }
-  if (fallbackBrand) return fallbackBrand
+  for (const brand of WHATSAPP_BRANDS) {
+    const key = WHATSAPP_BRAND_RECEIVE_ONLY_KEYS[brand]
+    const ids = key ? (await getTenantSecret(tenantId, key))?.split(',').map(s => s.trim()) : undefined
+    if (ids?.includes(phoneNumberId)) return { brand, receiveOnly: true }
+  }
+  if (fallbackBrand) return { brand: fallbackBrand, receiveOnly: false }
   console.error('[whatsapp webhook] no configured brand matches phone_number_id', phoneNumberId, 'for tenant', tenantId)
   return null
 }
@@ -181,7 +188,11 @@ export function createWhatsappWebhookHandlers(endpointBrand?: WhatsappBrand) {
     for (const entry of body.entry ?? []) {
       for (const change of entry.changes ?? []) {
         const value = change.value
-        const brand = await resolveBrand(tenant.id, value.metadata?.phone_number_id, endpointBrand)
+        const routed = await resolveBrand(tenant.id, value.metadata?.phone_number_id, endpointBrand)
+        const brand = routed?.brand ?? null
+        // Set on inbound rows that came in on a receive-only number — the thread's 24h reply
+        // window ignores them (Meta's window is per business number, and we never send from it).
+        const receiveOnlyPhoneNumberId = routed?.receiveOnly ? value.metadata!.phone_number_id! : null
         const accessToken = brand ? await getTenantSecret(tenant.id, WHATSAPP_BRAND_SECRET_KEYS[brand].apiToken) : null
 
         // Delivery/read receipts for messages we sent
@@ -280,7 +291,7 @@ export function createWhatsappWebhookHandlers(endpointBrand?: WhatsappBrand) {
             : null
 
           const saved = await db.whatsappMessage.create({
-            data: { conversationId: conversation.id, direction: 'IN', body: text, mediaUrl: null, mediaType, status: 'DELIVERED', providerMessageId: msg.id, replyToId: quoted?.id ?? null },
+            data: { conversationId: conversation.id, direction: 'IN', body: text, mediaUrl: null, mediaType, status: 'DELIVERED', providerMessageId: msg.id, replyToId: quoted?.id ?? null, receiveOnlyPhoneNumberId },
             select: { id: true },
           })
           emitTenantEvent(tenant.id, 'chat')
@@ -323,6 +334,15 @@ export function createWhatsappWebhookHandlers(endpointBrand?: WhatsappBrand) {
             if (leadId) await fillLeadContactFromText(db, leadId, text)
           } catch (e) {
             console.error('[whatsapp webhook] lead link/history failed', e)
+          }
+
+          // A chat session just started → match it to the website WhatsApp-button tap it came
+          // from ("Ref SL-XXXXX", else the 30-min timing rule) — src/lib/wa-tap.ts.
+          if (isNewConversation || !existing || isNewContactSession(existing.lastInboundAt)) {
+            const sentAt = Number(msg.timestamp) * 1000
+            const startedAt = Number.isFinite(sentAt) && sentAt > 0 ? new Date(sentAt) : new Date()
+            await matchWhatsappSession(db, { conversationId: conversation.id, startedAt, text })
+              .catch(e => console.error('[whatsapp webhook] WA tap match failed', e))
           }
 
           // Notice for whichever sales rep this chat is assigned to — in-app bell (toast +

@@ -5,18 +5,22 @@ import type { PrismaClient } from '@prisma/client'
 // a lead imported from Freshsales is classified by what Freshsales knows about how the contact
 // arrived (its web form fields, Meta/Google lead-form tag, Freshchat channel, incoming email).
 export const LEAD_ENTRY_SOURCES = [
-  'WEBSITE_FORM', 'INSTANT_FORM', 'WHATSAPP', 'INSTAGRAM', 'MESSENGER', 'LIVE_CHAT', 'EMAIL', 'OTHER',
+  'WEBSITE_FORM', 'INSTANT_FORM', 'WHATSAPP', 'INSTAGRAM', 'MESSENGER', 'LIVE_CHAT', 'EMAIL', 'PHONE', 'AGENT_OTA', 'OTHER',
 ] as const
+// PHONE and AGENT_OTA can't be detected — only sales set them (Lead.entrySourceManual).
+export const MANUAL_ONLY_ENTRY_SOURCES: readonly LeadEntrySource[] = ['PHONE', 'AGENT_OTA']
 export type LeadEntrySource = typeof LEAD_ENTRY_SOURCES[number]
 
 export const LEAD_ENTRY_SOURCE_LABEL: Record<LeadEntrySource, string> = {
   WEBSITE_FORM: 'Website Form',
-  INSTANT_FORM: 'Instant Form',
+  INSTANT_FORM: 'Meta Instant Form',
   WHATSAPP: 'WhatsApp',
   INSTAGRAM: 'Instagram',
   MESSENGER: 'Messenger',
   LIVE_CHAT: 'Website Chat',
   EMAIL: 'Email',
+  PHONE: 'Phone',
+  AGENT_OTA: 'Agent / OTA',
   OTHER: 'Other / Manual',
 }
 
@@ -24,6 +28,7 @@ export const isLeadEntrySource = (v: unknown): v is LeadEntrySource =>
   typeof v === 'string' && (LEAD_ENTRY_SOURCES as readonly string[]).includes(v)
 
 // Precedence (first match wins):
+//  0. The channel sales picked by hand (Lead.entrySourceManual) — e.g. Phone, Agent/OTA
 //  1. Lead created by the ERP's own chat webhooks (Lead.source "WHATSAPP_SAMARA" etc.)
 //  2. The ERP's own form inquiries — Meta Lead Ad → Instant form, CF7 → Website form
 //  3. Freshsales tags — lead-form integration (cf_form_source set, but no website landing
@@ -36,7 +41,7 @@ export const isLeadEntrySource = (v: unknown): v is LeadEntrySource =>
 // A "FRESHSALES_DEAL" card (a contact's 2nd+ deal) is classified through the deal's contact.
 const CLASSIFY_SQL = `
 WITH base AS (
-  SELECT l.id, l.source, l."entrySource" AS cur,
+  SELECT l.id, l.source, l."entrySource" AS cur, l."entrySourceManual" AS manual,
          COALESCE(l."freshsalesContactId", d."contactFsIds"[1]) AS cid
   FROM "Lead" l
   LEFT JOIN "FreshsalesDeal" d ON d.id = l."freshsalesDealId" AND l."freshsalesContactId" IS NULL
@@ -71,7 +76,7 @@ WITH base AS (
   SELECT DISTINCT u.cid FROM "FreshsalesConversation" m, unnest(m."contactFsIds") AS u(cid)
   WHERE m.direction = 'incoming'
 ), sig AS (
-  SELECT b.id, b.source, b.cur, b.cid,
+  SELECT b.id, b.source, b.cur, b.cid, b.manual,
          c.raw->'custom_field'->>'cf_form_source' AS form_src,
          c.raw->'custom_field'->>'cf_door_opener' AS door,
          c.raw->'custom_field'->>'cf_utm_source' AS cf_utm,
@@ -88,6 +93,7 @@ WITH base AS (
 ), cls AS (
   SELECT s.id, s.cur,
     CASE
+      WHEN s.manual IS NOT NULL THEN s.manual
       WHEN split_part(s.source, '_', 1) IN ('WHATSAPP', 'INSTAGRAM', 'MESSENGER') THEN split_part(s.source, '_', 1)
       -- The ERP's own form inquiries are direct evidence, so they beat Freshsales' tags.
       WHEN s.meta THEN 'INSTANT_FORM'

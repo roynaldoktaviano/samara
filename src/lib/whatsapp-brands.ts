@@ -21,6 +21,13 @@ export const WHATSAPP_BRAND_SECRET_KEYS: Record<WhatsappBrand, { phoneNumberId: 
   OTIUM:    { phoneNumberId: 'whatsappOtiumPhoneNumberId',    apiToken: 'whatsappOtiumApiToken',    wabaId: 'whatsappOtiumWabaId' },
 }
 
+// Extra numbers whose inbound messages still file under this brand but that the ERP never
+// sends from (e.g. Samara's old number after moving to a new one) — comma-separated phone
+// number IDs. Replies always go out from the brand's main phoneNumberId.
+export const WHATSAPP_BRAND_RECEIVE_ONLY_KEYS: Partial<Record<WhatsappBrand, TenantSecretKey>> = {
+  SAMARA: 'whatsappSamaraReceiveOnlyPhoneNumberIds',
+}
+
 // Only for a number that lives in its own Meta App (separate verify token / app secret) —
 // brands not listed use the shared whatsappWebhookSecret / whatsappAppSecret.
 export const WHATSAPP_BRAND_WEBHOOK_SECRET_KEYS: Partial<Record<WhatsappBrand, { webhookSecret: TenantSecretKey; appSecret: TenantSecretKey }>> = {

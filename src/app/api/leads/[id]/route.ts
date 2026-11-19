@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { logActivity } from '@/lib/activity'
+import { isLeadEntrySource } from '@/lib/lead-entry-source'
 import { leadOwnerScope, canAccessLead } from '@/lib/lead-access'
 import { leadDealName } from '@/lib/deal-name'
 
@@ -28,10 +29,10 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     })
     if (!lead) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     // The Guest this lead became — via its booking, else the guest profile with the same email.
-    const phoneTail = lead.phone?.replace(/\D/g, '').slice(-10)
+    // Exact E.164 only — no partial-number search (src/lib/contact-identity.ts).
     const guestMatch = [
       ...(lead.email?.trim() ? [{ email: { equals: lead.email.trim(), mode: 'insensitive' as const } }] : []),
-      ...(phoneTail && phoneTail.length >= 8 ? [{ phone: { endsWith: phoneTail } }] : []),
+      ...(lead.phoneE164 ? [{ phoneE164: lead.phoneE164 }] : []),
     ]
     const guestId = lead.booking?.customer.id ?? (guestMatch.length
       ? (await db.customer.findFirst({ where: { deletedAt: null, OR: guestMatch }, orderBy: { createdAt: 'desc' }, select: { id: true } }))?.id ?? null
@@ -83,16 +84,26 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       firstName, lastName, nationality, email, phone, instagram, notes,
       productInterest, destinationId, travelStartDate, travelEndDate, travelSeason,
       guestCount, leadQuality, budgetMin, budgetMax, budgetCurrency,
-      tripType, tripAmount, tripAmountCurrency,
+      tripType, tripAmount, tripAmountCurrency, entrySourceManual,
     } = body
 
     const name = [firstName, lastName].filter(Boolean).join(' ') || body.name
     if (!name) return NextResponse.json({ error: 'Name is required' }, { status: 400 })
 
+    // Every form save sends the channel; "Automatic" only resets anything when a manual one was set.
+    const channelPatch = entrySourceManual === undefined ? {}
+      : isLeadEntrySource(entrySourceManual) ? { entrySourceManual, entrySource: entrySourceManual }
+      : (await db.lead.findUnique({ where: { id }, select: { entrySourceManual: true } }))?.entrySourceManual
+        ? { entrySourceManual: null, entrySource: null }
+        : {}
+
     const lead = await db.lead.update({
       where: { id },
       data: {
         name, firstName, lastName, nationality, email, phone, notes,
+        // Channel picked by hand wins over the automatic one (src/lib/lead-entry-source.ts);
+        // clearing it lets the next classification run fill entrySource again.
+        ...channelPatch,
         ...(instagram !== undefined && { instagram: typeof instagram === 'string' ? instagram.trim().replace(/^@/, '') || null : null }),
         productInterest: productInterest || null,
         destinationId: destinationId || null,

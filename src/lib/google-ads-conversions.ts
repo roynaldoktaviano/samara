@@ -1,5 +1,6 @@
 import type { PrismaClient } from '@prisma/client'
 import { findLinkedLeadId } from './customer-lead-link'
+import { adUploadDecision, isUploadableMatch } from './ad-consent'
 
 export const GOOGLE_ADS_CONVERSION_HEADER = ['Google Click ID', 'Conversion Name', 'Conversion Time', 'Conversion Value', 'Conversion Currency']
 
@@ -27,7 +28,8 @@ export function toGoogleAdsTime(date: Date): string {
  * booking's FIRST confirmed payment counts (a later final-payment confirmation isn't a new
  * conversion), and only bookings whose customer has a captured `gclid` can be attributed to
  * a Google Ads click — anything else is silently skipped rather than exported with a blank
- * click ID. Re-running this with an overlapping `since` window is safe: Google Ads dedupes
+ * click ID. Guests who declined ad cookies (or EU/UK/CH guests without a banner accept) are
+ * skipped too — see adUploadDecision. Re-running this with an overlapping `since` window is safe: Google Ads dedupes
  * conversion rows by (Google Click ID + Conversion Name + Conversion Time), so the same
  * booking showing up again in a later sync just gets ignored on their end, not double-counted.
  */
@@ -59,24 +61,29 @@ export async function getGoogleAdsConversions(db: PrismaClient, since: Date, con
   const customers = await db.customer.findMany({
     where: { id: { in: customerIds } },
     select: {
-      id: true, email: true, phone: true,
-      inquiries: { where: { gclid: { not: null } }, orderBy: { createdAt: 'desc' }, take: 1, select: { gclid: true } },
+      id: true, email: true, phone: true, nationality: true,
+      inquiries: { orderBy: { createdAt: 'desc' }, select: { gclid: true, adConsent: true, consentRegion: true, matchConfidence: true } },
     },
   })
 
   const gclidByCustomer = new Map<string, string | null>()
   for (const c of customers) {
-    if (c.inquiries[0]?.gclid) {
-      gclidByCustomer.set(c.id, c.inquiries[0].gclid)
+    // A person who first inquired as a Lead keeps those inquiries (click ID, consent) on the
+    // Lead — pull them in alongside the Customer's own.
+    const leadId = await findLinkedLeadId(db, c)
+    const leadInquiries = leadId
+      ? await db.inquiry.findMany({ where: { leadId }, orderBy: { createdAt: 'desc' }, select: { gclid: true, adConsent: true, consentRegion: true, matchConfidence: true } })
+      : []
+    const all = [...c.inquiries, ...leadInquiries]
+    // Consent gate (src/lib/ad-consent.ts): declined anywhere, or EU/UK/CH without a real
+    // banner accept → never sent to Google.
+    if (!adUploadDecision(all, c.nationality).ok) {
+      gclidByCustomer.set(c.id, null)
       continue
     }
-    // No gclid on the Customer's own inquiries — this person may have first
-    // inquired as a Lead (with the click ID) before converting to a Customer.
-    const leadId = await findLinkedLeadId(db, c)
-    const leadGclid = leadId
-      ? (await db.inquiry.findFirst({ where: { leadId, gclid: { not: null } }, orderBy: { createdAt: 'desc' }, select: { gclid: true } }))?.gclid ?? null
-      : null
-    gclidByCustomer.set(c.id, leadGclid)
+    // A LOW-confidence WhatsApp match's click ID may be someone else's — skipped (ad-consent.ts).
+    const usable = (i: { gclid: string | null; matchConfidence: string | null }) => !!i.gclid && isUploadableMatch(i.matchConfidence)
+    gclidByCustomer.set(c.id, c.inquiries.find(usable)?.gclid ?? leadInquiries.find(usable)?.gclid ?? null)
   }
 
   const rows: GoogleAdsConversionRow[] = []

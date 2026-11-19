@@ -313,6 +313,10 @@ model Customer {
   gender                 String?
   email                  String?
   phone                  String?
+  // Exact E.164 form of `phone` ("+6281234567890"), kept by the DB trigger in
+  // scripts/migrate-attribution-phase-a.ts — null when `phone` has no country code (no
+  // country is ever guessed). Identity matching compares this column only, never a partial number.
+  phoneE164              String?
   passport               String?
   dateOfBirth            DateTime?
   isChild                Boolean                 @default(false)
@@ -358,6 +362,7 @@ model Customer {
   @@index([email])
   @@index([createdAt])
   @@index([ownerId])
+  @@index([phoneE164])
 }
 
 // Sales Pipeline stages — mirror the Freshsales Deals board (Roy, 2026-11-11). Most moves are
@@ -406,6 +411,8 @@ model Lead {
   nationality         String?
   email               String?
   phone               String?
+  // Exact E.164 form of `phone` — same trigger/rule as Customer.phoneE164.
+  phoneE164           String?
   notes               String?
   // Instagram handle (without @) — filled when the lead came in by Instagram DM, and used to
   // match a later DM from the same person back to this lead (see src/lib/lead-contact.ts).
@@ -458,19 +465,22 @@ model Lead {
 
   // Sales rep who owns this lead. For WhatsApp-sourced leads it's kept in sync with the
   // linked chat's assignedToId (chat owner = lead owner, see src/lib/whatsapp-lead.ts).
-  ownerId         String?
-  owner           User?     @relation("LeadOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  ownerId           String?
+  owner             User?     @relation("LeadOwner", fields: [ownerId], references: [id], onDelete: SetNull)
   // When the current owner got it — the 24h stagnant clock (src/lib/lead-stagnant.ts)
   // restarts from here on every hand-over.
-  ownerAssignedAt DateTime?
+  ownerAssignedAt   DateTime?
   // Where the lead came from when created by the app itself, e.g. "WHATSAPP_SAMARA".
   // Website-form leads leave this null — their source lives on Inquiry.utm*.
-  source          String?
+  source            String?
   // Channel the lead first came in through (WEBSITE_FORM, INSTANT_FORM, WHATSAPP, INSTAGRAM,
   // MESSENGER, LIVE_CHAT, EMAIL, OTHER) — derived from forms/chats/Freshsales data by
   // src/lib/lead-entry-source.ts and kept fresh by the 15-min Freshsales job. Drives the
   // source tabs on the Leads page.
-  entrySource     String?
+  entrySource       String?
+  // Channel picked by hand by sales (any LEAD_ENTRY_SOURCES key, e.g. PHONE / AGENT_OTA) —
+  // beats the automatic classification above, which then just copies it into entrySource.
+  entrySourceManual String?
 
   inquiries              Inquiry[]
   pageViews              PageView[]
@@ -490,6 +500,7 @@ model Lead {
   @@index([bookingId])
   @@index([freshsalesDealId])
   @@index([entrySource])
+  @@index([phoneE164])
 }
 
 // One row per hand-over of a Lead between sales reps (history for the Sales Pipeline and
@@ -563,57 +574,131 @@ model PageView {
   @@index([occurredAt])
 }
 
+// One tap on a website WhatsApp button (Button Click to Chat). The site logs the tap with a
+// short ref code that is also put in the pre-filled message ("Ref SL-7KQ2M"), and forwards it
+// here (POST /api/webhooks/wa-tap). When the chat arrives it's matched back to its tap — by
+// the ref (CONFIDENT) or, without one, by timing within 30 min (MEDIUM, or LOW if ambiguous) —
+// and the tap's click IDs/UTMs/consent become a WHATSAPP Inquiry on the lead (src/lib/wa-tap.ts).
+model WaTap {
+  id                    String        @id @default(cuid())
+  ref                   String        @unique // "SL-7KQ2M" (SL = Samara, OT = Otium, MV = Mischief)
+  brand                 WhatsappBrand
+  tappedAt              DateTime
+  pageUrl               String?
+  lang                  String?
+  visitorId             String?
+  gclid                 String?
+  gbraid                String?
+  wbraid                String?
+  fbclid                String?
+  msclkid               String?
+  fbc                   String?
+  fbp                   String?
+  utmSource             String?
+  utmMedium             String?
+  utmCampaign           String?
+  utmTerm               String?
+  utmContent            String?
+  ftUtmSource           String?
+  ftUtmMedium           String?
+  ftUtmCampaign         String?
+  ftGclid               String?
+  referrer              String?
+  adConsent             String?
+  consentRegion         String?
+  ipAddress             String?
+  userAgent             String?
+  rawPayload            Json?
+  // Set once matched — the chat it became and the Inquiry carrying its attribution.
+  matchedConversationId String?
+  matchedAt             DateTime?
+  inquiry               Inquiry?
+  createdAt             DateTime      @default(now())
+
+  @@index([brand, tappedAt])
+  @@index([matchedConversationId])
+}
+
 // One row per form/inquiry submission — links to whichever of Lead/Customer
 // currently owns it (exactly one of leadId/customerId set; enforced in app
 // code, not a DB constraint, matching this schema's other either/or relations).
 // Reassigned from leadId to customerId when a Lead converts into a Guest via
 // booking creation — see POST /api/bookings.
 model Inquiry {
-  id                 String    @id @default(cuid())
-  source             String
-  leadId             String?
-  customerId         String?
-  checkInDate        DateTime?
-  checkOutDate       DateTime?
-  guestCount         Int?
-  tripType           String?
-  message            String?
-  website            String? // domain of the page the form was submitted from, e.g. "samaraliveaboard.com"
-  url                String? // full URL of the page the form was submitted from
+  id                  String    @id @default(cuid())
+  source              String
+  leadId              String?
+  customerId          String?
+  checkInDate         DateTime?
+  checkOutDate        DateTime?
+  guestCount          Int?
+  tripType            String?
+  message             String?
+  website             String? // domain of the page the form was submitted from, e.g. "samaraliveaboard.com"
+  url                 String? // full URL of the page the form was submitted from
   // "Original" touch — first_source/first_medium/first_campaign in Freshsales.
   // Filled from the form's ft_* fields (its own first-touch capture, persisted
   // client-side e.g. via cookie across the visitor's first-ever session).
-  utmSource          String?
-  utmMedium          String?
-  utmCampaign        String?
-  utmTerm            String?
-  utmContent         String?
-  gclid              String?
-  gbraid             String? // Google Ads' iOS/App-attribution equivalent of gclid
-  wbraid             String? // Google Ads' web-conversion equivalent of gclid (privacy sandbox)
-  fbclid             String? // Meta/Facebook click ID
-  leadSource         String? // Freshsales "Lead Source" (cf_lead_source)
-  refererField       String? // Freshsales "Referer Field" (cf_referer_field)
-  mobileNumberBackup String? // Freshsales "Mobile number backup" (cf_mobile_number_backup)
-  reference          String? // Freshsales "Reference" (cf_reference)
+  utmSource           String?
+  utmMedium           String?
+  utmCampaign         String?
+  utmTerm             String?
+  utmContent          String?
+  gclid               String?
+  gbraid              String? // Google Ads' iOS/App-attribution equivalent of gclid
+  wbraid              String? // Google Ads' web-conversion equivalent of gclid (privacy sandbox)
+  fbclid              String? // Meta/Facebook click ID
+  leadSource          String? // Freshsales "Lead Source" (cf_lead_source)
+  refererField        String? // Freshsales "Referer Field" (cf_referer_field)
+  mobileNumberBackup  String? // Freshsales "Mobile number backup" (cf_mobile_number_backup)
+  reference           String? // Freshsales "Reference" (cf_reference)
   // "Created from" touch — last_source/last_medium/last_campaign in Freshsales.
   // Filled from the form's bare utm_*/gclid/etc fields — this submission's own
   // traffic source, as opposed to the visitor's very first touch above.
-  lastSource         String?
-  lastMedium         String?
-  lastCampaign       String?
-  lastTerm           String?
-  lastContent        String?
-  lastGclid          String?
-  lastGbraid         String?
-  lastWbraid         String?
-  lastFbclid         String?
+  lastSource          String?
+  lastMedium          String?
+  lastCampaign        String?
+  lastTerm            String?
+  lastContent         String?
+  lastGclid           String?
+  lastGbraid          String?
+  lastWbraid          String?
+  lastFbclid          String?
   // "Most recent" touch — latest_source/latest_medium/latest_campaign in Freshsales
-  latestSource       String?
-  latestMedium       String?
-  latestCampaign     String?
-  rawPayload         Json?
-  createdAt          DateTime  @default(now())
+  latestSource        String?
+  latestMedium        String?
+  latestCampaign      String?
+  // Ad-cookie consent from the website form (granted / denied / unknown / not_required) and
+  // the visitor's banner region (eu, uk, ch, au, us, none…). Decides whether this person may
+  // be sent to Google/Meta — see src/lib/ad-consent.ts.
+  adConsent           String?
+  consentRegion       String?
+  // Store-all tracking (Marc, 15 Nov): every click ID / cookie / landing / IP / UA is kept for
+  // every lead; consent only decides what is later SENT (src/lib/ad-consent.ts). Exception:
+  // Meta's fbc/fbp are dropped on an EU/UK/CH (or blank-region) denial — see src/lib/inquiry-tracking.ts.
+  msclkid             String? // Microsoft Ads click ID, first touch (ft_msclkid)
+  lastMsclkid         String? // … this submission's own (msclkid)
+  fbc                 String? // Meta _fbc cookie / fbclid-derived click value
+  fbp                 String? // Meta _fbp browser cookie
+  firstLandingUrl     String? // first page of the visitor's first-ever session (ft_landing_url / first_landing_url)
+  landingUrl          String? // first page of this session (landing_url)
+  firstReferrer       String? // referrer of the first-ever session (ft_referrer)
+  referrer            String? // referrer of this session
+  ipAddress           String?
+  userAgent           String?
+  // Google "session attributes" blob (cf_google_session_attributes in Freshsales) — opaque, kept as sent.
+  sessionAttributes   String?
+  // WhatsApp click-to-chat match (src/lib/wa-tap.ts): the website tap this chat was matched to,
+  // its "Ref SL-XXXXX" code and how sure the match is (CONFIDENT / MEDIUM / LOW — LOW is never
+  // uploaded until sales change it).
+  waRef               String?
+  waTapId             String?   @unique
+  waTap               WaTap?    @relation(fields: [waTapId], references: [id], onDelete: SetNull)
+  matchConfidence     String?
+  matchConfidenceById String?
+  matchConfidenceAt   DateTime?
+  rawPayload          Json?
+  createdAt           DateTime  @default(now())
 
   lead     Lead?     @relation(fields: [leadId], references: [id], onDelete: SetNull)
   customer Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
@@ -4234,19 +4319,19 @@ enum LeaveRequestStatus {
 // `days` (not enforced as a hard floor — HR can still approve into a negative balance,
 // e.g. advance leave, but sees the resulting balance).
 model LeaveRequest {
-  id         String             @id @default(cuid())
-  employeeId String
-  employee   Employee           @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  startDate  DateTime
-  endDate    DateTime
-  days       Int
-  reason     String?
-  status     LeaveRequestStatus @default(PENDING)
+  id          String             @id @default(cuid())
+  employeeId  String
+  employee    Employee           @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  startDate   DateTime
+  endDate     DateTime
+  days        Int
+  reason      String?
+  status      LeaveRequestStatus @default(PENDING)
   // LEAVE (cuti) deducts leaveBalance and syncs CUTI into Attendance Recap; WFH does
   // neither deduction nor balance check, and syncs WFH instead.
-  type       LeaveRequestType   @default(LEAVE)
+  type        LeaveRequestType   @default(LEAVE)
   // SICK: doctor's letter (data URLs, image/PDF) — required on create. Empty for LEAVE/WFH.
-  attachments String[]          @default([])
+  attachments String[]           @default([])
 
   // See the model comment above — true when the employee's yacht had a Captain and/or
   // Cruise Director at request time, meaning the crew stage(s) must clear before HR's
@@ -4907,6 +4992,10 @@ model WhatsappMessage {
   // Provider's own message id — lets the inbound webhook dedupe on redelivery,
   // and lets an outbound send record what it maps to once the provider replies.
   providerMessageId String?               @unique
+  // IN only: the phone number ID it arrived on when that's one of the brand's receive-only
+  // numbers (e.g. Samara's old number, see WHATSAPP_BRAND_RECEIVE_ONLY_KEYS). Null = arrived
+  // on the brand's main number. Such rows don't open the 24h reply window.
+  receiveOnlyPhoneNumberId String?
   sentByUserId      String?
   sentByName        String?
   createdAt         DateTime              @default(now())

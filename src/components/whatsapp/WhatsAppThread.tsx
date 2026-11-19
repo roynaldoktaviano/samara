@@ -35,6 +35,8 @@ interface Message {
   sentByName: string | null
   templateName: string | null
   errorMessage: string | null
+  // Set when the customer wrote to one of the brand's receive-only numbers (e.g. Samara's old number).
+  receiveOnlyPhoneNumberId?: string | null
   createdAt: string
   replyTo: QuotedMessage | null
 }
@@ -602,6 +604,9 @@ export default function WhatsAppThread({ conversationId, onConversationUpdate, s
                         </p>
                       )}
                       {m.body && <p className="whitespace-pre-wrap break-words">{m.body}</p>}
+                      {m.direction === 'IN' && m.receiveOnlyPhoneNumberId && (
+                        <p className="text-[10px] mt-1 text-warning" title="The customer wrote to a number the ERP only receives on — replies go out from the main number">Sent to the old number</p>
+                      )}
                       <div className={`flex items-center gap-1 mt-1 justify-end ${m.direction === 'OUT' ? 'text-white/70' : 'text-muted-foreground'}`}>
                         {m.direction === 'OUT' && m.sentByName && isAdmin && <span className="text-[10px] mr-1">{m.sentByName}</span>}
                         <span className="text-[10px] tabular-nums">{formatDate(m.createdAt, 'datetime')}</span>
@@ -638,7 +643,9 @@ export default function WhatsAppThread({ conversationId, onConversationUpdate, s
             <span className="text-warning">
               {detail.windowExpiresAt
                 ? 'More than 24h since the customer last replied — WhatsApp only accepts a Message Template now.'
-                : 'The customer hasn’t messaged this number yet — start with a Message Template.'}
+                : thread.some(m => m.direction === 'IN' && m.receiveOnlyPhoneNumberId)
+                  ? 'The customer wrote to the old number — replies go out from the new one, so start with a Message Template.'
+                  : 'The customer hasn’t messaged this number yet — start with a Message Template.'}
             </span>
             <Button type="button" variant="link" onClick={openTemplatePicker} className="h-auto shrink-0 p-0 text-xs text-success underline">
               Send Template

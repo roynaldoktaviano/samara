@@ -15,11 +15,13 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Skeleton } from '@/components/ui/skeleton'
-import { UserPlus, Plus, Edit, MessageCircle, Send, Search, Mail, Phone, ChevronRight, ChevronLeft, Trash2, X, Globe, RotateCw, Download, ArrowUp, ArrowDown, Target, AlertTriangle, Loader2, Ship, AtSign, Instagram, Facebook, MessagesSquare, HelpCircle } from 'lucide-react'
+import { UserPlus, Plus, Edit, MessageCircle, Send, Search, Mail, Phone, ChevronRight, ChevronLeft, Trash2, X, Globe, RotateCw, Download, ArrowUp, ArrowDown, Target, AlertTriangle, Loader2, Ship, AtSign, Instagram, Facebook, MessagesSquare, HelpCircle, Briefcase } from 'lucide-react'
 import LeadEditSheet from '@/components/leads/LeadEditSheet'
 import LostReasonDialog from '@/components/leads/LostReasonDialog'
 import { isHttpUrl } from '@/lib/url-safety'
 import { WebsiteJourney } from '@/components/shared/WebsiteJourney'
+import { AdConsentBadge } from '@/components/shared/AdConsentBadge'
+import { InquiryAttributionDialog, WaMatchBadge, hasAttribution, type AttributionInquiry } from '@/components/shared/InquiryAttributionDialog'
 import { LEAD_ORIGINS, LEAD_ORIGIN_LABEL, LEAD_ORIGIN_COLOR, INQUIRY_FORM_LABEL, classifyLeadOrigin, formPageLabel, type LeadOrigin } from '@/lib/lead-origin'
 import FreshsalesImportModal from '@/components/shared/FreshsalesImportModal'
 import { LEAD_ENTRY_SOURCES, LEAD_ENTRY_SOURCE_LABEL, type LeadEntrySource } from '@/lib/lead-entry-source'
@@ -77,6 +79,8 @@ const ENTRY_SOURCE_BADGE: Record<LeadEntrySource, { icon: typeof Globe; classNam
   MESSENGER:    { icon: Facebook,        className: 'bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-300' },
   LIVE_CHAT:    { icon: MessagesSquare,  className: 'bg-teal-100 text-teal-700 dark:bg-teal-950 dark:text-teal-300' },
   EMAIL:        { icon: Mail,            className: 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300' },
+  PHONE:        { icon: Phone,           className: 'bg-lime-100 text-lime-700 dark:bg-lime-950 dark:text-lime-300' },
+  AGENT_OTA:    { icon: Briefcase,       className: 'bg-orange-100 text-orange-700 dark:bg-orange-950 dark:text-orange-300' },
   OTHER:        { icon: HelpCircle,      className: 'bg-muted text-muted-foreground' },
 }
 
@@ -124,7 +128,7 @@ const CONTACT_CHANNEL_COLOR: Record<LeadContact['channel'], string> = {
   MESSENGER: 'bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-200',
 }
 
-interface Inquiry {
+interface Inquiry extends AttributionInquiry {
   id: string
   source: string
   checkInDate?: string | null
@@ -154,6 +158,8 @@ interface Inquiry {
   lastGbraid?: string | null
   lastWbraid?: string | null
   lastFbclid?: string | null
+  adConsent?: string | null
+  consentRegion?: string | null
   createdAt: string
 }
 
@@ -1019,7 +1025,13 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail, onOpenBooking, onOp
                               {isHttpUrl(inq.url) ? <a href={inq.url} target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground">{formPageLabel(inq.url, inq.website)}</a> : inq.website}
                             </p>
                           )}
-                          {(inq.utmSource || inq.utmMedium || inq.utmCampaign || inq.lastSource || inq.gclid || inq.fbclid) && (
+                          {(inq.adConsent || inq.waRef || inq.matchConfidence) && (
+                            <div className="flex flex-wrap gap-1">
+                              <WaMatchBadge inquiry={inq} />
+                              <AdConsentBadge consent={inq.adConsent} region={inq.consentRegion} />
+                            </div>
+                          )}
+                          {hasAttribution(inq) && (
                             <button
                               onClick={() => setAttributionInquiry(inq)}
                               className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground pt-0.5 transition-colors"
@@ -1043,67 +1055,14 @@ export default function Leads({ onOpenWhatsapp, onOpenEmail, onOpenBooking, onOp
       )}
 
       {/* ── Attribution detail modal ──────────────────────────────────────── */}
-      <Dialog open={!!attributionInquiry} onOpenChange={open => { if (!open) setAttributionInquiry(null) }}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Attribution</DialogTitle>
-            <DialogDescription>
-              {attributionInquiry && formatDate(attributionInquiry.createdAt, 'datetime')}
-            </DialogDescription>
-          </DialogHeader>
-          {attributionInquiry && (() => {
-            const inq = attributionInquiry
-            const firstTouch = [
-              ['Source', inq.utmSource], ['Medium', inq.utmMedium], ['Campaign', inq.utmCampaign],
-              ['Term', inq.utmTerm], ['Content', inq.utmContent],
-              ['Google Click ID', inq.gclid], ['Google Braid (app)', inq.gbraid], ['Google Braid (web)', inq.wbraid],
-              ['Facebook Click ID', inq.fbclid],
-            ] as const
-            const lastTouch = [
-              ['Source', inq.lastSource], ['Medium', inq.lastMedium], ['Campaign', inq.lastCampaign],
-              ['Term', inq.lastTerm], ['Content', inq.lastContent],
-              ['Google Click ID', inq.lastGclid], ['Google Braid (app)', inq.lastGbraid], ['Google Braid (web)', inq.lastWbraid],
-              ['Facebook Click ID', inq.lastFbclid],
-            ] as const
-            const hasFirst = firstTouch.some(([, v]) => v)
-            const hasLast = lastTouch.some(([, v]) => v)
-            return (
-              <div className="space-y-4 text-sm">
-                <div>
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">First Touch <span className="font-normal normal-case">— visitor&apos;s very first session</span></p>
-                  {!hasFirst ? (
-                    <p className="text-xs text-muted-foreground italic">No data</p>
-                  ) : (
-                    <div className="rounded-lg border divide-y">
-                      {firstTouch.filter(([, v]) => v).map(([label, value]) => (
-                        <div key={label} className="flex items-center justify-between gap-3 px-3 py-1.5">
-                          <span className="text-xs text-muted-foreground shrink-0">{label}</span>
-                          <span className="text-xs font-mono text-right break-all">{value}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <div>
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Last Touch <span className="font-normal normal-case">— this inquiry&apos;s own source</span></p>
-                  {!hasLast ? (
-                    <p className="text-xs text-muted-foreground italic">No data</p>
-                  ) : (
-                    <div className="rounded-lg border divide-y">
-                      {lastTouch.filter(([, v]) => v).map(([label, value]) => (
-                        <div key={label} className="flex items-center justify-between gap-3 px-3 py-1.5">
-                          <span className="text-xs text-muted-foreground shrink-0">{label}</span>
-                          <span className="text-xs font-mono text-right break-all">{value}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )
-          })()}
-        </DialogContent>
-      </Dialog>
+      <InquiryAttributionDialog
+        inquiry={attributionInquiry}
+        onClose={() => setAttributionInquiry(null)}
+        onUpdated={u => {
+          setAttributionInquiry(prev => (prev ? { ...prev, ...u } : prev))
+          setInquiries(prev => prev?.map(i => (i.id === u.id ? { ...i, ...u } : i)) ?? prev)
+        }}
+      />
 
       {/* ── Rejected webhook submissions — leads that never made it in ─────── */}
       <Dialog open={failuresOpen} onOpenChange={setFailuresOpen}>

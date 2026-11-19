@@ -162,7 +162,7 @@ export async function POST(request: NextRequest) {
       firstName, lastName, nationality, email, phone, instagram, notes,
       productInterest, destinationId, travelStartDate, travelEndDate, travelSeason,
       guestCount, leadQuality, budgetMin, budgetMax, budgetCurrency,
-      tripType, tripAmount, tripAmountCurrency,
+      tripType, tripAmount, tripAmountCurrency, entrySourceManual,
     } = body
 
     const name = [firstName, lastName].filter(Boolean).join(' ') || body.name
@@ -173,6 +173,8 @@ export async function POST(request: NextRequest) {
     const lead = await db.lead.create({
       data: {
         name, firstName, lastName, nationality, email, phone, notes,
+        // Channel picked by sales (Phone, Agent/OTA…) — see src/lib/lead-entry-source.ts.
+        ...(isLeadEntrySource(entrySourceManual) && { entrySourceManual, entrySource: entrySourceManual }),
         ...(instagram !== undefined && { instagram: typeof instagram === 'string' ? instagram.trim().replace(/^@/, '') || null : null }),
         productInterest: productInterest || null,
         destinationId: destinationId || null,

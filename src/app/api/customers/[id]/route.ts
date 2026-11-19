@@ -127,12 +127,11 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 
     // Sales Pipeline leads for this guest: the ones their bookings closed, plus enquiries under the
     // same email / phone (older leads predate the booking ↔ lead link).
-    const phoneTail = customer.phone?.replace(/\D/g, '').slice(-10)
     const pipelineLeads = await db.lead.findMany({
       where: { OR: [
         { bookingId: { in: customer.bookings.map(b => b.id) } },
         ...(customer.email?.trim() ? [{ deletedAt: null, email: { equals: customer.email.trim(), mode: 'insensitive' as const } }] : []),
-        ...(phoneTail && phoneTail.length >= 8 ? [{ deletedAt: null, phone: { endsWith: phoneTail } }] : []),
+        ...(customer.phoneE164 ? [{ deletedAt: null, phoneE164: customer.phoneE164 }] : []),
       ] },
       orderBy: { createdAt: 'desc' },
       take: 20,

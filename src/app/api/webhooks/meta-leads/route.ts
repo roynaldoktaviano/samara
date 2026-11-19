@@ -8,6 +8,7 @@ import { autoAssignWebsiteLead } from '@/lib/whatsapp-lead'
 import { logWebhookFailure } from '@/lib/webhook-log'
 import { WHATSAPP_GRAPH_VERSION } from '@/lib/whatsapp-brands'
 import { handleMetaMessagingEvents, hasMetaMessagingEvents, type MetaMessagingBody } from '@/lib/meta-dm'
+import { fillEmptyOnly, findContactByIdentity, normalizeEmail, toE164 } from '@/lib/contact-identity'
 
 // Meta (Facebook/Instagram) Lead Ads instant-form leads → Lead + Inquiry, same
 // owner resolution as the website CF7 webhook (existing Customer → existing Lead → new Lead).
@@ -186,8 +187,11 @@ function vesselFromNames(...names: string[]): string | null {
 
 async function ingestLead(db: PrismaClient, lead: MetaLead): Promise<IngestResult> {
   const f = lead.fields
-  const email = f.email ?? ''
-  const phone = f.phone_number ?? f.phone ?? ''
+  // Same identity rule as the website form: normalised email, exact E.164 (Meta sends "+62…").
+  const email = normalizeEmail(f.email) ?? ''
+  const rawPhone = f.phone_number ?? f.phone ?? ''
+  const phoneE164 = toE164(rawPhone)
+  const phone = phoneE164 ?? rawPhone.trim()
   let firstName = f.first_name ?? ''
   let lastName = f.last_name ?? ''
   const fullNameField = f.full_name ?? ''
@@ -221,12 +225,9 @@ async function ingestLead(db: PrismaClient, lead: MetaLead): Promise<IngestResul
   const utmSource = lead.platform || 'meta'
   const utmMedium = lead.isOrganic ? 'organic_social' : 'paid_social'
 
-  // Meta stores numbers as "+62…", WhatsApp-created Leads/Customers as "62…" — match either.
-  const phoneVariants = phone ? [...new Set([phone, phone.replace(/^\+/, ''), `+${phone.replace(/^\+/, '')}`])] : []
-
   // Same per-contact advisory lock keys as the CF7 webhook, so the same person arriving
   // from both at once still resolves to a single Lead.
-  const lockKeys = [email && `cf7:email:${email.toLowerCase()}`, phone && `cf7:phone:${phone}`]
+  const lockKeys = [email && `cf7:email:${email}`, phone && `cf7:phone:${phone}`]
     .filter((k): k is string => !!k)
     .sort()
 
@@ -251,56 +252,37 @@ async function ingestLead(db: PrismaClient, lead: MetaLead): Promise<IngestResul
     let ownerType: 'customer' | 'lead'
     let ownerId: string
 
-    const matchedCustomer =
-      (email ? await tx.customer.findFirst({ where: { email: { equals: email, mode: 'insensitive' }, deletedAt: null } }) : null) ??
-      (phone ? await tx.customer.findFirst({ where: { phone: { in: phoneVariants }, deletedAt: null } }) : null)
-
-    if (matchedCustomer) {
+    // Guest first, then Lead (src/lib/contact-identity.ts); only empty fields are filled.
+    const match = await findContactByIdentity(tx, { email, phoneE164 })
+    if (match?.type === 'customer') {
       ownerType = 'customer'
-      // Only fill gaps — a Customer's details are usually passport-verified.
-      const updated = await tx.customer.update({
-        where: { id: matchedCustomer.id },
+      const cur = await tx.customer.findUniqueOrThrow({ where: { id: match.id }, select: { email: true, phone: true } })
+      const fill = fillEmptyOnly(cur, { email: email || null, phone: phone || null })
+      if (Object.keys(fill).length) await tx.customer.update({ where: { id: match.id }, data: fill })
+      ownerId = match.id
+    } else if (match?.type === 'lead') {
+      ownerType = 'lead'
+      const cur = await tx.lead.findUniqueOrThrow({ where: { id: match.id }, select: { firstName: true, lastName: true, email: true, phone: true, productInterest: true } })
+      const fill = fillEmptyOnly(cur, { email: email || null, phone: phone || null, productInterest: vessel || null })
+      const rename = !cur.firstName && firstName ? { firstName, lastName: lastName || null, name: fullName } : {}
+      if (Object.keys(fill).length || Object.keys(rename).length) {
+        await tx.lead.update({ where: { id: match.id }, data: { ...fill, ...rename } })
+      }
+      ownerId = match.id
+    } else {
+      ownerType = 'lead'
+      const created = await tx.lead.create({
         data: {
-          ...(!matchedCustomer.email && email && { email }),
-          ...(!matchedCustomer.phone && phone && { phone }),
+          name:      fullName,
+          firstName: firstName || null,
+          lastName:  lastName  || null,
+          email:     email     || null,
+          phone:     phone     || null,
+          productInterest: vessel || null,
         },
         select: { id: true },
       })
-      ownerId = updated.id
-    } else {
-      const leadSelect = { id: true, firstName: true, lastName: true, email: true, phone: true, productInterest: true } as const
-      const matchedLead =
-        (email ? await tx.lead.findFirst({ where: { email: { equals: email, mode: 'insensitive' }, deletedAt: null }, select: leadSelect }) : null) ??
-        (phone ? await tx.lead.findFirst({ where: { phone: { in: phoneVariants }, deletedAt: null }, select: leadSelect }) : null)
-
-      if (matchedLead) {
-        ownerType = 'lead'
-        const updated = await tx.lead.update({
-          where: { id: matchedLead.id },
-          data: {
-            ...(!matchedLead.firstName && firstName && { firstName, lastName: lastName || null, name: fullName }),
-            ...(!matchedLead.email && email && { email }),
-            ...(!matchedLead.phone && phone && { phone }),
-            ...(!matchedLead.productInterest && vessel && { productInterest: vessel }),
-          },
-          select: { id: true },
-        })
-        ownerId = updated.id
-      } else {
-        ownerType = 'lead'
-        const created = await tx.lead.create({
-          data: {
-            name:      fullName,
-            firstName: firstName || null,
-            lastName:  lastName  || null,
-            email:     email     || null,
-            phone:     phone     || null,
-            productInterest: vessel || null,
-          },
-          select: { id: true },
-        })
-        ownerId = created.id
-      }
+      ownerId = created.id
     }
 
     await tx.inquiry.create({

@@ -1,4 +1,5 @@
 import type { Prisma, PrismaClient } from '@prisma/client'
+import { toE164 } from './contact-identity'
 
 /**
  * A person can submit an inquiry as a Lead before ever becoming a paying
@@ -11,7 +12,9 @@ import type { Prisma, PrismaClient } from '@prisma/client'
 export async function findLinkedLeadId(db: PrismaClient, contact: { email?: string | null; phone?: string | null }): Promise<string | null> {
   const or: Prisma.LeadWhereInput[] = []
   if (contact.email) or.push({ email: { equals: contact.email, mode: 'insensitive' } })
-  if (contact.phone) or.push({ phone: contact.phone })
+  // Exact E.164 only (src/lib/contact-identity.ts) — a raw-string compare missed "+62…" vs "0062…".
+  const phoneE164 = toE164(contact.phone)
+  if (phoneE164) or.push({ phoneE164 })
   if (or.length === 0) return null
 
   const lead = await db.lead.findFirst({ where: { OR: or }, select: { id: true } })

@@ -18,6 +18,8 @@ import GuestEditSheet from '@/components/customers/GuestEditSheet'
 import FreshsalesImportModal from '@/components/shared/FreshsalesImportModal'
 import { isHttpUrl } from '@/lib/url-safety'
 import { WebsiteJourney } from '@/components/shared/WebsiteJourney'
+import { AdConsentBadge } from '@/components/shared/AdConsentBadge'
+import { InquiryAttributionDialog, WaMatchBadge, hasAttribution, type AttributionInquiry } from '@/components/shared/InquiryAttributionDialog'
 import { formatDate, formatDateRange, formatMoney } from '@/lib/format'
 import { LEAD_STAGE_COLOR, LEAD_STAGE_LABEL, type LeadStage } from '@/lib/lead-pipeline'
 
@@ -75,7 +77,7 @@ interface GuestDetail extends Guest {
   pipelineLeads?: { id: string; dealName: string; stage: LeadStage; ownerName: string | null; createdAt: string }[]
 }
 
-interface Inquiry {
+interface Inquiry extends AttributionInquiry {
   id: string
   source: string
   checkInDate?: string | null
@@ -105,6 +107,8 @@ interface Inquiry {
   lastGbraid?: string | null
   lastWbraid?: string | null
   lastFbclid?: string | null
+  adConsent?: string | null
+  consentRegion?: string | null
   createdAt: string
 }
 
@@ -744,7 +748,13 @@ export default function Guests({ deepLinkId, onDeepLinkHandled, onOpenBooking }:
                                 {isHttpUrl(inq.url) ? <a href={inq.url} target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground">{inq.website}</a> : inq.website}
                               </p>
                             )}
-                            {(inq.utmSource || inq.utmMedium || inq.utmCampaign || inq.lastSource || inq.gclid || inq.fbclid) && (
+                            {(inq.adConsent || inq.waRef || inq.matchConfidence) && (
+                            <div className="flex flex-wrap gap-1">
+                              <WaMatchBadge inquiry={inq} />
+                              <AdConsentBadge consent={inq.adConsent} region={inq.consentRegion} />
+                            </div>
+                          )}
+                            {hasAttribution(inq) && (
                               <button
                                 type="button"
                                 onClick={() => setAttributionInquiry(inq)}
@@ -774,67 +784,14 @@ export default function Guests({ deepLinkId, onDeepLinkHandled, onOpenBooking }:
       )}
 
       {/* ── Attribution detail modal ──────────────────────────────────────── */}
-      <Dialog open={!!attributionInquiry} onOpenChange={open => { if (!open) setAttributionInquiry(null) }}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Attribution</DialogTitle>
-            <DialogDescription>
-              {attributionInquiry && formatDate(attributionInquiry.createdAt, 'datetime')}
-            </DialogDescription>
-          </DialogHeader>
-          {attributionInquiry && (() => {
-            const inq = attributionInquiry
-            const firstTouch = [
-              ['Source', inq.utmSource], ['Medium', inq.utmMedium], ['Campaign', inq.utmCampaign],
-              ['Term', inq.utmTerm], ['Content', inq.utmContent],
-              ['Google Click ID', inq.gclid], ['Google Braid (app)', inq.gbraid], ['Google Braid (web)', inq.wbraid],
-              ['Facebook Click ID', inq.fbclid],
-            ] as const
-            const lastTouch = [
-              ['Source', inq.lastSource], ['Medium', inq.lastMedium], ['Campaign', inq.lastCampaign],
-              ['Term', inq.lastTerm], ['Content', inq.lastContent],
-              ['Google Click ID', inq.lastGclid], ['Google Braid (app)', inq.lastGbraid], ['Google Braid (web)', inq.lastWbraid],
-              ['Facebook Click ID', inq.lastFbclid],
-            ] as const
-            const hasFirst = firstTouch.some(([, v]) => v)
-            const hasLast = lastTouch.some(([, v]) => v)
-            return (
-              <div className="space-y-4 text-sm">
-                <div>
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">First Touch <span className="font-normal normal-case">— visitor&apos;s very first session</span></p>
-                  {!hasFirst ? (
-                    <p className="text-xs text-muted-foreground italic">No data</p>
-                  ) : (
-                    <div className="rounded-lg border divide-y">
-                      {firstTouch.filter(([, v]) => v).map(([label, value]) => (
-                        <div key={label} className="flex items-center justify-between gap-3 px-3 py-1.5">
-                          <span className="text-xs text-muted-foreground shrink-0">{label}</span>
-                          <span className="text-xs font-mono text-right break-all">{value}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <div>
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Last Touch <span className="font-normal normal-case">— this inquiry&apos;s own source</span></p>
-                  {!hasLast ? (
-                    <p className="text-xs text-muted-foreground italic">No data</p>
-                  ) : (
-                    <div className="rounded-lg border divide-y">
-                      {lastTouch.filter(([, v]) => v).map(([label, value]) => (
-                        <div key={label} className="flex items-center justify-between gap-3 px-3 py-1.5">
-                          <span className="text-xs text-muted-foreground shrink-0">{label}</span>
-                          <span className="text-xs font-mono text-right break-all">{value}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )
-          })()}
-        </DialogContent>
-      </Dialog>
+      <InquiryAttributionDialog
+        inquiry={attributionInquiry}
+        onClose={() => setAttributionInquiry(null)}
+        onUpdated={u => {
+          setAttributionInquiry(prev => (prev ? { ...prev, ...u } : prev))
+          setInquiries(prev => prev?.map(i => (i.id === u.id ? { ...i, ...u } : i)) ?? prev)
+        }}
+      />
 
       {/* ── Single Delete Confirmation ────────────────────────────────────── */}
       <AlertDialog open={!!deleteTarget} onOpenChange={open => { if (!open) { setDeleteTarget(null); setDeleteError('') } }}>

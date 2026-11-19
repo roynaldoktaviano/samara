@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getDb } from '@/lib/get-db'
 import { requireRole, type AppRole } from '@/lib/auth-guard'
+import { adUploadDecision, UPLOADABLE_MATCH_WHERE, type ConsentInquiry } from '@/lib/ad-consent'
 
 const ALLOWED: AppRole[] = ['ADMIN', 'MARKETING', 'SUPER_ADMIN']
 const HEADER = [
@@ -26,7 +27,7 @@ export async function GET() {
   const db = await getDb(auth.session)
 
   const inquiries = await db.inquiry.findMany({
-    where: { leadId: { not: null }, gclid: { not: null } },
+    where: { leadId: { not: null }, gclid: { not: null }, ...UPLOADABLE_MATCH_WHERE },
     orderBy: { createdAt: 'desc' },
     select: { leadId: true, gclid: true, gbraid: true, utmSource: true, utmMedium: true, utmCampaign: true, utmTerm: true, utmContent: true, url: true, createdAt: true },
   })
@@ -47,7 +48,21 @@ export async function GET() {
     select: { id: true, name: true, firstName: true, lastName: true, nationality: true, email: true, phone: true, notes: true },
   })
 
+  // Consent gate (src/lib/ad-consent.ts) — leads who declined ad cookies, or EU/UK/CH leads
+  // without a banner accept, are left out of anything meant for upload to Google.
+  const consentRows = await db.inquiry.findMany({
+    where: { leadId: { in: leadIds } },
+    select: { leadId: true, adConsent: true, consentRegion: true },
+  })
+  const consentByLead = new Map<string, ConsentInquiry[]>()
+  for (const r of consentRows) {
+    const list = consentByLead.get(r.leadId!) ?? []
+    list.push(r)
+    consentByLead.set(r.leadId!, list)
+  }
+
   const rows = leads
+    .filter(l => adUploadDecision(consentByLead.get(l.id) ?? [], l.nationality).ok)
     .map(l => ({ l, click: byLead.get(l.id)! }))
     .sort((a, b) => b.click.createdAt.getTime() - a.click.createdAt.getTime())
     .map(({ l, click }) => [

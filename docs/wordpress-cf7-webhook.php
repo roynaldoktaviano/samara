@@ -141,12 +141,24 @@ add_action('wpcf7_mail_sent', function ($contact_form) {
     // Page the form was submitted from (incl. its ?utm_… query string).
     $page_url = (string) $submission->get_meta('url');
     $data['page-url']   = $page_url;
-    $data['visitor_ip'] = (string) $submission->get_meta('remote_ip');
+    $data['visitor_ip'] = samara_erp_visitor_ip() ?: (string) $submission->get_meta('remote_ip');
+    // The CF7 submit is the visitor's own browser request, so this is their User-Agent.
+    $data['user_agent'] = isset($_SERVER['HTTP_USER_AGENT']) ? substr(sanitize_text_field(wp_unslash($_SERVER['HTTP_USER_AGENT'])), 0, 1000) : '';
 
     $cookie = function ($name) {
         return isset($_COOKIE[$name]) ? sanitize_text_field(wp_unslash($_COOKIE[$name])) : '';
     };
     $data['visitorId'] = $cookie('samara_vid');
+
+    // Meta cookies, read server-side like the old deal maker did (snippet 92) — unless the form
+    // already carries them. Skipped on a consent denial in the EU/UK/CH or with no region.
+    $consent = strtolower(isset($data['ad_consent']) ? $data['ad_consent'] : '');
+    $region  = strtolower(isset($data['consent_region']) ? $data['consent_region'] : '');
+    $meta_blocked = $consent === 'denied' && in_array($region, array('', 'none', 'eu', 'eea', 'uk', 'ch'), true);
+    foreach (array('_fbp', '_fbc') as $meta_cookie) {
+        if ($meta_blocked) { unset($data[$meta_cookie]); continue; }
+        if (empty($data[$meta_cookie]) || $data[$meta_cookie] === 'undefined') $data[$meta_cookie] = $cookie($meta_cookie);
+    }
 
     // Current touch = this page's query string; first touch = samara_ft_* cookies.
     $query = array();
@@ -166,3 +178,50 @@ add_action('wpcf7_mail_sent', function ($contact_form) {
         'body'     => wp_json_encode($data),
     ));
 });
+
+// Visitor IP behind Cloudflare (CF-Connecting-IP), else REMOTE_ADDR — same as the old deal maker.
+function samara_erp_visitor_ip() {
+    foreach (array('HTTP_CF_CONNECTING_IP', 'REMOTE_ADDR') as $key) {
+        if (!empty($_SERVER[$key])) {
+            $ip = trim((string) $_SERVER[$key]);
+            if (filter_var($ip, FILTER_VALIDATE_IP)) return $ip;
+        }
+    }
+    return '';
+}
+
+// ── 4. Server: relay each WhatsApp-button tap to the ERP ──
+// Snippet 63 logs every tap on the WhatsApp button (ref "SL-XXXXX", click IDs, UTMs, consent…)
+// through this site's POST /wp-json/gb/v1/wa-tap. After that endpoint succeeds, the same tap is
+// forwarded to the ERP so it can match the WhatsApp chat back to the click (ERP src/lib/wa-tap.ts).
+// No change to snippet 63 needed.
+add_filter('rest_post_dispatch', function ($response, $server, $request) {
+    if (!defined('SAMARA_ERP_WEBHOOK_SECRET')) return $response;
+    if (!($request instanceof WP_REST_Request) || $request->get_route() !== '/gb/v1/wa-tap') return $response;
+    if (is_wp_error($response) || $response->get_status() >= 300) return $response;
+
+    $tap = $request->get_json_params();
+    if (!is_array($tap) || !$tap) $tap = $request->get_body_params();
+    if (!is_array($tap) || !$tap) return $response;
+    // Values the tap endpoint itself may have added (e.g. the generated ref).
+    $resp_data = $response->get_data();
+    if (is_array($resp_data)) {
+        foreach (array('ref', 'code', 'tapped_at', 'created_at') as $k) {
+            if (empty($tap[$k]) && !empty($resp_data[$k])) $tap[$k] = $resp_data[$k];
+        }
+    }
+    $tap['ip'] = samara_erp_visitor_ip();
+    $tap['ua'] = isset($_SERVER['HTTP_USER_AGENT']) ? substr(sanitize_text_field(wp_unslash($_SERVER['HTTP_USER_AGENT'])), 0, 1000) : '';
+    if (empty($tap['tapped_at'])) $tap['tapped_at'] = gmdate('c');
+
+    wp_remote_post(SAMARA_ERP_BASE . '/wa-tap?tenant=' . SAMARA_ERP_TENANT, array(
+        'timeout'  => 5,
+        'blocking' => false,
+        'headers'  => array(
+            'Content-Type'     => 'application/json',
+            'X-Webhook-Secret' => SAMARA_ERP_WEBHOOK_SECRET,
+        ),
+        'body'     => wp_json_encode($tap),
+    ));
+    return $response;
+}, 10, 3);

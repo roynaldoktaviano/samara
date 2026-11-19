@@ -3,6 +3,7 @@ import { pickNextSalesUserId } from '@/lib/whatsapp-distribution'
 import { sendPushToUser } from '@/lib/push'
 import { recordLeadOutbound } from '@/lib/lead-stage-auto'
 import { findChatLeadByName } from '@/lib/lead-name-match'
+import { findCustomerIdByPhone, findLeadByIdentity, toE164 } from '@/lib/contact-identity'
 
 // Links WhatsApp chats into the Lead pipeline. The pipeline stage lives on Lead only —
 // a chat just points at its Lead (WhatsappConversation.leadId) and carries a triage
@@ -12,36 +13,19 @@ import { findChatLeadByName } from '@/lib/lead-name-match'
 
 export { WHATSAPP_CHAT_CATEGORIES, WHATSAPP_CHAT_CATEGORY_LABEL, isWhatsappChatCategory, type WhatsappChatCategory } from '@/lib/whatsapp-chat-category'
 
-// Phones are stored in whatever format they were typed ("+62 812-...", "0812...", "62812...")
-// so matching compares the last 10 digits only — enough to be unique in practice while
-// ignoring country-code / leading-zero differences.
-function phoneTail(phone: string): string | null {
-  const digits = phone.replace(/\D/g, '')
-  return digits.length >= 8 ? digits.slice(-10) : null
+// A WhatsApp number (wa_id, digits with country code) is matched to Leads/Guests by its exact
+// E.164 form only — never by a partial / last-N-digits search (src/lib/contact-identity.ts).
+// A lead/guest whose stored phone has no country code ("0812…") therefore can't match by phone.
+function waE164(phone: string): string | null {
+  return toE164(phone, { international: true })
 }
 
 async function findLeadIdByPhone(db: PrismaClient, phone: string): Promise<string | null> {
-  const tail = phoneTail(phone)
-  if (!tail) return null
-  const rows = await db.$queryRaw<{ id: string }[]>`
-    SELECT id FROM "Lead"
-    WHERE "deletedAt" IS NULL AND phone IS NOT NULL
-      AND RIGHT(regexp_replace(phone, '\\D', '', 'g'), 10) = ${tail}
-    ORDER BY "createdAt" DESC LIMIT 1
-  `
-  return rows[0]?.id ?? null
+  return findLeadByIdentity(db, { phoneE164: waE164(phone) })
 }
 
 async function customerExistsByPhone(db: PrismaClient, phone: string): Promise<boolean> {
-  const tail = phoneTail(phone)
-  if (!tail) return false
-  const rows = await db.$queryRaw<{ id: string }[]>`
-    SELECT id FROM "Customer"
-    WHERE "deletedAt" IS NULL AND phone IS NOT NULL
-      AND RIGHT(regexp_replace(phone, '\\D', '', 'g'), 10) = ${tail}
-    LIMIT 1
-  `
-  return rows.length > 0
+  return !!(await findCustomerIdByPhone(db, waE164(phone)))
 }
 
 // Writes a Lead's new owner + restarts its 24h stagnant clock + logs the hand-over. No-op

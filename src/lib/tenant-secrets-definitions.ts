@@ -19,6 +19,7 @@ export type TenantSecretKey =
   | 'whatsappOtiumPhoneNumberId'
   | 'whatsappOtiumApiToken'
   | 'whatsappSamaraWabaId'
+  | 'whatsappSamaraReceiveOnlyPhoneNumberIds'
   | 'whatsappMischiefWabaId'
   | 'whatsappOtiumWabaId'
   | 'whatsappWebhookSecret'
@@ -86,6 +87,7 @@ export interface TenantSecrets {
   whatsappOtiumPhoneNumberId?: string
   whatsappOtiumApiToken?: string
   whatsappSamaraWabaId?: string
+  whatsappSamaraReceiveOnlyPhoneNumberIds?: string
   whatsappMischiefWabaId?: string
   whatsappOtiumWabaId?: string
   whatsappWebhookSecret?: string
@@ -161,6 +163,7 @@ export const TENANT_SECRET_DEFINITIONS: {
   { key: 'whatsappOtiumPhoneNumberId', label: 'WhatsApp Phone Number ID — Otium', description: "Meta phone number ID for the Otium brand's WhatsApp Business number", envFallback: 'WHATSAPP_OTIUM_PHONE_NUMBER_ID' },
   { key: 'whatsappOtiumApiToken', label: 'WhatsApp API Token — Otium', description: 'System User (permanent) or temporary access token for the Otium number', envFallback: 'WHATSAPP_OTIUM_API_TOKEN' },
   { key: 'whatsappSamaraWabaId', label: 'WhatsApp Business Account ID — Samara', description: 'WABA ID that owns the Samara number — lets Chat > WhatsApp Templates sync approved templates from Meta (token needs whatsapp_business_management)', envFallback: 'WHATSAPP_SAMARA_WABA_ID' },
+  { key: 'whatsappSamaraReceiveOnlyPhoneNumberIds', label: 'WhatsApp Receive-only Phone Number IDs — Samara', description: "Comma-separated phone number IDs of other Samara numbers (e.g. the old one) whose incoming chats should still land in Samara's inbox. The ERP never sends from them — replies go out from the main Samara number, and Meta's 24h window doesn't carry over, so such a customer needs a Message Template first", envFallback: 'WHATSAPP_SAMARA_RECEIVE_ONLY_PHONE_NUMBER_IDS' },
   { key: 'whatsappMischiefWabaId', label: 'WhatsApp Business Account ID — Mischief', description: 'WABA ID that owns the Mischief number — lets Chat > WhatsApp Templates sync approved templates from Meta (token needs whatsapp_business_management)', envFallback: 'WHATSAPP_MISCHIEF_WABA_ID' },
   { key: 'whatsappOtiumWabaId', label: 'WhatsApp Business Account ID — Otium', description: 'WABA ID that owns the Otium number — lets Chat > WhatsApp Templates sync approved templates from Meta (token needs whatsapp_business_management)', envFallback: 'WHATSAPP_OTIUM_WABA_ID' },
   { key: 'whatsappWebhookSecret', label: 'WhatsApp Webhook Verify Token', description: 'Value you choose and also enter in the Meta webhook subscription setup — shared across all 3 numbers if they sit under the same Meta App', envFallback: 'WHATSAPP_WEBHOOK_SECRET' },
@@ -233,7 +236,7 @@ export const TENANT_SECRET_GROUPS: { id: string; label: string; match: (key: Ten
   { id: 'other', label: 'Other', match: () => true },
 ]
 
-const WHATSAPP_FIELD_ORDER = ['PhoneNumberId', 'ApiToken', 'WabaId', 'WebhookSecret', 'AppSecret']
+const WHATSAPP_FIELD_ORDER = ['PhoneNumberId', 'ApiToken', 'WabaId', 'ReceiveOnlyPhoneNumberIds', 'WebhookSecret', 'AppSecret']
 const whatsappFieldRank = (key: string) => {
   const i = WHATSAPP_FIELD_ORDER.findIndex(f => key.endsWith(f))
   return i === -1 ? WHATSAPP_FIELD_ORDER.length : i

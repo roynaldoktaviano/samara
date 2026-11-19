@@ -11,6 +11,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Loader2, User, Check, ChevronsUpDown, Search } from 'lucide-react'
 import { toast } from 'sonner'
 import { NATIONALITIES } from '@/lib/nationalities'
+import { LEAD_ENTRY_SOURCES, LEAD_ENTRY_SOURCE_LABEL } from '@/lib/lead-entry-source'
+import { toE164 } from '@/lib/contact-identity'
 
 /* ── Types ── */
 export interface LeadFormState {
@@ -21,6 +23,8 @@ export interface LeadFormState {
   guestCount: string; leadQuality: string
   budgetMin: string; budgetMax: string; budgetCurrency: string
   tripType: string; tripAmount: string; tripAmountCurrency: string
+  // '' = detected automatically; else a LEAD_ENTRY_SOURCES key picked by sales
+  entrySourceManual: string
 }
 
 export const LEAD_FORM_EMPTY: LeadFormState = {
@@ -30,6 +34,7 @@ export const LEAD_FORM_EMPTY: LeadFormState = {
   guestCount: '', leadQuality: '',
   budgetMin: '', budgetMax: '', budgetCurrency: 'USD',
   tripType: '', tripAmount: '', tripAmountCurrency: 'USD',
+  entrySourceManual: '',
 }
 
 export function toLeadFormState(data: any): LeadFormState {
@@ -55,8 +60,11 @@ export function toLeadFormState(data: any): LeadFormState {
     tripType:        data.tripType        ?? '',
     tripAmount:      data.tripAmount != null ? String(data.tripAmount) : '',
     tripAmountCurrency: data.tripAmountCurrency ?? 'USD',
+    entrySourceManual: data.entrySourceManual ?? '',
   }
 }
+
+const AUTO_CHANNEL = '__auto__'
 
 function NationalitySelect({ id, value, onChange }: { id?: string; value: string; onChange: (v: string) => void }) {
   const [open, setOpen] = useState(false)
@@ -238,11 +246,23 @@ export function ProfileFields({ form, setForm, narrow }: { form: LeadFormState; 
         <Field label="Email" htmlFor="lead-email">
           <Input id="lead-email" type="email" value={form.email} onChange={set('email')} placeholder="email@example.com" />
         </Field>
-        <Field label="Phone" htmlFor="lead-phone">
+        <Field
+          label="Phone" htmlFor="lead-phone"
+          hint={form.phone.trim() && !toE164(form.phone) ? 'Add the country code (+62…, +61…) — without it this number can’t be matched to WhatsApp chats or form enquiries.' : undefined}
+        >
           <Input id="lead-phone" type="tel" value={form.phone} onChange={set('phone')} placeholder="+62 812 3456 7890" />
         </Field>
         <Field label="Instagram" htmlFor="lead-instagram" col2>
           <Input id="lead-instagram" value={form.instagram} onChange={set('instagram')} placeholder="username (without @)" />
+        </Field>
+        <Field label="Lead Channel" htmlFor="lead-channel" col2 hint="How this person first reached us. Leave on Automatic unless it was a phone call, an agent/OTA, or the detection is wrong.">
+          <Select value={form.entrySourceManual || AUTO_CHANNEL} onValueChange={v => setForm({ ...form, entrySourceManual: v === AUTO_CHANNEL ? '' : v })}>
+            <SelectTrigger id="lead-channel"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value={AUTO_CHANNEL}>Automatic (detected)</SelectItem>
+              {LEAD_ENTRY_SOURCES.map(src => <SelectItem key={src} value={src}>{LEAD_ENTRY_SOURCE_LABEL[src]}</SelectItem>)}
+            </SelectContent>
+          </Select>
         </Field>
         <Field label="Notes" htmlFor="lead-notes" col2>
           <Textarea id="lead-notes" value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} placeholder="Any additional context about this lead…" rows={3} />

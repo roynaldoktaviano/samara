@@ -47,11 +47,14 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   // Meta only allows free-form replies within 24h of the customer's own last message —
   // the thread UI uses this to count down and switch to Message Templates once it's closed.
   // lastInboundAt is kept by the webhook; older threads from before that column fall back to a lookup.
-  const lastInboundAt = conversation.lastInboundAt ?? (await db.whatsappMessage.findFirst({
-    where: { conversationId: id, direction: 'IN' },
+  // The window is per business number, so a message that came in on a receive-only number
+  // (e.g. Samara's old one) doesn't open it for our main number — those threads need the lookup too.
+  const latestIn = messages.findLast(m => m.direction === 'IN')
+  const lastInboundAt = (!latestIn?.receiveOnlyPhoneNumberId && conversation.lastInboundAt) || (await db.whatsappMessage.findFirst({
+    where: { conversationId: id, direction: 'IN', receiveOnlyPhoneNumberId: null },
     orderBy: { createdAt: 'desc' },
     select: { createdAt: true },
-  }))?.createdAt ?? null
+  }))?.createdAt || null
   const windowExpiresAt = lastInboundAt ? new Date(lastInboundAt.getTime() + 24 * 60 * 60 * 1000) : null
   const windowOpen = !!windowExpiresAt && windowExpiresAt.getTime() > Date.now()
 

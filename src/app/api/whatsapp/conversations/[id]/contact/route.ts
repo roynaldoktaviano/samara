@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { salesCanAccessConversation } from '@/lib/whatsapp-distribution'
+import { findCustomerIdByPhone, toE164 } from '@/lib/contact-identity'
 
 export interface WhatsappContactPanel {
   lead: {
@@ -20,13 +21,6 @@ export interface WhatsappContactPanel {
 }
 
 const BOOKING_LIMIT = 5
-
-// Last 10 digits, same matching rule as src/lib/whatsapp-lead.ts — guests' phones are
-// stored however they were typed.
-function phoneTail(phone: string): string | null {
-  const digits = phone.replace(/\D/g, '')
-  return digits.length >= 8 ? digits.slice(-10) : null
-}
 
 async function loadConversation(id: string) {
   const session = await getServerSession(authOptions)
@@ -48,19 +42,15 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const loaded = await loadConversation(id)
   if ('error' in loaded) return loaded.error
   const { db, conversation, role, session } = loaded
-  const tail = phoneTail(conversation.phone)
+  // Guest with this exact number (E.164 — no partial-number search, src/lib/contact-identity.ts)
+  const phoneE164 = toE164(conversation.phone, { international: true })
 
   const [lead, customerRow, otherChats] = await Promise.all([
     conversation.leadId ? db.lead.findFirst({
       where: { id: conversation.leadId, deletedAt: null },
       include: { owner: { select: { name: true, email: true } }, destination: { select: { name: true } } },
     }) : null,
-    tail ? db.$queryRaw<{ id: string }[]>`
-      SELECT id FROM "Customer"
-      WHERE "deletedAt" IS NULL AND phone IS NOT NULL
-        AND RIGHT(regexp_replace(phone, '\\D', '', 'g'), 10) = ${tail}
-      ORDER BY "createdAt" DESC LIMIT 1
-    `.then(r => r[0] ?? null) : null,
+    findCustomerIdByPhone(db, phoneE164).then(id => (id ? { id } : null)),
     db.whatsappConversation.findMany({
       where: { phone: conversation.phone, id: { not: id } },
       select: { id: true, brand: true, lastMessageAt: true, assignedToId: true, assignedTo: { select: { name: true, email: true } } },

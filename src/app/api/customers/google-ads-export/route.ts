@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { getDb } from '@/lib/get-db'
 import { requireRole, type AppRole } from '@/lib/auth-guard'
+import { adUploadDecision, UPLOADABLE_MATCH_WHERE, type ConsentInquiry } from '@/lib/ad-consent'
+import { findLinkedLeadId } from '@/lib/customer-lead-link'
 
 const ALLOWED: AppRole[] = ['ADMIN', 'MARKETING', 'SUPER_ADMIN']
 const HEADER = ['Name', 'Email', 'Phone', 'Source', 'Medium', 'Campaign', 'Term', 'Content', 'Google Click ID', 'Google Braid', 'Form URL', 'Click Date']
@@ -24,7 +26,7 @@ export async function GET() {
   const db = await getDb(auth.session)
 
   const inquiries = await db.inquiry.findMany({
-    where: { customerId: { not: null }, gclid: { not: null } },
+    where: { customerId: { not: null }, gclid: { not: null }, ...UPLOADABLE_MATCH_WHERE },
     orderBy: { createdAt: 'desc' },
     select: { customerId: true, gclid: true, gbraid: true, utmSource: true, utmMedium: true, utmCampaign: true, utmTerm: true, utmContent: true, url: true, createdAt: true },
   })
@@ -40,9 +42,31 @@ export async function GET() {
   }
 
   const customerIds = [...byCustomer.keys()]
-  const customers = await db.customer.findMany({ where: { id: { in: customerIds } }, select: { id: true, name: true, email: true, phone: true } })
+  const customers = await db.customer.findMany({ where: { id: { in: customerIds } }, select: { id: true, name: true, email: true, phone: true, nationality: true } })
+
+  // Consent gate (src/lib/ad-consent.ts) — guests who declined ad cookies, or EU/UK/CH guests
+  // without a banner accept, are left out. Their earlier inquiries as a Lead count too.
+  const consentRows = await db.inquiry.findMany({
+    where: { customerId: { in: customerIds } },
+    select: { customerId: true, adConsent: true, consentRegion: true },
+  })
+  const consentByCustomer = new Map<string, ConsentInquiry[]>()
+  for (const r of consentRows) {
+    const list = consentByCustomer.get(r.customerId!) ?? []
+    list.push(r)
+    consentByCustomer.set(r.customerId!, list)
+  }
+  const allowed = new Set<string>()
+  for (const c of customers) {
+    const leadId = await findLinkedLeadId(db, c)
+    const leadRows = leadId
+      ? await db.inquiry.findMany({ where: { leadId }, select: { adConsent: true, consentRegion: true } })
+      : []
+    if (adUploadDecision([...(consentByCustomer.get(c.id) ?? []), ...leadRows], c.nationality).ok) allowed.add(c.id)
+  }
 
   const rows = customers
+    .filter(c => allowed.has(c.id))
     .map(c => ({ c, click: byCustomer.get(c.id)! }))
     .sort((a, b) => b.click.createdAt.getTime() - a.click.createdAt.getTime())
     .map(({ c, click }) => [
