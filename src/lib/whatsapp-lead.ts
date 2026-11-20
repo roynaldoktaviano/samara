@@ -233,26 +233,3 @@ export function inquiryBrandWhere(brand: WhatsappBrand): Prisma.InquiryWhereInpu
   if (brand === 'MISCHIEF') return { AND: [not(otiumTrip), { OR: [mischiefTrip, { AND: [hostIsNot('otium'), hostIs('mischief')] }] }] }
   return { AND: [not(otiumTrip), not(mischiefTrip), hostIsNot('otium'), hostIsNot('mischief')] }
 }
-
-// Auto-assigns a website-form Lead that has no owner yet, rotating through the per-brand
-// WEBSITE pool (own round-robin counter) — configured at Chat > Leads Distribution. If that brand's pool is empty it falls back to Samara's so
-// leads never sit unowned just because a pool hasn't been set up. Notifies the new owner.
-// Returns the assigned user id, or null if the lead already had one / no pool at all.
-export async function autoAssignWebsiteLead(db: PrismaClient, leadId: string, hostname: string | null | undefined, leadName: string, tripType?: string | null): Promise<string | null> {
-  const lead = await db.lead.findUnique({ where: { id: leadId }, select: { ownerId: true } })
-  if (!lead || lead.ownerId) return null
-
-  const brand = brandForInquiry(hostname, tripType)
-  const ownerId = await pickNextSalesUserId(db, brand, 'WEBSITE') ?? (brand !== 'SAMARA' ? await pickNextSalesUserId(db, 'SAMARA', 'WEBSITE') : null)
-  if (!ownerId) return null
-  // Guarded so a concurrent claim/assignment isn't overwritten.
-  const { count } = await db.lead.updateMany({ where: { id: leadId, ownerId: null }, data: { ownerId, ownerAssignedAt: new Date() } })
-  if (count === 0) return null
-  await db.leadAssignmentLog.create({ data: { leadId, toUserId: ownerId, reason: 'AUTO_DISTRIBUTION' } })
-
-  const title = `New website lead: ${leadName}`
-  const body = hostname ? `via ${hostname}` : 'via website form'
-  db.notification.create({ data: { userId: ownerId, type: 'LEAD_ASSIGNED', title, body } }).catch(() => {})
-  sendPushToUser(db, ownerId, { title, body, url: '/' }).catch(() => {})
-  return ownerId
-}

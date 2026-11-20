@@ -12,6 +12,7 @@ export type TenantSecretKey =
   | 'pageviewAllowedDomains'
   | 'tripSheetGoogleSheetId'
   | 'googleAdsConversionsSheetId'
+  | 'googleOfflineFeedSheetId'
   | 'whatsappSamaraPhoneNumberId'
   | 'whatsappSamaraApiToken'
   | 'whatsappMischiefPhoneNumberId'
@@ -80,6 +81,7 @@ export interface TenantSecrets {
   pageviewAllowedDomains?: string
   tripSheetGoogleSheetId?: string
   googleAdsConversionsSheetId?: string
+  googleOfflineFeedSheetId?: string
   whatsappSamaraPhoneNumberId?: string
   whatsappSamaraApiToken?: string
   whatsappMischiefPhoneNumberId?: string
@@ -156,6 +158,7 @@ export const TENANT_SECRET_DEFINITIONS: {
   { key: 'pageviewAllowedDomains', label: 'Website Pageview Allowed Domains', description: 'Comma-separated website domains the page-view tracker may report from, e.g. samaraliveaboard.com, otiumyacht.com — subdomains included. Pageviews from any other site are rejected. Empty = any domain accepted', envFallback: 'PAGEVIEW_ALLOWED_DOMAINS' },
   { key: 'tripSheetGoogleSheetId', label: 'Trip Sheet Google Sheet ID', description: "This tenant's own spreadsheet for trip sheet sync", envFallback: 'TRIP_SHEET_GOOGLE_SHEET_ID' },
   { key: 'googleAdsConversionsSheetId', label: 'Google Ads Conversions Sheet ID', description: 'Spreadsheet auto-synced with confirmed-deposit bookings, set as a Google Sheets source on a Google Ads conversion action', envFallback: 'GOOGLE_ADS_CONVERSIONS_SHEET_ID' },
+  { key: 'googleOfflineFeedSheetId', label: 'Google Offline Feed Sheet ID (CRM stages)', description: 'Spreadsheet the ERP rewrites every 3h with the go-live offline feed: one tab per brand (AC / INV / Booking rows, Data Manager column names), Stage unknown, Excluded, Pending changes, Meta (draft). Point Data Manager at it on switch day', envFallback: 'GOOGLE_OFFLINE_FEED_SHEET_ID' },
   { key: 'whatsappSamaraPhoneNumberId', label: 'WhatsApp Phone Number ID — Samara', description: "Meta phone number ID for the Samara brand's WhatsApp Business number", envFallback: 'WHATSAPP_SAMARA_PHONE_NUMBER_ID' },
   { key: 'whatsappSamaraApiToken', label: 'WhatsApp API Token — Samara', description: 'System User (permanent) or temporary access token for the Samara number', envFallback: 'WHATSAPP_SAMARA_API_TOKEN' },
   { key: 'whatsappMischiefPhoneNumberId', label: 'WhatsApp Phone Number ID — Mischief', description: "Meta phone number ID for the Mischief brand's WhatsApp Business number", envFallback: 'WHATSAPP_MISCHIEF_PHONE_NUMBER_ID' },

@@ -7,6 +7,7 @@ import { logActivity } from '@/lib/activity'
 import { chatRole, roleMatches } from '@/lib/role-utils'
 import { salesCanAccessConversation } from '@/lib/whatsapp-distribution'
 import { ensureLeadForConversation, isWhatsappChatCategory, WHATSAPP_CHAT_CATEGORY_LABEL } from '@/lib/whatsapp-lead'
+import { runChatDealMaker } from '@/lib/deal-chat'
 
 // Triage a chat into SALES / GUEST / VENDOR / SPAM (or back to UNSORTED). Moving it to
 // SALES creates/links its Lead so it shows up in the WhatsApp Pipeline. Moving it out of
@@ -29,6 +30,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   await db.whatsappConversation.update({ where: { id }, data: { category } })
   const leadId = category === 'SALES' ? await ensureLeadForConversation(db, id, session.user.id) : null
+  // Triaged as Sales → the lead gets an open deal for this number's brand (parity B, src/lib/deal-chat.ts)
+  if (leadId) {
+    const conv = await db.whatsappConversation.findUnique({ where: { id }, select: { brand: true } })
+    await runChatDealMaker(db, { leadId, brand: conv?.brand, channel: 'WHATSAPP', whatsappConversationId: id, actingUserId: session.user.id, ensureOnly: true })
+      .catch(e => console.error('[whatsapp category] deal maker failed', e))
+  }
 
   logActivity({
     userId: session.user.id,

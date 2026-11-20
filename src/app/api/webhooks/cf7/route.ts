@@ -1,8 +1,11 @@
+import type { WhatsappBrand } from '@prisma/client'
 import { NextRequest, NextResponse } from 'next/server'
 import { resolveTenantBySlugFull } from '@/lib/resolve-tenant'
 import { getTenantSecret } from '@/lib/tenant-secrets'
 import { logActivity } from '@/lib/activity'
-import { autoAssignWebsiteLead } from '@/lib/whatsapp-lead'
+import { brandForInquiry } from '@/lib/whatsapp-lead'
+import { contactLockKeys, enquirySummary, flushDealPushes, lockContact, runDealMaker, tripTypeFromText } from '@/lib/deal-maker'
+import { inferDealYacht } from '@/lib/deal-product-interest'
 import { isHttpUrl } from '@/lib/url-safety'
 import { logWebhookFailure } from '@/lib/webhook-log'
 import { getClientIp, countryFromIp } from '@/lib/geo-country'
@@ -179,14 +182,17 @@ export async function POST(request: NextRequest) {
     // submission can arrive twice within milliseconds (double-click, or the site firing
     // the webhook twice), and without the lock both requests miss each other's "find
     // existing" check and each create a Lead.
-    const lockKeys = [email && `cf7:email:${email}`, phone && `cf7:phone:${phone}`]
-      .filter((k): k is string => !!k)
-      .sort() // fixed order so two requests locking the same pair can't deadlock
+    // Same keys in every intake path (form, Meta, chats — src/lib/deal-maker.ts), sorted so two
+    // requests locking the same pair can't deadlock. Held through the deal maker below too, so one
+    // person's double submit / form + WhatsApp can't open two deals (parity B3).
+    const lockKeys = contactLockKeys(email, phoneE164)
+    // Hidden "brand" field on the form (parity E10: Otium / Mischief sites, Samara's form 53463 and the
+    // /yacht/otium/ form) wins; else the trip type / site decides.
+    const brandField = (pick(data, 'brand', 'erp_brand', 'site_brand') || '').trim().toLowerCase()
+    const brand: WhatsappBrand = /otium/.test(brandField) ? 'OTIUM' : /mischief/.test(brandField) ? 'MISCHIEF' : /samara/.test(brandField) ? 'SAMARA' : brandForInquiry(website, tripType)
 
-    const { ownerType, ownerId, duplicate } = await db.$transaction(async (tx) => {
-      for (const key of lockKeys) {
-        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${key}))`
-      }
+    const { ownerType, ownerId, duplicate, pushes } = await db.$transaction(async (tx) => {
+      await lockContact(tx, lockKeys)
 
       let ownerType: 'customer' | 'lead'
       let ownerId: string
@@ -242,9 +248,10 @@ export async function POST(request: NextRequest) {
         },
         select: { id: true },
       })
-      if (duplicate) return { ownerType, ownerId, duplicate: true }
+      if (duplicate) return { ownerType, ownerId, duplicate: true, pushes: [] }
 
-      await tx.inquiry.create({
+      const inquiry = await tx.inquiry.create({
+        select: { id: true },
         data: {
           source: 'CF7',
           ...(ownerType === 'customer' ? { customerId: ownerId } : { leadId: ownerId }),
@@ -281,16 +288,28 @@ export async function POST(request: NextRequest) {
         },
       })
 
-      return { ownerType, ownerId, duplicate: false }
-    })
+      // Deal rules (parity B): open deal of this brand + trip type → note + 4h task for its owner;
+      // else a new deal in New Enquiry owned by the contact owner / round-robin. Website brand
+      // (B1): Otium / Mischief trip types and sites go to their own pipeline.
+      const checkInDate = parseDate(checkIn), checkOutDate = parseDate(checkOut)
+      const guests = numGuests ? parseInt10(numGuests) : null
+      const dm = await runDealMaker(tx, {
+        ...(ownerType === 'customer' ? { customerId: ownerId } : { leadId: ownerId }),
+        brand,
+        tripType: tripTypeFromText(tripType),
+        channel: 'WEBSITE_FORM',
+        enquiry: true,
+        inquiryId: inquiry.id,
+        summary: enquirySummary({ tripType, guestCount: guests, checkIn: checkInDate, checkOut: checkOutDate, message }),
+        travelStartDate: checkInDate, travelEndDate: checkOutDate, guestCount: guests,
+        productInterest: inferDealYacht({ text: tripType, url: url || null, brand, tripType: tripTypeFromText(tripType) }),
+      })
+
+      return { ownerType, ownerId, duplicate: false, pushes: dm.pushes }
+    }, { timeout: 20000 })
 
     if (duplicate) return json({ ok: true, ownerType, ownerId, duplicate: true })
-
-    // New or still-unowned Lead → rotate it to a sales rep from that inquiry's brand pool
-    // (see autoAssignWebsiteLead). Best-effort: never fails the form submission.
-    if (ownerType === 'lead') {
-      await autoAssignWebsiteLead(db, ownerId, website, fullName, tripType).catch(e => console.error('[CF7 webhook] auto-assign failed', e))
-    }
+    await flushDealPushes(db, pushes)
 
     logActivity({
       userId: '', userName: 'Website CF7', userRole: 'SYSTEM',

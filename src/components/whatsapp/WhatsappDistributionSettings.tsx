@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { toast } from 'sonner'
@@ -23,7 +24,7 @@ const CHANNELS: { id: Channel; label: string; icon: typeof MessageCircle; hasBra
   { id: 'WEBSITE',   label: 'Website Form', icon: Globe,         hasBrands: true,  noun: 'website form leads' },
 ]
 
-interface SalesUser { id: string; name: string | null; email: string }
+interface SalesUser { id: string; name: string | null; email: string; salesAway: boolean; unavailable: string | null }
 interface Participant { userId: string; percentage: number }
 
 export default function WhatsappDistributionSettings() {
@@ -76,6 +77,14 @@ export default function WhatsappDistributionSettings() {
 
   const isPercentageValid = method !== 'PERCENTAGE' || totalPercentage === 100
   const canSave = selected.size > 0 && isPercentageValid
+
+  // Away applies to every channel and brand at once (not part of the pool being edited).
+  async function setAway(u: SalesUser, away: boolean) {
+    const res = await fetch('/api/whatsapp/distribution/away', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: u.id, away }) })
+    if (!res.ok) { toast.error('Could not update Away'); return }
+    toast.success(`${u.name ?? u.email} ${away ? 'is Away — skipped by round-robin' : 'is back in rotation'}`)
+    load(channel, brand)
+  }
 
   async function save() {
     if (!canSave) return
@@ -177,6 +186,7 @@ export default function WhatsappDistributionSettings() {
               <CardTitle className="text-base">Sales in Rotation</CardTitle>
               <CardDescription>
                 {method === 'PERCENTAGE' ? 'Check a sales rep, then set their percentage share.' : `Check the sales reps who should get ${channelInfo.noun}.`}
+                {' '}Anyone Away, on approved leave today or inactive is skipped automatically (all channels).
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-1">
@@ -191,7 +201,16 @@ export default function WhatsappDistributionSettings() {
                     <Label htmlFor={`sales-${u.id}`} className="flex-1 cursor-pointer font-normal">
                       <span className="font-medium">{u.name ?? u.email}</span>
                       <span className="text-xs text-muted-foreground ml-1.5">{u.email}</span>
+                      {u.unavailable && (
+                        <span className="ml-1.5 text-[10px] rounded bg-warning/10 text-warning px-1.5 py-0.5" title="Skipped by round-robin today">
+                          {u.unavailable === 'away' ? 'Away' : u.unavailable === 'on leave' ? 'On leave today' : 'Inactive'}
+                        </span>
+                      )}
                     </Label>
+                    <label className="flex items-center gap-1.5 text-xs text-muted-foreground shrink-0" title="While Away, this rep gets no new leads from any channel">
+                      Away
+                      <Switch checked={u.salesAway} onCheckedChange={v => setAway(u, v)} aria-label={`${u.name ?? u.email} away`} />
+                    </label>
                     {method === 'PERCENTAGE' && isChecked && (
                       <div className="relative w-24 shrink-0">
                         <Input

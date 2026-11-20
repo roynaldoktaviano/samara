@@ -76,6 +76,10 @@ const PUBLIC_PATHS = [
   // My Works weekly/monthly/yearly task spawner — self-hosted interval in
   // instrumentation-node.ts, authenticates via its own CRON_SECRET bearer token
   '/api/my-works/recurring-tick',
+  // Google Ads booking sheet + go-live offline feed (parity D) — self-hosted interval in
+  // instrumentation-node.ts, authenticate via their own CRON_SECRET bearer token
+  '/api/marketing/google-ads-conversions/sync',
+  '/api/marketing/offline-feed/sync',
   // PWA manifest + service worker — must be fetchable pre-login (browsers request these
   // to decide installability before the user necessarily has a session)
   '/manifest.webmanifest',

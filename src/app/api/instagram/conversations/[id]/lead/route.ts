@@ -6,6 +6,7 @@ import { getDb } from '@/lib/get-db'
 import { emitTenantEvent } from '@/lib/realtime-bus'
 import { salesCanAccessConversation } from '@/lib/whatsapp-distribution'
 import { ensureLeadForMetaDm } from '@/lib/lead-contact'
+import { runChatDealMaker } from '@/lib/deal-chat'
 
 // The Instagram/Messenger chat's "Edit lead" button on a chat with no Lead yet — links an
 // existing Lead by IG handle or creates one, so the rep can then edit it right there.
@@ -21,6 +22,9 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
   if (role === 'SALES' && conv.assignedToId !== session.user.id) return NextResponse.json({ error: 'Claim this chat first' }, { status: 403 })
   const { leadId } = await ensureLeadForMetaDm(db, id)
   if (!leadId) return NextResponse.json({ error: 'Could not create lead' }, { status: 500 })
+  const igConv = await db.instagramConversation.findUnique({ where: { id }, select: { brand: true, platform: true } })
+  await runChatDealMaker(db, { leadId, brand: igConv?.brand, channel: igConv?.platform === 'MESSENGER' ? 'MESSENGER' : 'INSTAGRAM', actingUserId: session.user.id, ensureOnly: true })
+    .catch(e => console.error('[instagram lead] deal maker failed', e))
   emitTenantEvent(session.user.tenantId, 'chat')
   return NextResponse.json({ leadId })
 }

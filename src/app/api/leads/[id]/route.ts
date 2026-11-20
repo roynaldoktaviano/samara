@@ -6,8 +6,10 @@ import { logActivity } from '@/lib/activity'
 import { isLeadEntrySource } from '@/lib/lead-entry-source'
 import { leadOwnerScope, canAccessLead } from '@/lib/lead-access'
 import { leadDealName } from '@/lib/deal-name'
+import { chatRole } from '@/lib/role-utils'
+import { primaryDealOfLead, updateDealFields } from '@/lib/deal-stage'
 
-export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getServerSession(authOptions)
   if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
@@ -37,7 +39,26 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     const guestId = lead.booking?.customer.id ?? (guestMatch.length
       ? (await db.customer.findFirst({ where: { deletedAt: null, OR: guestMatch }, orderBy: { createdAt: 'desc' }, select: { id: true } }))?.id ?? null
       : null)
-    return NextResponse.json({ ...lead, dealName: leadDealName(lead), guestId })
+    // Pipeline deals of this person (src/lib/deal-maker.ts). Lead.stage / tripType / tripAmount are
+    // the primary deal's (DB mirror); `?deal=<id>` (board card) returns that deal's values instead.
+    const deals = await db.deal.findMany({
+      where: { leadId: id, deletedAt: null },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true, orderId: true, brand: true, tripType: true, productInterest: true, stage: true, stageUpdatedAt: true, amount: true, currency: true,
+        travelStartDate: true, travelEndDate: true, guestCount: true, channel: true, createdAt: true, lostReason: true,
+        owner: { select: { id: true, name: true } }, booking: { select: { id: true, bookingCode: true } },
+      },
+    })
+    const wanted = req.nextUrl.searchParams.get('deal')
+    const focus = (wanted && deals.find(d => d.id === wanted)) || deals.find(d => d.stage !== 'CLOSED_WON' && d.stage !== 'CLOSED_LOST') || deals[0] || null
+    const overlay = focus ? {
+      stage: focus.stage, tripType: focus.tripType, tripAmount: focus.amount, tripAmountCurrency: focus.currency,
+      travelStartDate: focus.travelStartDate ?? lead.travelStartDate, travelEndDate: focus.travelEndDate ?? lead.travelEndDate,
+      guestCount: focus.guestCount ?? lead.guestCount,
+      productInterest: focus.productInterest ?? lead.productInterest,
+    } : {}
+    return NextResponse.json({ ...lead, ...overlay, dealName: leadDealName({ ...lead, ...overlay }), guestId, deals, dealId: focus?.id ?? null })
   } catch (error) {
     console.error('Error fetching lead:', error)
     return NextResponse.json({ error: 'Failed to fetch lead' }, { status: 500 })
@@ -54,6 +75,8 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
     const { id } = await params
     const existing = await db.lead.findUnique({ where: { id }, select: { name: true } })
     await db.lead.update({ where: { id }, data: { deletedAt: new Date() } })
+    // Its open deals leave the board with it (booked / closed ones stay for history and feeds).
+    await db.deal.updateMany({ where: { leadId: id, deletedAt: null, bookingId: null, stage: { notIn: ['CLOSED_WON', 'CLOSED_LOST'] } }, data: { deletedAt: new Date() } })
 
     logActivity({
       userId:   session?.user?.id   ?? '',
@@ -84,11 +107,38 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       firstName, lastName, nationality, email, phone, instagram, notes,
       productInterest, destinationId, travelStartDate, travelEndDate, travelSeason,
       guestCount, leadQuality, budgetMin, budgetMax, budgetCurrency,
-      tripType, tripAmount, tripAmountCurrency, entrySourceManual,
+      tripType, tripAmount, tripAmountCurrency, entrySourceManual, dealId,
     } = body
 
     const name = [firstName, lastName].filter(Boolean).join(' ') || body.name
     if (!name) return NextResponse.json({ error: 'Name is required' }, { status: 400 })
+
+    // Trip type / amount / dates / pax belong to the deal (the board card's `dealId`, else the lead's
+    // primary deal). A Won / Lost deal is read-only unless ADMIN — refused before anything is saved.
+    const role = chatRole((session.user as { role?: string }).role)
+    const deal = typeof dealId === 'string' && dealId
+      ? await db.deal.findFirst({ where: { id: dealId, leadId: id }, select: { id: true, stage: true } })
+      : await primaryDealOfLead(db, id)
+    if (deal) {
+      const num = (v: unknown) => v != null && v !== '' && Number.isFinite(Number(v)) ? Number(v) : null
+      const open = deal.stage !== 'CLOSED_WON' && deal.stage !== 'CLOSED_LOST'
+      const r = await updateDealFields(db, {
+        dealId: deal.id, role,
+        data: {
+          ...(tripType !== undefined && { tripType: tripType === 'PRIVATE_CHARTER' || tripType === 'OPEN_TRIP' ? tripType : null }),
+          ...(tripAmount !== undefined && { amount: num(tripAmount) }),
+          // The form defaults the currency to USD — only meaningful next to an amount.
+          ...(tripAmountCurrency !== undefined && num(tripAmount) !== null && { currency: tripAmountCurrency || null }),
+          // Planned dates / pax also stay on the lead (person); they only go onto an open deal.
+          ...(open && travelStartDate !== undefined && { travelStartDate: travelStartDate ? new Date(travelStartDate) : null }),
+          ...(open && travelEndDate !== undefined && { travelEndDate: travelEndDate ? new Date(travelEndDate) : null }),
+          ...(open && guestCount !== undefined && { guestCount: guestCount ? Number(guestCount) : null }),
+          // Yacht: the deal's own (Freshsales Product Interest); also kept on the lead below.
+          ...(productInterest !== undefined && { productInterest: productInterest || null }),
+        },
+      })
+      if (!r.ok) return NextResponse.json({ error: r.error }, { status: r.status })
+    }
 
     // Every form save sends the channel; "Automatic" only resets anything when a manual one was set.
     const channelPatch = entrySourceManual === undefined ? {}
@@ -115,9 +165,10 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         budgetMin: budgetMin != null && budgetMin !== '' ? Number(budgetMin) : null,
         budgetMax: budgetMax != null && budgetMax !== '' ? Number(budgetMax) : null,
         budgetCurrency: budgetCurrency || null,
-        ...(tripType !== undefined && { tripType: tripType === 'PRIVATE_CHARTER' || tripType === 'OPEN_TRIP' ? tripType : null }),
-        ...(tripAmount !== undefined && { tripAmount: tripAmount != null && tripAmount !== '' && Number.isFinite(Number(tripAmount)) ? Number(tripAmount) : null }),
-        ...(tripAmountCurrency !== undefined && { tripAmountCurrency: tripAmountCurrency || null }),
+        // With a deal these three are the deal's (mirrored onto the lead by DB trigger).
+        ...(!deal && tripType !== undefined && { tripType: tripType === 'PRIVATE_CHARTER' || tripType === 'OPEN_TRIP' ? tripType : null }),
+        ...(!deal && tripAmount !== undefined && { tripAmount: tripAmount != null && tripAmount !== '' && Number.isFinite(Number(tripAmount)) ? Number(tripAmount) : null }),
+        ...(!deal && tripAmountCurrency !== undefined && { tripAmountCurrency: tripAmountCurrency || null }),
       },
     })
 

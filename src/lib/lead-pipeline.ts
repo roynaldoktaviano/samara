@@ -6,7 +6,7 @@
 //   FOLLOW_UP_1 / FOLLOW_UP_2  staff wrote again ≥ FOLLOW_UP_GAP_HOURS later with no answer
 //   BOOKING_CONFIRMATION       a booking was created for this lead
 //   INVOICE_SENT               the booking's first invoice was generated
-//   CLOSED_WON                 first payment confirmed
+//   CLOSED_WON                 first payment (deposit / DP) confirmed — needs a payment status
 //   CLOSED_LOST                manual only, with a reason
 // Sales can still drag a card to any column — replies sent outside the ERP aren't seen.
 export const LEAD_STAGES = [
@@ -44,6 +44,21 @@ export const LEAD_STAGE_COLOR: Record<LeadStage, string> = {
 export const CONVERSATION_STAGES: readonly LeadStage[] = ['NEW', 'INITIAL_MESSAGE_SENT', 'ACTIVE_COMMUNICATION', 'FOLLOW_UP_1', 'FOLLOW_UP_2']
 // Booking-driven stages, in order — the auto move only ever goes forward along these.
 export const BOOKING_STAGES: readonly LeadStage[] = ['BOOKING_CONFIRMATION', 'INVOICE_SENT', 'CLOSED_WON']
+
+// Parity C3 (Jay): the trip type (Private Charter / Open Trip) must be confirmed before a deal
+// enters In Active Communication — Google's AC upload is per PC / OT — and every booking stage after it.
+// The follow-up stages don't need it (an unresponsive guest may never say).
+export const TRIP_TYPE_REQUIRED_STAGES: readonly LeadStage[] = ['ACTIVE_COMMUNICATION', 'BOOKING_CONFIRMATION', 'INVOICE_SENT', 'CLOSED_WON']
+
+// Freshsales "Payment status". Won = deposit (DP) received (Roy, 20 Nov), so entering Won needs
+// Deposit paid or Paid.
+export const DEAL_PAYMENT_STATUSES = ['DEPOSIT_PAID', 'PAID', 'NOT_PAID'] as const
+export type DealPaymentStatus = typeof DEAL_PAYMENT_STATUSES[number]
+export const DEAL_PAYMENT_STATUS_LABEL: Record<DealPaymentStatus, string> = { DEPOSIT_PAID: 'Deposit paid', PAID: 'Paid in full', NOT_PAID: 'Not paid' }
+export const WON_PAYMENT_STATUSES: readonly DealPaymentStatus[] = ['DEPOSIT_PAID', 'PAID']
+export function isDealPaymentStatus(v: unknown): v is DealPaymentStatus {
+  return typeof v === 'string' && (DEAL_PAYMENT_STATUSES as readonly string[]).includes(v)
+}
 
 export function isClosedStage(stage: LeadStage): boolean {
   return stage === 'CLOSED_WON' || stage === 'CLOSED_LOST'

@@ -8,23 +8,36 @@ import { sendPushToUser } from '@/lib/push'
 
 const HOUR = 60 * 60 * 1000
 
-async function moveStage(db: PrismaClient, leadId: string, from: LeadStage, to: LeadStage, userId: string | null) {
+// Stages now live on the Deal (src/lib/deal-maker.ts); a lead's Lead.stage just mirrors its
+// primary deal (DB trigger). Message-driven moves apply to every OPEN deal of the person that is
+// still in a conversation stage — Won / Lost deals are read-only and never moved here.
+async function moveDealStage(db: PrismaClient, dealId: string, from: LeadStage, to: LeadStage, userId: string | null) {
   // Conditional on the stage we read, so two hooks racing can't undo each other.
-  await db.lead.updateMany({ where: { id: leadId, stage: from }, data: { stage: to, stageUpdatedAt: new Date(), stageUpdatedById: userId } })
+  await db.deal.updateMany({ where: { id: dealId, stage: from }, data: { stage: to, stageUpdatedAt: new Date(), stageUpdatedById: userId } })
 }
 
+const conversationDeals = (db: PrismaClient, leadId: string) => db.deal.findMany({
+  where: { leadId, deletedAt: null, stage: { in: [...CONVERSATION_STAGES] } },
+  select: { id: true, stage: true, tripType: true },
+})
+
 /**
- * Customer wrote to us (WA / IG / Messenger / email). An answer to our message puts the lead
- * in "In Active Communication"; a lead still at New Enquiry stays there until staff reply.
+ * Customer wrote to us (WA / IG / Messenger / email). An answer to our message puts the deal
+ * in "In Active Communication"; a deal still at New Enquiry stays there until staff reply.
  */
 export async function recordLeadInbound(db: PrismaClient, leadId: string, at = new Date()): Promise<void> {
-  const lead = await db.lead.findUnique({ where: { id: leadId }, select: { stage: true, lastInboundAt: true } })
+  const lead = await db.lead.findUnique({ where: { id: leadId }, select: { lastInboundAt: true } })
   if (!lead) return
   if (!lead.lastInboundAt || lead.lastInboundAt < at) {
     await db.lead.update({ where: { id: leadId }, data: { lastInboundAt: at } })
   }
-  if (lead.stage === 'INITIAL_MESSAGE_SENT' || lead.stage === 'FOLLOW_UP_1' || lead.stage === 'FOLLOW_UP_2') {
-    await moveStage(db, leadId, lead.stage, 'ACTIVE_COMMUNICATION', null)
+  for (const d of await conversationDeals(db, leadId)) {
+    // Parity C3: no In Active Communication before the trip type is confirmed — the deal waits (its
+    // card shows "Trip type?") and moves as soon as sales set it (updateDealFields in deal-stage.ts).
+    if (!d.tripType) continue
+    if (d.stage === 'INITIAL_MESSAGE_SENT' || d.stage === 'FOLLOW_UP_1' || d.stage === 'FOLLOW_UP_2') {
+      await moveDealStage(db, d.id, d.stage, 'ACTIVE_COMMUNICATION', null)
+    }
   }
 }
 
@@ -34,20 +47,40 @@ export async function recordLeadInbound(db: PrismaClient, leadId: string, at = n
  * message with no answer in between → 1st Follow-Up, then 2nd Follow-Up.
  */
 export async function recordLeadOutbound(db: PrismaClient, leadId: string, userId: string | null, at = new Date()): Promise<void> {
-  const lead = await db.lead.findUnique({ where: { id: leadId }, select: { stage: true, lastInboundAt: true, lastOutboundAt: true } })
+  const lead = await db.lead.findUnique({ where: { id: leadId }, select: { lastInboundAt: true, lastOutboundAt: true } })
   if (!lead) return
   const prevOut = lead.lastOutboundAt
   if (!prevOut || prevOut < at) {
     await db.lead.update({ where: { id: leadId }, data: { lastOutboundAt: at } })
   }
-
-  if (lead.stage === 'NEW') return moveStage(db, leadId, 'NEW', 'INITIAL_MESSAGE_SENT', userId)
-
   const unanswered = !!prevOut && (!lead.lastInboundAt || lead.lastInboundAt < prevOut)
   const gapReached = !!prevOut && at.getTime() - prevOut.getTime() >= FOLLOW_UP_GAP_HOURS * HOUR
-  if (!unanswered || !gapReached) return
-  if (lead.stage === 'INITIAL_MESSAGE_SENT' || lead.stage === 'ACTIVE_COMMUNICATION') return moveStage(db, leadId, lead.stage, 'FOLLOW_UP_1', userId)
-  if (lead.stage === 'FOLLOW_UP_1') return moveStage(db, leadId, 'FOLLOW_UP_1', 'FOLLOW_UP_2', userId)
+  for (const d of await conversationDeals(db, leadId)) {
+    if (d.stage === 'NEW') { await moveDealStage(db, d.id, 'NEW', 'INITIAL_MESSAGE_SENT', userId); continue }
+    if (!unanswered || !gapReached) continue
+    if (d.stage === 'INITIAL_MESSAGE_SENT' || d.stage === 'ACTIVE_COMMUNICATION') await moveDealStage(db, d.id, d.stage, 'FOLLOW_UP_1', userId)
+    else if (d.stage === 'FOLLOW_UP_1') await moveDealStage(db, d.id, 'FOLLOW_UP_1', 'FOLLOW_UP_2', userId)
+  }
+}
+
+export type LeadChatEvent = { direction: 'IN' | 'OUT'; at: Date; userId?: string | null }
+
+/**
+ * Chat messages that reached the ERP without passing the hooks above — replies the team sent from
+ * Freshchat, copied in by src/lib/freshchat-mirror.ts — replayed oldest first so the pipeline
+ * moves as if they had been sent from the ERP. Several bubbles in a row (same direction, under an
+ * hour apart) are one turn: only its first and last message are replayed.
+ */
+export async function replayLeadChatEvents(db: PrismaClient, leadId: string, events: LeadChatEvent[]): Promise<void> {
+  const ev = [...events].sort((a, b) => +a.at - +b.at)
+  const sameTurn = (a: LeadChatEvent | undefined, b: LeadChatEvent | undefined) =>
+    !!a && !!b && a.direction === b.direction && +b.at - +a.at < HOUR
+  for (let i = 0; i < ev.length; i++) {
+    if (sameTurn(ev[i - 1], ev[i]) && sameTurn(ev[i], ev[i + 1])) continue
+    const e = ev[i]
+    if (e.direction === 'IN') await recordLeadInbound(db, leadId, e.at)
+    else await recordLeadOutbound(db, leadId, e.userId ?? null, e.at)
+  }
 }
 
 /** Open (not won/lost) lead for an email address — email threads have no leadId of their own. */
@@ -63,10 +96,10 @@ export async function findOpenLeadIdByEmail(db: PrismaClient, email: string | nu
 }
 
 /**
- * Booking-driven stages for every lead linked to this booking: created → Send Booking
+ * Booking-driven stages for every deal linked to this booking: created → Send Booking
  * Confirmation, first invoice generated → Send Invoice 1, first payment confirmed → Won.
- * Only ever moves forward (a lead at Won never drops back to Invoice), but does pull a lead out
- * of the conversation stages or Lost — a booking means it wasn't lost after all.
+ * Only ever moves forward, and never touches a Won / Lost deal (read-only — a booking for a
+ * person whose deal was Lost gets a new deal, see linkBookingDeals in src/lib/deal-booking.ts).
  * Call after creating a booking, generating an invoice or confirming a payment.
  */
 export async function syncLeadStageFromBooking(db: PrismaClient, bookingId: string, userId: string | null): Promise<void> {
@@ -75,10 +108,10 @@ export async function syncLeadStageFromBooking(db: PrismaClient, bookingId: stri
     select: {
       status: true, depositPaid: true,
       payments: { select: { status: true, invoiceGeneratedAt: true } },
-      pipelineLeads: { select: { id: true, stage: true } },
+      deals: { where: { deletedAt: null }, select: { id: true, stage: true, paymentStatus: true } },
     },
   })
-  if (!booking || booking.pipelineLeads.length === 0 || booking.status === 'cancelled' || booking.status === 'on_hold') return
+  if (!booking || booking.deals.length === 0 || booking.status === 'cancelled' || booking.status === 'on_hold') return
 
   const paid = booking.depositPaid > 0 || booking.payments.some(p => p.status === 'confirmed')
     || ['partially_paid', 'fully_paid', 'completed'].includes(booking.status)
@@ -86,10 +119,18 @@ export async function syncLeadStageFromBooking(db: PrismaClient, bookingId: stri
   const target: LeadStage = paid ? 'CLOSED_WON' : invoiced ? 'INVOICE_SENT' : 'BOOKING_CONFIRMATION'
   const targetRank = BOOKING_STAGES.indexOf(target)
 
-  for (const lead of booking.pipelineLeads) {
-    const rank = BOOKING_STAGES.indexOf(lead.stage)
+  // Payment status (parity C3): deposit received = Won with "Deposit paid"; paid in full → "Paid".
+  const fullyPaid = ['fully_paid', 'completed'].includes(booking.status)
+  const payment = fullyPaid ? 'PAID' : paid ? 'DEPOSIT_PAID' : null
+
+  for (const deal of booking.deals) {
+    if (payment && deal.stage !== 'CLOSED_LOST' && deal.paymentStatus !== payment && !(deal.paymentStatus === 'PAID' && payment === 'DEPOSIT_PAID')) {
+      await db.deal.update({ where: { id: deal.id }, data: { paymentStatus: payment } })
+    }
+    if (deal.stage === 'CLOSED_WON' || deal.stage === 'CLOSED_LOST') continue
+    const rank = BOOKING_STAGES.indexOf(deal.stage)
     if (rank >= targetRank) continue
-    await moveStage(db, lead.id, lead.stage, target, userId)
+    await moveDealStage(db, deal.id, deal.stage, target, userId)
   }
 }
 

@@ -9,6 +9,7 @@ import { pickNextSalesUserId } from '@/lib/whatsapp-distribution'
 import { autoLinkNewConversation } from '@/lib/whatsapp-lead'
 import { fillLeadContactFromText, isNewContactSession, recordLeadContact } from '@/lib/lead-contact'
 import { recordWhatsappChatAttribution, type WhatsappReferral } from '@/lib/wa-chat-attribution'
+import { runChatDealMaker } from '@/lib/deal-chat'
 import { recordLeadInbound } from '@/lib/lead-stage-auto'
 import { sendPushToUser } from '@/lib/push'
 import { isViewing } from '@/lib/chat-presence'
@@ -339,6 +340,8 @@ export function createWhatsappWebhookHandlers(endpointBrand?: WhatsappBrand) {
           // still UNSORTED without one. Then the contact goes into the lead's history: always when
           // the chat just got its Lead, else when they'd been quiet 24h+ (src/lib/lead-contact.ts).
           // Never blocks acking the webhook.
+          let chatLeadId: string | null = null
+          let chatLeadJustLinked = false
           try {
             let leadId = existing?.leadId ?? null
             let created = false
@@ -346,6 +349,8 @@ export function createWhatsappWebhookHandlers(endpointBrand?: WhatsappBrand) {
               ({ leadId, created } = await autoLinkNewConversation(db, conversation.id, { createLead: true }))
             }
             const justLinked = !!leadId && !existing?.leadId
+            chatLeadId = leadId
+            chatLeadJustLinked = justLinked
             if (leadId && (justLinked || (existing && isNewContactSession(existing.lastInboundAt)))) {
               await recordLeadContact(db, { leadId, channel: 'WHATSAPP', brand, whatsappConversationId: conversation.id, message: preview, isFirstContact: created })
             }
@@ -361,8 +366,14 @@ export function createWhatsappWebhookHandlers(endpointBrand?: WhatsappBrand) {
           // from as an inquiry on the lead: Click-to-WhatsApp ad, website button tap ("Ref SL-XXXXX",
           // else the 30-min timing rule) or direct — src/lib/wa-chat-attribution.ts.
           const isSessionStart = isNewConversation || !existing || isNewContactSession(existing.lastInboundAt)
-          if (isSessionStart || msg.referral) {
-            await recordWhatsappChatAttribution(db, { conversationId: conversation.id, startedAt: sentAt, text, isSessionStart, referral: msg.referral })
+          const origin = isSessionStart || msg.referral
+            ? await recordWhatsappChatAttribution(db, { conversationId: conversation.id, startedAt: sentAt, text, isSessionStart, referral: msg.referral })
+            : null
+          // Deal rules (parity B, src/lib/deal-maker.ts): a new Sales chat contact opens a deal in New
+          // Enquiry, or joins this brand's open deal (+ 4h task when it came from an ad / website tap).
+          if (chatLeadId && (chatLeadJustLinked || isSessionStart || origin?.kind === 'AD')) {
+            await runChatDealMaker(db, { leadId: chatLeadId, brand, channel: 'WHATSAPP', whatsappConversationId: conversation.id, origin, text: preview, at: sentAt })
+              .catch(e => console.error('[whatsapp webhook] deal maker failed', e))
           }
 
           // Notice for whichever sales rep this chat is assigned to — in-app bell (toast +

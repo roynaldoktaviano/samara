@@ -133,6 +133,12 @@ model User {
   createdBookings                        Booking[]                         @relation("BookingCreatedBy")
   leadStageUpdates                       Lead[]                            @relation("LeadStageUpdatedBy")
   ownedLeads                             Lead[]                            @relation("LeadOwner")
+  ownedDeals                             Deal[]                            @relation("DealOwner")
+  dealStageUpdates                       Deal[]                            @relation("DealStageUpdatedBy")
+  dealNotes                              DealNote[]                        @relation("DealNoteAuthor")
+  // Leads Distribution "Away" switch: while true this sales rep gets no new deals / chats from
+  // round-robin and isn't used as a deal's contact owner (src/lib/sales-availability.ts).
+  salesAway                              Boolean                           @default(false)
   ownedCustomers                         Customer[]                        @relation("CustomerOwner")
   leadAssignmentsFrom                    LeadAssignmentLog[]               @relation("LeadAssignmentFrom")
   leadAssignmentsTo                      LeadAssignmentLog[]               @relation("LeadAssignmentTo")
@@ -280,11 +286,15 @@ model Todo {
   recurrenceAnchor DateTime?
   recurrenceIndex  Int            @default(0)
   recurrenceNextAt DateTime?
+  // Set on the "follow up within 4h" task the deal maker gives a deal's owner (src/lib/deal-maker.ts).
+  dealId           String?
+  deal             Deal?          @relation(fields: [dealId], references: [id], onDelete: SetNull)
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
   activities       TodoActivity[]
 
   @@index([userId, status])
+  @@index([dealId])
   @@index([recurrenceNextAt])
 }
 
@@ -353,6 +363,7 @@ model Customer {
   waitingListItems       WaitingList[]
   waitingListHistories   WaitingListHistory[]    @relation("WaitingListHistoryCustomer")
   inquiries              Inquiry[]
+  deals                  Deal[]
   pageViews              PageView[]
   freshsalesContacts     FreshsalesContact[]
   freshchatConversations FreshchatConversation[]
@@ -483,6 +494,10 @@ model Lead {
   entrySourceManual String?
 
   inquiries              Inquiry[]
+  // Pipeline deals of this person (src/lib/deal-maker.ts). The stage / trip type / amount /
+  // lost reason / freshsalesDealId columns above are a read-only mirror of the PRIMARY deal
+  // (newest open, else newest), kept by DB trigger refresh_lead_from_deals — write the Deal.
+  deals                  Deal[]
   pageViews              PageView[]
   whatsappConversations  WhatsappConversation[]
   instagramConversations InstagramConversation[]
@@ -501,6 +516,107 @@ model Lead {
   @@index([freshsalesDealId])
   @@index([entrySource])
   @@index([phoneE164])
+}
+
+// A Sales Pipeline deal — one card on the board (Freshsales "deal"). A person (Lead, or a Guest
+// who enquires again) can have many: the deal maker (src/lib/deal-maker.ts) opens a new one per
+// enquiry unless an open deal of the same brand + trip type exists (go-live parity section B).
+// Won / Lost deals are read-only (only ADMIN can reopen; the Freshsales sync is the exception
+// until cutover). Lead.stage etc. mirror the person's primary deal via DB trigger.
+model Deal {
+  id               String          @id @default(cuid())
+  // Order ID in Google / Meta conversion uploads: the Freshsales deal ID for deals that exist in
+  // Freshsales (migrated, or born during dual-write and matched), else "ERP-<n>" — never numeric,
+  // so it can't collide with a Freshsales ID.
+  orderId          String?         @unique
+  freshsalesDealId String?         @unique
+  leadId           String?
+  lead             Lead?           @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  customerId       String?
+  customer         Customer?       @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  brand            WhatsappBrand   @default(SAMARA)
+  tripType         TripType?
+  // Yacht of this enquiry ("Samara I" / "Samara II" / "Otium" / "Mischief" / "Samara I + Samara II") —
+  // Freshsales Product Interest minus its PC / OT half (that's tripType). src/lib/deal-product-interest.ts
+  productInterest  String?
+  // Never sent to Google / Meta offline feeds (Freshsales never_upload.json). src/lib/ad-offline-feed.ts
+  neverUpload      Boolean         @default(false)
+  stage            LeadStage       @default(NEW)
+  stageUpdatedAt   DateTime?
+  stageUpdatedById String?
+  stageUpdatedBy   User?           @relation("DealStageUpdatedBy", fields: [stageUpdatedById], references: [id], onDelete: SetNull)
+  ownerId          String?
+  owner            User?           @relation("DealOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  ownerAssignedAt  DateTime?
+  amount           Float?
+  currency         String?
+  lostReason       LeadLostReason?
+  lostNote         String?
+  // Freshsales "Payment status": DEPOSIT_PAID | PAID | NOT_PAID. Required to enter Won (parity C3;
+  // Won = deposit received). Set from the booking's payments when the booking moves the deal.
+  paymentStatus    String?
+  bookingId        String?
+  booking          Booking?        @relation("DealBooking", fields: [bookingId], references: [id], onDelete: SetNull)
+  travelStartDate  DateTime?
+  travelEndDate    DateTime?
+  guestCount       Int?
+  // How it came in: WEBSITE_FORM, META_FORM, WHATSAPP, INSTAGRAM, MESSENGER, MANUAL, BOOKING,
+  // FRESHSALES (made by the Freshsales sync) or MIGRATED (from the pre-Deal lead card).
+  channel          String?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  deletedAt        DateTime?
+
+  inquiries    Inquiry[]
+  notes        DealNote[]
+  todos        Todo[]
+  stageChanges DealStageChange[]
+
+  @@index([leadId])
+  @@index([customerId])
+  @@index([ownerId])
+  @@index([stage])
+  @@index([brand, stage])
+  @@index([bookingId])
+  @@index([createdAt])
+  @@index([deletedAt])
+}
+
+// One row per stage change of a deal (parity C2) — the conversion time for Google / Meta uploads is
+// when the deal first reached a stage. Written by DB trigger deal_stage_history on every Deal insert
+// / stage update, whoever writes it; Freshsales deals also get their earlier history from the
+// Freshsales timeline (STAGE_CHANGE events). See src/lib/deal-stage-history.ts.
+model DealStageChange {
+  id          String     @id @default(cuid())
+  dealId      String
+  deal        Deal       @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  fromStage   LeadStage?
+  toStage     LeadStage
+  changedAt   DateTime
+  changedById String?
+  // MANUAL (moved by hand in the ERP), SYSTEM (ERP automation / deal maker / booking), FRESHSALES
+  // (Freshsales sync or its timeline). Set per transaction via set_config('app.stage_source', …).
+  source      String     @default("SYSTEM")
+  createdAt   DateTime   @default(now())
+
+  @@unique([dealId, toStage, changedAt])
+  @@index([dealId, changedAt])
+  @@index([toStage, changedAt])
+}
+
+// Timeline line on a deal — "enquired again via website (2 pax, 12 Mar)", reopened by admin, etc.
+model DealNote {
+  id          String   @id @default(cuid())
+  dealId      String
+  deal        Deal     @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  // ENQUIRY (a new enquiry joined this open deal), SYSTEM (automatic event), USER (typed by staff)
+  kind        String   @default("SYSTEM")
+  body        String
+  createdById String?
+  createdBy   User?    @relation("DealNoteAuthor", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+
+  @@index([dealId, createdAt])
 }
 
 // One row per hand-over of a Lead between sales reps (history for the Sales Pipeline and
@@ -625,78 +741,78 @@ model WaTap {
 // Reassigned from leadId to customerId when a Lead converts into a Guest via
 // booking creation — see POST /api/bookings.
 model Inquiry {
-  id                  String    @id @default(cuid())
-  source              String
-  leadId              String?
-  customerId          String?
-  checkInDate         DateTime?
-  checkOutDate        DateTime?
-  guestCount          Int?
-  tripType            String?
-  message             String?
-  website             String? // domain of the page the form was submitted from, e.g. "samaraliveaboard.com"
-  url                 String? // full URL of the page the form was submitted from
+  id                     String    @id @default(cuid())
+  source                 String
+  leadId                 String?
+  customerId             String?
+  checkInDate            DateTime?
+  checkOutDate           DateTime?
+  guestCount             Int?
+  tripType               String?
+  message                String?
+  website                String? // domain of the page the form was submitted from, e.g. "samaraliveaboard.com"
+  url                    String? // full URL of the page the form was submitted from
   // "Original" touch — first_source/first_medium/first_campaign in Freshsales.
   // Filled from the form's ft_* fields (its own first-touch capture, persisted
   // client-side e.g. via cookie across the visitor's first-ever session).
-  utmSource           String?
-  utmMedium           String?
-  utmCampaign         String?
-  utmTerm             String?
-  utmContent          String?
-  gclid               String?
-  gbraid              String? // Google Ads' iOS/App-attribution equivalent of gclid
-  wbraid              String? // Google Ads' web-conversion equivalent of gclid (privacy sandbox)
-  fbclid              String? // Meta/Facebook click ID
-  leadSource          String? // Freshsales "Lead Source" (cf_lead_source)
-  refererField        String? // Freshsales "Referer Field" (cf_referer_field)
-  mobileNumberBackup  String? // Freshsales "Mobile number backup" (cf_mobile_number_backup)
-  reference           String? // Freshsales "Reference" (cf_reference)
+  utmSource              String?
+  utmMedium              String?
+  utmCampaign            String?
+  utmTerm                String?
+  utmContent             String?
+  gclid                  String?
+  gbraid                 String? // Google Ads' iOS/App-attribution equivalent of gclid
+  wbraid                 String? // Google Ads' web-conversion equivalent of gclid (privacy sandbox)
+  fbclid                 String? // Meta/Facebook click ID
+  leadSource             String? // Freshsales "Lead Source" (cf_lead_source)
+  refererField           String? // Freshsales "Referer Field" (cf_referer_field)
+  mobileNumberBackup     String? // Freshsales "Mobile number backup" (cf_mobile_number_backup)
+  reference              String? // Freshsales "Reference" (cf_reference)
   // "Created from" touch — last_source/last_medium/last_campaign in Freshsales.
   // Filled from the form's bare utm_*/gclid/etc fields — this submission's own
   // traffic source, as opposed to the visitor's very first touch above.
-  lastSource          String?
-  lastMedium          String?
-  lastCampaign        String?
-  lastTerm            String?
-  lastContent         String?
-  lastGclid           String?
-  lastGbraid          String?
-  lastWbraid          String?
-  lastFbclid          String?
+  lastSource             String?
+  lastMedium             String?
+  lastCampaign           String?
+  lastTerm               String?
+  lastContent            String?
+  lastGclid              String?
+  lastGbraid             String?
+  lastWbraid             String?
+  lastFbclid             String?
   // "Most recent" touch — latest_source/latest_medium/latest_campaign in Freshsales
-  latestSource        String?
-  latestMedium        String?
-  latestCampaign      String?
+  latestSource           String?
+  latestMedium           String?
+  latestCampaign         String?
   // Ad-cookie consent from the website form (granted / denied / unknown / not_required) and
   // the visitor's banner region (eu, uk, ch, au, us, none…). Decides whether this person may
   // be sent to Google/Meta — see src/lib/ad-consent.ts.
-  adConsent           String?
-  consentRegion       String?
+  adConsent              String?
+  consentRegion          String?
   // Store-all tracking (Marc, 15 Nov): every click ID / cookie / landing / IP / UA is kept for
   // every lead; consent only decides what is later SENT (src/lib/ad-consent.ts). Exception:
   // Meta's fbc/fbp are dropped on an EU/UK/CH (or blank-region) denial — see src/lib/inquiry-tracking.ts.
-  msclkid             String? // Microsoft Ads click ID, first touch (ft_msclkid)
-  lastMsclkid         String? // … this submission's own (msclkid)
-  fbc                 String? // Meta _fbc cookie / fbclid-derived click value
-  fbp                 String? // Meta _fbp browser cookie
-  firstLandingUrl     String? // first page of the visitor's first-ever session (ft_landing_url / first_landing_url)
-  landingUrl          String? // first page of this session (landing_url)
-  firstReferrer       String? // referrer of the first-ever session (ft_referrer)
-  referrer            String? // referrer of this session
-  ipAddress           String?
-  userAgent           String?
+  msclkid                String? // Microsoft Ads click ID, first touch (ft_msclkid)
+  lastMsclkid            String? // … this submission's own (msclkid)
+  fbc                    String? // Meta _fbc cookie / fbclid-derived click value
+  fbp                    String? // Meta _fbp browser cookie
+  firstLandingUrl        String? // first page of the visitor's first-ever session (ft_landing_url / first_landing_url)
+  landingUrl             String? // first page of this session (landing_url)
+  firstReferrer          String? // referrer of the first-ever session (ft_referrer)
+  referrer               String? // referrer of this session
+  ipAddress              String?
+  userAgent              String?
   // Google "session attributes" blob (cf_google_session_attributes in Freshsales) — opaque, kept as sent.
-  sessionAttributes   String?
+  sessionAttributes      String?
   // WhatsApp click-to-chat match (src/lib/wa-tap.ts): the website tap this chat was matched to,
   // its "Ref SL-XXXXX" code and how sure the match is (CONFIDENT / MEDIUM / LOW — LOW is never
   // uploaded until sales change it).
-  waRef               String?
-  waTapId             String?   @unique
-  waTap               WaTap?    @relation(fields: [waTapId], references: [id], onDelete: SetNull)
-  matchConfidence     String?
-  matchConfidenceById String?
-  matchConfidenceAt   DateTime?
+  waRef                  String?
+  waTapId                String?   @unique
+  waTap                  WaTap?    @relation(fields: [waTapId], references: [id], onDelete: SetNull)
+  matchConfidence        String?
+  matchConfidenceById    String?
+  matchConfidenceAt      DateTime?
   // Every WhatsApp chat session gets an inquiry (src/lib/wa-chat-attribution.ts): the website
   // tap above ("WHATSAPP"), Meta's Click-to-WhatsApp `referral` ("WHATSAPP_AD"), or neither
   // ("WHATSAPP_DIRECT"). whatsappConversationId ties it to its thread so a tap that arrives
@@ -710,14 +826,18 @@ model Inquiry {
   adBody                 String?
   adMediaType            String? // "image" | "video"
   adMediaUrl             String?
-  rawPayload          Json?
-  createdAt           DateTime  @default(now())
+  rawPayload             Json?
+  createdAt              DateTime  @default(now())
 
+  // The pipeline deal this enquiry opened or was added to (src/lib/deal-maker.ts).
+  dealId   String?
+  deal     Deal?     @relation(fields: [dealId], references: [id], onDelete: SetNull)
   lead     Lead?     @relation(fields: [leadId], references: [id], onDelete: SetNull)
   customer Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
 
   @@index([leadId])
   @@index([customerId])
+  @@index([dealId])
   @@index([createdAt])
   @@index([whatsappConversationId])
   @@index([ctwaClid])
@@ -1264,6 +1384,7 @@ model Booking {
   stockUsages                   StockMovement[]
   freelanceTripAssignments      FreelanceTripAssignment[]
   pipelineLeads                 Lead[]                    @relation("LeadBooking")
+  deals                         Deal[]                    @relation("DealBooking")
 
   @@index([status])
   @@index([openTripId, status])
@@ -4989,31 +5110,31 @@ model WhatsappConversation {
 }
 
 model WhatsappMessage {
-  id                String                @id @default(cuid())
-  conversationId    String
-  conversation      WhatsappConversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  direction         WhatsappDirection
-  body              String?
-  mediaUrl          String?
-  mediaType         String?
+  id                       String                @id @default(cuid())
+  conversationId           String
+  conversation             WhatsappConversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  direction                WhatsappDirection
+  body                     String?
+  mediaUrl                 String?
+  mediaType                String?
   // Set when this OUT message was sent as an approved Message Template (HSM) rather than
   // free text — required by Meta to message someone outside the 24h customer-service
   // window (see src/lib/whatsapp-templates.ts). `body` still holds the rendered text for display.
-  templateName      String?
-  status            WhatsappMessageStatus @default(SENT)
+  templateName             String?
+  status                   WhatsappMessageStatus @default(SENT)
   // Why Meta refused/failed this OUT message — set from the send response or from a
   // `failed` status webhook (code + title + details), so staff can see the reason.
-  errorMessage      String?
+  errorMessage             String?
   // Provider's own message id — lets the inbound webhook dedupe on redelivery,
   // and lets an outbound send record what it maps to once the provider replies.
-  providerMessageId String?               @unique
+  providerMessageId        String?               @unique
   // IN only: the phone number ID it arrived on when that's one of the brand's receive-only
   // numbers (e.g. Samara's old number, see WHATSAPP_BRAND_RECEIVE_ONLY_KEYS). Null = arrived
   // on the brand's main number. Such rows don't open the 24h reply window.
   receiveOnlyPhoneNumberId String?
-  sentByUserId      String?
-  sentByName        String?
-  createdAt         DateTime              @default(now())
+  sentByUserId             String?
+  sentByName               String?
+  createdAt                DateTime              @default(now())
 
   // WhatsApp-style "swipe to reply" quoting — points at another message in the
   // same conversation, either direction. SetNull so deleting the quoted message
@@ -5669,4 +5790,40 @@ model OnboardingForm {
   @@index([status])
   @@index([candidateId])
   @@index([targetEmployeeId])
+}
+
+// Offline conversion upload ledger (parity D): every row the ERP feed has prepared, per platform +
+// action + Order ID. A prepared row is re-emitted UNCHANGED until its conversion is 90 days old;
+// a later value / time change becomes an AdUploadChange waiting for approval — never a silent
+// re-send. src/lib/ad-offline-feed.ts
+model AdUploadLedger {
+  id             String           @id @default(cuid())
+  platform       String // GOOGLE | META
+  action         String // AC_PC | AC_OT | INV_PC | INV_OT | BOOKING (Google) / QualifiedLead | Purchase (Meta)
+  brand          WhatsappBrand
+  orderId        String
+  dealId         String?
+  row            Json // the exact feed row, column → value
+  conversionTime DateTime
+  preparedAt     DateTime         @default(now())
+  changes        AdUploadChange[]
+
+  @@unique([platform, action, orderId])
+  @@index([conversionTime])
+}
+
+model AdUploadChange {
+  id          String         @id @default(cuid())
+  ledgerId    String
+  ledger      AdUploadLedger @relation(fields: [ledgerId], references: [id], onDelete: Cascade)
+  oldRow      Json
+  newRow      Json
+  reason      String // which columns changed
+  status      String         @default("PENDING") // PENDING | APPROVED | REJECTED
+  decidedById String?
+  decidedAt   DateTime?
+  createdAt   DateTime       @default(now())
+
+  @@index([ledgerId, status])
+  @@index([status])
 }

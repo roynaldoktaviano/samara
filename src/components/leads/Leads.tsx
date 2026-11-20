@@ -18,6 +18,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { UserPlus, Plus, Edit, MessageCircle, Send, Search, Mail, Phone, ChevronRight, ChevronLeft, Trash2, X, Globe, RotateCw, Download, ArrowUp, ArrowDown, Target, AlertTriangle, Loader2, Ship, AtSign, Instagram, Facebook, MessagesSquare, HelpCircle, Briefcase } from 'lucide-react'
 import LeadEditSheet from '@/components/leads/LeadEditSheet'
 import LostReasonDialog from '@/components/leads/LostReasonDialog'
+import WonPaymentDialog from '@/components/leads/WonPaymentDialog'
 import { isHttpUrl } from '@/lib/url-safety'
 import { WebsiteJourney } from '@/components/shared/WebsiteJourney'
 import { AdConsentBadge } from '@/components/shared/AdConsentBadge'
@@ -259,6 +260,7 @@ export default function Leads({ onOpenWhatsapp, onOpenMetaChat, onOpenEmail, onO
   const [metaYachts, setMetaYachts] = useState<string[]>([])
   const [stageBusy, setStageBusy] = useState(false)
   const [lostTarget, setLostTarget] = useState<Lead | null>(null)
+  const [wonTarget, setWonTarget] = useState<Lead | null>(null)
   const [destinationMap, setDestinationMap] = useState<Record<string, string>>({})
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const [sheetOpen, setSheetOpen] = useState(false)
@@ -381,8 +383,10 @@ export default function Leads({ onOpenWhatsapp, onOpenMetaChat, onOpenEmail, onO
 
   const closeDetail = () => { setDetailOpen(false); setDetail(null); setInquiries(null); setContacts(null); setPageViews(null) }
 
-  const changeStage = async (lead: Lead, stage: LeadStage, extra?: { lostReason: string; lostNote: string }) => {
+  const changeStage = async (lead: Lead, stage: LeadStage, extra?: { lostReason: string; lostNote: string } | { paymentStatus: string }) => {
     if (stage === 'CLOSED_LOST' && !extra) { setLostTarget(lead); return }
+    // Won = deposit received — needs the payment status (parity C3)
+    if (stage === 'CLOSED_WON' && !extra) { setWonTarget(lead); return }
     setStageBusy(true)
     try {
       const res = await fetch(`/api/leads/${lead.id}/stage`, {
@@ -392,6 +396,7 @@ export default function Leads({ onOpenWhatsapp, onOpenMetaChat, onOpenEmail, onO
       if (!res.ok) { toast.error(data?.error ?? 'Failed to update stage'); return }
       toast.success(`Stage updated to ${LEAD_STAGE_LABEL[stage]}`)
       setLostTarget(null)
+      setWonTarget(null)
       setDetail(cur => cur ? { ...cur, ...data } : data)
       fetchLeads(page)
     } finally {
@@ -897,6 +902,13 @@ export default function Leads({ onOpenWhatsapp, onOpenMetaChat, onOpenEmail, onO
       </>}
 
       {/* ── Add / Edit Lead Sheet ─────────────────────────────────────────── */}
+      <WonPaymentDialog
+        open={!!wonTarget}
+        dealName={wonTarget?.name}
+        busy={stageBusy}
+        onCancel={() => setWonTarget(null)}
+        onConfirm={paymentStatus => wonTarget && changeStage(wonTarget, 'CLOSED_WON', { paymentStatus })}
+      />
       <LostReasonDialog
         open={!!lostTarget}
         leadName={lostTarget?.name}
@@ -956,7 +968,8 @@ export default function Leads({ onOpenWhatsapp, onOpenMetaChat, onOpenEmail, onO
                       <p className="text-xs text-muted-foreground uppercase tracking-wide">Pipeline Stage</p>
                       <Badge className={`${LEAD_STAGE_COLOR[detail.stage]} border-transparent`}>{LEAD_STAGE_LABEL[detail.stage]}</Badge>
                     </div>
-                    <Select value={detail.stage} onValueChange={v => changeStage(detail, v as LeadStage)} disabled={stageBusy}>
+                    {/* Won / Lost deals are read-only except for admins (parity B4) */}
+                    <Select value={detail.stage} onValueChange={v => changeStage(detail, v as LeadStage)} disabled={stageBusy || ((detail.stage === 'CLOSED_WON' || detail.stage === 'CLOSED_LOST') && !isAdmin)}>
                       <SelectTrigger aria-label="Move to stage" className="w-full sm:w-56"><SelectValue /></SelectTrigger>
                       <SelectContent>
                         {LEAD_STAGES.map(s => <SelectItem key={s} value={s}>{LEAD_STAGE_LABEL[s]}</SelectItem>)}

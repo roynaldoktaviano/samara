@@ -10,9 +10,10 @@ import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { LEAD_FORM_EMPTY, ProfileFields, QualificationFields, toLeadFormState, type LeadFormState } from '@/components/leads/LeadEditSheet'
 import {
-  LEAD_LOST_REASONS, LEAD_LOST_REASON_LABEL, LEAD_STAGES, LEAD_STAGE_COLOR, LEAD_STAGE_LABEL,
-  type LeadLostReason, type LeadStage,
+  DEAL_PAYMENT_STATUS_LABEL, LEAD_LOST_REASONS, LEAD_LOST_REASON_LABEL, LEAD_STAGES, LEAD_STAGE_COLOR, LEAD_STAGE_LABEL, WON_PAYMENT_STATUSES,
+  type DealPaymentStatus, type LeadLostReason, type LeadStage,
 } from '@/lib/lead-pipeline'
+import { chatRole, roleMatches } from '@/lib/role-utils'
 
 // Lead panel open/closed beside a chat thread — remembered per browser, shared by the
 // WhatsApp and Instagram/Messenger threads (new key so it starts open for everyone).
@@ -39,6 +40,7 @@ export default function ChatLeadSection({ channel, conversationId, leadId, assig
   const role = (session?.user as { role?: string } | undefined)?.role
   // SALES may only edit Leads they own, which follow the chat holder — so only their own chats.
   const canEdit = !!session?.user && (role !== 'SALES' || assignedToId === session.user.id)
+  const isAdmin = roleMatches(chatRole(role), ['ADMIN'])
 
   const [stage, setStage] = useState<LeadStage | null>(null)
   const [form, setForm] = useState<LeadFormState>(LEAD_FORM_EMPTY)
@@ -53,8 +55,12 @@ export default function ChatLeadSection({ channel, conversationId, leadId, assig
   const [lostPending, setLostPending] = useState(false)
   const [lostReason, setLostReason] = useState<LeadLostReason | ''>('')
   const [lostNote, setLostNote] = useState('')
+  // Won needs the payment status first (parity C3 — Won = deposit received).
+  const [wonPending, setWonPending] = useState(false)
+  const [wonPayment, setWonPayment] = useState<DealPaymentStatus | ''>('')
 
   const dirty = JSON.stringify(form) !== JSON.stringify(saved)
+  const closedStage = stage === 'CLOSED_WON' || stage === 'CLOSED_LOST'
   const dirtyRef = useRef(dirty)
   dirtyRef.current = dirty
 
@@ -78,6 +84,7 @@ export default function ChatLeadSection({ channel, conversationId, leadId, assig
 
   useEffect(() => {
     setLostPending(false)
+    setWonPending(false)
     if (!leadId) { setStage(null); setForm(LEAD_FORM_EMPTY); setSaved(LEAD_FORM_EMPTY); return }
     load(true)
   }, [leadId, load])
@@ -117,7 +124,7 @@ export default function ChatLeadSection({ channel, conversationId, leadId, assig
     }
   }
 
-  async function moveStage(target: LeadStage, extra?: { lostReason: LeadLostReason; lostNote: string }) {
+  async function moveStage(target: LeadStage, extra?: { lostReason: LeadLostReason; lostNote: string } | { paymentStatus: DealPaymentStatus }) {
     if (!leadId) return
     setStageBusy(true)
     try {
@@ -128,6 +135,7 @@ export default function ChatLeadSection({ channel, conversationId, leadId, assig
       if (!res.ok) { toast.error(body?.error ?? 'Failed to move stage'); return }
       setStage(target)
       setLostPending(false)
+      setWonPending(false)
       toast.success(`Moved to ${LEAD_STAGE_LABEL[target]}`)
       onChanged()
     } finally {
@@ -138,8 +146,10 @@ export default function ChatLeadSection({ channel, conversationId, leadId, assig
   function onPickStage(v: string) {
     const target = v as LeadStage
     if (target === stage) return
-    if (target === 'CLOSED_LOST') { setLostReason(''); setLostNote(''); setLostPending(true); return }
+    if (target === 'CLOSED_LOST') { setWonPending(false); setLostReason(''); setLostNote(''); setLostPending(true); return }
+    if (target === 'CLOSED_WON') { setLostPending(false); setWonPayment(''); setWonPending(true); return }
     setLostPending(false)
+    setWonPending(false)
     moveStage(target)
   }
 
@@ -169,7 +179,7 @@ export default function ChatLeadSection({ channel, conversationId, leadId, assig
     <section className="space-y-4">
       <div className="space-y-1.5">
         <Label htmlFor={`stage-${conversationId}`} className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Pipeline Stage</Label>
-        <Select value={lostPending ? 'CLOSED_LOST' : stage ?? undefined} onValueChange={onPickStage} disabled={!canEdit || stageBusy}>
+        <Select value={lostPending ? 'CLOSED_LOST' : wonPending ? 'CLOSED_WON' : stage ?? undefined} onValueChange={onPickStage} disabled={!canEdit || stageBusy || (closedStage && !isAdmin)}>
           <SelectTrigger id={`stage-${conversationId}`} className="h-9 w-full text-xs">
             {stageBusy ? <span className="flex items-center gap-1.5 text-muted-foreground"><Loader2 className="h-3.5 w-3.5 animate-spin" />Moving…</span> : <SelectValue placeholder="Select stage" />}
           </SelectTrigger>
@@ -181,6 +191,24 @@ export default function ChatLeadSection({ channel, conversationId, leadId, assig
             ))}
           </SelectContent>
         </Select>
+        {wonPending && (
+          <div className="rounded-md border border-success/30 bg-success/5 p-2.5 space-y-2">
+            <Select value={wonPayment || undefined} onValueChange={v => setWonPayment(v as DealPaymentStatus)}>
+              <SelectTrigger aria-label="Payment status" className="h-8 w-full text-xs"><SelectValue placeholder="Payment status (Won = deposit received)" /></SelectTrigger>
+              <SelectContent>
+                {WON_PAYMENT_STATUSES.map(s => <SelectItem key={s} value={s} className="text-xs">{DEAL_PAYMENT_STATUS_LABEL[s]}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <div className="flex gap-2">
+              <Button size="sm" variant="outline" className="h-7 flex-1 text-xs" onClick={() => setWonPending(false)} disabled={stageBusy}>Cancel</Button>
+              <Button size="sm" className="h-7 flex-1 text-xs" disabled={!wonPayment} loading={stageBusy}
+                onClick={() => wonPayment && moveStage('CLOSED_WON', { paymentStatus: wonPayment })}>Mark Won</Button>
+            </div>
+          </div>
+        )}
+        {closedStage && !lostPending && (
+          <p className="text-[11px] text-muted-foreground">{LEAD_STAGE_LABEL[stage!]} deals are read-only{isAdmin ? ' — as admin you can still reopen it.' : '. A new enquiry opens a new deal.'}</p>
+        )}
         {lostPending && (
           <div className="rounded-md border border-destructive/30 bg-destructive/5 p-2.5 space-y-2">
             <Select value={lostReason || undefined} onValueChange={v => setLostReason(v as LeadLostReason)}>

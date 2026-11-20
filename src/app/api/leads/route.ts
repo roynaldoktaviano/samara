@@ -8,6 +8,7 @@ import { leadOwnerScope } from '@/lib/lead-access'
 import { classifyLeadOrigin, LEAD_ORIGINS, LEAD_ORIGIN_SELECT, sourceLabel, type LeadOrigin } from '@/lib/lead-origin'
 import { WHATSAPP_BRANDS, type WhatsappBrand } from '@/lib/whatsapp-brands'
 import { isLeadEntrySource, refreshLeadEntrySources } from '@/lib/lead-entry-source'
+import { runDealMakerLocked } from '@/lib/deal-maker'
 
 // New leads (webhooks, chats, the Freshsales sync) arrive without Lead.entrySource; classify them
 // before listing. Throttled per process — the 15-min Freshsales job re-checks every lead anyway.
@@ -191,6 +192,29 @@ export async function POST(request: NextRequest) {
         ...(tripAmountCurrency !== undefined && { tripAmountCurrency: tripAmountCurrency || null }),
       },
     })
+
+    // Every new lead opens a deal (parity B): a SALES rep who types it in owns it; otherwise
+    // round-robin of the brand's pool (src/lib/deal-maker.ts). Brand from the yacht interest.
+    try {
+      if ((session.user as { role?: string }).role === 'SALES') {
+        await db.lead.update({ where: { id: lead.id }, data: { ownerId: session.user.id, ownerAssignedAt: new Date() } })
+        await db.leadAssignmentLog.create({ data: { leadId: lead.id, toUserId: session.user.id, reason: 'CLAIM' } })
+      }
+      const made = await runDealMakerLocked(db, {
+        leadId: lead.id,
+        brand: /otium/i.test(productInterest ?? '') ? 'OTIUM' : /mischief/i.test(productInterest ?? '') ? 'MISCHIEF' : 'SAMARA',
+        tripType: tripType === 'PRIVATE_CHARTER' || tripType === 'OPEN_TRIP' ? tripType : null,
+        channel: 'MANUAL', enquiry: false, actingUserId: session.user.id,
+        travelStartDate: travelStartDate ? new Date(travelStartDate) : null,
+        travelEndDate: travelEndDate ? new Date(travelEndDate) : null,
+        guestCount: guestCount ? Number(guestCount) : null,
+        productInterest: productInterest || null,
+      })
+      const amount = tripAmount != null && tripAmount !== '' && Number.isFinite(Number(tripAmount)) ? Number(tripAmount) : null
+      if (amount !== null) await db.deal.update({ where: { id: made.dealId }, data: { amount, currency: tripAmountCurrency || null } })
+    } catch (e) {
+      console.error('[leads] deal maker failed', e)
+    }
 
     logActivity({
       userId:   session?.user?.id   ?? '',

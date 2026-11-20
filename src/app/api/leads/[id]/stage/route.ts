@@ -4,49 +4,45 @@ import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { logActivity } from '@/lib/activity'
 import { leadOwnerScope } from '@/lib/lead-access'
-import { isLeadLostReason, isLeadStage, LEAD_STAGE_LABEL } from '@/lib/lead-pipeline'
+import { isLeadStage, LEAD_STAGE_LABEL } from '@/lib/lead-pipeline'
+import { chatRole } from '@/lib/role-utils'
+import { changeDealStage, primaryDealOfLead } from '@/lib/deal-stage'
+import { runDealMakerLocked } from '@/lib/deal-maker'
 
+// Stage of a lead = stage of its PRIMARY deal (newest open, else newest) — the stage picker in the
+// chat lead panel and on the Leads page. Won / Lost deals are read-only except for ADMIN
+// (src/lib/deal-stage.ts). A lead with no deal yet gets one (manual entry) at the chosen stage.
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getServerSession(authOptions)
   if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
+  const role = chatRole((session.user as { role?: string }).role)
   try {
     const { id } = await params
-    const body = await request.json()
-    const { stage: targetStage, lostReason, lostNote } = body
+    const { stage, lostReason, lostNote, paymentStatus } = await request.json()
+    if (!isLeadStage(stage)) return NextResponse.json({ error: 'Invalid stage' }, { status: 400 })
 
-    if (!isLeadStage(targetStage)) {
-      return NextResponse.json({ error: 'Invalid stage' }, { status: 400 })
-    }
-
-    // Won leads are archived (deletedAt) once their booking converts them — still movable from the board.
-    const lead = await db.lead.findFirst({ where: { id, ...leadOwnerScope((session.user as { role?: string }).role, session.user.id) } })
+    const lead = await db.lead.findFirst({ where: { id, ...leadOwnerScope(role, session.user.id) }, select: { id: true, name: true, stage: true, tripType: true } })
     if (!lead) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-    // Manual moves are free (Freshsales-style board) — the automatic ones live in lead-stage-auto.ts.
-    if (lead.stage === targetStage) return NextResponse.json({ error: `Already in ${LEAD_STAGE_LABEL[targetStage]}` }, { status: 409 })
 
-    if (targetStage === 'CLOSED_LOST' && !isLeadLostReason(lostReason)) {
-      return NextResponse.json({ error: 'Pick a lost reason before marking this lead as Lost.' }, { status: 400 })
+    let deal = await primaryDealOfLead(db, id)
+    if (!deal) {
+      const made = await runDealMakerLocked(db, { leadId: id, brand: 'SAMARA', tripType: lead.tripType, channel: 'MANUAL', enquiry: false, actingUserId: session.user.id })
+      deal = { id: made.dealId, stage: 'NEW' }
     }
-
-    const updated = await db.lead.update({
-      where: { id },
-      data: {
-        stage: targetStage, stageUpdatedAt: new Date(), stageUpdatedById: session.user.id,
-        ...(targetStage === 'CLOSED_LOST' ? { lostReason, lostNote: typeof lostNote === 'string' && lostNote.trim() ? lostNote.trim() : null } : {}),
-      },
-      // The detail view swaps in this response — keep the owner so Sales Owner doesn't blank out
-      include: { owner: { select: { id: true, name: true } } },
-    })
+    const from = deal.stage
+    const r = await changeDealStage(db, { dealId: deal.id, stage, lostReason, lostNote, paymentStatus, user: { id: session.user.id, name: session.user.name, role } })
+    if (!r.ok) return NextResponse.json({ error: r.error }, { status: r.status })
 
     logActivity({
       userId:   session.user.id,
       userName: session.user.name ?? session.user.email ?? 'Unknown',
-      userRole: (session.user as { role?: string })?.role ?? '',
+      userRole: role,
       action: 'UPDATE', entity: 'Lead', entityId: id,
-      detail: `Lead stage: ${LEAD_STAGE_LABEL[lead.stage]} → ${LEAD_STAGE_LABEL[targetStage]} (${lead.name})`,
+      detail: `Deal stage: ${LEAD_STAGE_LABEL[from]} → ${LEAD_STAGE_LABEL[stage]} (${lead.name})`,
     }, db).catch(() => {})
 
+    const updated = await db.lead.findUnique({ where: { id }, include: { owner: { select: { id: true, name: true } } } })
     return NextResponse.json(updated)
   } catch (error) {
     console.error('Error updating lead stage:', error)

@@ -5,7 +5,8 @@
 //  - leads: one row per Freshsales deal (the real sales funnel; ERP Lead rows only mirror
 //    Freshsales contacts), joined through its contact to the nearest ERP Inquiry (trip date,
 //    trip type, UTM) and, for won deals, to the guest's ERP Booking (yacht, destination,
-//    departure, value). Deals of the Agent Outreach pipeline are B2B outreach, not enquiries.
+//    departure, value). Deals of the Agent Outreach pipeline are B2B outreach, not enquiries, and
+//    Old Pipeline deals are not guest deals either (go-live parity B6).
 //  - trips: open trips plus private-charter bookings.
 // Nothing personal leaves here: no names, emails, phones or free-text notes.
 import { db, withRetry } from '@/lib/db'
@@ -153,7 +154,7 @@ export async function buildLeads(): Promise<Row[]> {
       join "FreshsalesLookup" s on s.kind = 'DEAL_STAGE' and s."fsId" = d."stageFsId"
       left join "FreshsalesLookup" p on p.kind = 'DEAL_PIPELINE' and p."fsId" = s."parentFsId"
       left join "FreshsalesLookup" r on r.kind = 'DEAL_REASON' and r."fsId" = d."lostReasonFsId"
-      where not d."isDeleted" and d."fsCreatedAt" is not null and coalesce(p.name, '') <> 'Agent Outreach Pipeline'`,
+      where not d."isDeleted" and d."fsCreatedAt" is not null and coalesce(p.name, '') not in ('Agent Outreach Pipeline', 'Old Pipeline')`,
     db.$queryRaw<ContactRow[]>`
       select c.id, nullif(c.raw->>'country', '') country, c."leadId", c."customerId", l.nationality,
              nullif(lower(trim(coalesce(c.email, l.email))), '') em

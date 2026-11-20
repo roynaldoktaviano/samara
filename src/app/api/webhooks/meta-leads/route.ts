@@ -4,7 +4,9 @@ import type { PrismaClient } from '@prisma/client'
 import { resolveTenantBySlugFull } from '@/lib/resolve-tenant'
 import { getTenantSecret } from '@/lib/tenant-secrets'
 import { logActivity } from '@/lib/activity'
-import { autoAssignWebsiteLead } from '@/lib/whatsapp-lead'
+import { brandForInquiry } from '@/lib/whatsapp-lead'
+import { contactLockKeys, enquirySummary, flushDealPushes, lockContact, runDealMaker, tripTypeFromText, type PushNotice } from '@/lib/deal-maker'
+import { inferDealYacht } from '@/lib/deal-product-interest'
 import { logWebhookFailure } from '@/lib/webhook-log'
 import { WHATSAPP_GRAPH_VERSION } from '@/lib/whatsapp-brands'
 import { handleMetaMessagingEvents, hasMetaMessagingEvents, type MetaMessagingBody } from '@/lib/meta-dm'
@@ -225,16 +227,12 @@ async function ingestLead(db: PrismaClient, lead: MetaLead): Promise<IngestResul
   const utmSource = lead.platform || 'meta'
   const utmMedium = lead.isOrganic ? 'organic_social' : 'paid_social'
 
-  // Same per-contact advisory lock keys as the CF7 webhook, so the same person arriving
-  // from both at once still resolves to a single Lead.
-  const lockKeys = [email && `cf7:email:${email}`, phone && `cf7:phone:${phone}`]
-    .filter((k): k is string => !!k)
-    .sort()
+  // Same per-contact advisory lock keys as every other intake path (src/lib/deal-maker.ts), so the
+  // same person arriving from the form and an Instant Form at once is one Lead and one deal.
+  const lockKeys = contactLockKeys(email, phoneE164)
 
   const result = await db.$transaction(async (tx) => {
-    for (const key of lockKeys) {
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${key}))`
-    }
+    await lockContact(tx, lockKeys)
 
     // Meta retries deliveries it didn't get a 200 for — the leadgen id makes that idempotent.
     if (lead.leadgenId) {
@@ -244,8 +242,8 @@ async function ingestLead(db: PrismaClient, lead: MetaLead): Promise<IngestResul
       })
       if (seen && (seen.customerId || seen.leadId)) {
         return seen.customerId
-          ? { ownerType: 'customer' as const, ownerId: seen.customerId, duplicate: true }
-          : { ownerType: 'lead' as const, ownerId: seen.leadId!, duplicate: true }
+          ? { ownerType: 'customer' as const, ownerId: seen.customerId, duplicate: true, pushes: [] as PushNotice[] }
+          : { ownerType: 'lead' as const, ownerId: seen.leadId!, duplicate: true, pushes: [] as PushNotice[] }
       }
     }
 
@@ -285,7 +283,8 @@ async function ingestLead(db: PrismaClient, lead: MetaLead): Promise<IngestResul
       ownerId = created.id
     }
 
-    await tx.inquiry.create({
+    const inquiry = await tx.inquiry.create({
+      select: { id: true },
       data: {
         source: SOURCE,
         ...(ownerType === 'customer' ? { customerId: ownerId } : { leadId: ownerId }),
@@ -314,13 +313,27 @@ async function ingestLead(db: PrismaClient, lead: MetaLead): Promise<IngestResul
       },
     })
 
-    return { ownerType, ownerId, duplicate: false }
-  })
+    // Deal rules (parity B) — same as the website form. The vessel picks the brand pipeline.
+    const guests = isFinite(guestCount) ? guestCount : null
+    const dealBrand = brandForInquiry(website, tripType)
+    const dealTripType = tripTypeFromText(vessel || lead.formName || null)
+    const dm = await runDealMaker(tx, {
+      ...(ownerType === 'customer' ? { customerId: ownerId } : { leadId: ownerId }),
+      brand: dealBrand,
+      tripType: dealTripType,
+      productInterest: inferDealYacht({ text: [vessel, lead.formName].filter(Boolean).join(' '), brand: dealBrand, tripType: dealTripType }),
+      channel: 'META_FORM',
+      enquiry: true,
+      inquiryId: inquiry.id,
+      summary: enquirySummary({ tripType: [lead.formName, departure].filter(Boolean).join(' · ') || null, guestCount: guests, checkIn: range?.checkIn ?? null, checkOut: range?.checkOut ?? null }),
+      travelStartDate: range?.checkIn ?? null, travelEndDate: range?.checkOut ?? null, guestCount: guests,
+    })
+
+    return { ownerType, ownerId, duplicate: false, pushes: dm.pushes }
+  }, { timeout: 20000 })
 
   if (!result.duplicate) {
-    if (result.ownerType === 'lead') {
-      await autoAssignWebsiteLead(db, result.ownerId, website, fullName, tripType).catch(e => console.error('[Meta leads webhook] auto-assign failed', e))
-    }
+    await flushDealPushes(db, result.pushes)
     logActivity({
       userId: '', userName: 'Meta Lead Ads', userRole: 'SYSTEM',
       action: 'CREATE', entity: result.ownerType === 'customer' ? 'Customer' : 'Lead', entityId: result.ownerId,

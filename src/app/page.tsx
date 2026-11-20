@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { useSession, signOut, signIn } from 'next-auth/react'
+import { SalesOnlineToggle } from '@/components/leads/SalesOnlineToggle'
 import { useRouter } from 'next/navigation'
 import { ThemeToggle } from '@/components/ThemeToggle'
 import { TenantTheme } from '@/components/TenantTheme'
@@ -1460,6 +1461,9 @@ export default function Home() {
 
               {/* ── Separator ── */}
               <div className="h-6 w-px bg-border" />
+
+              {/* ── Sales Online / Offline (round-robin) ── */}
+              {userRole === 'SALES' && <SalesOnlineToggle />}
 
               {/* ── User Menu ── */}
               <div className="relative" ref={userMenuRef}>

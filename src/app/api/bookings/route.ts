@@ -9,7 +9,7 @@ import { getTenantSecret } from '@/lib/tenant-secrets'
 import { roleMatches } from '@/lib/role-utils'
 import { resolveClawbackRatePerNight } from '@/lib/agent-clawback'
 import { renumberTripYear } from '@/lib/openTripNumbering'
-import { syncLeadStageFromBooking } from '@/lib/lead-stage-auto'
+import { linkBookingDeals } from '@/lib/deal-booking'
 import { CONVERSATION_STAGES } from '@/lib/lead-pipeline'
 import type { Prisma } from '@prisma/client'
 
@@ -506,12 +506,21 @@ export async function POST(request: NextRequest) {
     if (convertedLeads.length > 0) {
       await Promise.all(convertedLeads.map(({ leadId, customerId }) => Promise.all([
         db.inquiry.updateMany({ where: { leadId }, data: { leadId: null, customerId } }),
-        // Archived from the Leads list but linked to the booking — the Sales Pipeline keeps
-        // showing it in Send Booking Confirmation → Send Invoice 1 → Won as payments come in.
+        // Archived from the Leads list but linked to the booking — its deal stays on the Sales
+        // Pipeline in Send Booking Confirmation → Send Invoice 1 → Won as payments come in.
         db.lead.update({ where: { id: leadId }, data: { deletedAt: new Date(), bookingId: booking.id } }),
       ])))
-        .then(() => syncLeadStageFromBooking(db, booking.id, session.user.id))
         .catch(err => console.error('[bookings] Failed to archive converted lead(s):', err))
+    }
+    // The person's open deal takes this booking (a Won/Lost deal is read-only → a new deal at
+    // Send Booking Confirmation) — src/lib/deal-booking.ts. Also a returning guest's open deal.
+    if (!isOnHold && (convertedLeads.length > 0 || lead?.customerId)) {
+      const people = [
+        ...convertedLeads.map(c => ({ leadId: c.leadId as string | null, customerId: c.customerId })),
+        ...(lead?.customerId && !convertedLeads.some(c => c.customerId === lead.customerId) ? [{ leadId: null, customerId: lead.customerId }] : []),
+      ]
+      await linkBookingDeals(db, booking.id, people, session.user.id)
+        .catch(err => console.error('[bookings] Failed to link deal(s):', err))
     }
 
     // Close any conflicting open trips (private charter override), then recompute the

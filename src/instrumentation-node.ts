@@ -218,6 +218,16 @@ export async function startNodeInstrumentation() {
     }
   }, googleAdsSyncIntervalMs)
 
+  // Go-live offline feed (parity D, src/lib/ad-offline-feed.ts): ledger + feed sheet + Meta CAPI
+  // (when enabled). Only tenants with googleOfflineFeedSheetId set take part.
+  setInterval(async () => {
+    try {
+      await fetch(`http://127.0.0.1:${port}/api/marketing/offline-feed/sync`, { headers: cronHeaders })
+    } catch (err) {
+      console.error('[scheduler] offline-feed sync tick failed:', err)
+    }
+  }, googleAdsSyncIntervalMs)
+
   // Instagram Login tokens live 60 days — extend any within 15 days of expiry, per tenant
   // (see refreshIgLoginTokens in src/lib/instagram-login.ts). Daily, plus once at boot so a
   // server that's been down a while catches up.

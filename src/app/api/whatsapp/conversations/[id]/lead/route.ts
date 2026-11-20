@@ -6,6 +6,7 @@ import { getDb } from '@/lib/get-db'
 import { emitTenantEvent } from '@/lib/realtime-bus'
 import { salesCanAccessConversation } from '@/lib/whatsapp-distribution'
 import { ensureLeadForConversation } from '@/lib/whatsapp-lead'
+import { runChatDealMaker } from '@/lib/deal-chat'
 
 // The chat's "Edit lead" button on a chat that has no Lead yet — links/creates one (same rules
 // as categorising it as Sales) so the rep can then edit name/phone/email right there.
@@ -21,6 +22,9 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
   if (role === 'SALES' && conv.assignedToId !== session.user.id) return NextResponse.json({ error: 'Claim this chat first' }, { status: 403 })
   const leadId = await ensureLeadForConversation(db, id, session.user.id)
   if (!leadId) return NextResponse.json({ error: 'Could not create lead' }, { status: 500 })
+  const waConv = await db.whatsappConversation.findUnique({ where: { id }, select: { brand: true } })
+  await runChatDealMaker(db, { leadId, brand: waConv?.brand, channel: 'WHATSAPP', whatsappConversationId: id, actingUserId: session.user.id, ensureOnly: true })
+    .catch(e => console.error('[whatsapp lead] deal maker failed', e))
   emitTenantEvent(session.user.tenantId, 'chat')
   return NextResponse.json({ leadId })
 }

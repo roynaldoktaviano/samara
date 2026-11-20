@@ -1,4 +1,5 @@
 import type { LeadDistributionChannel, PrismaClient, WhatsappBrand } from '@prisma/client'
+import { unavailableSalesUsers } from '@/lib/sales-availability'
 
 export type WhatsappDistributionMethod = 'ROUND_ROBIN' | 'PERCENTAGE'
 export type { LeadDistributionChannel }
@@ -62,8 +63,13 @@ export async function getDistributionPool(db: PrismaClient, brand: WhatsappBrand
 // (e.g. the stagnant sweep) a separate counter so it doesn't use up the channel's turns.
 // Returns null if the pool is empty — e.g. nobody's been configured yet.
 export async function pickNextSalesUserId(db: PrismaClient, brand: WhatsappBrand, channel: LeadDistributionChannel = 'WHATSAPP', counterScope?: string): Promise<string | null> {
-  const { participants, method } = await getDistributionPool(db, brand, channel)
-  if (participants.length === 0) return null
+  const { participants: pool, method } = await getDistributionPool(db, brand, channel)
+  if (pool.length === 0) return null
+  // Away / resigned / on approved leave today → skipped (src/lib/sales-availability.ts). If the
+  // whole pool is out, rotate over everyone rather than leave the lead without an owner.
+  const out = await unavailableSalesUsers(db, pool.map(p => p.userId))
+  const available = pool.filter(p => !out.has(p.userId))
+  const participants = available.length ? available : pool
   if (method === 'PERCENTAGE') return pickWeighted(participants)
 
   // ROUND_ROBIN — atomic increment on a shared counter row (one per channel/brand); the

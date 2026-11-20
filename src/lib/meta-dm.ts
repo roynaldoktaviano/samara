@@ -9,6 +9,7 @@ import { pickNextSalesUserId } from '@/lib/whatsapp-distribution'
 import { sendPushToUser } from '@/lib/push'
 import { isViewing } from '@/lib/chat-presence'
 import { ensureLeadForMetaDm, fillLeadContactFromText, isNewContactSession, recordLeadContact } from '@/lib/lead-contact'
+import { runChatDealMaker } from '@/lib/deal-chat'
 import { recordLeadInbound, recordLeadOutbound } from '@/lib/lead-stage-auto'
 import { IG_GRAPH, getIgLoginToken } from '@/lib/instagram-login'
 
@@ -483,6 +484,11 @@ export async function handleMetaMessagingEvents(db: PrismaClient, tenantId: stri
           const justLinked = !!leadId && !before?.leadId
           if (leadId && (justLinked || (before && isNewContactSession(before.lastInboundAt, now)))) {
             await recordLeadContact(db, { leadId, channel: platform, brand, instagramConversationId: conversation.id, message: preview, isFirstContact: created })
+            // Deal rules (parity B): new deal for this brand, or a note on its open deal (src/lib/deal-chat.ts).
+            if (!stale) {
+              await runChatDealMaker(db, { leadId, brand, channel: platform === 'MESSENGER' ? 'MESSENGER' : 'INSTAGRAM', text: preview, at: now })
+                .catch(e => console.error('[meta-dm] deal maker failed', e))
+            }
           }
           // Customer answered → Sales Pipeline "In Active Communication" (src/lib/lead-stage-auto.ts).
           // Skipped for old history the Messenger poll back-fills.

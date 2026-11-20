@@ -17,8 +17,12 @@
  * a message the thread already has (same direction + text within 3 minutes) is skipped.
  * Old history never raises unread counts or "Needs reply": the thread's inbound/outbound clocks
  * only move for conversations active in the last 7 days.
+ * Sales Pipeline: newly copied messages from the last 7 days are replayed through the lead's stage
+ * hooks (src/lib/lead-stage-auto.ts), so a reply sent from Freshchat moves the deal like one sent
+ * from the ERP (New Enquiry → Initial Message Sent → In Active Communication …).
  */
 import type { MetaDmPlatform, Prisma, PrismaClient, WhatsappBrand } from '@prisma/client'
+import { replayLeadChatEvents, type LeadChatEvent } from './lead-stage-auto'
 
 type Log = (m: string) => void
 type Att = { kind: string; name: string | null; contentType: string | null; url: string; storedUrl: string | null }
@@ -153,6 +157,21 @@ export async function mirrorFreshchatToErpChats(db: PrismaClient, opts: { apply:
   }
   const convDone: { id: string; kind: string | null; threadId: string | null }[] = []
   let fakeId = 0
+  // Pipeline replay: from the first newly copied recent message on, the whole conversation in
+  // order (the customer's side may already be in the ERP from Meta, it still counts as an answer)
+  const stageReplays: { leadId: string; events: LeadChatEvent[] }[] = []
+  const queueStageReplay = (leadId: string | null | undefined, rows: Row[], fresh: Row[]) => {
+    const cutoff = Date.now() - RECENT_MS
+    const from = fresh.find(r => +r.createdAt >= cutoff)?.createdAt
+    if (!leadId || !from) return
+    stageReplays.push({
+      leadId,
+      events: rows.filter(r => +r.createdAt >= +from).map(r => ({
+        direction: r.direction, at: r.createdAt,
+        userId: r.direction === 'OUT' && r.sentByName ? agentUser.get(norm(r.sentByName)) ?? null : null,
+      })),
+    })
+  }
 
   for (let i = 0; i < ids.length; i += 100) {
     const convs = await db.freshchatConversation.findMany({
@@ -196,6 +215,7 @@ export async function mirrorFreshchatToErpChats(db: PrismaClient, opts: { apply:
         const fresh = rows.filter(r => !copied.has(r.key) && !isNativeDup(r))
         inc('whatsapp: skipped (already in ERP from Meta)', rows.filter(r => !copied.has(r.key) && isNativeDup(r)).length)
         fresh.forEach(r => copied.add(r.key))
+        queueStageReplay(thread.leadId ?? conv.lead?.id, rows, fresh)
         waRows.push(...fresh.map(r => ({ conversationId: thread!.id, direction: r.direction, body: r.body, mediaUrl: r.mediaUrl, mediaType: r.mediaType, status: 'READ' as const, providerMessageId: r.key, sentByName: r.sentByName, createdAt: r.createdAt })))
         inc('whatsapp: messages copied', fresh.length)
         merge(thread.id, 'whatsapp', { first: rows[0].createdAt, last, lastIn, lastOut, leadId: conv.lead?.id ?? null })
@@ -224,6 +244,7 @@ export async function mirrorFreshchatToErpChats(db: PrismaClient, opts: { apply:
         const fresh = rows.filter(r => !copied.has(r.key) && !isNativeDup(r))
         inc('ig/messenger: skipped (already in ERP from Meta)', rows.filter(r => !copied.has(r.key) && isNativeDup(r)).length)
         fresh.forEach(r => copied.add(r.key))
+        queueStageReplay(thread.leadId ?? conv.lead?.id, rows, fresh)
         igRows.push(...fresh.map(r => ({ conversationId: thread!.id, direction: r.direction, body: r.body, mediaUrl: r.mediaUrl, mediaType: r.mediaType, status: 'READ' as const, providerMessageId: r.key, sentByName: r.sentByName, createdAt: r.createdAt })))
         inc(`${platform.toLowerCase()}: messages copied`, fresh.length)
         merge(thread.id, 'instagram', { first: rows[0].createdAt, last, lastIn, lastOut, leadId: conv.lead?.id ?? null })
@@ -255,6 +276,10 @@ export async function mirrorFreshchatToErpChats(db: PrismaClient, opts: { apply:
         ? db.whatsappConversation.update({ where: { id: u.id }, data: u.data, select: { id: true } })
         : db.instagramConversation.update({ where: { id: u.id }, data: u.data, select: { id: true } })))
     }
+    for (const r of stageReplays) {
+      await replayLeadChatEvents(db, r.leadId, r.events).catch(e => log(`  pipeline replay failed for lead ${r.leadId}: ${e instanceof Error ? e.message : e}`))
+    }
+    if (stageReplays.length) inc('pipeline: chats replayed into lead stages', stageReplays.length)
     const now = new Date()
     for (let j = 0; j < convDone.length; j += 200) {
       await db.$transaction(convDone.slice(j, j + 200).map(c => db.freshchatConversation.update({

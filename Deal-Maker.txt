@@ -1,0 +1,869 @@
+<?php
+
+/* Grok Bot: CF7 -> Freshsales direct send + CENTRAL DEAL MAKER (v6-live, 14 Nov 2026, Marc t1546u "Ok create the central deal maker").
+   v5 (13 Nov, Marc t1479u/t1483u): after a CF7 mail is SENT (wpcf7_mail_sent), upsert the contact by email (35 pairs, IP only with
+   ad consent) + one contact note. Non-blocking (shutdown after fastcgi_finish_request). Key: option gb_fs_direct_key (never output).
+   v6 adds ONE deal maker for every source (design: /workspace/returning-guest-deal-gap-2026-11-14/DESIGN.md, FULL section):
+   - Website forms (in-process, below), Freshsales webhook (POST /wp-json/gb/v1/deal-maker, source=webhook, contact_id),
+     WhatsApp (source=wa, phone E.164 + optional SL- ref). Endpoint is secret-protected (option gb_dm_secret, header X-GB-Secret).
+   - Rules: contact first with latest data; no open deal of the same type (PC/OT) -> new deal Sales Pipeline / New Enquiry with every
+     field; open deal of the same type -> note + task for its owner (deal unchanged); never write Won/Lost; never overwrite a value;
+     owner = contact owner (NO active-owner check, Marc 02:09), round-robin only when the contact has no owner (contact gets the same).
+   - Same-submit safety: deal created for this contact within 15 min = this enquiry's deal (fill EMPTY fields only) + per-contact lock.
+   - WhatsApp (Marc 14 Nov 12:48/12:49): SL- ref = Confident (all click IDs). No ref + exactly ONE Samara tap in the 30-min window = Medium
+     (Google AND Meta IDs on the deal, uploadable to both). No ref + 2 or more taps = Low (IDs from the most recent tap on the deal, plus a
+     sales note to check by hand; never uploaded while Low). Sales can edit the Click ID match dropdown; uploads read the CURRENT value.
+     No ref and no tap: no deal, log only. OT-/MV- refs stay skipped.
+   Modes per source (option overrides constant): off | log (dry-run, decide + log, no deal writes) | test (live ONLY for TEST records:
+   first name TEST + abots+...@samarayachting.com; everything else = log) | on.
+   Rollback: modes -> off (v5 behaviour); full: code = snippet-92-v5-live-baseline.php. */
+/* v7-wa-enrich (15 Nov 2026, Marc t1594u "add all data we collect to the deal"): WhatsApp path copies EVERY value stored on the
+   website tap (gb_wa_taps: ref, created_at, gclid, gbraid, wbraid, fbclid, _fbc, utm_source/medium/campaign/content/term, ad_consent,
+   consent_region, page, lang, vid) onto the deal (existing fields) + a structured deal note for values without a deal field.
+   _fbc only when the tap consent is exactly 'granted'. Tap consent -> contact cf_ad_consent / cf_consent_region (fill empty; a denial
+   always wins). Not for Low matches (could be the wrong guest). Product Interest from the tap page when the contact has no trip type.
+   Backfill: secret endpoint param fill_deal=<open Sales-pipeline deal id> = fill EMPTY fields of that deal + note (never Won/Lost).
+   Rollback: code = /workspace/wa-enrich-2026-11-15/backup/snippet-92-live-before-enrich.php (v6, sha256 994c0aca...). */
+/* v7.2-store-all (15 Nov 2026, Marc 15:07 WITA t1606u "record them for everybody ... depending on the consent, we will use them or not use them,
+   but we're still gonna be recording all the data all the time"): IP, Meta _fbc/_fbp, user agent and Google session attributes are STORED for
+   every lead whatever the consent value (granted, denied, not_required, unknown; EU or not).
+   EXCEPTION (Marc 15:10 WITA, ePrivacy cookie-read rule): Meta cookies _fbc/_fbp are NOT read or stored when consent is 'denied' and the
+   region is EU/UK/CH or blank (gb_fb_cookie_ok). Click IDs incl. fbclid/msclkid, IP, UA, referrer and session data are still stored. Consent is still stored next to them and the
+   upload scripts decide USE from it (denied never uploaded; EU/UK/CH need a clicked grant). WhatsApp path also copies the new tap values
+   (msclkid, _fbp, referrer, user agent, IP) from gb_wa_taps (snippet 63 v4): deal fields cf_msclkid / cf_meta_fbp / cf_browser_user_agent,
+   IP + referrer in the structured deal note (no deal field for them; no new Freshsales fields).
+   Rollback: code = /workspace/store-all-2026-11-15/backup/snippet-92-before-20261115-150833.php (v7.1, sha256 ef32a326...). */
+if (!defined('GB_FS_DIRECT_FORMS')) define('GB_FS_DIRECT_FORMS', '22879:*,52668:*,53463:*,84303:*'); // Samara enquiry forms. Newsletter 90693 never listed.
+if (!defined('GB_DM_MODE_FORM'))    define('GB_DM_MODE_FORM', 'test');
+if (!defined('GB_DM_MODE_WEBHOOK')) define('GB_DM_MODE_WEBHOOK', 'test');
+if (!defined('GB_DM_MODE_WA'))      define('GB_DM_MODE_WA', 'test');
+if (!defined('GB_FS_PIPELINE'))     define('GB_FS_PIPELINE', 113000000041);      // Sales Pipeline
+if (!defined('GB_FS_STAGE_NEW'))    define('GB_FS_STAGE_NEW', 113000000383);     // New Enquiry
+if (!defined('GB_FS_PIPES_IGNORE')) define('GB_FS_PIPES_IGNORE', '13000016199,113000000045'); // Old Pipeline, Agent Outreach: not guest deals
+if (!defined('GB_FS_RR_POOL'))      define('GB_FS_RR_POOL', '13000050547,13000020553,113000000538,113000000814'); // Efrinda, Laika, Wiwin, Wulan
+if (!defined('GB_FS_FRESH_SECONDS')) define('GB_FS_FRESH_SECONDS', 900);
+if (!defined('GB_FS_FORM_SOURCE'))  define('GB_FS_FORM_SOURCE', 'Samara direct send'); // on NEW contacts when the deal maker is live for them (lets the old workflow be narrowed)
+if (!defined('GB_DM_SITE'))         define('GB_DM_SITE', 'samaraliveaboard.com');
+if (!defined('GB_DM_WA_WINDOW'))    define('GB_DM_WA_WINDOW', 1800);              // WA match window: taps in the 30 min before the chat (Medium / Low)
+
+/* v7.2: may the Meta browser cookies (_fbc/_fbp) be read/stored? Not for an EU/UK/CH (or region-unknown) denial. */
+function gb_fb_cookie_ok($consent, $region) {
+  if (strtolower(trim((string) $consent)) !== 'denied') return true;
+  return !in_array(strtolower(trim((string) $region)), array('eu', 'uk', 'ch', ''), true);
+}
+function gb_fs_direct_log($row) {
+  $log = get_option('gb_fs_direct_log', array());
+  if (!is_array($log)) $log = array();
+  $row['t'] = wp_date('Y-m-d H:i:s');
+  $log[] = $row;
+  if (count($log) > 300) $log = array_slice($log, -300);
+  update_option('gb_fs_direct_log', $log, false);
+}
+function gb_fs_direct_enabled_for($form_id, $post_id) {
+  $list = array_map('trim', explode(',', GB_FS_DIRECT_FORMS));
+  return in_array('*', $list, true) || in_array($form_id . ':*', $list, true) || in_array($form_id . ':' . $post_id, $list, true);
+}
+function gb_dm_mode($src) {
+  $c = array('form' => GB_DM_MODE_FORM, 'webhook' => GB_DM_MODE_WEBHOOK, 'wa' => GB_DM_MODE_WA);
+  $m = get_option('gb_dm_mode_' . $src, '');
+  if (!in_array($m, array('off', 'log', 'test', 'on'), true)) $m = isset($c[$src]) ? $c[$src] : 'off';
+  return $m;
+}
+function gb_dm_is_test($email, $first) {
+  return (bool) preg_match('/^abots\+[^@]+@samarayachting\.com$/i', (string) $email) && stripos(trim((string) $first), 'TEST') === 0;
+}
+function gb_dm_live($src, $is_test) { $m = gb_dm_mode($src); return $m === 'on' || ($m === 'test' && $is_test); }
+function gb_dm_e164($p) {
+  $p = trim((string) $p); if ($p === '') return '';
+  $d = preg_replace('/[^\d+]/', '', $p);
+  if (strpos($d, '00') === 0) $d = '+' . substr($d, 2);
+  if (preg_match('/^\+[1-9]\d{6,14}$/', $d)) return $d;
+  return '';
+}
+
+$GLOBALS['gb_fs_direct_queue'] = array();
+
+add_action('wpcf7_mail_sent', function ($cf) {
+  try {
+    if (!class_exists('WPCF7_Submission')) return;
+    $sub = WPCF7_Submission::get_instance();
+    if (!$sub || $sub->get_status() !== 'mail_sent') return;
+    $form_id = (int) $cf->id();
+    $post_id = (int) $sub->get_meta('container_post_id');
+    if (!gb_fs_direct_enabled_for($form_id, $post_id)) return;
+    if (!get_option('gb_fs_direct_key')) { gb_fs_direct_log(array('form' => $form_id, 'post' => $post_id, 'err' => 'no_key')); return; }
+    gb_fs_form_queue($form_id, $post_id, (array) $sub->get_posted_data(), false);
+  } catch (\Throwable $e) {
+    gb_fs_direct_log(array('err' => 'prep_exception', 'msg' => substr($e->getMessage(), 0, 200)));
+  }
+}, 20);
+
+/* Builds the contact upsert + this enquiry's deal values from the posted CF7 data. $sim = admin TEST simulation (no $_POST/cookies/UA). */
+function gb_fs_form_queue($form_id, $post_id, $pd, $sim) {
+  try {
+    $g = function ($k) use ($pd, $sim) {
+      $v = array_key_exists($k, $pd) ? $pd[$k] : ((!$sim && isset($_POST[$k])) ? wp_unslash($_POST[$k]) : '');
+      if (is_array($v)) $v = implode(', ', array_filter(array_map('strval', $v), 'strlen'));
+      return trim((string) $v);
+    };
+    $email = sanitize_email($g('field_Email'));
+    if (!$email || !is_email($email)) { gb_fs_direct_log(array('form' => $form_id, 'post' => $post_id, 'err' => 'no_email')); return; }
+
+    $core = array('field_FirstName' => 'first_name', 'field_LastName' => 'last_name');
+    $cfmap = array(
+      'field_PhoneWA' => 'cf_whatsapp_number', 'field_TripType' => 'cf_trip_type', 'field_NumbGuests' => 'cf_number_of_guests',
+      'field_Request' => 'cf_details_and_special_requests', 'field_CheckIn' => 'cf_trip_date', 'field_CheckOut' => 'cf_check_out_date',
+      'gclid' => 'cf_gclid', 'gbraid' => 'cf_gbraid', 'wbraid' => 'cf_wbraid', 'ad_consent' => 'cf_ad_consent', 'consent_region' => 'cf_consent_region',
+      'utm_term' => 'cf_utm_term', 'utm_source' => 'cf_utm_source', 'utm_medium' => 'cf_utm_medium', 'utm_campaign' => 'cf_utm_campaign',
+      'utm_content' => 'cf_utm_content', 'fbclid' => 'cf_fbclid', 'ft_utm_source' => 'cf_passport_nr', 'ft_utm_medium' => 'cf_anzahl_der_gaste',
+      'ft_utm_campaign' => 'cf_anfrage', 'ft_utm_content' => 'cf_art_der_reise', 'ft_utm_term' => 'cf_vorname', 'ft_gclid' => 'cf_nachname',
+      'ft_gbraid' => 'cf_duration', 'ft_wbraid' => 'cf_industry_type', 'vx_url' => 'cf_door_opener', '_fbc' => 'cf_wa_chat', 'ft_fbclid' => 'cf_comments',
+      'field_PrivateCharterBudget' => 'cf_private_charter_budget', 'destination' => 'cf_destination',
+      'first_landing_url' => 'cf_mobile_number_backup', 'landing_url' => 'cf_telefon_wa_lead_field', 'form_page_url' => 'cf_e_mail_adresse', 'msclkid' => 'cf_interest',
+    );
+    $text255 = array('cf_whatsapp_number','cf_trip_type','cf_number_of_guests','cf_gclid','cf_gbraid','cf_wbraid','cf_consent_region','cf_utm_term',
+      'cf_passport_nr','cf_anzahl_der_gaste','cf_anfrage','cf_art_der_reise','cf_vorname','cf_nachname','cf_duration','cf_industry_type',
+      'cf_mobile_number_backup','cf_telefon_wa_lead_field','cf_e_mail_adresse','cf_interest','cf_trigger_field','cf_private_charter_budget','cf_destination');
+    $contact = array('emails' => $email);
+    foreach ($core as $src => $dst) { $v = sanitize_text_field($g($src)); if ($v !== '') $contact[$dst] = mb_substr($v, 0, 255); }
+    $custom = array();
+    $fb_ok = gb_fb_cookie_ok($g('ad_consent'), $g('consent_region'));   // v7.2: no _fbc/_fbp for an EU denial
+    foreach ($cfmap as $src => $dst) {
+      $v = $g($src);
+      if ($src === '_fbc' && !$fb_ok) continue;
+      if ($v === '') continue;
+      if ($dst === 'cf_details_and_special_requests') $v = sanitize_textarea_field($v); else $v = sanitize_text_field($v);
+      if ($dst === 'cf_ad_consent' && !in_array($v, array('granted','denied','unknown','not_required'), true)) continue;
+      if (($dst === 'cf_trip_date' || $dst === 'cf_check_out_date') && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $v)) continue;
+      if ($dst === 'cf_trip_type' && stripos($v, 'select trip') !== false) continue;
+      if (in_array($dst, $text255, true)) $v = mb_substr($v, 0, 255);
+      if ($v !== '') $custom[$dst] = $v;
+    }
+    $consent = $g('ad_consent');
+    $ip_set = false;
+    if (true) {   // v7.2: IP stored for every lead (consent decides use in uploads, not storage)
+      $ip = isset($_SERVER['HTTP_CF_CONNECTING_IP']) ? trim($_SERVER['HTTP_CF_CONNECTING_IP']) : '';
+      if (!filter_var($ip, FILTER_VALIDATE_IP)) $ip = isset($_SERVER['REMOTE_ADDR']) ? trim($_SERVER['REMOTE_ADDR']) : '';
+      if (filter_var($ip, FILTER_VALIDATE_IP)) { $custom['cf_trigger_field'] = $ip; $ip_set = true; }
+    }
+    if ($custom) $contact['custom_field'] = $custom;
+
+    $lines = array('Website enquiry (direct send) — ' . wp_date('Y-m-d H:i') . ' WITA', 'Form: CF7 ' . $form_id . ' on page ' . $post_id);
+    $labels = array('field_FirstName'=>'First name','field_LastName'=>'Last name','field_Email'=>'Email','field_PhoneWA'=>'Phone/WA','field_TripType'=>'Trip type',
+      'field_NumbGuests'=>'Guests','field_CheckIn'=>'Check-in','field_CheckOut'=>'Check-out','field_Request'=>'Request',
+      'destination'=>'Destination','duration'=>'Duration','budget'=>'Budget (multi-step slider)','field_PrivateCharterBudget'=>'Private charter budget',
+      'form_page_url'=>'Form page','landing_url'=>'Landing URL','ft_landing_url'=>'First landing URL (full)','referrer'=>'Referrer (full)',
+      'ft_referrer'=>'First referrer (full)','ft_msclkid'=>'First MSCLKID','msclkid'=>'MSCLKID','gclid'=>'GCLID','ad_consent'=>'Ad consent','consent_region'=>'Consent region');
+    foreach ($labels as $k => $lab) { $v = $g($k); if ($v !== '') $lines[] = $lab . ': ' . sanitize_textarea_field($v); }
+    $ref = isset($_SERVER['HTTP_REFERER']) ? esc_url_raw(wp_unslash($_SERVER['HTTP_REFERER'])) : '';
+    if ($ref) $lines[] = 'HTTP referer of submit: ' . $ref;
+
+    // v6: this enquiry's own values, written onto its deal (contact fields get overwritten by the next enquiry)
+    $iso = function ($v) { return preg_match('/^\d{4}-\d{2}-\d{2}$/', $v) ? $v : ''; };
+    $granted = true;   // v7.2 (Marc 15:07): session attributes + UA for every lead; _fbc/_fbp also gated by $fb_ok (EU denial)
+    $phone_raw = mb_substr(sanitize_text_field($g('field_PhoneWA')), 0, 255);
+    $enq = array(
+      'src' => 'form', 'ts' => time(), 'form' => $form_id, 'post' => $post_id, 'attempt' => 0, 'email' => $email,
+      'first' => isset($contact['first_name']) ? $contact['first_name'] : '', 'last' => isset($contact['last_name']) ? $contact['last_name'] : '',
+      'trip' => isset($custom['cf_trip_type']) ? $custom['cf_trip_type'] : '',
+      'in' => $iso($g('field_CheckIn')), 'out' => $iso($g('field_CheckOut')),
+      'guests' => (int) preg_replace('/\D/', '', $g('field_NumbGuests')),
+      'request' => mb_substr(sanitize_textarea_field($g('field_Request')), 0, 9000),
+      'destination' => mb_substr(sanitize_text_field($g('destination')), 0, 255),
+      'duration' => (stripos($g('duration'), 'select') !== false) ? '' : mb_substr(sanitize_text_field($g('duration')), 0, 255),
+      'budget_usd' => (int) preg_replace('/\D/', '', $g('budget')),
+      'budget' => mb_substr(sanitize_text_field($g('field_PrivateCharterBudget')), 0, 255),
+      'phone' => gb_dm_e164($phone_raw) !== '' ? gb_dm_e164($phone_raw) : $phone_raw,
+      'gclid' => mb_substr(sanitize_text_field($g('gclid')), 0, 255), 'gbraid' => mb_substr(sanitize_text_field($g('gbraid')), 0, 255), 'wbraid' => mb_substr(sanitize_text_field($g('wbraid')), 0, 255),
+      'fbclid' => mb_substr(sanitize_text_field($g('fbclid')), 0, 255), 'msclkid' => mb_substr(sanitize_text_field($g('msclkid')), 0, 255),
+      'utm_source' => sanitize_text_field($g('utm_source')), 'utm_medium' => sanitize_text_field($g('utm_medium')), 'utm_campaign' => sanitize_text_field($g('utm_campaign')),
+      'landing' => mb_substr(esc_url_raw($g('landing_url')), 0, 255),
+      'website' => GB_DM_SITE, 'channel' => 'Form',
+      // Google session string + UA: stored for every lead (v7.2); Meta cookie keys for every lead except an EU denial. Uploads apply consent.
+      'sa' => $granted ? mb_substr(preg_replace('/[^A-Za-z0-9_\-]/', '', $g('session_attributes')), 0, 9000) : '',
+      'fbc' => ($granted && $fb_ok) ? mb_substr(sanitize_text_field($g('_fbc') !== '' ? $g('_fbc') : ((!$sim && isset($_COOKIE['_fbc'])) ? wp_unslash($_COOKIE['_fbc']) : '')), 0, 255) : '',
+      'fbp' => ($granted && $fb_ok) ? mb_substr(sanitize_text_field($sim ? $g('__sim_fbp') : (isset($_COOKIE['_fbp']) ? wp_unslash($_COOKIE['_fbp']) : '')), 0, 255) : '',
+      'ua' => $granted ? mb_substr(sanitize_text_field($sim ? $g('__sim_ua') : (isset($_SERVER['HTTP_USER_AGENT']) ? wp_unslash($_SERVER['HTTP_USER_AGENT']) : '')), 0, 2000) : '',
+    );
+    $enq['match'] = ($enq['gclid'] . $enq['gbraid'] . $enq['wbraid'] . $enq['fbclid'] . $enq['msclkid'] . $enq['fbc']) !== '' ? 'Confident' : '';
+    $enq['is_test'] = gb_dm_is_test($email, $enq['first']);
+    $GLOBALS['gb_fs_direct_queue'][] = array('form' => $form_id, 'post' => $post_id, 'contact' => $contact, 'note' => implode("\n", $lines), 'ip' => $ip_set, 'consent' => $consent, 'enq' => $enq);
+    if ($sim) return true;
+    static $hooked = false;
+    if (!$hooked) { $hooked = true; add_action('shutdown', 'gb_fs_direct_flush', 1000); }
+  } catch (\Throwable $e) {
+    gb_fs_direct_log(array('err' => 'prep_exception', 'msg' => substr($e->getMessage(), 0, 200)));
+  }
+  return false;
+}
+
+function gb_fs_direct_flush($sync = false) {
+  if (empty($GLOBALS['gb_fs_direct_queue'])) return;
+  try {
+    if ($sync !== true) {
+      if (function_exists('fastcgi_finish_request')) { @fastcgi_finish_request(); }
+      elseif (function_exists('litespeed_finish_request')) { @litespeed_finish_request(); }
+    }
+    @ignore_user_abort(true);
+    foreach ($GLOBALS['gb_fs_direct_queue'] as $job) {
+      $t0 = microtime(true);
+      $row = array('form' => $job['form'], 'post' => $job['post'], 'ip_set' => $job['ip'], 'consent' => $job['consent']);
+      $email = $job['contact']['emails'];
+      $live = gb_dm_live('form', !empty($job['enq']['is_test']));
+      $existed = null;
+      if (gb_dm_mode('form') !== 'off') {
+        // Is this email already a contact? A NEW contact gets Form Source only when the deal maker is live for it (never overwrites).
+        list($lc, $lj) = gb_fs_api('GET', 'lookup?f=email&entities=contact&q=' . rawurlencode($email), null, 5);
+        $found = ($lc === 200) ? (array) ($lj['contacts']['contacts'] ?? array()) : array();
+        $row['lookup'] = $lc; $existed = ($lc === 200) ? (count($found) > 0) : null;
+        if ($live && $existed === false && GB_FS_FORM_SOURCE !== '') $job['contact']['custom_field']['cf_form_source'] = GB_FS_FORM_SOURCE;
+      }
+      list($code, $b) = gb_fs_api('POST', 'contacts/upsert', array('unique_identifier' => array('emails' => $email), 'contact' => $job['contact']), 5);
+      $row['upsert'] = $code;
+      $cid = isset($b['contact']['id']) ? $b['contact']['id'] : null; $row['cid'] = $cid;
+      if ($code >= 300 || !$cid) { $row['err'] = 'upsert_http'; gb_fs_direct_log($row); continue; }
+      list($nc) = gb_fs_api('POST', 'notes', array('note' => array('description' => $job['note'], 'targetable_type' => 'Contact', 'targetable_id' => $cid)), 5);
+      $row['note'] = $nc;
+      $row['ms'] = (int) round((microtime(true) - $t0) * 1000);
+      gb_fs_direct_log($row);
+      if (gb_dm_mode('form') !== 'off') {
+        $e = $job['enq']; $e['cid'] = $cid;
+        $e['new'] = ($code === 201) || ($existed === false);
+        $e['by_us'] = ($code === 201);
+        gb_dm_run($e);  // immediately, same run
+      }
+    }
+  } catch (\Throwable $e) {
+    gb_fs_direct_log(array('err' => 'flush_exception', 'msg' => substr($e->getMessage(), 0, 200)));
+  }
+  $GLOBALS['gb_fs_direct_queue'] = array();
+}
+
+/* ---------- v6: the central deal maker ---------- */
+function gb_fs_api($method, $path, $body = null, $timeout = 8) {
+  $h = array('Authorization' => 'Token token=' . get_option('gb_fs_direct_key'), 'Content-Type' => 'application/json', 'Accept' => 'application/json');
+  $args = array('method' => $method, 'timeout' => $timeout, 'headers' => $h);
+  if ($body !== null) $args['body'] = wp_json_encode($body);
+  $r = wp_remote_request('https://samarayachting.myfreshworks.com/crm/sales/api/' . $path, $args);
+  if (is_wp_error($r)) return array(0, null);
+  return array((int) wp_remote_retrieve_response_code($r), json_decode(wp_remote_retrieve_body($r), true));
+}
+function gb_fs_type_of_text($s) {
+  $s = strtolower((string) $s);
+  if ($s === '') return '?';
+  if (preg_match('/\bot\b|open trip|shared|cabin|kabine|last minute|#ot/', $s)) return 'OT';
+  if (preg_match('/\bpc\b|private|mischief|otium|charter|family|honeymoon|diving|group/', $s)) return 'PC';
+  return '?';
+}
+function gb_fs_product_interest($trip) {
+  $s = strtolower((string) $trip); $t = gb_fs_type_of_text($s);
+  if ($t === 'OT') return preg_match('/samara ii|\bs2\b/', $s) ? '' : 'OT / S1';
+  if ($t === 'PC') {
+    if (strpos($s, 'mischief') !== false) return 'PC / Mischief';
+    if (strpos($s, 'otium') !== false) return 'PC / Otium';
+    if (preg_match('/samara ii|\bs2\b/', $s)) return 'PC / S2';
+    if (preg_match('/samara i\b|\bs1\b/', $s)) return 'PC / S1';
+  }
+  return '';
+}
+/* Round-robin pool, used ONLY when the contact has no owner. Inactive pool members are skipped (cached 6 h). */
+function gb_fs_pool_active() {
+  $ids = get_transient('gb_fs_active_users');
+  if (!is_array($ids)) {
+    list($c, $j) = gb_fs_api('GET', 'selector/owners');
+    $ids = array();
+    if ($c === 200 && is_array($j)) { foreach ((array) ($j['users'] ?? array()) as $u) if (!empty($u['is_active'])) $ids[] = (int) $u['id']; set_transient('gb_fs_active_users', $ids, 6 * HOUR_IN_SECONDS); }
+  }
+  $pool = array_values(array_filter(array_map('intval', explode(',', GB_FS_RR_POOL))));
+  $act = $ids ? array_values(array_filter($pool, function ($u) use ($ids) { return in_array($u, $ids, true); })) : array();
+  return $act ? $act : $pool;
+}
+function gb_fs_rr_owner($live) {
+  $pool = gb_fs_pool_active();
+  $i = (int) get_option('gb_fs_rr_index', 0);
+  if ($live) update_option('gb_fs_rr_index', ($i + 1) % count($pool), false);
+  return $pool[$i % count($pool)];
+}
+function gb_fs_enquiry_note($e, $headline) {
+  $src = array('form' => 'Website enquiry', 'webhook' => 'Freshsales contact (webhook)', 'wa' => 'WhatsApp chat');
+  $l = array($headline, ($src[$e['src']] ?? 'Enquiry') . ' ' . wp_date('Y-m-d H:i', $e['ts']) . ' WITA' . (!empty($e['form']) ? ' (CF7 ' . $e['form'] . ', page ' . $e['post'] . ')' : ''));
+  foreach (array('trip' => 'Trip type', 'in' => 'Check-in', 'out' => 'Check-out', 'duration' => 'Duration', 'guests' => 'Guests', 'destination' => 'Destination',
+    'budget_usd' => 'Budget comfort (USD)', 'budget' => 'Private charter budget', 'phone' => 'Phone/WA', 'request' => 'Request',
+    'gclid' => 'GCLID', 'gbraid' => 'GBRAID', 'wbraid' => 'WBRAID', 'fbclid' => 'fbclid', 'msclkid' => 'MSCLKID', 'utm_campaign' => 'UTM campaign',
+    'landing' => 'Landing URL', 'website' => 'Website', 'ref' => 'WhatsApp ref', 'match' => 'Click ID match') as $k => $lab) {
+    if (!empty($e[$k])) $l[] = $lab . ': ' . $e[$k];
+  }
+  if (!empty($e['probable'])) $l[] = (($e['match'] ?? '') === 'Low'
+    ? 'LOW confidence WhatsApp match (2 or more website taps fit; this could be wrong). SALES: please check by hand. If the match is right, correct the click IDs if needed, then change Click ID match to Medium or Confident so it can be uploaded to Google and Meta. While this is Low it will not be uploaded. Candidates: '
+    : 'MEDIUM confidence WhatsApp match (exactly one website tap fits the timing): ') . $e['probable'];
+  if (!empty($e['upload'])) $l[] = 'Ad upload rule: ' . $e['upload'];
+  if (!empty($e['tapdata']) && is_array($e['tapdata'])) {
+    $l[] = '';
+    $l[] = '--- Website tap data (structured; every value stored on the WhatsApp tap record) ---';
+    foreach ($e['tapdata'] as $k => $v) if ($v !== '' && $v !== null) $l[] = $k . ': ' . $v;
+    $l[] = 'stored_for_every_lead: identifiers are kept whatever the consent (Meta cookies not on an EU denial); ad_consent above decides whether uploads may use them';
+  }
+  return implode("\n", $l);
+}
+/* All guest-entered fields + tracking for the deal. With $existing_cf: only fields that are EMPTY there. */
+function gb_fs_deal_fields($e, $existing_cf = null) {
+  $g = function ($k) use ($e) { return isset($e[$k]) ? $e[$k] : ''; };
+  $nights = ($g('in') && $g('out') && strtotime($g('out')) > strtotime($g('in'))) ? (int) round((strtotime($g('out')) - strtotime($g('in'))) / 86400) : '';
+  $want = array(
+    'cf_date_window_start' => $g('in'), 'cf_date_window_end' => $g('out'), 'cf_number_of_nights' => $nights,
+    'cf_number_of_guestss' => ((int) $g('guests')) > 0 ? (int) $g('guests') : '',
+    // 14 Nov 2026 Marc 17:33/17:34: deals from the 6 /yacht/otium/ pages (EN 53857, DE 53858, ES 55963, FR 55964, IT 55967, ID 53859):
+    // Signature Voyage (#SL) -> 'SV / Otium', otherwise (Private Charter (#SL)) -> 'PC / Otium'. Brand stays Samara.
+    'cf_product_interest' => in_array((int) $g('post'), array(53857, 53858, 55963, 55964, 55967, 53859), true)
+      ? (stripos((string) $g('trip'), 'signature voyage') !== false ? 'SV / Otium' : 'PC / Otium')
+      : (gb_fs_product_interest($g('trip')) !== '' ? gb_fs_product_interest($g('trip')) : $g('pi_page')),
+    'cf_route' => $g('destination'), 'cf_budget' => ((int) $g('budget_usd')) > 0 ? (int) $g('budget_usd') : '', 'cf_private_charter_budget' => $g('budget'),
+    'cf_gcl_id' => $g('gclid'), 'cf_gbraid' => $g('gbraid'), 'cf_wbraid' => $g('wbraid'), 'cf_fbclid' => $g('fbclid'), 'cf_msclkid' => $g('msclkid'),
+    'cf_utm_source' => $g('utm_source'), 'cf_utm_medium' => $g('utm_medium'), 'cf_utm_campaign' => $g('utm_campaign'),
+    'cf_landing_url' => $g('landing'), 'cf_lead_source_channel' => $g('channel'),
+    'cf_trip_type_form' => $g('trip'), 'cf_request_form' => $g('request'), 'cf_duration_form' => $g('duration'), 'cf_phonewa_form' => $g('phone'),
+    'cf_google_session_attributes' => $g('sa'), 'cf_meta_fbc' => $g('fbc'), 'cf_meta_fbp' => $g('fbp'), 'cf_browser_user_agent' => $g('ua'),
+    'cf_website' => $g('website'), 'cf_click_id_match' => $g('match'),
+  );
+  $out = array();
+  foreach ($want as $k => $v) {
+    if ($v === '' || $v === null) continue;
+    if (is_array($existing_cf) && isset($existing_cf[$k]) && $existing_cf[$k] !== '' && $existing_cf[$k] !== null) continue; // never overwrite
+    $out[$k] = $v;
+  }
+  return $out;
+}
+function gb_fs_deal_retry($e, $row, $why) {
+  $wait = array(120, 600, 3600);
+  $row['err'] = $why; $row['attempt'] = $e['attempt'];
+  if ($e['attempt'] < count($wait)) {
+    $e['attempt']++;
+    wp_schedule_single_event(time() + $wait[$e['attempt'] - 1], 'gb_fs_deal_retry_event', array($e));
+    $row['retry_in_s'] = $wait[$e['attempt'] - 1];
+  } else {
+    $row['final'] = 'deal_failed';
+    if (!empty($row['live'])) gb_fs_api('POST', 'notes', array('note' => array('targetable_type' => 'Contact', 'targetable_id' => $e['cid'],
+      'description' => gb_fs_enquiry_note($e, 'DEAL COULD NOT BE CREATED AUTOMATICALLY - please create it by hand.'))));
+  }
+  gb_fs_direct_log($row);
+  return $row;
+}
+add_action('gb_fs_deal_retry_event', function ($e) { gb_dm_run($e); }, 10, 1);
+
+/* Per-contact lock (atomic add_option). Stale after 120 s. */
+function gb_dm_lock($cid) {
+  $k = 'gb_dm_lk_' . (int) $cid;
+  if (add_option($k, time(), '', 'no')) return true;
+  if ((int) get_option($k, 0) < time() - 120) { delete_option($k); return add_option($k, time(), '', 'no'); }
+  return false;
+}
+function gb_dm_unlock($cid) { delete_option('gb_dm_lk_' . (int) $cid); }
+
+/* A Sales-pipeline, not-closed deal of this contact created within the fresh window of the enquiry (e.g. the old workflow's deal). */
+function gb_dm_find_fresh($e) {
+  list($c, $j) = gb_fs_api('GET', 'contacts/' . (int) $e['cid'] . '?include=deals');
+  if ($c !== 200 || !is_array($j)) return null;
+  $stages = array(); foreach ((array) ($j['deal_stages'] ?? array()) as $s) $stages[$s['id']] = (string) ($s['forecast_type'] ?? '');
+  $want = gb_fs_type_of_text($e['trip'] ?? '');
+  foreach ((array) ($j['deals'] ?? array()) as $d) {
+    if ((int) ($d['deal_pipeline_id'] ?? 0) !== GB_FS_PIPELINE) continue;
+    if (stripos($stages[$d['deal_stage_id']] ?? '', 'closed') === 0) continue;
+    $age = $e['ts'] - strtotime($d['created_at']);
+    $dt = gb_fs_type_of_text(($d['custom_field']['cf_product_interest'] ?? '') . ' ' . ($d['name'] ?? ''));
+    if ($age > -GB_FS_FRESH_SECONDS && $age < GB_FS_FRESH_SECONDS && ($dt === $want || $dt === '?' || $want === '?')) return $d;
+  }
+  return null;
+}
+
+/* The one rule, for every source. $e: src, ts, cid, new, is_test, attempt + enquiry values. Returns the log row. */
+function gb_dm_run($e) {
+  $live = gb_dm_live($e['src'], !empty($e['is_test']));
+  $row = array('step' => 'deal', 'src' => $e['src'], 'form' => $e['form'] ?? null, 'cid' => $e['cid'], 'new' => !empty($e['new']), 'mode' => gb_dm_mode($e['src']), 'live' => $live, 'test' => !empty($e['is_test']), 'attempt' => $e['attempt']);
+  if (gb_dm_mode($e['src']) === 'off') return $row;
+  if (!gb_dm_lock($e['cid'])) {
+    if ($e['attempt'] < 3) { $e['attempt']++; wp_schedule_single_event(time() + 60, 'gb_fs_deal_retry_event', array($e)); }
+    $row['case'] = 'locked_retry_60s'; gb_fs_direct_log($row); return $row;
+  }
+  try {
+    if (!empty($e['new']) && $e['attempt'] === 0 && empty($e['no_wait'])) sleep(3); // let assignment rules set the contact owner
+    list($c, $j) = gb_fs_api('GET', 'contacts/' . (int) $e['cid'] . '?include=deals,owner');
+    if ($c !== 200 || !is_array($j)) { gb_dm_unlock($e['cid']); return gb_fs_deal_retry($e, $row, 'get_contact_' . $c); }
+    $deals = (array) ($j['deals'] ?? array()); $stages = array();
+    foreach ((array) ($j['deal_stages'] ?? array()) as $s) $stages[$s['id']] = (string) ($s['forecast_type'] ?? '');
+    $owner = (int) ($j['contact']['owner_id'] ?? 0);
+    $ignore = array_map('intval', explode(',', GB_FS_PIPES_IGNORE));
+    $want_type = gb_fs_type_of_text($e['trip'] ?? '');
+    $fresh = null; $open_same = array(); $noted = null;
+    $lock = get_transient('gb_fs_rd_' . (int) $e['cid']);
+    foreach ($deals as $d) {
+      $pipe = (int) ($d['deal_pipeline_id'] ?? 0);
+      if (in_array($pipe, $ignore, true)) continue;
+      if (stripos($stages[$d['deal_stage_id']] ?? '', 'closed') === 0) continue;   // Won/Lost: read only, never written
+      $age = $e['ts'] - strtotime($d['created_at']);
+      $dt = gb_fs_type_of_text(($d['custom_field']['cf_product_interest'] ?? '') . ' ' . ($d['name'] ?? ''));
+      $same = ($dt === $want_type || $dt === '?' || $want_type === '?');
+      if (!empty($e['fill_deal']) && (string) $d['id'] === (string) $e['fill_deal'] && $pipe === GB_FS_PIPELINE) { $fresh = $d; continue; }   // v7 backfill: fill this open deal
+      if ((string) $lock === 'n' . $d['id'] && $same) { $noted = $d; continue; }   // already noted for this submit
+      if ($same && $pipe === GB_FS_PIPELINE && ((string) $d['id'] === (string) $lock || ($age > -GB_FS_FRESH_SECONDS && $age < GB_FS_FRESH_SECONDS))) { if (!$fresh) $fresh = $d; continue; }
+      if ($same) $open_same[] = $d;
+    }
+    $row['deals_seen'] = count($deals);
+    if (!empty($e['fill_deal']) && (!$fresh || (string) $fresh['id'] !== (string) $e['fill_deal'])) { $row['case'] = 'fill_deal_not_open_or_not_found'; $row['deal'] = $e['fill_deal']; gb_dm_unlock($e['cid']); gb_fs_direct_log($row); return $row; }
+    // Old workflow "Create deal on new contact" still fires on contact CREATE (Trip Type/Lead Source not empty), typically 4-90 s later.
+    // If this contact was created recently by someone else (browser capture), or by us while the workflow is not yet narrowed,
+    // wait for that deal and FILL it (never a 2nd deal). Polls ~65 s in-process, then one WP-Cron recheck at +180 s; only then create.
+    if (!$fresh && $e['src'] === 'form') {
+      $created = strtotime((string) ($j['contact']['created_at'] ?? '')) ?: 0;
+      $recent = $created > 0 && ($e['ts'] - $created) < GB_FS_FRESH_SECONDS;
+      $narrowed = (get_option('gb_dm_wf_narrowed', '0') === '1');
+      if ($recent && (empty($e['by_us']) || !$narrowed)) {
+        $row['wf_expected'] = true;
+        if ($live) {
+          if (empty($e['wf_polled'])) {
+            foreach (array(8, 12, 20, 25) as $sl) {
+              sleep($sl);
+              $fresh = gb_dm_find_fresh($e);
+              if ($fresh) { $row['wf_deal_after_s'] = time() - $e['ts']; break; }
+            }
+          }
+          if (!$fresh && empty($e['wf_deferred'])) {
+            $e['wf_polled'] = 1; $e['wf_deferred'] = 1;
+            wp_schedule_single_event(time() + 180, 'gb_fs_deal_retry_event', array($e));
+            $row['case'] = 'waiting_for_old_workflow_deal_recheck_180s'; gb_dm_unlock($e['cid']); gb_fs_direct_log($row); return $row;
+          }
+          if (!$fresh) { $row['wf_no_deal_after_wait'] = true; $e['new'] = true; }   // contact made minutes ago by a capture: name it as a new enquiry   // deferred recheck, still none -> the deal maker creates it
+        }
+      }
+    }
+    if ($fresh) {
+      $row['case'] = 'same_submit_fill_empty'; $row['deal'] = $fresh['id'];
+      list($c2, $jd) = gb_fs_api('GET', 'deals/' . $fresh['id']);
+      if ($c2 !== 200) { gb_dm_unlock($e['cid']); return gb_fs_deal_retry($e, $row, 'get_deal_' . $c2); }
+      $patch = gb_fs_deal_fields($e, (array) ($jd['deal']['custom_field'] ?? array()));
+      $row['fields'] = array_keys($patch);
+      if ($live && $patch) { list($c3) = gb_fs_api('PUT', 'deals/' . $fresh['id'], array('deal' => array('custom_field' => $patch))); $row['put'] = $c3; }
+      if ($live && $e['src'] === 'wa' && !empty($e['tapdata'])) {
+        list($cn) = gb_fs_api('POST', 'notes', array('note' => array('targetable_type' => 'Deal', 'targetable_id' => $fresh['id'],
+          'description' => gb_fs_enquiry_note($e, 'WhatsApp chat linked to this deal (website tap data added; existing values were not changed).'))));
+        $row['note'] = $cn;
+      }
+      if ($live) set_transient('gb_fs_rd_' . (int) $e['cid'], $fresh['id'], 1800);
+      gb_dm_unlock($e['cid']); gb_fs_direct_log($row); return $row;
+    }
+    if ($noted && !$fresh) { $row['case'] = 'same_submit_already_noted'; $row['deal'] = $noted['id']; gb_dm_unlock($e['cid']); gb_fs_direct_log($row); return $row; }
+    if ($open_same) {
+      usort($open_same, function ($a, $b) { return strcmp((string) $b['updated_at'], (string) $a['updated_at']); });
+      $d = $open_same[0]; $row['case'] = 'open_same_type_note'; $row['deal'] = $d['id'];
+      if ($live) {
+        list($cn) = gb_fs_api('POST', 'notes', array('note' => array('targetable_type' => 'Deal', 'targetable_id' => $d['id'],
+          'description' => gb_fs_enquiry_note($e, 'RETURNING GUEST: new enquiry on this open deal. Values below are the NEW request; the deal was not changed.'))));
+        list($ct) = gb_fs_api('POST', 'tasks', array('task' => array('title' => 'Returning guest sent a new enquiry: check dates/guests',
+          'description' => gb_fs_enquiry_note($e, 'New enquiry from an existing guest (see deal note).'),
+          'due_date' => gmdate('c', time() + 4 * 3600), 'owner_id' => $d['owner_id'], 'targetable_type' => 'Deal', 'targetable_id' => $d['id'])));
+        $row['note'] = $cn; $row['task'] = $ct;
+        if ($cn >= 300 || !$cn) { gb_dm_unlock($e['cid']); return gb_fs_deal_retry($e, $row, 'deal_note_' . $cn); }
+        set_transient('gb_fs_rd_' . (int) $e['cid'], 'n' . $d['id'], 1800);
+      }
+      gb_dm_unlock($e['cid']); gb_fs_direct_log($row); return $row;
+    }
+    // New deal (new guest, or returning guest with no open deal of this type). Owner = contact owner; round-robin only if none.
+    if ($owner > 0) { $row['owner'] = 'contact_owner'; }
+    else {
+      $owner = gb_fs_rr_owner($live); $row['owner'] = 'round_robin';
+      if ($live) { list($co) = gb_fs_api('PUT', 'contacts/' . (int) $e['cid'], array('contact' => array('owner_id' => $owner))); $row['contact_owner_put'] = $co; }
+    }
+    $row['owner_id'] = $owner;
+    $name = trim(($e['first'] ?? '') . ' ' . ($e['last'] ?? ''));
+    if ($name === '') $name = trim(($j['contact']['first_name'] ?? '') . ' ' . ($j['contact']['last_name'] ?? ''));
+    if ($name === '') $name = !empty($e['phone']) ? $e['phone'] : 'Contact ' . (int) $e['cid'];
+    $deal = array('name' => $name . ' Deal' . (!empty($e['new']) ? '' : ' (re-enquiry ' . wp_date('j M Y', $e['ts']) . ')'), 'amount' => 0,
+      'deal_pipeline_id' => GB_FS_PIPELINE, 'deal_stage_id' => GB_FS_STAGE_NEW, 'owner_id' => $owner,
+      'contacts_added_list' => array((int) $e['cid']), 'custom_field' => gb_fs_deal_fields($e));
+    $ls = (int) ($j['contact']['lead_source_id'] ?? 0); if ($ls > 0) $deal['lead_source_id'] = $ls;   // "Source", as the old workflow copied
+    $row['case'] = !empty($e['new']) ? 'new_contact_new_deal' : 'returning_new_deal'; $row['fields'] = array_keys($deal['custom_field']);
+    if (!$live) { gb_dm_unlock($e['cid']); gb_fs_direct_log($row); return $row; }
+    list($cd, $jd) = gb_fs_api('POST', 'deals', array('deal' => $deal));
+    if ($cd === 400 && stripos(wp_json_encode($jd), 'inactive') !== false) {
+      // Freshsales refuses deals for a deactivated owner: fall back to round-robin (contact gets the same person), logged.
+      $owner = gb_fs_rr_owner(true); $deal['owner_id'] = $owner; $row['owner'] = 'inactive_owner_fallback_round_robin'; $row['owner_id'] = $owner;
+      list($co) = gb_fs_api('PUT', 'contacts/' . (int) $e['cid'], array('contact' => array('owner_id' => $owner))); $row['contact_owner_put'] = $co;
+      list($cd, $jd) = gb_fs_api('POST', 'deals', array('deal' => $deal));
+    }
+    $row['deal_http'] = $cd; $row['deal'] = $jd['deal']['id'] ?? null;
+    if (!$row['deal']) { gb_dm_unlock($e['cid']); return gb_fs_deal_retry($e, $row, 'deal_post_' . $cd); }
+    set_transient('gb_fs_rd_' . (int) $e['cid'], $row['deal'], 1800);
+    gb_fs_api('POST', 'notes', array('note' => array('targetable_type' => 'Deal', 'targetable_id' => $row['deal'],
+      'description' => gb_fs_enquiry_note($e, !empty($e['new']) ? 'New enquiry (deal created by the central deal maker).' : 'New deal for a returning guest (earlier deals untouched).'))));
+    if (($e['match'] ?? '') === 'Low') {
+      list($ct) = gb_fs_api('POST', 'tasks', array('task' => array('title' => 'LOW confidence WhatsApp match: please check by hand',
+        'description' => gb_fs_enquiry_note($e, 'This deal was matched only by timing, and 2 or more website taps fit, so it could be the wrong guest. Check the match. If it is right, correct the click IDs if needed, then change Click ID match to Medium or Confident so it can be uploaded to Google and Meta. While this is Low it will not be uploaded.'),
+        'due_date' => gmdate('c', time() + 4 * 3600), 'owner_id' => $owner, 'targetable_type' => 'Deal', 'targetable_id' => $row['deal'])));
+      $row['task'] = $ct;
+    }
+    gb_dm_unlock($e['cid']); gb_fs_direct_log($row); return $row;
+  } catch (\Throwable $ex) {
+    gb_dm_unlock($e['cid']);
+    return gb_fs_deal_retry($e, $row, 'deal_step_exception: ' . substr($ex->getMessage(), 0, 150));
+  }
+}
+
+/* Build an enquiry from a Freshsales contact (webhook / WhatsApp sources). */
+function gb_dm_enq_from_contact($ct, $src) {
+  $cf = (array) ($ct['custom_field'] ?? array());
+  $v = function ($k, $len = 255) use ($cf) { $x = isset($cf[$k]) ? trim((string) $cf[$k]) : ''; return mb_substr($x, 0, $len); };
+  $iso = function ($x) { return preg_match('/^\d{4}-\d{2}-\d{2}/', (string) $x) ? substr($x, 0, 10) : ''; };
+  $email = (string) ($ct['email'] ?? '');
+  $phone_raw = $v('cf_whatsapp_number') !== '' ? $v('cf_whatsapp_number') : (string) ($ct['mobile_number'] ?? '');
+  $granted = gb_fb_cookie_ok($v('cf_ad_consent'), $v('cf_consent_region'));   // v7.2: copy contact _fbc to the deal unless EU denial
+  $host = '';
+  foreach (array('cf_e_mail_adresse', 'cf_telefon_wa_lead_field', 'cf_mobile_number_backup') as $k) { $h = wp_parse_url($v($k), PHP_URL_HOST); if ($h) { $host = preg_replace('/^www\./', '', strtolower($h)); break; } }
+  $created = strtotime((string) ($ct['created_at'] ?? '')) ?: 0;
+  $e = array('src' => $src, 'ts' => time(), 'cid' => (int) $ct['id'], 'attempt' => 0, 'email' => $email,
+    'new' => $created > 0 && (time() - $created) < 1800, 'first' => (string) ($ct['first_name'] ?? ''), 'last' => (string) ($ct['last_name'] ?? ''),
+    'trip' => $v('cf_trip_type'), 'in' => $iso($v('cf_trip_date')), 'out' => $iso($v('cf_check_out_date')),
+    'guests' => (int) preg_replace('/\D/', '', $v('cf_number_of_guests')), 'request' => $v('cf_details_and_special_requests', 9000),
+    'destination' => $v('cf_destination'), 'budget' => $v('cf_private_charter_budget'),
+    'phone' => gb_dm_e164($phone_raw) !== '' ? gb_dm_e164($phone_raw) : mb_substr($phone_raw, 0, 255),
+    'gclid' => $v('cf_gclid'), 'gbraid' => $v('cf_gbraid'), 'wbraid' => $v('cf_wbraid'), 'fbclid' => $v('cf_fbclid'), 'msclkid' => $v('cf_interest'),
+    'utm_source' => $v('cf_utm_source'), 'utm_medium' => $v('cf_utm_medium'), 'utm_campaign' => $v('cf_utm_campaign'),
+    'landing' => $v('cf_telefon_wa_lead_field'), 'website' => $host, 'channel' => $src === 'wa' ? 'WhatsApp' : 'Form',
+    'fbc' => $granted ? $v('cf_wa_chat') : '', 'lead_source' => $v('cf_lead_source'), 'form_source' => $v('cf_form_source'),
+  );
+  $e['match'] = ($e['gclid'] . $e['gbraid'] . $e['wbraid'] . $e['fbclid'] . $e['msclkid'] . $e['fbc']) !== '' ? 'Confident' : '';
+  $e['is_test'] = gb_dm_is_test($email, $e['first']);
+  return $e;
+}
+/* Which brand/site does a contact belong to? Only Samara is in scope; others stay with the old workflow for now. */
+function gb_dm_is_samara($e) {
+  if ($e['website'] !== '') return $e['website'] === GB_DM_SITE;
+  $t = strtolower($e['trip'] . ' ' . $e['form_source']);
+  if (preg_match('/otium|mischief ?voyage|siloina|silolona/', $t) && strpos($t, '#sl') === false) return false;
+  return strpos($t, '#sl') !== false || $e['src'] === 'wa' ? true : null;   // null = unknown
+}
+function gb_dm_wa_tap($ref) {
+  global $wpdb; if (!function_exists('gb_wa_table')) return null;
+  return $wpdb->get_row($wpdb->prepare('SELECT * FROM ' . gb_wa_table() . ' WHERE ref = %s LIMIT 1', $ref), ARRAY_A);
+}
+function gb_dm_wa_taps_before($ts, $test_only = false) {
+  global $wpdb; if (!function_exists('gb_wa_table')) return array();
+  // TEST records only see TEST taps (utm_source = dmtest), so tests never pick up a real visitor's tap; real records never see TEST taps.
+  $w = $test_only ? " AND utm_source = 'dmtest'" : " AND (utm_source IS NULL OR utm_source <> 'dmtest')";
+  return (array) $wpdb->get_results($wpdb->prepare('SELECT * FROM ' . gb_wa_table() . ' WHERE created_at BETWEEN %s AND %s' . $w . ' ORDER BY id LIMIT 10',
+    gmdate('Y-m-d H:i:s', $ts - GB_DM_WA_WINDOW), gmdate('Y-m-d H:i:s', $ts)), ARRAY_A);
+}
+
+/* v7: every value stored on the tap -> enquiry. Deal fields where they exist; the rest in $e['tapdata'] (structured note). */
+function gb_dm_pi_from_page($url) {
+  $p = strtolower((string) wp_parse_url((string) $url, PHP_URL_PATH));
+  if ($p === '') return '';
+  if (preg_match('#/(shared-trip|open-trip|thankyou-ot)(/|$)#', $p)) return 'OT / S1';
+  if (preg_match('#samara-ii#', $p)) return 'PC / S2';
+  if (preg_match('#samara-i(-|/|$)#', $p)) return 'PC / S1';
+  return '';
+}
+function gb_dm_apply_tap(&$e, $tap, $level) {
+  foreach (array('gclid', 'gbraid', 'wbraid', 'fbclid', 'msclkid', 'utm_source', 'utm_medium', 'utm_campaign') as $k) $e[$k] = (string) ($tap[$k] ?? '');
+  // v7.2 (Marc 15:07/15:10): stored for every tap whatever the consent, except Meta cookies on an EU denial; uploads apply consent.
+  $fb_ok = gb_fb_cookie_ok($tap['ad_consent'] ?? '', $tap['consent_region'] ?? '');   // Meta cookies: not for an EU denial (Marc 15:10)
+  $e['fbc'] = $fb_ok ? (string) ($tap['_fbc'] ?? '') : '';
+  $e['fbp'] = $fb_ok ? (string) ($tap['_fbp'] ?? '') : '';
+  $e['ua'] = mb_substr((string) ($tap['ua'] ?? ''), 0, 2000);
+  $e['landing'] = mb_substr((string) ($tap['page'] ?? ''), 0, 255);
+  if (($e['trip'] ?? '') === '') $e['pi_page'] = gb_dm_pi_from_page($tap['page'] ?? '');
+  $t = strtotime((string) ($tap['created_at'] ?? '') . ' UTC') ?: 0;
+  $e['tap_consent'] = (string) ($tap['ad_consent'] ?? ''); $e['tap_region'] = (string) ($tap['consent_region'] ?? '');
+  $e['tapdata'] = array(
+    'match_confidence' => $level, 'tap_ref' => (string) ($tap['ref'] ?? ''),
+    'tap_time_utc' => (string) ($tap['created_at'] ?? ''), 'tap_time_wita' => $t ? wp_date('Y-m-d H:i:s', $t) . ' WITA' : '',
+    'ad_consent' => (string) ($tap['ad_consent'] ?? ''), 'consent_region' => (string) ($tap['consent_region'] ?? ''),
+    'consent_recorded_at' => $t ? wp_date('Y-m-d H:i:s', $t) . ' WITA (consent state read by the tap script at the tap)' : '',
+    'page_url' => (string) ($tap['page'] ?? ''), 'language' => (string) ($tap['lang'] ?? ''), 'samara_visitor_id' => (string) ($tap['vid'] ?? ''),
+    'gclid' => (string) ($tap['gclid'] ?? ''), 'gbraid' => (string) ($tap['gbraid'] ?? ''), 'wbraid' => (string) ($tap['wbraid'] ?? ''),
+    'fbclid' => (string) ($tap['fbclid'] ?? ''), 'msclkid' => (string) ($tap['msclkid'] ?? ''), 'fbc' => $fb_ok ? (string) ($tap['_fbc'] ?? '') : '(not read: EU consent denied)', 'fbp' => $fb_ok ? (string) ($tap['_fbp'] ?? '') : '(not read: EU consent denied)',
+    'ip' => (string) ($tap['ip'] ?? ''), 'referrer' => (string) ($tap['referrer'] ?? ''), 'user_agent' => (string) ($tap['ua'] ?? ''),
+    'utm_source' => (string) ($tap['utm_source'] ?? ''), 'utm_medium' => (string) ($tap['utm_medium'] ?? ''), 'utm_campaign' => (string) ($tap['utm_campaign'] ?? ''),
+    'utm_content' => (string) ($tap['utm_content'] ?? ''), 'utm_term' => (string) ($tap['utm_term'] ?? ''),
+    'whatsapp_chat_started' => !empty($e['chat_at']) ? $e['chat_at'] : '', 'freshchat_conversation' => !empty($e['fc_conv']) ? $e['fc_conv'] : '',
+  );
+  if ((string) ($tap['ad_consent'] ?? '') === 'denied') $e['upload'] = 'Consent DENIED on the website tap (region ' . ((string) ($tap['consent_region'] ?? '') ?: 'unknown') . '): NEVER upload this guest to Google or Meta.';
+}
+/* v7: tap consent -> Freshsales contact. Fill empty; a denial always wins. Only for Confident/Medium (Low may be the wrong guest). */
+function gb_dm_contact_consent($cid, $ct, $e, $live) {
+  $v = (string) ($e['tap_consent'] ?? ''); $rg = (string) ($e['tap_region'] ?? '');
+  if (!in_array($v, array('granted', 'denied', 'not_required'), true)) return array('consent' => 'tap_' . ($v ?: 'empty') . '_not_written');
+  $cf = (array) ($ct['custom_field'] ?? array()); $cur = trim((string) ($cf['cf_ad_consent'] ?? '')); $curr = trim((string) ($cf['cf_consent_region'] ?? ''));
+  $put = array();
+  if ($cur === '' || ($v === 'denied' && $cur !== 'denied')) $put['cf_ad_consent'] = $v;
+  if ($rg !== '' && ($curr === '' || ($v === 'denied' && $cur !== 'denied'))) $put['cf_consent_region'] = $rg;
+  if (!$put) return array('consent' => 'contact_already_set', 'contact_value' => $cur);
+  if (!$live) return array('consent' => 'would_write', 'fields' => array_keys($put));
+  // Freshsales refuses any contact update without an email or External ID (400 "Fill any one field"); WhatsApp-only contacts have neither.
+  if (trim((string) ($ct['email'] ?? '')) === '' && empty($ct['emails']) && trim((string) ($ct['external_id'] ?? '')) === '') return array('consent' => 'not_written_contact_has_no_email', 'fields' => array_keys($put), 'note' => 'consent is in the deal note');
+  list($c) = gb_fs_api('PUT', 'contacts/' . (int) $cid, array('contact' => array('custom_field' => $put)));
+  return array('consent' => 'written', 'http' => $c, 'fields' => array_keys($put), 'was' => $cur);
+}
+
+/* REST: POST /wp-json/gb/v1/deal-maker  (secret header X-GB-Secret or ?k=). */
+add_action('rest_api_init', function () {
+  register_rest_route('gb/v1', '/deal-maker', array('methods' => 'POST', 'permission_callback' => function ($r) {
+      $s = (string) get_option('gb_dm_secret', ''); $got = (string) ($r->get_header('x-gb-secret') ?: $r->get_param('k'));
+      return strlen($s) >= 32 && hash_equals($s, $got);
+    },
+    'callback' => function ($r) {
+      try {
+        $p = (array) $r->get_json_params(); if (!$p) $p = (array) $r->get_body_params();
+        $src = in_array(($p['source'] ?? 'webhook'), array('webhook', 'wa'), true) ? $p['source'] : 'webhook';
+        if (gb_dm_mode($src) === 'off') return new WP_REST_Response(array('ok' => true, 'case' => 'mode_off'), 200);
+        $cid = (int) ($p['contact_id'] ?? 0);
+        if ($src === 'wa' && !$cid) {
+          $ph = gb_dm_e164($p['phone'] ?? '');
+          if ($ph === '') return new WP_REST_Response(array('ok' => false, 'err' => 'phone_not_e164'), 400);
+          foreach (array('mobile_number', 'cf_whatsapp_number', 'work_number') as $f) {
+            list($lc, $lj) = gb_fs_api('GET', 'lookup?f=' . $f . '&entities=contact&q=' . rawurlencode($ph));
+            $hits = ($lc === 200) ? (array) ($lj['contacts']['contacts'] ?? array()) : array();
+            if (count($hits) === 1) { $cid = (int) $hits[0]['id']; break; }
+            if (count($hits) > 1) { gb_fs_direct_log(array('step' => 'deal', 'src' => 'wa', 'case' => 'phone_ambiguous', 'n' => count($hits))); return new WP_REST_Response(array('ok' => false, 'err' => 'phone_ambiguous'), 409); }
+          }
+          if (!$cid && !empty($p['email']) && is_email($p['email'])) {
+            list($lc, $lj) = gb_fs_api('GET', 'lookup?f=email&entities=contact&q=' . rawurlencode(sanitize_email($p['email'])));
+            $hits = ($lc === 200) ? (array) ($lj['contacts']['contacts'] ?? array()) : array();
+            if (count($hits) === 1) $cid = (int) $hits[0]['id'];
+          }
+          if (!$cid) return new WP_REST_Response(array('ok' => false, 'err' => 'no_contact'), 404);
+        }
+        if (!$cid) return new WP_REST_Response(array('ok' => false, 'err' => 'no_contact_id'), 400);
+        list($c, $j) = gb_fs_api('GET', 'contacts/' . $cid);
+        if ($c !== 200 || empty($j['contact'])) return new WP_REST_Response(array('ok' => false, 'err' => 'contact_' . $c), 502);
+        $e = gb_dm_enq_from_contact($j['contact'], $src);
+        if (!empty($p['test_only']) && empty($e['is_test'])) return new WP_REST_Response(array('ok' => false, 'err' => 'test_only_real_contact'), 403);
+        if (isset($p['new'])) $e['new'] = (bool) $p['new'];
+        $e['no_wait'] = true;
+        if (!empty($p['chat_started_at'])) { $tc = strtotime((string) $p['chat_started_at']); if ($tc) $e['chat_at'] = wp_date('Y-m-d H:i:s', $tc) . ' WITA'; }
+        if (!empty($p['fc_conv'])) $e['fc_conv'] = substr(preg_replace('/[^A-Za-z0-9\-]/', '', (string) $p['fc_conv']), 0, 40);
+        if (!empty($p['fill_deal'])) $e['fill_deal'] = (int) $p['fill_deal'];
+        if (!empty($p['ts']) && $e['is_test']) $e['ts'] = (int) $p['ts'];   // TEST records only: simulate a later enquiry time
+        if ($src === 'webhook') {
+          if ($e['trip'] === '' && $e['lead_source'] === '') { $row = array('step' => 'deal', 'src' => 'webhook', 'cid' => $cid, 'case' => 'skip_no_trip_or_lead_source'); gb_fs_direct_log($row); return new WP_REST_Response(array('ok' => true) + $row, 200); }
+          if (stripos($e['form_source'], GB_FS_FORM_SOURCE) !== false) { $row = array('step' => 'deal', 'src' => 'webhook', 'cid' => $cid, 'case' => 'skip_direct_send_contact'); gb_fs_direct_log($row); return new WP_REST_Response(array('ok' => true) + $row, 200); }
+        }
+        $sam = gb_dm_is_samara($e);
+        if ($sam !== true) { $row = array('step' => 'deal', 'src' => $src, 'cid' => $cid, 'case' => $sam === false ? 'skip_not_samara' : 'skip_site_unknown'); gb_fs_direct_log($row); return new WP_REST_Response(array('ok' => true) + $row, 200); }
+        if ($src === 'wa') {
+          $e['website'] = GB_DM_SITE; $e['channel'] = empty($e['fill_deal']) ? 'WhatsApp' : '';   // v7 backfill onto an existing deal: keep its channel
+          // WhatsApp attribution (Marc 14 Nov 12:48/12:49): SL- ref = Confident; 1 tap = Medium; 2+ taps = Low; no tap = no deal.
+          foreach (array('gclid', 'gbraid', 'wbraid', 'fbclid', 'msclkid', 'fbc', 'utm_source', 'utm_medium', 'utm_campaign') as $k) $e[$k] = '';
+          $ref = strtoupper(preg_replace('/[^A-Za-z0-9\-]/', '', (string) ($p['ref'] ?? '')));
+          // Ref codes are per brand on the shared WhatsApp number: SL- Samara, OT- otiumyacht.com, MV- mischiefvoyage.com (14 Nov: an OT- chat was misread as "no ref").
+          if ($ref === '' && !empty($p['message']) && preg_match('/\b(SL|OT|MV)-([2-9A-HJ-NP-Z]{5})\b/i', (string) $p['message'], $m)) $ref = strtoupper($m[1] . '-' . $m[2]);
+          $brands = array('SL' => GB_DM_SITE, 'OT' => 'otiumyacht.com', 'MV' => 'mischiefvoyage.com');
+          $pfx = $ref !== '' ? strtoupper(substr($ref, 0, 2)) : '';
+          if ($pfx !== '' && $pfx !== 'SL') {
+            $row = array('step' => 'deal', 'src' => 'wa', 'cid' => $cid, 'case' => 'skip_other_brand', 'brand' => $brands[$pfx] ?? 'unknown', 'ref' => $ref);
+            gb_fs_direct_log($row); return new WP_REST_Response(array('ok' => true) + $row, 200);   // Otium/Mischief WA: not in Samara scope yet, never timing-matched to Samara taps
+          }
+          // require_ref=1 (default until Medium/Low go-live): Samara WA deals only for SL- codes. TEST records are exempt so Medium/Low can be tested first.
+          if ($pfx !== 'SL' && get_option('gb_dm_wa_require_ref', '1') === '1' && empty($e['is_test'])) {
+            $row = array('step' => 'deal', 'src' => 'wa', 'cid' => $cid, 'case' => 'skip_no_ref');
+            gb_fs_direct_log($row); return new WP_REST_Response(array('ok' => true) + $row, 200);
+          }
+          $tap = ($pfx === 'SL' && $ref !== '') ? gb_dm_wa_tap($ref) : null;
+          if ($tap) {
+            $e['ref'] = $ref; $e['match'] = 'Confident';
+            $e['upload'] = 'Confident (SL- ref): Google and Meta click IDs on the deal may be uploaded.';
+            gb_dm_apply_tap($e, $tap, 'Confident (SL- ref code)');
+          } else {
+            $tchat = strtotime((string) ($p['chat_started_at'] ?? '')) ?: time();
+            $taps = gb_dm_wa_taps_before($tchat, !empty($e['is_test']));
+            $d = array();
+            foreach ($taps as $tp) $d[] = 'ref ' . $tp['ref'] . ' at ' . $tp['created_at'] . ' UTC, page ' . $tp['page'] . ($tp['gclid'] ? ', gclid ' . $tp['gclid'] : '') . ($tp['gbraid'] ? ', gbraid ' . $tp['gbraid'] : '') . ($tp['wbraid'] ? ', wbraid ' . $tp['wbraid'] : '') . ($tp['fbclid'] ? ', fbclid ' . $tp['fbclid'] : '') . ($tp['_fbc'] ? ', fbc ' . $tp['_fbc'] : '');
+            if (count($taps) === 1) {
+              $e['match'] = 'Medium';
+              $e['upload'] = 'Medium (exactly one website tap): Google and Meta click IDs on the deal may be uploaded.';
+              gb_dm_apply_tap($e, $taps[0], 'Medium (one website tap in the 30-min window)');
+              $e['probable'] = implode(' | ', $d);
+            } elseif (count($taps) >= 2) {
+              $e['match'] = 'Low';
+              $latest = $taps[count($taps) - 1];   // most recent tap in the window; sales can correct IDs when they change the dropdown
+              gb_dm_apply_tap($e, $latest, 'Low (' . count($taps) . ' candidate taps; values from the most recent)');
+              $e['upload'] = 'Low (' . count($taps) . ' candidate taps): NOT uploaded to Google or Meta while Click ID match is Low. Click IDs currently on the deal are from the most recent tap (' . $latest['ref'] . '). If sales changes Click ID match to Medium or Confident, the next upload will include this deal.';
+              $e['probable'] = implode(' | ', $d);
+            } else {
+              $row = array('step' => 'deal', 'src' => 'wa', 'cid' => $cid, 'case' => 'skip_no_tap', 'ref' => $ref !== '' ? $ref . ' (not found)' : '');
+              gb_fs_direct_log($row); return new WP_REST_Response(array('ok' => true) + $row, 200);   // no Samara tap candidate: no deal, sales handles by hand
+            }
+            if ($ref !== '' && empty($e['ref'])) $e['ref'] = $ref . ' (not found)';
+          }
+        }
+        $cons = null;
+        if ($src === 'wa' && in_array(($e['match'] ?? ''), array('Confident', 'Medium'), true) && gb_dm_mode('wa') !== 'off') {
+          $cons = gb_dm_contact_consent($cid, $j['contact'], $e, gb_dm_live('wa', !empty($e['is_test'])));
+          gb_fs_direct_log(array('step' => 'wa_consent', 'cid' => $cid) + $cons);
+        }
+        $row = gb_dm_run($e);
+        if ($cons) $row['consent_write'] = $cons;
+        if (!empty($e['match'])) $row['match'] = $e['match'];
+        return new WP_REST_Response(array('ok' => true) + $row, 200);
+      } catch (\Throwable $ex) {
+        gb_fs_direct_log(array('step' => 'deal', 'err' => 'endpoint_exception', 'msg' => substr($ex->getMessage(), 0, 200)));
+        return new WP_REST_Response(array('ok' => false, 'err' => 'exception'), 500);
+      }
+    }));
+  /* Admin-only TEST simulation of a CF7 submit (reCAPTCHA blocks automated browsers): TEST emails only, runs the same code path. */
+  register_rest_route('grokfix/v1', '/dm-simulate', array('methods' => 'POST', 'permission_callback' => function () { return current_user_can('manage_options'); },
+    'callback' => function ($r) {
+      $p = (array) $r->get_json_params(); $pd = (array) ($p['data'] ?? array());
+      if (!gb_dm_is_test($pd['field_Email'] ?? '', $pd['field_FirstName'] ?? '')) return new WP_REST_Response(array('ok' => false, 'err' => 'test_records_only'), 400);
+      $form = (int) ($p['form'] ?? 0); $post = (int) ($p['post'] ?? 0);
+      if (!gb_fs_direct_enabled_for($form, $post)) return new WP_REST_Response(array('ok' => false, 'err' => 'form_not_listed'), 400);
+      $GLOBALS['gb_fs_direct_queue'] = array();
+      if (!gb_fs_form_queue($form, $post, $pd, true)) return new WP_REST_Response(array('ok' => false, 'err' => 'queue_failed'), 500);
+      $n0 = count((array) get_option('gb_fs_direct_log', array()));
+      gb_fs_direct_flush(true);
+      return array('ok' => true, 'log' => array_slice((array) get_option('gb_fs_direct_log', array()), -2));
+    }));
+  register_rest_route('grokfix/v1', '/fsdirect', array('methods' => 'GET,POST', 'permission_callback' => function () { return current_user_can('manage_options'); },
+    'callback' => function ($r) {
+      $p = (array) $r->get_json_params(); $out = array();
+      if (!empty($p['key'])) { update_option('gb_fs_direct_key', trim((string) $p['key']), false); $out['stored'] = true; }
+      if (!empty($p['fc_key']) && strlen((string) $p['fc_key']) >= 20) { update_option('gb_dm_fc_key', (string) $p['fc_key'], false); $out['fc_key_stored'] = true; }
+      if (isset($p['fc_poll']) && in_array((string) $p['fc_poll'], array('0', '1'), true)) update_option('gb_dm_fc_poll', (string) $p['fc_poll'], false);
+      if (isset($p['wa_require_ref']) && in_array((string) $p['wa_require_ref'], array('0', '1'), true)) update_option('gb_dm_wa_require_ref', (string) $p['wa_require_ref'], false);
+      if (!empty($p['dm_secret']) && strlen((string) $p['dm_secret']) >= 32) { update_option('gb_dm_secret', (string) $p['dm_secret'], false); $out['dm_secret_stored'] = true; }
+      if (!empty($p['modes']) && is_array($p['modes'])) foreach ($p['modes'] as $s => $m) {
+        if (in_array($s, array('form', 'webhook', 'wa'), true) && in_array($m, array('off', 'log', 'test', 'on', ''), true)) { if ($m === '') delete_option('gb_dm_mode_' . $s); else update_option('gb_dm_mode_' . $s, $m, false); }
+      }
+      if (isset($p['wf_narrowed'])) update_option('gb_dm_wf_narrowed', $p['wf_narrowed'] ? '1' : '0', false);
+      if (!empty($p['clear_log'])) { delete_option('gb_fs_direct_log'); $out['log_cleared'] = true; }
+      $out['has_key'] = (bool) get_option('gb_fs_direct_key');
+      $out['has_dm_secret'] = strlen((string) get_option('gb_dm_secret', '')) >= 32;
+      $out['forms'] = GB_FS_DIRECT_FORMS;
+      $out['modes'] = array('form' => gb_dm_mode('form'), 'webhook' => gb_dm_mode('webhook'), 'wa' => gb_dm_mode('wa'));
+      $out['fc'] = array('has_key' => strlen((string) get_option('gb_dm_fc_key', '')) >= 20, 'poll' => get_option('gb_dm_fc_poll', '1'), 'require_ref' => get_option('gb_dm_wa_require_ref', '1'),
+        'next_run' => wp_next_scheduled('gb_dm_fc_poll_event') ? wp_date('Y-m-d H:i:s', wp_next_scheduled('gb_dm_fc_poll_event')) : null, 'status' => get_option('gb_dm_fc_status', null),
+        'seen' => count((array) get_option('gb_dm_fc_seen', array())));
+      $out['wf_narrowed'] = (get_option('gb_dm_wf_narrowed', '0') === '1');
+      $out['fastcgi'] = function_exists('fastcgi_finish_request');
+      $out['version'] = 'v6-live';
+      $n = isset($p['n']) ? max(1, min(300, (int) $p['n'])) : (int) ($r->get_param('n') ?: 20);
+      $out['log'] = array_slice((array) get_option('gb_fs_direct_log', array()), -$n);
+      return $out;
+    }));
+});
+
+/* ---- Freshchat WhatsApp poller (Marc 14 Nov 12:48: Confident / Medium / Low, shared number) ----
+   WP-Cron every 5 min: Freshchat users updated in the last window -> their conversations on the WhatsApp channel ->
+   first guest message of each new chat session (no guest message in the 6 h before).
+   SL- code, or no-code chats, are sent to the deal maker (Confident / Medium / Low, or skip_no_tap). OT- / MV- stay logged only.
+   Until wa_require_ref is set to 0, the deal maker still refuses real no-code chats (TEST records are exempt).
+   Processed conversations kept in option gb_dm_fc_seen. Off switch: option gb_dm_fc_poll = '0' (or wa mode off). Key: option gb_dm_fc_key (never printed). */
+if (!defined('GB_DM_FC_BASE'))    define('GB_DM_FC_BASE', 'https://floresrunaway-7c6af359ced15b416799360.freshchat.com/v2/');
+if (!defined('GB_DM_FC_CHANNEL')) define('GB_DM_FC_CHANNEL', '04deeef9-7229-4a45-9f07-1583381d3a98');   // shared WhatsApp number
+add_filter('cron_schedules', function ($s) { $s['gb_5min'] = array('interval' => 300, 'display' => 'Every 5 minutes (GB)'); return $s; });
+add_action('init', function () {
+  $on = get_option('gb_dm_fc_poll', '1') === '1' && strlen((string) get_option('gb_dm_fc_key', '')) >= 20;
+  $next = wp_next_scheduled('gb_dm_fc_poll_event');
+  if ($on && !$next) wp_schedule_event(time() + 60, 'gb_5min', 'gb_dm_fc_poll_event');
+  if (!$on && $next) wp_clear_scheduled_hook('gb_dm_fc_poll_event');
+});
+add_action('gb_dm_fc_poll_event', function () { gb_dm_fc_poll(); });
+function gb_dm_fc_get($path, $q = array()) {
+  $r = wp_remote_get(GB_DM_FC_BASE . $path . ($q ? '?' . http_build_query($q) : ''), array('timeout' => 12,
+    'headers' => array('Authorization' => 'Bearer ' . get_option('gb_dm_fc_key', ''), 'Accept' => 'application/json')));
+  if (is_wp_error($r)) return array(0, null);
+  return array((int) wp_remote_retrieve_response_code($r), json_decode(wp_remote_retrieve_body($r), true));
+}
+function gb_dm_fc_text($m) {
+  $t = array(); foreach ((array) ($m['message_parts'] ?? array()) as $pt) if (!empty($pt['text']['content'])) $t[] = (string) $pt['text']['content'];
+  return implode(' ', $t);
+}
+/* One message decision. Returns array(row, done): done=false means retry on the next run (contact not in Freshsales yet). */
+function gb_dm_fc_decide($conv, $msg_time, $text, $phone, $test_only = false) {
+  $row = array('step' => 'fc_poll', 'conv' => substr((string) $conv, 0, 40), 'msg_at' => $msg_time);
+  $ref = '';
+  if (preg_match('/\b(SL|OT|MV)-([2-9A-HJ-NP-Z]{5})\b/i', (string) $text, $m)) {
+    $ref = strtoupper($m[1] . '-' . $m[2]); $row['ref'] = $ref;
+    if (strtoupper($m[1]) !== 'SL') { $row['case'] = 'other_brand_logged_only'; return array($row, true); }
+  }
+  $req = new WP_REST_Request('POST', '/gb/v1/deal-maker');
+  $req->set_header('x-gb-secret', (string) get_option('gb_dm_secret', ''));
+  $req->set_header('content-type', 'application/json');
+  $body = array('source' => 'wa', 'phone' => $phone, 'message' => (string) $text, 'chat_started_at' => $msg_time, 'fc_conv' => (string) $conv);
+  if ($ref !== '') $body['ref'] = $ref;
+  if ($test_only) $body['test_only'] = 1;
+  $req->set_body(wp_json_encode($body));
+  $res = rest_do_request($req); $d = (array) $res->get_data();
+  $row['case'] = $ref !== '' ? 'sl_code_sent_to_deal_maker' : 'no_code_sent_to_deal_maker';
+  $row['http'] = $res->get_status(); $row['dm'] = $d['case'] ?? ($d['err'] ?? null);
+  $row['cid'] = $d['cid'] ?? null; $row['live'] = $d['live'] ?? null; $row['match'] = $d['match'] ?? null;
+  return array($row, !in_array(($d['err'] ?? ''), array('no_contact', 'exception'), true));
+}
+function gb_dm_fc_poll() {
+  if (get_option('gb_dm_fc_poll', '1') !== '1' || gb_dm_mode('wa') === 'off') return array('skipped' => 'off');
+  if (strlen((string) get_option('gb_dm_fc_key', '')) < 20) return array('skipped' => 'no_key');
+  if (get_transient('gb_dm_fc_running')) return array('skipped' => 'running');
+  set_transient('gb_dm_fc_running', 1, 240);
+  $now = time(); $st = (array) get_option('gb_dm_fc_status', array());
+  $since = max($now - 7200, (int) ($st['last_ok'] ?? 0) - 900);              // overlap 15 min, never older than 2 h
+  $seen = (array) get_option('gb_dm_fc_seen', array());
+  $out = array('users' => 0, 'convs' => 0, 'decided' => 0, 'err' => null);
+  try {
+    for ($pg = 1; $pg <= 3; $pg++) {
+      list($c, $j) = gb_dm_fc_get('users', array('created_from' => '2015-01-01T00:00:00Z', 'created_to' => gmdate('Y-m-d\TH:i:s\Z', $now + 60),
+        'updated_from' => gmdate('Y-m-d\TH:i:s\Z', $since), 'items_per_page' => 100, 'page' => $pg));
+      if ($c !== 200) { $out['err'] = 'users_' . $c; break; }
+      foreach ((array) ($j['users'] ?? array()) as $u) {
+        $out['users']++;
+        $phone = gb_dm_e164($u['phone'] ?? '');
+        list($cc, $cj) = gb_dm_fc_get('users/' . rawurlencode($u['id']) . '/conversations');
+        if ($cc !== 200) continue;
+        foreach ((array) ($cj['conversations'] ?? array()) as $cv) {
+          $id = (string) ($cv['id'] ?? ''); if ($id === '') continue;
+          if (isset($seen[$id]['ch']) && $seen[$id]['ch'] !== GB_DM_FC_CHANNEL) continue;   // known non-WhatsApp conversation
+          if (!isset($seen[$id]['ch'])) {
+            list($dc, $dj) = gb_dm_fc_get('conversations/' . rawurlencode($id)); if ($dc !== 200) continue;
+            $seen[$id] = array('ch' => (string) ($dj['channel_id'] ?? ''), 'm' => '', 'n' => 0, 't' => $now);
+            if ($seen[$id]['ch'] !== GB_DM_FC_CHANNEL) continue;
+          }
+          $out['convs']++;
+          list($mc, $mj) = gb_dm_fc_get('conversations/' . rawurlencode($id) . '/messages', array('items_per_page' => 50));
+          if ($mc !== 200) continue;
+          $um = array_values(array_filter((array) ($mj['messages'] ?? array()), function ($m) { return ($m['actor_type'] ?? '') === 'user'; }));
+          usort($um, function ($a, $b) { return strcmp((string) $a['created_time'], (string) $b['created_time']); });
+          $prev = 0;
+          foreach ($um as $m) {
+            $mt = (string) $m['created_time']; $ts = strtotime($mt) ?: 0;
+            $session_start = ($prev === 0 || $ts - $prev >= 6 * 3600); $prev = $ts;
+            if ($mt <= (string) $seen[$id]['m'] || $ts < $now - 7200) continue;   // already handled, or older than 2 h
+            if ($session_start) {
+              list($row, $done) = gb_dm_fc_decide($id, $mt, gb_dm_fc_text($m), $phone);
+              if (!$done && (int) $seen[$id]['n'] < 6) { $seen[$id]['n']++; $row['retry'] = $seen[$id]['n']; gb_fs_direct_log($row); $out['decided']++; break; }
+              gb_fs_direct_log($row); $out['decided']++; $seen[$id]['n'] = 0;
+            }
+            $seen[$id]['m'] = $mt; $seen[$id]['t'] = $now;
+          }
+        }
+      }
+      if ($pg >= (int) ($j['pagination']['total_pages'] ?? 1)) break;
+    }
+  } catch (\Throwable $ex) { $out['err'] = 'exception: ' . substr($ex->getMessage(), 0, 120); }
+  foreach ($seen as $k => $v) if ((int) ($v['t'] ?? 0) < $now - 14 * 86400) unset($seen[$k]);
+  update_option('gb_dm_fc_seen', $seen, false);
+  $st = array('last_run' => wp_date('Y-m-d H:i:s', $now), 'last_ok' => $out['err'] ? (int) ($st['last_ok'] ?? 0) : $now, 'last' => $out);
+  update_option('gb_dm_fc_status', $st, false);
+  delete_transient('gb_dm_fc_running');
+  return $out;
+}
+/* Admin-only: run the poll now, or simulate one SL- chat for a TEST contact (never messages anyone; TEST contacts only). */
+add_action('rest_api_init', function () {
+  register_rest_route('grokfix/v1', '/fc-poll', array('methods' => 'POST', 'permission_callback' => function () { return current_user_can('manage_options'); },
+    'callback' => function ($r) {
+      $p = (array) $r->get_json_params();
+      if (!empty($p['sim'])) {
+        $s = (array) $p['sim'];
+        list($row, $done) = gb_dm_fc_decide('TEST-' . substr((string) ($s['conv'] ?? 'sim'), 0, 30), (string) ($s['at'] ?? gmdate('Y-m-d\TH:i:s\Z')), (string) ($s['text'] ?? ''), gb_dm_e164($s['phone'] ?? ''), true);
+        $row['sim'] = true; gb_fs_direct_log($row);
+        return array('ok' => true, 'row' => $row, 'done' => $done);
+      }
+      return array('ok' => true, 'poll' => gb_dm_fc_poll());
+    }));
+});

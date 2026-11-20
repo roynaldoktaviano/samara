@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSession } from 'next-auth/react'
 import { toast } from 'sonner'
-import { Loader2, MessageCircle, Search, Pencil, Clock, Inbox, ChevronDown, ChevronUp, Globe, UserPen, UserPlus, Instagram, BellRing, Zap, Facebook } from 'lucide-react'
+import { Loader2, MessageCircle, Search, Pencil, Clock, Inbox, ChevronDown, ChevronUp, Globe, UserPen, UserPlus, Instagram, BellRing, Zap, Facebook, Lock } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -14,12 +14,13 @@ import { formatDate } from '@/lib/format'
 import { roleMatches } from '@/lib/role-utils'
 import {
   LEAD_STAGES, LEAD_STAGE_COLOR, LEAD_STAGE_LABEL, LEAD_LOST_REASON_LABEL, CONVERSATION_STAGES, FOLLOW_UP_DUE_DAYS,
-  isFollowUpDue, type LeadStage, type LeadLostReason,
+  isFollowUpDue, DEAL_PAYMENT_STATUS_LABEL, TRIP_TYPE_REQUIRED_STAGES, type LeadStage, type LeadLostReason, type DealPaymentStatus,
 } from '@/lib/lead-pipeline'
 import { WHATSAPP_BRANDS, WHATSAPP_BRAND_LABELS, type WhatsappBrand } from '@/lib/whatsapp-brands'
 import { WHATSAPP_CHAT_CATEGORY_LABEL, type WhatsappChatCategory } from '@/lib/whatsapp-chat-category'
 import LeadEditSheet from '@/components/leads/LeadEditSheet'
 import LostReasonDialog from '@/components/leads/LostReasonDialog'
+import WonPaymentDialog from '@/components/leads/WonPaymentDialog'
 import DealBookingHistory from '@/components/leads/DealBookingHistory'
 import FreshsalesHistory from '@/components/freshsales/FreshsalesHistory'
 import { leadDealName, type DealTripType } from '@/lib/deal-name'
@@ -41,8 +42,14 @@ interface PipelineChat {
   id: string; brand: WhatsappBrand; lastMessageAt: string; lastMessagePreview: string | null; unreadCount: number
   lastInboundAt: string | null; lastOutboundAt: string | null
 }
+interface DealNote { id: string; kind: string; body: string; createdAt: string; createdBy: { name: string | null } | null }
+// One card = one DEAL (src/lib/deal-maker.ts); `id` is the deal id, `leadId` / `customerId` the person.
 interface PipelineLead {
-  id: string; name: string; phone: string | null; email: string | null; stage: LeadStage; stageUpdatedAt: string | null
+  id: string; leadId: string | null; customerId: string | null; orderId: string | null; freshsalesDealId: string | null
+  brand: WhatsappBrand; channel: string | null; notes: DealNote[]
+  paymentStatus: DealPaymentStatus | null
+  stageChanges: { id: string; fromStage: LeadStage | null; toStage: LeadStage; changedAt: string; source: string }[]
+  name: string; phone: string | null; email: string | null; stage: LeadStage; stageUpdatedAt: string | null
   leadQuality: 'HOT' | 'WARM' | 'COLD' | null; guestCount: number | null; travelStartDate: string | null
   travelEndDate: string | null; travelSeason: string | null; productInterest: string | null
   budgetMin: number | null; budgetMax: number | null; budgetCurrency: string | null
@@ -136,6 +143,7 @@ function money(amount: number, currency: string) {
 }
 
 const SHORT_DATE = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: '2-digit' })
+const STAMP = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' })
 
 // "2 PAX · 5 Nov 27" — what the deal name (yacht / 3D2N / destination) doesn't already say.
 function tripSummary(l: PipelineLead): string {
@@ -179,7 +187,9 @@ export default function SalesPipeline({ onOpenChat, onOpenMetaChat, onOpenBookin
   const [triaging, setTriaging] = useState<string | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [editLeadId, setEditLeadId] = useState<string | null>(null)
+  const [editDealId, setEditDealId] = useState<string | null>(null)
   const [lostTarget, setLostTarget] = useState<PipelineLead | null>(null)
+  const [wonTarget, setWonTarget] = useState<PipelineLead | null>(null)
   const [busy, setBusy] = useState(false)
   const [dragId, setDragId] = useState<string | null>(null)
   const [dropStage, setDropStage] = useState<LeadStage | null>(null)
@@ -225,30 +235,39 @@ export default function SalesPipeline({ onOpenChat, onOpenMetaChat, onOpenBookin
 
   // The Guest this lead became (via its booking, else same email) — feeds the booking history.
   const [detailGuestId, setDetailGuestId] = useState<string | null>(null)
-  const selectedBookingGuest = selected?.booking?.customer.id ?? null
+  const selectedBookingGuest = selected?.booking?.customer.id ?? selected?.customerId ?? null
+  const selectedLeadId = selected?.leadId ?? null
   useEffect(() => {
     setDetailGuestId(selectedBookingGuest)
-    if (!selectedId || selectedBookingGuest) return
+    if (!selectedLeadId || selectedBookingGuest) return
     let alive = true
-    fetch(`/api/leads/${selectedId}`)
+    fetch(`/api/leads/${selectedLeadId}`)
       .then(r => r.ok ? r.json() : null)
       .then(d => { if (alive) setDetailGuestId(d?.guestId ?? null) })
       .catch(() => {})
     return () => { alive = false }
-  }, [selectedId, selectedBookingGuest])
+  }, [selectedLeadId, selectedBookingGuest])
 
-  async function changeStage(lead: PipelineLead, stage: LeadStage, extra?: { lostReason: string; lostNote: string }) {
+  async function changeStage(lead: PipelineLead, stage: LeadStage, extra?: { lostReason: string; lostNote: string } | { paymentStatus: DealPaymentStatus }) {
     if (stage === lead.stage) return
     if (stage === 'CLOSED_LOST' && !extra) { setLostTarget(lead); return }
+    // Parity C3: trip type before In Active Communication; payment status at Won
+    if (TRIP_TYPE_REQUIRED_STAGES.includes(stage) && !lead.tripType) {
+      toast.error(`Set the trip type (Private Charter / Open Trip) first — Edit under Trip details.`)
+      setSelectedId(lead.id)
+      return
+    }
+    if (stage === 'CLOSED_WON' && !extra) { setWonTarget(lead); return }
     setBusy(true)
     try {
-      const res = await fetch(`/api/leads/${lead.id}/stage`, {
+      const res = await fetch(`/api/deals/${lead.id}/stage`, {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ stage, ...extra }),
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) { toast.error(data?.error ?? 'Failed to change stage'); return }
       toast.success(`${lead.name} → ${LEAD_STAGE_LABEL[stage]}`)
       setLostTarget(null)
+      setWonTarget(null)
       await load()
     } finally {
       setBusy(false)
@@ -259,7 +278,7 @@ export default function SalesPipeline({ onOpenChat, onOpenMetaChat, onOpenBookin
   async function setOwnerOf(lead: PipelineLead, ownerId: string | null) {
     setBusy(true)
     try {
-      const res = await fetch(`/api/leads/${lead.id}/owner`, {
+      const res = await fetch(`/api/deals/${lead.id}/owner`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ownerId }),
       })
       const data = await res.json().catch(() => ({}))
@@ -291,13 +310,14 @@ export default function SalesPipeline({ onOpenChat, onOpenMetaChat, onOpenBookin
     setDropStage(null)
     if (lead) changeStage(lead, stage)
   }
+  const isClosed = (s: LeadStage) => s === 'CLOSED_WON' || s === 'CLOSED_LOST'
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 className="text-2xl font-bold tracking-tight">Sales Pipeline</h2>
-          <p className="text-sm text-muted-foreground">All leads from website, WhatsApp, Instagram, email and manual entry. Cards move on their own as you chat, book and invoice — drag to move by hand.</p>
+          <p className="text-sm text-muted-foreground">One card per deal from website, WhatsApp, Instagram, email and manual entry. Cards move on their own as you chat, book and invoice — drag to move by hand. Won and Lost deals are read-only.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative w-full sm:w-56">
@@ -311,9 +331,9 @@ export default function SalesPipeline({ onOpenChat, onOpenMetaChat, onOpenBookin
             </SelectContent>
           </Select>
           <Select value={brand} onValueChange={v => setBrand(v as WhatsappBrand)}>
-            <SelectTrigger aria-label="Filter by WhatsApp number" className="w-full sm:w-40"><SelectValue /></SelectTrigger>
+            <SelectTrigger aria-label="Filter by brand" className="w-full sm:w-40"><SelectValue /></SelectTrigger>
             <SelectContent>
-              {WHATSAPP_BRANDS.map(b => <SelectItem key={b} value={b}>WA {WHATSAPP_BRAND_LABELS[b]}</SelectItem>)}
+              {WHATSAPP_BRANDS.map(b => <SelectItem key={b} value={b}>{WHATSAPP_BRAND_LABELS[b]} pipeline</SelectItem>)}
             </SelectContent>
           </Select>
           {isAdmin && (
@@ -410,8 +430,10 @@ export default function SalesPipeline({ onOpenChat, onOpenMetaChat, onOpenBookin
                     const unread = l.whatsappConversations.reduce((n, c) => n + c.unreadCount, 0)
                     const value = dealValue(l)
                     const summary = tripSummary(l)
+                    // Won / Lost are read-only — only an admin can drag them out (parity B4)
+                    const locked = isClosed(l.stage) && !isAdmin
                     return (
-                      <div key={l.id} draggable onDragStart={() => setDragId(l.id)} onDragEnd={() => { setDragId(null); setDropStage(null) }}
+                      <div key={l.id} draggable={!locked} onDragStart={() => { if (!locked) setDragId(l.id) }} onDragEnd={() => { setDragId(null); setDropStage(null) }}
                         onClick={() => setSelectedId(l.id)}
                         className={cn('rounded-lg border bg-card p-2.5 cursor-pointer hover:shadow-sm transition-shadow space-y-1.5',
                           overdue && 'border-destructive/40 bg-destructive/5',
@@ -445,6 +467,8 @@ export default function SalesPipeline({ onOpenChat, onOpenMetaChat, onOpenBookin
                           ))}
                           {l.leadQuality && <span className={`text-[10px] rounded px-1.5 py-0.5 ${QUALITY_COLOR[l.leadQuality]}`}>{l.leadQuality}</span>}
                           {!l.owner && <span className="text-[10px] rounded bg-warning/10 text-warning px-1.5 py-0.5">No owner</span>}
+                          {!l.tripType && !isClosed(stage) && <span className="text-[10px] rounded bg-warning/10 text-warning px-1.5 py-0.5" title="Set Private Charter / Open Trip — needed before In Active Communication">Trip type?</span>}
+                          {stage === 'CLOSED_WON' && l.paymentStatus && <span className="text-[10px] rounded bg-success/10 text-success px-1.5 py-0.5">{DEAL_PAYMENT_STATUS_LABEL[l.paymentStatus]}</span>}
                           {stage === 'CLOSED_LOST' && l.lostReason && <span className="text-[10px] rounded bg-muted px-1.5 py-0.5">{LEAD_LOST_REASON_LABEL[l.lostReason]}</span>}
                           {followUpDue && (
                             <span className="text-[10px] rounded bg-destructive/10 text-destructive px-1.5 py-0.5 flex items-center gap-0.5" title={`No reply ${FOLLOW_UP_DUE_DAYS}+ days after your last message`}>
@@ -485,6 +509,10 @@ export default function SalesPipeline({ onOpenChat, onOpenMetaChat, onOpenBookin
                 {/* Deal header — same name as on the card, the guest page and booking history */}
                 <div className="px-5 pt-5 pb-4 pr-12 space-y-2">
                   <SheetTitle className="text-base font-semibold leading-snug text-primary break-words">{leadDealName(selected)}</SheetTitle>
+                  <p className="text-[11px] text-muted-foreground flex flex-wrap gap-x-2">
+                    <span>{WHATSAPP_BRAND_LABELS[selected.brand]}</span>
+                    {selected.orderId && <span className="font-mono" title={selected.freshsalesDealId ? 'Freshsales deal ID (Order ID in Google / Meta uploads)' : 'Order ID in Google / Meta uploads'}>Order ID {selected.orderId}</span>}
+                  </p>
                   <p className="text-sm text-muted-foreground break-words">
                     <span className="font-medium text-foreground">{selected.name}</span>
                     {contact && <> · {contact}</>}
@@ -508,18 +536,23 @@ export default function SalesPipeline({ onOpenChat, onOpenMetaChat, onOpenBookin
                     <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Stage</p>
                     <Badge className={`${LEAD_STAGE_COLOR[selected.stage]} border-transparent`}>{LEAD_STAGE_LABEL[selected.stage]}</Badge>
                   </div>
-                  <Select value={selected.stage} onValueChange={v => changeStage(selected, v as LeadStage)} disabled={busy}>
+                  <Select value={selected.stage} onValueChange={v => changeStage(selected, v as LeadStage)} disabled={busy || (isClosed(selected.stage) && !isAdmin)}>
                     <SelectTrigger aria-label="Move to stage" className="w-full"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       {LEAD_STAGES.map(s => <SelectItem key={s} value={s}>{LEAD_STAGE_LABEL[s]}</SelectItem>)}
                     </SelectContent>
                   </Select>
+                  {isClosed(selected.stage) && (
+                    <p className="text-[11px] text-muted-foreground flex items-center gap-1">
+                      <Lock className="h-3 w-3" /> {LEAD_STAGE_LABEL[selected.stage]} deals are read-only{isAdmin ? ' — as admin you can still reopen it.' : '. Ask an admin to reopen it.'}
+                    </p>
+                  )}
                   {isFollowUpDue(selected) && (
                     <p className="text-[11px] text-destructive flex items-center gap-1"><BellRing className="h-3 w-3" /> No reply for {FOLLOW_UP_DUE_DAYS}+ days since your last message — time to follow up.</p>
                   )}
                   <details className="text-[11px] text-muted-foreground">
                     <summary className="cursor-pointer select-none flex items-center gap-1 w-fit"><Zap className="h-3 w-3" /> How stages move on their own</summary>
-                    <p className="mt-1.5 pl-4">First reply from the ERP → Initial Message Sent; customer answers → In Active Communication; you write again {'≥'}24h later with no answer → 1st / 2nd Follow-Up; booking created → Booking Confirmation; invoice generated → Invoice; first payment confirmed → Won.</p>
+                    <p className="mt-1.5 pl-4">First reply from the ERP → Initial Message Sent; customer answers → In Active Communication (once the trip type is set); you write again {'≥'}24h later with no answer → 1st / 2nd Follow-Up; booking created → Booking Confirmation; invoice generated → Invoice; deposit (DP) confirmed → Won. Moving by hand into In Active Communication or later needs the trip type, and Won needs the payment status.</p>
                   </details>
                 </section>
 
@@ -539,14 +572,16 @@ export default function SalesPipeline({ onOpenChat, onOpenMetaChat, onOpenBookin
                     </Select>
                   ) : selected.owner ? (
                     <p className="text-sm font-medium">{selected.owner.id === myId ? 'You' : (selected.owner.name ?? selected.owner.email)}</p>
+                  ) : isClosed(selected.stage) ? (
+                    <p className="text-sm text-muted-foreground">No owner</p>
                   ) : (
                     <Button size="sm" variant="outline" disabled={busy} onClick={() => myId && setOwnerOf(selected, myId)}>
-                      <UserPlus className="h-3.5 w-3.5" /> Claim this lead
+                      <UserPlus className="h-3.5 w-3.5" /> Claim this deal
                     </Button>
                   )}
                   {selected.owner && selected.ownerAssignedAt && !selected.stage.startsWith('CLOSED') && (
                     <p className="text-[11px] text-muted-foreground">
-                      Assigned {relTime(selected.ownerAssignedAt)} · all of this lead’s chats follow the owner.
+                      Assigned {relTime(selected.ownerAssignedAt)}{selected.leadId ? ' · this person’s chats and open deals follow the owner.' : ''}
                     </p>
                   )}
                   {selected.assignmentLogs.length > 0 && (
@@ -568,9 +603,16 @@ export default function SalesPipeline({ onOpenChat, onOpenMetaChat, onOpenBookin
                 <section className="px-5 py-4 space-y-3">
                   <div className="flex items-center justify-between gap-2">
                     <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Trip details</p>
-                    <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => setEditLeadId(selected.id)}>
-                      <Pencil className="h-3.5 w-3.5" /> Edit
-                    </Button>
+                    {selected.leadId && (
+                      <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => { setEditLeadId(selected.leadId); setEditDealId(selected.id) }}>
+                        <Pencil className="h-3.5 w-3.5" /> Edit
+                      </Button>
+                    )}
+                    {!selected.leadId && selected.customerId && onOpenGuest && (
+                      <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => onOpenGuest(selected.customerId!)}>
+                        Open guest
+                      </Button>
+                    )}
                   </div>
                   <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
                     {([
@@ -590,6 +632,39 @@ export default function SalesPipeline({ onOpenChat, onOpenMetaChat, onOpenBookin
                   </dl>
                 </section>
 
+                {/* Deal timeline — enquiries that joined this deal, reopen notes (src/lib/deal-maker.ts) */}
+                {selected.notes.length > 0 && (
+                  <section className="px-5 py-4 space-y-2">
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Deal timeline</p>
+                    <ul className="space-y-1.5">
+                      {selected.notes.map(n => (
+                        <li key={n.id} className="text-xs">
+                          <span className="text-muted-foreground">{formatDate(n.createdAt)}{n.createdBy?.name ? ` · ${n.createdBy.name}` : ''} — </span>
+                          <span className="break-words">{n.body}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                )}
+
+                {/* Stage history (parity C2) — when the deal entered each stage; uploads use the first time */}
+                {selected.stageChanges.length > 0 && (
+                  <section className="px-5 py-4 space-y-2">
+                    <details className="text-xs">
+                      <summary className="cursor-pointer select-none w-fit text-xs font-medium uppercase tracking-wide text-muted-foreground">Stage history ({selected.stageChanges.length})</summary>
+                      <ul className="mt-2 space-y-1 tabular-nums">
+                        {selected.stageChanges.map(c => (
+                          <li key={c.id} className="flex flex-wrap gap-x-1.5">
+                            <span className="text-muted-foreground">{STAMP.format(new Date(c.changedAt))}</span>
+                            <span>{c.fromStage ? `${LEAD_STAGE_LABEL[c.fromStage]} → ` : ''}<span className="font-medium">{LEAD_STAGE_LABEL[c.toStage]}</span></span>
+                            <span className="text-muted-foreground">· {c.source === 'MANUAL' ? 'by hand' : c.source === 'FRESHSALES' ? 'Freshsales' : 'automatic'}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
+                  </section>
+                )}
+
                 {/* Booking history (from the guest this lead became) */}
                 <section className="px-5 py-4">
                   <DealBookingHistory guestId={detailGuestId} currentBookingId={selected.booking?.id} onOpenBooking={onOpenBooking} onOpenGuest={onOpenGuest} />
@@ -597,7 +672,7 @@ export default function SalesPipeline({ onOpenChat, onOpenMetaChat, onOpenBookin
 
                 {/* Freshsales deals + history (the source of truth for this pipeline) */}
                 <section className="px-5 py-4">
-                  <FreshsalesHistory leadId={selected.id} />
+                  {selected.leadId ? <FreshsalesHistory leadId={selected.leadId} /> : null}
                 </section>
 
                 {/* Channels */}
@@ -643,7 +718,14 @@ export default function SalesPipeline({ onOpenChat, onOpenMetaChat, onOpenBookin
         </SheetContent>
       </Sheet>
 
-      <LeadEditSheet open={!!editLeadId} leadId={editLeadId} onClose={() => setEditLeadId(null)} onSaved={() => { setEditLeadId(null); load() }} />
+      <LeadEditSheet open={!!editLeadId} leadId={editLeadId} dealId={editDealId} onClose={() => { setEditLeadId(null); setEditDealId(null) }} onSaved={() => { setEditLeadId(null); setEditDealId(null); load() }} />
+      <WonPaymentDialog
+        open={!!wonTarget}
+        dealName={wonTarget?.name}
+        busy={busy}
+        onCancel={() => setWonTarget(null)}
+        onConfirm={paymentStatus => wonTarget && changeStage(wonTarget, 'CLOSED_WON', { paymentStatus })}
+      />
       <LostReasonDialog
         open={!!lostTarget}
         leadName={lostTarget?.name}

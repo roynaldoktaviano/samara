@@ -380,11 +380,14 @@ export function QualificationFields({ form, setForm, narrow, stage }: { form: Le
 interface Props {
   open: boolean
   leadId?: string | null
+  // A Sales Pipeline card: trip type / amount / dates / pax are saved on this deal (else the
+  // lead's primary deal) — see PUT /api/leads/[id].
+  dealId?: string | null
   onClose: () => void
   onSaved?: (lead: any) => void
 }
 
-export default function LeadEditSheet({ open, leadId, onClose, onSaved }: Props) {
+export default function LeadEditSheet({ open, leadId, dealId, onClose, onSaved }: Props) {
   const isEdit = !!leadId
 
   const [form, setForm] = useState<LeadFormState>(LEAD_FORM_EMPTY)
@@ -403,7 +406,7 @@ export default function LeadEditSheet({ open, leadId, onClose, onSaved }: Props)
     }
     const controller = new AbortController()
     setLoading(true)
-    fetch(`/api/leads/${leadId}`, { signal: controller.signal })
+    fetch(`/api/leads/${leadId}${dealId ? `?deal=${encodeURIComponent(dealId)}` : ''}`, { signal: controller.signal })
       .then(r => r.json())
       .then(data => {
         setLeadName(data.name ?? '')
@@ -413,16 +416,20 @@ export default function LeadEditSheet({ open, leadId, onClose, onSaved }: Props)
       .catch(e => { if (e.name !== 'AbortError') console.error(e) })
       .finally(() => setLoading(false))
     return () => controller.abort()
-  }, [open, leadId])
+  }, [open, leadId, dealId])
 
   const handleSave = async () => {
     if (!form.firstName.trim()) return
     setSaving(true)
     try {
       const res = isEdit
-        ? await fetch(`/api/leads/${leadId}`, { method: 'PUT',  headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) })
+        ? await fetch(`/api/leads/${leadId}`, { method: 'PUT',  headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...form, ...(dealId ? { dealId } : {}) }) })
         : await fetch('/api/leads',            { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) })
-      if (!res.ok) throw new Error()
+      if (!res.ok) {
+        const b = await res.json().catch(() => ({}))
+        toast.error(b?.error ?? (isEdit ? 'Failed to save changes' : 'Failed to add lead'))
+        return
+      }
       const saved = await res.json()
       toast.success(isEdit ? 'Lead updated' : 'Lead added successfully')
       onSaved?.(saved)

@@ -5,6 +5,7 @@ import { findCustomerIdByPhone, toE164 } from '@/lib/contact-identity'
 import { isHttpUrl } from '@/lib/url-safety'
 import type { MatchConfidence } from '@/lib/wa-match-confidence'
 import { WA_AD_INQUIRY_SOURCE, WA_DIRECT_INQUIRY_SOURCE } from '@/lib/lead-origin'
+import { ensureLowMatchTask } from '@/lib/wa-low-match'
 
 // WhatsApp click → chat attribution, the rule the Freshsales deal maker used (handover 17 Nov):
 //  • Every tap on a website WhatsApp button is logged with a ref code that the site also puts
@@ -323,9 +324,10 @@ async function linkTap(db: Db, tap: WaTap, session: Session, confidence: MatchCo
   const inquiryId = reuseInquiryId ?? (await sessionInquiry(db, session.conversationId, session.startedAt, WA_DIRECT_INQUIRY_SOURCE))?.id
   if (inquiryId) {
     await db.inquiry.update({ where: { id: inquiryId }, data: { ...data, source: 'WHATSAPP', rawPayload: (tap.rawPayload ?? undefined) as Prisma.InputJsonValue | undefined } })
+    if (confidence === 'LOW') await lateLowMatchTask(db, inquiryId)
     return
   }
-  await db.inquiry.create({
+  const created = await db.inquiry.create({
     data: {
       source: 'WHATSAPP',
       ...owner,
@@ -334,5 +336,13 @@ async function linkTap(db: Db, tap: WaTap, session: Session, confidence: MatchCo
       rawPayload: (tap.rawPayload ?? undefined) as Prisma.InputJsonValue | undefined,
       createdAt: session.startedAt,
     },
+    select: { id: true },
   })
+  if (confidence === 'LOW') await lateLowMatchTask(db, created.id)
+}
+
+/** LOW linked to a chat that may already have its deal → the owner's "check by hand" task (src/lib/wa-low-match.ts).
+ *  When the deal doesn't exist yet the chat deal maker creates the task right after it makes the deal. */
+async function lateLowMatchTask(db: Db, inquiryId: string): Promise<void> {
+  await ensureLowMatchTask(db, inquiryId).catch(e => console.error('[wa-tap] low-match task failed', e))
 }

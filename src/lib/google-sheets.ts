@@ -233,3 +233,40 @@ export async function rebuildGoogleAdsConversionsSheet(db: PrismaClient, sheetId
 
   return { ok: true as const, rows: conversions.length }
 }
+
+// ── Go-live offline feed (parity D) — src/lib/ad-offline-feed.ts ─────────────────
+/**
+ * Rewrites the offline-feed spreadsheet: one tab per brand with the Data Manager columns, then
+ * Stage unknown / Excluded / Pending changes / Meta (draft). Runs the ledger (persist) first, so
+ * prepared rows stay frozen, and sends Meta events when META_CAPI_ENABLED=1.
+ */
+export async function rebuildOfflineFeedSheet(db: PrismaClient, sheetId: string | null) {
+  const { buildGoogleFeed, sendMetaEvents, FEED_COLUMNS, META_COLUMNS, metaRow } = await import('@/lib/ad-offline-feed')
+  const feed = await buildGoogleFeed(db, { persist: true })
+  const metaResult = await sendMetaEvents(db, feed.meta).catch(e => ({ sent: 0, skipped: String(e) }))
+  const sheetsClient = getSheetsClient()
+  if (!sheetId || !sheetsClient) return { ok: false as const, reason: 'not_configured', added: feed.added, queued: feed.queued, meta: metaResult }
+
+  const cols = [...FEED_COLUMNS]
+  const toRows = (rows: Record<string, string | number>[], header: readonly string[]) => [[...header], ...rows.map(r => header.map(h => r[h] ?? ''))]
+  const tabs: [string, (string | number)[][]][] = [
+    ...Object.entries(feed.tabs).map(([name, rows]) => [name, toRows(rows, cols)] as [string, (string | number)[][]]),
+    ['Stage unknown', toRows(feed.stageUnknown, cols)],
+    ['Excluded', [['Order_ID', 'Stage', 'Brand', 'Conversion_Time', 'Reason'], ...feed.excluded.map(e => [e.orderId, e.stage, e.brand, e.conversionTime, e.reason])]],
+    ['Pending changes', [['Change ID', 'Brand', 'Action', 'Order_ID', 'Changed', 'Old time', 'New time', 'Old value', 'New value', 'Queued at'],
+      ...feed.pending.map(p => {
+        const o = p.oldRow as Record<string, string | number>, n = p.newRow as Record<string, string | number>
+        return [p.id, p.ledger.brand, p.ledger.action, p.ledger.orderId, p.reason, o.Conversion_Time, n.Conversion_Time, `${o.Conversion_Value} ${o.Conversion_Currency}`, `${n.Conversion_Value} ${n.Conversion_Currency}`, p.createdAt.toISOString()]
+      })]],
+    ['Meta (draft)', toRows(feed.meta.map(metaRow), META_COLUMNS)],
+  ]
+  const meta = await sheetsClient.spreadsheets.get({ spreadsheetId: sheetId })
+  const existingTabs = new Map<string, number>((meta.data.sheets ?? []).map(s => [s.properties!.title!, s.properties!.sheetId!]))
+  for (const [name, values] of tabs) {
+    await ensureSheetTabExists(sheetsClient, sheetId, name, existingTabs)
+    // Text values only (RAW): Google must see Order IDs / hashes exactly as written.
+    await sheetsClient.spreadsheets.values.clear({ spreadsheetId: sheetId, range: `'${name}'!A1:Z50000` })
+    await sheetsClient.spreadsheets.values.update({ spreadsheetId: sheetId, range: `'${name}'!A1`, valueInputOption: 'RAW', requestBody: { values } })
+  }
+  return { ok: true as const, rows: Object.values(feed.tabs).reduce((n, t) => n + t.length, 0), added: feed.added, queued: feed.queued, meta: metaResult }
+}

@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { getWhatsappDistributionMethod, setWhatsappDistributionMethod, LEAD_DISTRIBUTION_CHANNELS, CHANNELS_WITH_BRANDS, type WhatsappDistributionMethod, type LeadDistributionChannel } from '@/lib/whatsapp-distribution'
 import { WHATSAPP_BRANDS, type WhatsappBrand } from '@/lib/whatsapp-brands'
+import { unavailableSalesUsers } from '@/lib/sales-availability'
 
 // Admin-only settings screen (Chat > Leads Distribution) for how new leads get handed out
 // to sales — either round-robin across a chosen pool, or a fixed percentage split.
@@ -31,14 +32,17 @@ export async function GET(req: NextRequest) {
 
   const db = await getDb(session)
   const [salesUsers, participants, method] = await Promise.all([
-    db.user.findMany({ where: { role: 'SALES' }, select: { id: true, name: true, email: true }, orderBy: { name: 'asc' } }),
+    db.user.findMany({ where: { role: 'SALES' }, select: { id: true, name: true, email: true, salesAway: true }, orderBy: { name: 'asc' } }),
     db.whatsappDistributionParticipant.findMany({ where: { brand, channel }, orderBy: { createdAt: 'asc' }, select: { userId: true, percentage: true } }),
     getWhatsappDistributionMethod(db, brand, channel),
   ])
 
   // An unconfigured non-WhatsApp pool borrows the WhatsApp pool (see getDistributionPool).
   const borrowsWhatsapp = channel !== 'WHATSAPP' && participants.length === 0
-  return NextResponse.json({ method, salesUsers, participants, borrowsWhatsapp })
+  // Who round-robin skips today (Away switch / resigned / on approved leave) — src/lib/sales-availability.ts
+  const out = await unavailableSalesUsers(db, salesUsers.map(u => u.id))
+  const users = salesUsers.map(u => ({ ...u, unavailable: out.get(u.id) ?? null }))
+  return NextResponse.json({ method, salesUsers: users, participants, borrowsWhatsapp })
 }
 
 export async function PUT(req: NextRequest) {

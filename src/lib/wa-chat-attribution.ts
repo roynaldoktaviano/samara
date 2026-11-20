@@ -67,20 +67,21 @@ function adAttribution(r: WhatsappReferral) {
 const hasReferral = (r: WhatsappReferral | null | undefined): r is WhatsappReferral =>
   !!r && !!(r.ctwa_clid || r.source_id || r.source_url)
 
-async function recordAdChat(db: PrismaClient, session: Session, referral: WhatsappReferral): Promise<void> {
+async function recordAdChat(db: PrismaClient, session: Session, referral: WhatsappReferral): Promise<string | null> {
   const data = adAttribution(referral)
   // Meta re-sends a webhook it thinks we missed — same click, same row.
-  if (data.ctwaClid && await db.inquiry.findFirst({ where: { ctwaClid: data.ctwaClid }, select: { id: true } })) return
+  if (data.ctwaClid && await db.inquiry.findFirst({ where: { ctwaClid: data.ctwaClid }, select: { id: true } })) return null
   const owner = await chatInquiryOwner(db, session.conversationId)
-  if (!owner) return
+  if (!owner) return null
   const rawPayload = JSON.parse(JSON.stringify({ referral })) as Prisma.InputJsonValue
   // A "direct chat" row written moments ago for this same start (webhook retry / batch order) → it becomes the ad.
   const placeholder = await sessionInquiry(db, session.conversationId, session.startedAt, WA_DIRECT_INQUIRY_SOURCE)
   if (placeholder) {
     await db.inquiry.update({ where: { id: placeholder.id }, data: { ...data, source: WA_AD_INQUIRY_SOURCE, rawPayload } })
-    return
+    return placeholder.id
   }
-  await db.inquiry.create({
+  const row = await db.inquiry.create({
+    select: { id: true },
     data: {
       source: WA_AD_INQUIRY_SOURCE,
       ...owner,
@@ -91,17 +92,19 @@ async function recordAdChat(db: PrismaClient, session: Session, referral: Whatsa
       createdAt: session.startedAt,
     },
   })
+  return row.id
 }
 
-async function recordDirectChat(db: PrismaClient, session: Session): Promise<void> {
+async function recordDirectChat(db: PrismaClient, session: Session): Promise<string | null> {
   const recent = await db.inquiry.findFirst({
     where: { whatsappConversationId: session.conversationId, createdAt: { gte: new Date(session.startedAt.getTime() - DIRECT_REPEAT_MS) } },
     select: { id: true },
   })
-  if (recent) return
+  if (recent) return null
   const owner = await chatInquiryOwner(db, session.conversationId)
-  if (!owner) return
-  await db.inquiry.create({
+  if (!owner) return null
+  const row = await db.inquiry.create({
+    select: { id: true },
     data: {
       source: WA_DIRECT_INQUIRY_SOURCE,
       ...owner,
@@ -112,7 +115,11 @@ async function recordDirectChat(db: PrismaClient, session: Session): Promise<voi
       createdAt: session.startedAt,
     },
   })
+  return row.id
 }
+
+/** What started this chat session — AD / TAP are real enquiries for the deal maker (src/lib/deal-maker.ts). */
+export type WaChatOrigin = { kind: 'AD' | 'TAP' | 'DIRECT'; inquiryId: string | null } | null
 
 /**
  * Called by the WhatsApp webhook for an inbound message that starts a chat session, or that carries
@@ -122,17 +129,20 @@ async function recordDirectChat(db: PrismaClient, session: Session): Promise<voi
 export async function recordWhatsappChatAttribution(db: PrismaClient, session: Session & {
   isSessionStart: boolean
   referral?: WhatsappReferral | null
-}): Promise<void> {
+}): Promise<WaChatOrigin> {
   const s: Session = { conversationId: session.conversationId, startedAt: session.startedAt, text: session.text }
   try {
     if (hasReferral(session.referral)) {
-      await recordAdChat(db, s, session.referral)
-      return
+      return { kind: 'AD', inquiryId: await recordAdChat(db, s, session.referral) }
     }
-    if (!session.isSessionStart) return
-    if (await matchWhatsappSession(db, s)) return
-    await recordDirectChat(db, s)
+    if (!session.isSessionStart) return null
+    if (await matchWhatsappSession(db, s)) {
+      const row = await db.inquiry.findFirst({ where: { whatsappConversationId: s.conversationId }, orderBy: { createdAt: 'desc' }, select: { id: true } })
+      return { kind: 'TAP', inquiryId: row?.id ?? null }
+    }
+    return { kind: 'DIRECT', inquiryId: await recordDirectChat(db, s) }
   } catch (e) {
     console.error('[whatsapp webhook] chat attribution failed', session.conversationId, e)
+    return null
   }
 }
