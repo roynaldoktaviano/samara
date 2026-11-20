@@ -82,6 +82,7 @@ import MyLeaveRequestsPage from '@/components/hr/MyLeaveRequestsPage'
 import MyWorksPage from '@/components/my-works/MyWorksPage'
 import BusinessTripsPage from '@/components/hr/BusinessTripsPage'
 import MyBusinessTripsPage from '@/components/hr/MyBusinessTripsPage'
+import MyPurchaseRequestsPage from '@/components/purchasing/MyPurchaseRequestsPage'
 import RecruitmentRequestsPage from '@/components/hr/RecruitmentRequestsPage'
 import MyRecruitmentRequestsPage from '@/components/hr/MyRecruitmentRequestsPage'
 import OvertimeRequestsPage from '@/components/hr/OvertimeRequestsPage'
@@ -810,6 +811,10 @@ export default function Home() {
         setCurrentView('hr-entities-assignments')
         if (docId) setDeepLink({ view: 'hr-entities-assignments', id: docId })
       }
+    } else if ((n.requestId || n.type === 'REQUEST_ORDER_SUBMITTED') && !visibleNavItems.some(i => i.id === 'purchasing-requests')) {
+      // No Purchasing › Requests access (any employee using the self-service Purchase Request
+      // menu, or their manager): approval asks open My Approvals, the rest their own requests.
+      setCurrentView(n.type.startsWith('PR_APPROVAL') ? 'my-approvals' : 'my-purchase-requests')
     } else if (n.requestId || n.type === 'REQUEST_ORDER_SUBMITTED') {
       setCurrentView('purchasing-requests')
       if (n.requestId) setDeepLink({ view: 'purchasing-requests', id: n.requestId })
@@ -938,6 +943,7 @@ export default function Home() {
       case 'my-approvals':   return <MyApprovalsPage />
       case 'my-leave-requests': return <MyLeaveRequestsPage />
       case 'my-business-trips': return <MyBusinessTripsPage />
+      case 'my-purchase-requests': return <MyPurchaseRequestsPage />
       case 'my-recruitment': return <MyRecruitmentRequestsPage />
       case 'my-overtime':    return <MyOvertimePage />
       case 'activity-log':   return <ActivityLog />

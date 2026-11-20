@@ -93,8 +93,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 
   if (!roleMatches(role, VIEW_ALLOWED)) {
     // Warehouse can only open their own requests — not Purchasing's whole queue by id-guessing.
-    if (roleMatches(role, OWN_ONLY_ROLES) && request.requestedById === session.user.id) {
-      // own submission — allowed straight through
+    if (request.requestedById === session.user.id) {
+      // own submission (incl. the self-service Purchase Request menu, any role) — allowed through
     } else if (
       roleMatches(role, ['BOAT_CAPTAIN', 'CRUISE_DIRECTOR'])
       && request.status !== 'PENDING_APPROVAL'
@@ -884,10 +884,14 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   const { id } = await params
   const session = await getServerSession(authOptions)
   const role = (session?.user as { role?: string })?.role ?? ''
-  if (!session?.user?.id || !roleMatches(role, DELETE_ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!session?.user?.id || role === 'BOT') return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
   const existing = await db.purchaseRequest.findUnique({ where: { id }, select: { status: true, requestedById: true } })
   if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  // Any employee may withdraw their own request from the self-service Purchase Request menu
+  // while it still waits for their manager; anything else needs a Purchasing-side role.
+  const ownPending = existing.requestedById === session.user.id && existing.status === 'PENDING_APPROVAL'
+  if (!roleMatches(role, DELETE_ALLOWED) && !ownPending) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   if (roleMatches(role, OWN_ONLY_ROLES) && existing.requestedById !== session.user.id) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
   }

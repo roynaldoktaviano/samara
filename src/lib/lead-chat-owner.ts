@@ -8,6 +8,8 @@ import { recordLeadOwner } from '@/lib/whatsapp-lead'
 //  • "who chats" = the SALES-role user with the most replies to that lead (WhatsApp / Instagram /
 //    Messenger, sent from the ERP or copied in from Freshchat) in the last 30 days; tie → latest.
 //    Admins (Marc, Roy, Super Admin) and Freshchat's own notices never count.
+//  • No Sales reply yet but an active Freshchat conversation → the rep Freshchat assigned it to
+//    (Roy, 20 Nov 2026: new chat showed "Sales: Wiwin" while Freshchat had given it to Efrinda).
 //  • Leads nobody has replied to lately keep the Freshsales owner (src/lib/freshsales-erp-sync.ts
 //    asks chatOwnersByLead first and leaves these owners alone).
 //  • The lead's chats follow its owner.
@@ -66,6 +68,25 @@ export async function chatOwnersByLead(db: PrismaClient, leadIds?: string[]): Pr
   for (const [leadId, t] of tally) {
     const [best] = [...t.entries()].sort((a, b) => b[1].n - a[1].n || b[1].last - a[1].last)
     out.set(leadId, best[0])
+  }
+
+  // Nobody has replied yet → the rep Freshchat assigned the chat to (the one who will reply on the
+  // shared number), not the ERP's own round-robin pick. Latest Freshchat conversation active in the
+  // window, linked via its mirrored ERP thread's lead (or its own lead link).
+  const fcRows = await db.$queryRawUnsafe<{ lid: string; ag: string }[]>(`
+    SELECT DISTINCT ON (lid) lid, ag FROM (
+      SELECT COALESCE(w."leadId", i."leadId", f."leadId") lid, f."assignedAgentName" ag, f."lastMessageAt" at
+        FROM "FreshchatConversation" f
+        LEFT JOIN "WhatsappConversation" w ON f."erpThreadKind" = 'whatsapp' AND w.id = f."erpThreadId"
+        LEFT JOIN "InstagramConversation" i ON f."erpThreadKind" = 'instagram' AND i.id = f."erpThreadId"
+       WHERE f."assignedAgentName" IS NOT NULL AND f."lastMessageAt" >= $1) x
+     WHERE lid IS NOT NULL ${leadIds ? `AND lid = ANY($2)` : ''}
+     ORDER BY lid, at DESC`,
+  ...(leadIds ? [since, leadIds] : [since]))
+  for (const r of fcRows) {
+    if (out.has(r.lid)) continue
+    const u = userOf(null, r.ag)
+    if (u && sales.has(u)) out.set(r.lid, u)
   }
   return out
 }
