@@ -1,5 +1,6 @@
 'use client'
 
+import { chatRole } from '@/lib/role-utils'
 import { useState, useEffect, useRef, useCallback, useLayoutEffect } from 'react'
 import { useSession } from 'next-auth/react'
 import { toast } from 'sonner'
@@ -155,7 +156,7 @@ export default function WhatsAppThread({ conversationId, onConversationUpdate, s
   onOpenChat?: (conversationId: string) => void
 }) {
   const { data: session } = useSession()
-  const role = (session?.user as { role?: string })?.role ?? ''
+  const role = chatRole((session?.user as { role?: string })?.role)
   const isAdmin = role === 'ADMIN'
   const [assigning, setAssigning] = useState(false)
   const [categorizing, setCategorizing] = useState(false)

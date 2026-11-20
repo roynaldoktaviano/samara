@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { chatRole } from '@/lib/role-utils'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
@@ -9,7 +10,7 @@ import { findOpenLeadIdByEmail, recordLeadOutbound } from '@/lib/lead-stage-auto
 
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions)
-  const role = (session?.user as { role?: string })?.role ?? ''
+  const role = chatRole((session?.user as { role?: string })?.role)
   if (!session?.user?.id || !['ADMIN', 'SALES'].includes(role)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const db = await getDb(session)
@@ -45,7 +46,7 @@ export async function GET(req: NextRequest) {
 // is reused and its subject switched to this new one.
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions)
-  const role = (session?.user as { role?: string })?.role ?? ''
+  const role = chatRole((session?.user as { role?: string })?.role)
   if (!session?.user?.id || !['ADMIN', 'SALES'].includes(role)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { to: rawTo, name, subject: rawSubject, body: rawBody, html: rawHtml, attachmentUrls } = await req.json()

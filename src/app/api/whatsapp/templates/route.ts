@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { chatRole } from '@/lib/role-utils'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
@@ -15,7 +16,7 @@ function parseBrand(value: string | null): WhatsappBrand | null {
 // for the Chat > WhatsApp Templates settings screen.
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions)
-  const role = (session?.user as { role?: string })?.role ?? ''
+  const role = chatRole((session?.user as { role?: string })?.role)
   if (!session?.user?.id || !['ADMIN', 'SALES'].includes(role)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const brand = parseBrand(req.nextUrl.searchParams.get('brand'))
@@ -31,7 +32,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions)
-  const role = (session?.user as { role?: string })?.role ?? ''
+  const role = chatRole((session?.user as { role?: string })?.role)
   if (!session?.user?.id || role !== 'ADMIN') return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const body = await req.json()

@@ -5,7 +5,7 @@ import { getDb } from '@/lib/get-db'
 import { logActivity } from '@/lib/activity'
 import { emitTenantEvent } from '@/lib/realtime-bus'
 import { sendPushToUser } from '@/lib/push'
-import { roleMatches } from '@/lib/role-utils'
+import { chatRole, roleMatches } from '@/lib/role-utils'
 import { setLeadOwner } from '@/lib/whatsapp-lead'
 
 // Changes who owns a Lead (and, with it, its WhatsApp chats — see setLeadOwner).
@@ -13,7 +13,7 @@ import { setLeadOwner } from '@/lib/whatsapp-lead'
 //   SALES: `{ ownerId: <own id> }` only, and only while the lead has no owner (claim).
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getServerSession(authOptions)
-  const role = (session?.user as { role?: string })?.role ?? ''
+  const role = chatRole((session?.user as { role?: string })?.role)
   if (!session?.user?.id || !roleMatches(role, ['ADMIN', 'SALES'])) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { id } = await params

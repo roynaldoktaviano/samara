@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { chatRole } from '@/lib/role-utils'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
@@ -24,7 +25,7 @@ const BOOKING_LIMIT = 5
 
 async function loadConversation(id: string) {
   const session = await getServerSession(authOptions)
-  const role = (session?.user as { role?: string })?.role ?? ''
+  const role = chatRole((session?.user as { role?: string })?.role)
   if (!session?.user?.id || !['ADMIN', 'SALES'].includes(role)) return { error: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) } as const
   const db = await getDb(session)
   const conversation = await db.whatsappConversation.findUnique({ where: { id }, select: { id: true, phone: true, leadId: true, assignedToId: true } })

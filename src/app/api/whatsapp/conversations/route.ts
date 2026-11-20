@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { chatRole } from '@/lib/role-utils'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
@@ -11,7 +12,7 @@ import { emitTenantEvent } from '@/lib/realtime-bus'
 
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions)
-  const role = (session?.user as { role?: string })?.role ?? ''
+  const role = chatRole((session?.user as { role?: string })?.role)
   if (!session?.user?.id || !['ADMIN', 'SALES'].includes(role)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const db = await getDb(session)
@@ -35,7 +36,7 @@ export async function GET(req: NextRequest) {
 // other than the inbound webhook (src/app/api/webhooks/whatsapp/route.ts).
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions)
-  const role = (session?.user as { role?: string })?.role ?? ''
+  const role = chatRole((session?.user as { role?: string })?.role)
   if (!session?.user?.id || !['ADMIN', 'SALES'].includes(role)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { phone: rawPhone, brand, templateName, templateLanguage, templateParams, contactName } = await req.json()

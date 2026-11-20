@@ -1,5 +1,6 @@
 'use client'
 
+import { chatRole } from '@/lib/role-utils'
 import { useEffect, useState, useCallback, useRef, useId } from 'react'
 import { useSession } from 'next-auth/react'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
@@ -94,7 +95,7 @@ export default function UnifiedInbox({ onOpenEmail, onOpenBooking, initialWhatsa
   onDeepLinkHandled?: () => void
 }) {
   const { data: session } = useSession()
-  const userRole = (session?.user as { role?: string })?.role ?? ''
+  const userRole = chatRole((session?.user as { role?: string })?.role)
   const isAdmin = userRole === 'ADMIN'
 
   const [items, setItems] = useState<UnifiedInboxItem[]>([])

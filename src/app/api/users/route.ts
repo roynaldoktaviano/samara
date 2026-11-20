@@ -5,17 +5,23 @@ import { getDb } from '@/lib/get-db'
 import { centralDb } from '@/lib/central-db'
 import bcrypt from 'bcryptjs'
 import { logActivity } from '@/lib/activity'
+import { chatRole } from '@/lib/role-utils'
 
 const ALLOWED_ROLES = ['SALES', 'FINANCE', 'MARKETING', 'MARKETING_DIRECTOR', 'ADMIN', 'PURCHASING', 'WAREHOUSE', 'HR', 'SALES_MARKETING', 'FINANCE_DIRECTOR', 'CREW', 'BOAT_CAPTAIN', 'CRUISE_DIRECTOR', 'BOT']
 
 export async function GET() {
   const session = await getServerSession(authOptions)
-  if (!['ADMIN', 'SUPER_ADMIN'].includes(session?.user.role ?? '')) {
+  const role = session?.user.role ?? ''
+  // Chat-admin roles (e.g. MARKETING_DIRECTOR, see chatRole) need the SALES reps for the
+  // inbox's assignee filter / reassign picker — they get only those, not the full user list.
+  const salesOnly = !['ADMIN', 'SUPER_ADMIN'].includes(role) && chatRole(role) === 'ADMIN'
+  if (!['ADMIN', 'SUPER_ADMIN'].includes(role) && !salesOnly) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
   const tenantDb = await getDb(session)
   const users = await tenantDb.user.findMany({
+    where: salesOnly ? { role: 'SALES' } : undefined,
     select: {
       id: true, name: true, email: true, role: true, createdAt: true, purchasingDivision: true, assignedYachtId: true,
       employeeProfile: { select: { id: true, fullName: true, employeeNumber: true } },

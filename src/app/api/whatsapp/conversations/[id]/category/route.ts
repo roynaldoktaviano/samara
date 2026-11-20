@@ -4,7 +4,7 @@ import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { emitTenantEvent } from '@/lib/realtime-bus'
 import { logActivity } from '@/lib/activity'
-import { roleMatches } from '@/lib/role-utils'
+import { chatRole, roleMatches } from '@/lib/role-utils'
 import { salesCanAccessConversation } from '@/lib/whatsapp-distribution'
 import { ensureLeadForConversation, isWhatsappChatCategory, WHATSAPP_CHAT_CATEGORY_LABEL } from '@/lib/whatsapp-lead'
 
@@ -13,7 +13,7 @@ import { ensureLeadForConversation, isWhatsappChatCategory, WHATSAPP_CHAT_CATEGO
 // SALES keeps the Lead link (history stays) — the pipeline just stops listing it.
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getServerSession(authOptions)
-  const role = (session?.user as { role?: string })?.role ?? ''
+  const role = chatRole((session?.user as { role?: string })?.role)
   if (!session?.user?.id || !roleMatches(role, ['ADMIN', 'SALES'])) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { id } = await params

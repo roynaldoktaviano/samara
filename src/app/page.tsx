@@ -12,7 +12,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { toast } from 'sonner'
 import { SidebarProvider, Sidebar, SidebarContent, SidebarGroup, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarHeader, SidebarFooter, SidebarTrigger } from '@/components/ui/sidebar'
 import { Anchor, Calendar, LogOut, ChevronDown, Ship, UserCog, CreditCard, Bell, CheckCheck, Clock, CheckCircle2, XCircle, Briefcase, Tag, Shield, TrendingUp, TrendingDown, Building2, UserPen, Eye, EyeOff, ShoppingCart, ClipboardList, Boxes, ArrowRightLeft, Package, MapPin, IdCard, Wallet, Banknote, Compass, Send, LayoutTemplate, UserPlus, Globe, Image, Layers, FileText, MessageCircle, Mail, Receipt, Percent, PackagePlus, CalendarCheck, CalendarOff, HandCoins } from 'lucide-react'
-import { roleMatches } from '@/lib/role-utils'
+import { chatRole, roleMatches } from '@/lib/role-utils'
 import { type View, type NavItem, NAV_GROUPS, MARKETING_SUB_GROUPS, navigationItems } from '@/lib/nav-items'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
@@ -587,7 +587,7 @@ export default function Home() {
 
   const fetchUnreadWhatsapp = useCallback(async () => {
     try {
-      const role = (session?.user as { role?: string })?.role ?? ''
+      const role = chatRole((session?.user as { role?: string })?.role)
       if (!['ADMIN', 'SALES'].includes(role)) return
       const res = await fetch('/api/whatsapp/conversations?unread=1')
       if (res.ok) {
@@ -599,7 +599,7 @@ export default function Home() {
 
   const fetchUnreadInstagram = useCallback(async () => {
     try {
-      const role = (session?.user as { role?: string })?.role ?? ''
+      const role = chatRole((session?.user as { role?: string })?.role)
       if (!['ADMIN', 'SALES'].includes(role)) return
       const res = await fetch('/api/instagram/conversations?unread=1')
       if (res.ok) {
@@ -621,7 +621,7 @@ export default function Home() {
 
   const fetchUnreadEmailInbox = useCallback(async () => {
     try {
-      const role = (session?.user as { role?: string })?.role ?? ''
+      const role = chatRole((session?.user as { role?: string })?.role)
       if (!['ADMIN', 'SALES'].includes(role)) return
       const res = await fetch('/api/email-inbox/conversations?unread=1')
       if (res.ok) {

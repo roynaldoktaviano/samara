@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { chatRole } from '@/lib/role-utils'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
@@ -14,7 +15,7 @@ export type InboxUnreadCounts = Record<ChatPlatform, { total: number; byBrand: U
 // sidebar badge in src/app/page.tsx, so the numbers add up to it.
 export async function GET() {
   const session = await getServerSession(authOptions)
-  const role = (session?.user as { role?: string })?.role ?? ''
+  const role = chatRole((session?.user as { role?: string })?.role)
   if (!session?.user?.id || !['ADMIN', 'SALES'].includes(role)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
 

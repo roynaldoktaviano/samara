@@ -29,3 +29,14 @@ export function roleMatches(userRole: string | null | undefined, allowed: readon
 export function effectiveSessionRole(role: string, isCentralSuperAdmin?: boolean): string {
   return role === 'SUPER_ADMIN' && !isCentralSuperAdmin ? 'ADMIN' : role
 }
+
+/**
+ * The role used for the shared Chat inbox (WhatsApp / Instagram / Messenger / Email): roles
+ * that oversee the whole inbox act as ADMIN there (see every chat, filter by rep, reassign),
+ * everyone else keeps their own role (SALES = own + unassigned chats). The chat API routes
+ * only know ADMIN/SALES, so mapping here keeps them from 401-ing those roles.
+ */
+const CHAT_ADMIN_ROLES = ['MARKETING_DIRECTOR']
+export function chatRole(role: string | null | undefined): string {
+  return role && CHAT_ADMIN_ROLES.includes(role) ? 'ADMIN' : role ?? ''
+}

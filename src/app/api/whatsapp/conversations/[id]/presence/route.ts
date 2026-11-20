@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { chatRole } from '@/lib/role-utils'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { clearViewing, markViewing } from '@/lib/chat-presence'
@@ -7,7 +8,7 @@ import { clearViewing, markViewing } from '@/lib/chat-presence'
 // affects the caller's own notifications, so no conversation access check is needed.
 async function caller() {
   const session = await getServerSession(authOptions)
-  const role = (session?.user as { role?: string })?.role ?? ''
+  const role = chatRole((session?.user as { role?: string })?.role)
   if (!session?.user?.id || !session.user.tenantId || !['ADMIN', 'SALES'].includes(role)) return null
   return { userId: session.user.id, tenantId: session.user.tenantId }
 }

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { chatRole } from '@/lib/role-utils'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { presignUpload, r2PublicUrl, isR2Configured } from '@/lib/r2'
@@ -11,7 +12,7 @@ const ALLOWED_TYPES = [/^image\//, /^video\//, /^audio\//, /^application\/pdf$/]
 // the story on why a plain server-route POST fails on anything but tiny files).
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions)
-  const role = (session?.user as { role?: string })?.role ?? ''
+  const role = chatRole((session?.user as { role?: string })?.role)
   if (!session?.user?.id || !['ADMIN', 'SALES'].includes(role)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   if (!isR2Configured()) {
