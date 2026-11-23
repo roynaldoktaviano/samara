@@ -357,14 +357,13 @@ function verifySignature(rawBody: string, header: string | null, appSecret: stri
 }
 
 // Flat deliveries come from relay tools that each authenticate their own way, so any of
-// these is accepted as long as it's built from the tenant's Meta Lead Ads Webhook Secret:
-// ?secret= / body `secret`, a header carrying the secret itself (incl. "Bearer <secret>"),
-// or a header carrying an HMAC-SHA256 of the raw body (hex or base64, optional "sha256=").
-function isFlatRequestAuthorized(request: NextRequest, rawBody: string, data: Record<string, unknown>, expected: string): boolean {
+// these is accepted as long as it's built from the tenant's Meta Lead Ads Webhook Secret: a
+// header carrying the secret itself (incl. "Bearer <secret>"), or a header carrying an
+// HMAC-SHA256 of the raw body (hex or base64, optional "sha256="). Never in the URL or body —
+// those end up in access logs and relay-tool histories (handover §11 no. 14: secrets only in a
+// server-to-server header).
+function isFlatRequestAuthorized(request: NextRequest, rawBody: string, expected: string): boolean {
   const eq = (a: string, b: string) => a.length === b.length && crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b))
-  const given = request.nextUrl.searchParams.get('secret') ?? str(data.secret)
-  if (given && eq(given, expected)) return true
-
   const hmac = crypto.createHmac('sha256', expected).update(rawBody).digest()
   const accepted = [expected, `Bearer ${expected}`, hmac.toString('hex'), hmac.toString('base64')]
   for (const [, value] of request.headers) {
@@ -469,7 +468,7 @@ export async function POST(request: NextRequest) {
 
     // Flat delivery (Zapier/Make/relay tool/CSV row) — see isFlatRequestAuthorized.
     const expected = await getTenantSecret(tenant.id, 'metaLeadsWebhookSecret')
-    if (!expected || !isFlatRequestAuthorized(request, rawBody, data, expected)) {
+    if (!expected || !isFlatRequestAuthorized(request, rawBody, expected)) {
       // Header names only (never values) — enough to see how a new sender authenticates.
       const headerNames = [...request.headers.keys()].join(', ')
       logWebhookFailure({ source: SOURCE, tenantSlug: tenant.slug, reason: 'unauthorized', detail: `headers: ${headerNames}`, rawPayload: toJsonSafe(data) })

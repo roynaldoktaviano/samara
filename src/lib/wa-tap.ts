@@ -1,6 +1,6 @@
 import type { Prisma, PrismaClient, WaTap, WhatsappBrand } from '@prisma/client'
 import { consentRegionFrom, correctLegacyConsent, normalizeAdConsent } from '@/lib/ad-consent'
-import { cleanValue, dropMetaCookies, pickClean } from '@/lib/inquiry-tracking'
+import { cleanValue, dropMetaCookies, pickClean, stripMetaCookies } from '@/lib/inquiry-tracking'
 import { findCustomerIdByPhone, toE164 } from '@/lib/contact-identity'
 import { isHttpUrl } from '@/lib/url-safety'
 import type { MatchConfidence } from '@/lib/wa-match-confidence'
@@ -104,7 +104,8 @@ export function tapFromPayload(p: Record<string, unknown>): Omit<Prisma.WaTapCre
 export async function recordWaTap(db: Db, payload: Record<string, unknown>): Promise<{ ok: boolean; tapId?: string; matched?: boolean; lateMatchConversationId?: string | null }> {
   const data = tapFromPayload(payload)
   if (!data) return { ok: false }
-  const rawPayload = JSON.parse(JSON.stringify(payload)) as Prisma.InputJsonValue
+  // Raw copy follows the same Meta-cookie rule as the columns (consent already legacy-corrected).
+  const rawPayload = JSON.parse(JSON.stringify(stripMetaCookies(payload, dropMetaCookies(data.adConsent ?? null, data.consentRegion ?? null)))) as Prisma.InputJsonValue
   const existing = await db.waTap.findUnique({ where: { ref: data.ref } })
   let tap: WaTap
   if (existing) {

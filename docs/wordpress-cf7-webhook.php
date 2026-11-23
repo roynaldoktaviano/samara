@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Samara ERP Tracking
  * Description: Page-view tracker, Contact Form 7 → ERP, WhatsApp-tap relay → ERP. Secrets live in wp-config.php.
- * Version:     2026.11.23
+ * Version:     2026.11.23.2
  *
  * Samara ERP — website tracking + Contact Form 7 → ERP.
  *
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) exit; // only ever runs inside WordPress
 
 const SAMARA_ERP_BASE   = 'https://erp.samarayachting.com/api/webhooks';
 const SAMARA_ERP_TENANT = 'samara';
-const SAMARA_TOUCH_KEYS = array('utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'gclid', 'gbraid', 'wbraid', 'fbclid');
+const SAMARA_TOUCH_KEYS = array('utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'gclid', 'gbraid', 'wbraid', 'fbclid', 'msclkid');
 
 // ── 1. Browser: page-view beacon (to this site) + first-touch cookies — no secret here ──
 add_action('wp_footer', function () {
@@ -160,21 +160,30 @@ add_action('wpcf7_mail_sent', function ($contact_form) {
     $data['visitorId'] = $cookie('samara_vid');
 
     // Meta cookies, read server-side like the old deal maker did (snippet 92) — unless the form
-    // already carries them. Skipped on a consent denial in the EU/UK/CH or with no region.
-    $consent = strtolower(isset($data['ad_consent']) ? $data['ad_consent'] : '');
-    $region  = strtolower(isset($data['consent_region']) ? $data['consent_region'] : '');
-    $meta_blocked = $consent === 'denied' && in_array($region, array('', 'none', 'eu', 'eea', 'uk', 'ch'), true);
-    foreach (array('_fbp', '_fbc') as $meta_cookie) {
-        if ($meta_blocked) { unset($data[$meta_cookie]); continue; }
-        if (empty($data[$meta_cookie]) || $data[$meta_cookie] === 'undefined') $data[$meta_cookie] = $cookie($meta_cookie);
+    // already carries them. On a consent denial in the EU/UK/CH or with no region, every spelling
+    // of them is removed instead (handover §2).
+    if (samara_erp_meta_blocked($data)) {
+        $data = samara_erp_strip_meta_cookies($data);
+    } else {
+        foreach (array('_fbp', '_fbc') as $meta_cookie) {
+            if (empty($data[$meta_cookie]) || $data[$meta_cookie] === 'undefined') $data[$meta_cookie] = $cookie($meta_cookie);
+        }
     }
 
-    // Current touch = this page's query string; first touch = samara_ft_* cookies.
+    // Current touch: this page's query string when it has the key; otherwise keep what the form's
+    // own hidden field carries — snippet 62 fills it from the URL OR its first-party cookies
+    // (handover §2), so a click ID picked up on an earlier page must not be blanked here.
+    // First touch: the samara_ft_* cookie when set, else the form's own ft_* field.
     $query = array();
     parse_str((string) wp_parse_url($page_url, PHP_URL_QUERY), $query);
     foreach (SAMARA_TOUCH_KEYS as $key) {
-        $data[$key]         = isset($query[$key]) ? sanitize_text_field($query[$key]) : '';
-        $data['ft_' . $key] = $cookie('samara_ft_' . $key);
+        if (isset($query[$key]) && trim((string) $query[$key]) !== '') {
+            $data[$key] = sanitize_text_field($query[$key]);
+        } elseif (!isset($data[$key]) || in_array(strtolower(trim($data[$key])), array('undefined', 'null'), true)) {
+            $data[$key] = '';
+        }
+        $ft = $cookie('samara_ft_' . $key);
+        if ($ft !== '') $data['ft_' . $key] = $ft;
     }
 
     wp_remote_post(SAMARA_ERP_BASE . '/cf7?tenant=' . SAMARA_ERP_TENANT, array(
@@ -187,6 +196,23 @@ add_action('wpcf7_mail_sent', function ($contact_form) {
         'body'     => wp_json_encode($data),
     ));
 });
+
+// True when Meta's cookies must not be read or sent: ad consent denied in the EU/UK/CH or with no
+// region (handover §2; same rule as the ERP's dropMetaCookies). Forms say ad_consent /
+// consent_region, snippet 63 taps may say consent / region.
+function samara_erp_meta_blocked($data) {
+    $consent = strtolower(trim((string) (isset($data['ad_consent']) ? $data['ad_consent'] : (isset($data['consent']) ? $data['consent'] : ''))));
+    $region  = strtolower(trim((string) (isset($data['consent_region']) ? $data['consent_region'] : (isset($data['region']) ? $data['region'] : ''))));
+    return $consent === 'denied' && in_array($region, array('', 'none', 'eu', 'eea', 'uk', 'ch'), true);
+}
+
+// Every spelling of _fbc / _fbp (_fbc, fbc, meta_fbc, ft_fbc …) removed — not fbclid.
+function samara_erp_strip_meta_cookies($data) {
+    foreach (array_keys($data) as $k) {
+        if (preg_match('/^(ft_)?_?(meta_)?fb[cp]$/i', (string) $k)) unset($data[$k]);
+    }
+    return $data;
+}
 
 // Visitor IP behind Cloudflare (CF-Connecting-IP), else REMOTE_ADDR — same as the old deal maker.
 function samara_erp_visitor_ip() {
@@ -219,6 +245,8 @@ add_filter('rest_post_dispatch', function ($response, $server, $request) {
             if (empty($tap[$k]) && !empty($resp_data[$k])) $tap[$k] = $resp_data[$k];
         }
     }
+    // Snippet 63 logs _fbc/_fbp with the tap; on a denial they must not leave the site (handover §2).
+    if (samara_erp_meta_blocked($tap)) $tap = samara_erp_strip_meta_cookies($tap);
     $tap['ip'] = samara_erp_visitor_ip();
     $tap['ua'] = isset($_SERVER['HTTP_USER_AGENT']) ? substr(sanitize_text_field(wp_unslash($_SERVER['HTTP_USER_AGENT'])), 0, 1000) : '';
     if (empty($tap['tapped_at'])) $tap['tapped_at'] = gmdate('c');

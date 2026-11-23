@@ -39,6 +39,26 @@ export function dropMetaCookies(adConsent: string | null, consentRegion: string 
   return adConsent === 'denied' && (!consentRegion || consentRegion === 'none' || CONSENT_BANNER_REGIONS.has(consentRegion))
 }
 
+// Every spelling the website / snippet 63 / the plugin uses for Meta's two cookies (not fbclid —
+// that's a URL click ID, not a cookie).
+const META_COOKIE_KEY = /^(ft_)?_?(meta_)?fb[cp]$/i
+
+/**
+ * Copy of a raw payload without Meta's _fbc/_fbp when `drop` — the raw audit copy (Inquiry /
+ * WaTap rawPayload, webhook failure log) must follow the same rule as the columns (handover §2).
+ */
+export function stripMetaCookies<T extends Record<string, unknown>>(data: T, drop: boolean): T {
+  if (!drop) return data
+  return Object.fromEntries(Object.entries(data).filter(([k]) => !META_COOKIE_KEY.test(k))) as T
+}
+
+/** Same, deciding from the payload's own consent fields (website form / tap). */
+export function withoutDeniedMetaCookies<T extends Record<string, unknown>>(data: T): T {
+  const adConsent = normalizeAdConsent(pickClean(data, ['ad_consent', 'consent']))
+  const consentRegion = consentRegionFrom(data, ['consent_region', 'region'])
+  return stripMetaCookies(data, dropMetaCookies(adConsent, consentRegion))
+}
+
 export type InquiryTracking = Pick<Prisma.InquiryUncheckedCreateInput,
   | 'adConsent' | 'consentRegion' | 'msclkid' | 'lastMsclkid' | 'fbc' | 'fbp'
   | 'firstLandingUrl' | 'landingUrl' | 'firstReferrer' | 'referrer'

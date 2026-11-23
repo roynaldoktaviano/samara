@@ -11,6 +11,7 @@
     "build": "prisma generate && NODE_OPTIONS=--max-old-space-size=4096 next build && cp -r .next/static .next/standalone/.next/ && cp -r public .next/standalone/ && cp -r scripts .next/standalone/ && cp .env .next/standalone/.env",
     "start": "NODE_ENV=production node .next/standalone/server.js",
     "lint": "eslint .",
+    "typecheck": "NODE_OPTIONS=--max-old-space-size=8192 tsc --noEmit",
     "db:push": "prisma db push",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",

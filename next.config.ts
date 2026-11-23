@@ -12,6 +12,12 @@ const SECURITY_HEADERS = [
 const nextConfig: NextConfig = {
   output: "standalone",
   reactStrictMode: false,
+  // The server has ~8 GB RAM shared with the running app; the in-build TypeScript check
+  // needs 4–8 GB on its own and got the build worker OOM-killed (SIGKILL). Type-check
+  // separately with `npm run typecheck` before deploying instead.
+  typescript: { ignoreBuildErrors: true },
+  // One build worker instead of one per CPU — lower peak memory during "Collecting page data".
+  experimental: { cpus: 1 },
   // geoip-lite loads its .dat files from a path relative to its own __dirname at
   // runtime (fs.readFileSync) — bundling it rewrites that path and breaks the lookup,
   // so it must stay a normal require() against the real node_modules copy instead.

@@ -12,7 +12,7 @@ import { isHttpUrl } from '@/lib/url-safety'
 import { logWebhookFailure } from '@/lib/webhook-log'
 import { getClientIp, countryFromIp } from '@/lib/geo-country'
 import { providedWebhookSecret, webhookSecretMatches } from '@/lib/webhook-secret'
-import { cleanValue, trackingFromPayload } from '@/lib/inquiry-tracking'
+import { cleanValue, trackingFromPayload, withoutDeniedMetaCookies } from '@/lib/inquiry-tracking'
 import { fillEmptyOnly, findContactByIdentity, isPlaceholderName, normalizeEmail, toE164 } from '@/lib/contact-identity'
 
 // Called server-to-server only, by the WordPress site (a PHP hook on
@@ -45,13 +45,14 @@ function parseInt10(raw: string): number | null {
 }
 
 // Strips non-JSON-serializable values (e.g. a File from a multipart upload field)
-// before storing the raw submission as an audit trail.
+// before storing the raw submission as an audit trail. Meta's _fbc/_fbp (any spelling) are left
+// out on a consent denial in the EU/UK/CH or with no region, same as the columns (handover §2).
 function toJsonSafe(data: Record<string, unknown>): Record<string, string> {
   const out: Record<string, string> = {}
   for (const [k, v] of Object.entries(data)) {
     if (typeof v === 'string') out[k] = v
   }
-  return out
+  return withoutDeniedMetaCookies(out)
 }
 
 export async function POST(request: NextRequest) {
