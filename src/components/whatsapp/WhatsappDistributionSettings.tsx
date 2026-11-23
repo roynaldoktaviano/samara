@@ -13,6 +13,7 @@ import { toast } from 'sonner'
 import { Save, Shuffle, Percent, MessageCircle, Mail, Instagram, Globe } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { WHATSAPP_BRANDS, WHATSAPP_BRAND_LABELS, type WhatsappBrand } from '@/lib/whatsapp-brands'
+import DealMakerSwitches from '@/components/whatsapp/DealMakerSwitches'
 
 type Method = 'ROUND_ROBIN' | 'PERCENTAGE'
 type Channel = 'WHATSAPP' | 'EMAIL' | 'INSTAGRAM' | 'WEBSITE'
@@ -241,6 +242,9 @@ export default function WhatsappDistributionSettings() {
           </div>
         </>
       )}
+
+      {/* Global, not per channel / brand — the per-source deal-maker switch (handover §4 modes). */}
+      <DealMakerSwitches />
     </div>
   )
 }

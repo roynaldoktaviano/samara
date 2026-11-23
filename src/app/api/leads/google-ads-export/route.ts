@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getDb } from '@/lib/get-db'
 import { requireRole, type AppRole } from '@/lib/auth-guard'
-import { adUploadDecision, UPLOADABLE_MATCH_WHERE, type ConsentInquiry } from '@/lib/ad-consent'
+import { adUploadDecision, manualConsentRows, UPLOADABLE_MATCH_WHERE, type ConsentInquiry } from '@/lib/ad-consent'
 
 const ALLOWED: AppRole[] = ['ADMIN', 'MARKETING', 'SUPER_ADMIN']
 const HEADER = [
@@ -45,7 +45,7 @@ export async function GET() {
   const leadIds = [...byLead.keys()]
   const leads = await db.lead.findMany({
     where: { id: { in: leadIds }, deletedAt: null },
-    select: { id: true, name: true, firstName: true, lastName: true, nationality: true, email: true, phone: true, notes: true },
+    select: { id: true, name: true, firstName: true, lastName: true, nationality: true, email: true, phone: true, notes: true, adConsent: true },
   })
 
   // Consent gate (src/lib/ad-consent.ts) — leads who declined ad cookies, or EU/UK/CH leads
@@ -62,7 +62,7 @@ export async function GET() {
   }
 
   const rows = leads
-    .filter(l => adUploadDecision(consentByLead.get(l.id) ?? [], l.nationality).ok)
+    .filter(l => adUploadDecision([...(consentByLead.get(l.id) ?? []), ...manualConsentRows(l)], l.nationality).ok)
     .map(l => ({ l, click: byLead.get(l.id)! }))
     .sort((a, b) => b.click.createdAt.getTime() - a.click.createdAt.getTime())
     .map(({ l, click }) => [

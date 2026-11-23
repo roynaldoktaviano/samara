@@ -3,12 +3,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useSession } from 'next-auth/react'
 import { toast } from 'sonner'
-import { Loader2, UserPlus, UserRound } from 'lucide-react'
+import { BriefcaseBusiness, Loader2, UserPlus, UserRound } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { LEAD_FORM_EMPTY, ProfileFields, QualificationFields, toLeadFormState, type LeadFormState } from '@/components/leads/LeadEditSheet'
+import { useConfirm } from '@/components/ui/confirm-dialog'
+import { LEAD_FORM_EMPTY, ProfileFields, QualificationFields, TRIP_TYPE_OPTIONS, toLeadFormState, type LeadFormState } from '@/components/leads/LeadEditSheet'
 import {
   DEAL_PAYMENT_STATUS_LABEL, LEAD_LOST_REASONS, LEAD_LOST_REASON_LABEL, LEAD_STAGES, LEAD_STAGE_COLOR, LEAD_STAGE_LABEL, WON_PAYMENT_STATUSES,
   type DealPaymentStatus, type LeadLostReason, type LeadStage,
@@ -25,6 +26,9 @@ export const CHAT_LEAD_PANEL_KEY = 'chat-lead-panel-open'
  * keeps the conversation and the lead side by side while they talk.
  *
  * A chat with no Lead yet gets one via POST /api/{whatsapp|instagram}/conversations/[id]/lead.
+ * A lead with no open deal (e.g. a guest who WhatsApped the number directly — no deal by itself,
+ * src/lib/deal-chat.ts) gets "Create deal": the deal is built from the lead's fields below and
+ * its name is formatted from them (src/lib/deal-name.ts), never typed.
  * Auto stage moves (src/lib/lead-stage-auto.ts) are picked up on the 'chat-changed' event
  * without overwriting unsaved edits in the form.
  */
@@ -41,8 +45,14 @@ export default function ChatLeadSection({ channel, conversationId, leadId, assig
   // SALES may only edit Leads they own, which follow the chat holder — so only their own chats.
   const canEdit = !!session?.user && (role !== 'SALES' || assignedToId === session.user.id)
   const isAdmin = roleMatches(chatRole(role), ['ADMIN'])
+  const confirm = useConfirm()
 
   const [stage, setStage] = useState<LeadStage | null>(null)
+  // Formatted deal name ("PC/Samara I/Private Charter 3D2N Komodo/Guest") + whether an open deal exists.
+  const [dealName, setDealName] = useState<string | null>(null)
+  const [hasDeals, setHasDeals] = useState(false)
+  const [hasOpenDeal, setHasOpenDeal] = useState(true)
+  const [creatingDeal, setCreatingDeal] = useState(false)
   const [form, setForm] = useState<LeadFormState>(LEAD_FORM_EMPTY)
   const [saved, setSaved] = useState<LeadFormState>(LEAD_FORM_EMPTY)
   const [loading, setLoading] = useState(false)
@@ -64,7 +74,7 @@ export default function ChatLeadSection({ channel, conversationId, leadId, assig
   const dirtyRef = useRef(dirty)
   dirtyRef.current = dirty
 
-  const load = useCallback(async (initial: boolean) => {
+  const load = useCallback(async (initial: boolean, force = false) => {
     if (!leadId) return
     if (initial) setLoading(true)
     try {
@@ -73,10 +83,13 @@ export default function ChatLeadSection({ channel, conversationId, leadId, assig
       setNoAccess(false)
       const data = await res.json()
       setStage(data.stage ?? null)
+      setDealName(data.dealName ?? null)
+      setHasDeals(Array.isArray(data.deals) && data.deals.length > 0)
+      setHasOpenDeal(!!data.hasOpenDeal)
       const next = toLeadFormState(data)
       setSaved(next)
       // Never wipe what the rep is typing — a background refresh only fills a clean form.
-      if (initial || !dirtyRef.current) setForm(next)
+      if (initial || force || !dirtyRef.current) setForm(next)
     } catch { /* offline — keep what's shown */ } finally {
       if (initial) setLoading(false)
     }
@@ -110,17 +123,81 @@ export default function ChatLeadSection({ channel, conversationId, leadId, assig
     }
   }
 
-  async function save() {
-    if (!leadId || !form.firstName.trim()) return
+  async function save(quiet = false): Promise<boolean> {
+    if (!leadId || !form.firstName.trim()) return false
     setSaving(true)
     try {
       const res = await fetch(`/api/leads/${leadId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) })
-      if (!res.ok) { const b = await res.json().catch(() => ({})); toast.error(b?.error ?? 'Failed to save lead'); return }
+      if (!res.ok) { const b = await res.json().catch(() => ({})); toast.error(b?.error ?? 'Failed to save lead'); return false }
       setSaved(form)
-      toast.success('Lead saved')
+      if (!quiet) toast.success('Lead saved')
       onChanged()
+      load(false, true)
+      return true
     } finally {
       setSaving(false)
+    }
+  }
+
+  // The deal is built from the form, which after a closed deal still holds that trip's details —
+  // so the rep confirms what the new deal will get before it is made.
+  async function confirmCreateDeal() {
+    if (!leadId) return
+    const destinations: { id: string; name: string }[] = form.destinationId
+      ? await fetch('/api/destinations').then(r => (r.ok ? r.json() : [])).catch(() => [])
+      : []
+    const fmt = (d: string) => (d ? new Date(`${d}T00:00:00`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '')
+    const dates = [fmt(form.travelStartDate), fmt(form.travelEndDate)].filter(Boolean).join(' – ')
+    const rows: [string, string][] = [
+      ['Trip type', TRIP_TYPE_OPTIONS.find(t => t.value === form.tripType)?.label ?? ''],
+      ['Yacht', form.productInterest],
+      ['Destination', destinations.find(d => d.id === form.destinationId)?.name ?? ''],
+      ['Travel dates', dates],
+      ['Guests', form.guestCount],
+      ...(form.tripAmount ? [['Trip amount', `${form.tripAmountCurrency || 'USD'} ${form.tripAmount}`] as [string, string]] : []),
+    ]
+    const ok = await confirm({
+      title: hasDeals ? 'Create another deal?' : 'Create deal?',
+      description: (
+        <span className="block space-y-3">
+          <span className="block">Check that these are the details of <b>this</b> enquiry. The new deal and its name are made from them.</span>
+          <span className="grid grid-cols-[7.5rem_1fr] gap-x-3 gap-y-1 rounded-md border bg-muted/40 p-3 text-xs">
+            {rows.map(([k, v]) => (
+              <span key={k} className="contents">
+                <span className="text-muted-foreground">{k}</span>
+                <span className={v ? 'font-medium text-foreground' : 'text-destructive'}>{v || 'Not set'}</span>
+              </span>
+            ))}
+          </span>
+          {hasDeals && (
+            <span className="block rounded-md border border-warning/40 bg-warning/10 p-2.5 text-xs text-foreground">
+              These details may still be from the previous deal. If this is a different trip, choose <b>Check again</b> and update them first.
+            </span>
+          )}
+        </span>
+      ),
+      confirmLabel: hasDeals ? 'Yes, create another deal' : 'Yes, create deal',
+      cancelLabel: 'Check again',
+    })
+    if (ok) await createDeal()
+  }
+
+  // Unsaved edits go in first, so the deal is made from what the rep sees.
+  async function createDeal() {
+    if (!leadId) return
+    if (dirty && !(await save(true))) return
+    setCreatingDeal(true)
+    try {
+      const res = await fetch(`/api/leads/${leadId}/deal`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ channel, conversationId }),
+      })
+      const body = await res.json().catch(() => ({}))
+      if (!res.ok) { toast.error(body?.error ?? 'Could not create a deal'); return }
+      toast.success(body.created ? 'Deal created' : 'This lead already has an open deal')
+      await load(false, true)
+      onChanged()
+    } finally {
+      setCreatingDeal(false)
     }
   }
 
@@ -177,6 +254,25 @@ export default function ChatLeadSection({ channel, conversationId, leadId, assig
 
   return (
     <section className="space-y-4">
+      {hasOpenDeal && dealName && (
+        <p className="flex items-start gap-1.5 text-xs font-medium text-primary break-words">
+          <BriefcaseBusiness className="mt-0.5 h-3.5 w-3.5 shrink-0" />{dealName}
+        </p>
+      )}
+      {!hasOpenDeal && (
+        <div className="rounded-md border border-dashed p-2.5 space-y-2">
+          <p className="text-[11px] text-muted-foreground">
+            {hasDeals ? 'No open deal — the earlier one is closed.' : 'No deal yet — this chat doesn\u2019t open one by itself.'}{' '}
+            Fill in trip type, yacht, dates and pax below, then create the deal. Its name is made from them.
+          </p>
+          {canEdit && (
+            <Button size="sm" variant="brand" className="h-8 w-full text-xs" onClick={confirmCreateDeal} loading={creatingDeal} disabled={saving || !form.firstName.trim()}>
+              {!creatingDeal && <BriefcaseBusiness className="h-3.5 w-3.5" />} {hasDeals ? 'Create another deal' : 'Create deal'}
+            </Button>
+          )}
+        </div>
+      )}
+      {hasDeals && (
       <div className="space-y-1.5">
         <Label htmlFor={`stage-${conversationId}`} className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Pipeline Stage</Label>
         <Select value={lostPending ? 'CLOSED_LOST' : wonPending ? 'CLOSED_WON' : stage ?? undefined} onValueChange={onPickStage} disabled={!canEdit || stageBusy || (closedStage && !isAdmin)}>
@@ -226,6 +322,7 @@ export default function ChatLeadSection({ channel, conversationId, leadId, assig
           </div>
         )}
       </div>
+      )}
 
       {/* fieldset: a SALES rep looking at someone else's chat sees the lead read-only. */}
       <fieldset disabled={!canEdit} className="space-y-5 min-w-0">
@@ -236,7 +333,7 @@ export default function ChatLeadSection({ channel, conversationId, leadId, assig
       {canEdit && dirty && (
         <div className="sticky bottom-0 -mx-4 px-4 py-2.5 border-t bg-card flex gap-2">
           <Button size="sm" variant="outline" className="h-8 flex-1 text-xs" onClick={() => setForm(saved)} disabled={saving}>Discard</Button>
-          <Button size="sm" variant="brand" className="h-8 flex-1 text-xs" onClick={save} loading={saving} disabled={!form.firstName.trim()}>Save lead</Button>
+          <Button size="sm" variant="brand" className="h-8 flex-1 text-xs" onClick={() => save()} loading={saving} disabled={!form.firstName.trim()}>Save lead</Button>
         </div>
       )}
     </section>

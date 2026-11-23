@@ -23,6 +23,10 @@ export interface AudienceSources {
   agentLeads?: AudienceSourceFilter | boolean
   internal?: AudienceSourceFilter | boolean
   manualEmails?: string[]
+  /** Drop anyone (by email, across ALL sources) who booked / got a payment requested
+   * in the CURRENT calendar month — resolved at preview AND send time, so the month
+   * rolls over automatically. See guestsBookedThisMonth. */
+  excludeBookedThisMonth?: boolean
 }
 
 export interface AudienceMember {
@@ -46,6 +50,64 @@ async function customerIdsWithMinSpend(db: PrismaClient, minSpend: number): Prom
     totals.set(p.booking.customerId, (totals.get(p.booking.customerId) ?? 0) + p.amount)
   }
   return [...totals.entries()].filter(([, amount]) => amount >= minSpend).map(([customerId]) => customerId)
+}
+
+// Company runs on Bali time (WITA, UTC+8) — month boundaries follow that, not the server's UTC clock.
+const MONTH_TZ_OFFSET_H = 8
+
+export function currentMonthRange(now = new Date()): { start: Date; end: Date; label: string } {
+  const local = new Date(now.getTime() + MONTH_TZ_OFFSET_H * 3600_000)
+  const y = local.getUTCFullYear()
+  const m = local.getUTCMonth()
+  const start = new Date(Date.UTC(y, m, 1) - MONTH_TZ_OFFSET_H * 3600_000)
+  const end = new Date(Date.UTC(y, m + 1, 1) - MONTH_TZ_OFFSET_H * 3600_000)
+  const label = new Date(Date.UTC(y, m, 1)).toLocaleString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' })
+  return { start, end, label }
+}
+
+export interface BookedThisMonthGuest {
+  customerId: string
+  name: string | null
+  email: string
+  reason: string // e.g. "Booking confirmed · 12 Nov" / "Payment requested · 15 Nov"
+  at: string // ISO of the triggering event
+}
+
+const BOOKED_STATUSES = ['confirmed', 'partially_paid', 'fully_paid', 'completed'] as const
+const LIVE_PAYMENT_STATUSES = ['requested', 'invoice_ready', 'pending_confirmation', 'confirmed'] as const
+
+/**
+ * Guests who already committed this month — a booking created this month that's at
+ * least confirmed, OR any (non-rejected/cancelled) payment requested this month on
+ * one of their bookings. Marketing doesn't want to pitch them again right after.
+ */
+export async function guestsBookedThisMonth(db: PrismaClient, now = new Date()): Promise<{ label: string; guests: BookedThisMonthGuest[] }> {
+  const { start, end, label } = currentMonthRange(now)
+  const fmt = (d: Date) => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'Asia/Makassar' })
+
+  const [bookings, payments] = await Promise.all([
+    db.booking.findMany({
+      where: { createdAt: { gte: start, lt: end }, status: { in: [...BOOKED_STATUSES] } },
+      select: { createdAt: true, status: true, customer: { select: { id: true, name: true, email: true } } },
+    }),
+    db.payment.findMany({
+      where: { createdAt: { gte: start, lt: end }, status: { in: [...LIVE_PAYMENT_STATUSES] } },
+      select: { createdAt: true, booking: { select: { customer: { select: { id: true, name: true, email: true } } } } },
+    }),
+  ])
+
+  const byId = new Map<string, BookedThisMonthGuest>()
+  const add = (c: { id: string; name: string | null; email: string | null }, reason: string, at: Date) => {
+    if (!c.email || !c.email.includes('@')) return
+    const prev = byId.get(c.id)
+    // keep the earliest trigger in the month — that's when they "converted"
+    if (!prev || new Date(prev.at) > at) byId.set(c.id, { customerId: c.id, name: c.name, email: c.email, reason: `${reason} · ${fmt(at)}`, at: at.toISOString() })
+  }
+  for (const b of bookings) add(b.customer, 'Booking confirmed', b.createdAt)
+  for (const p of payments) add(p.booking.customer, 'Payment requested', p.createdAt)
+
+  const guests = [...byId.values()].sort((a, b) => b.at.localeCompare(a.at))
+  return { label, guests }
 }
 
 /**
@@ -169,6 +231,11 @@ export async function resolveAudience(db: PrismaClient, sources: AudienceSources
     if (email && !byEmail.has(email.toLowerCase())) {
       byEmail.set(email.toLowerCase(), { email, name: null, sourceType: 'MANUAL', sourceId: null })
     }
+  }
+
+  if (sources.excludeBookedThisMonth && byEmail.size > 0) {
+    const { guests } = await guestsBookedThisMonth(db)
+    for (const g of guests) byEmail.delete(g.email.toLowerCase())
   }
 
   if (byEmail.size === 0) return []

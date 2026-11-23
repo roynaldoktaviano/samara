@@ -23,6 +23,22 @@ const EEA_UK_CH_NATIONALITIES = new Set([
   'Spain', 'Sweden', 'Iceland', 'Liechtenstein', 'Norway', 'United Kingdom', 'Switzerland',
 ])
 
+// A refusal sales record by hand on a Lead that never saw the banner — phone, email, agent / OTA or
+// DM leads (handover §10: "Agent/OTA consent deferred to the ERP"). Only "denied": consent itself
+// must come from the guest (website banner), never from sales (Roy, 23 Nov). A recorded refusal
+// blocks every Google / Meta upload like any other denial.
+export const MANUAL_CONSENT_REGION = 'manual'
+
+/** A Lead's hand-recorded refusal as one more consent row (none when not recorded). */
+export function manualConsentRows(lead: { adConsent?: string | null } | null | undefined): ConsentInquiry[] {
+  return lead?.adConsent === 'denied' ? [{ adConsent: 'denied', consentRegion: MANUAL_CONSENT_REGION }] : []
+}
+
+/** A "granted" that counts as a real opt-in: given by the guest on the banner in a banner region. */
+export function isRealGrant(c: { adConsent: string | null; consentRegion: string | null }): boolean {
+  return c.adConsent === 'granted' && !!c.consentRegion && CONSENT_BANNER_REGIONS.has(c.consentRegion)
+}
+
 // Before this moment (15 Nov 2026 12:41 WITA) the site wrote "granted" for visitors who never
 // saw a banner (non-EU). Those rows are really "not_required".
 export const NO_BANNER_FIX_AT = new Date('2026-11-15T04:41:00Z')
@@ -76,7 +92,7 @@ export function adUploadDecision(inquiries: ConsentInquiry[], nationality?: stri
   const isEea = isEeaUkChNationality(nationality)
     || inquiries.some(i => i.consentRegion && CONSENT_BANNER_REGIONS.has(i.consentRegion))
   if (isEea) {
-    const realGrant = inquiries.some(i => i.adConsent === 'granted' && i.consentRegion && CONSENT_BANNER_REGIONS.has(i.consentRegion))
+    const realGrant = inquiries.some(isRealGrant)
     if (!realGrant) return { ok: false, reason: 'eea_without_consent' }
   }
   return { ok: true }

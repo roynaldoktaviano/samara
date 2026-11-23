@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import { Loader2 } from 'lucide-react'
+import { Loader2, ChevronDown, ChevronRight, CalendarX2 } from 'lucide-react'
 import AudiencePicker from '@/components/marketing/campaigns/AudiencePicker'
 
 // Shared between the campaign builder's Audience step and the standalone Audiences
@@ -24,6 +24,9 @@ export interface AudienceState {
   agentLeads: AudienceSourceState
   internal: AudienceSourceState
   manualEmails: string
+  // Drop guests who booked / had a payment requested in the CURRENT month (rolls over
+  // automatically — resolved server-side at preview and send time).
+  excludeBookedThisMonth: boolean
 }
 
 export interface YachtSummary { id: string; name: string }
@@ -37,6 +40,7 @@ export const emptyAudience = (): AudienceState => ({
   agentLeads: emptySource(),
   internal: emptySource(),
   manualEmails: '',
+  excludeBookedThisMonth: true,
 })
 
 function toFilter(s: AudienceSourceState, extra?: Record<string, unknown>) {
@@ -74,6 +78,7 @@ export function buildAudienceSources(a: AudienceState) {
     ...(a.agentLeads.enabled && { agentLeads: toFilter(a.agentLeads) }),
     ...(a.internal.enabled && { internal: toFilter(a.internal) }),
     manualEmails: a.manualEmails.split(/[\n,]/).map(s => s.trim()).filter(Boolean),
+    ...(a.excludeBookedThisMonth && { excludeBookedThisMonth: true }),
   }
 }
 
@@ -95,6 +100,7 @@ export function audienceStateFromSources(sources: any): AudienceState {
     agentLeads: fill(sources?.agentLeads),
     internal: fill(sources?.internal),
     manualEmails: (sources?.manualEmails ?? []).join('\n'),
+    excludeBookedThisMonth: !!sources?.excludeBookedThisMonth,
   }
 }
 
@@ -218,6 +224,70 @@ function LeadConditions({ audience, setAudience }: {
   )
 }
 
+interface BookedGuest { customerId: string; name: string | null; email: string; reason: string }
+
+// Applies across every source (matched by email), so it sits above them all. The list is
+// always "this month" at the moment it's viewed — and the send itself re-resolves it, so a
+// campaign saved in November but sent in December excludes December's bookers.
+function BookedThisMonthExclusion({ enabled, onChange }: { enabled: boolean; onChange: (v: boolean) => void }) {
+  const [data, setData] = useState<{ label: string; guests: BookedGuest[] } | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [open, setOpen] = useState(false)
+
+  useEffect(() => {
+    if (!enabled || data) return
+    setLoading(true)
+    fetch('/api/marketing/booked-this-month')
+      .then(r => r.ok ? r.json() : null)
+      .then(setData)
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [enabled, data])
+
+  const count = data?.guests.length ?? 0
+
+  return (
+    <div className="border rounded-lg p-4 space-y-2">
+      <label className="flex items-center gap-2 font-medium text-sm">
+        <input type="checkbox" checked={enabled} onChange={e => onChange(e.target.checked)} />
+        <CalendarX2 className="h-4 w-4 text-muted-foreground" />
+        Exclude guests who booked this month
+      </label>
+      <p className="text-xs text-muted-foreground ml-6">
+        Skips anyone whose booking was confirmed or who had a payment requested in the current month — matched by email across all sources below. Switches to the new month automatically.
+      </p>
+      {enabled && (
+        <div className="ml-6 space-y-2">
+          {loading ? (
+            <p className="text-xs text-muted-foreground flex items-center gap-1.5"><Loader2 className="h-3 w-3 animate-spin" /> Loading…</p>
+          ) : data ? (
+            <>
+              <button type="button" onClick={() => setOpen(o => !o)} disabled={count === 0}
+                className="text-xs font-medium flex items-center gap-1 disabled:cursor-default" style={{ color: 'var(--primary-strong)' }}>
+                {count > 0 && (open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />)}
+                {data.label}: {count} guest{count === 1 ? '' : 's'} excluded{count > 0 && (open ? ' — hide' : ' — show who')}
+              </button>
+              {open && count > 0 && (
+                <div className="border rounded-md max-h-56 overflow-y-auto divide-y">
+                  {data.guests.map(g => (
+                    <div key={g.customerId} className="flex items-center gap-2 px-2.5 py-1.5 text-xs">
+                      <span className="flex-1 truncate">{g.name ?? '—'}</span>
+                      <span className="text-muted-foreground truncate max-w-[35%]">{g.email}</span>
+                      <span className="text-muted-foreground whitespace-nowrap">{g.reason}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          ) : (
+            <p className="text-xs text-muted-foreground">Couldn't load this month's list.</p>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function AudienceSourceFields({ audience, setAudience, yachts }: {
   audience: AudienceState
   setAudience: (updater: (a: AudienceState) => AudienceState) => void
@@ -225,6 +295,10 @@ export function AudienceSourceFields({ audience, setAudience, yachts }: {
 }) {
   return (
     <div className="space-y-5">
+      <BookedThisMonthExclusion
+        enabled={audience.excludeBookedThisMonth}
+        onChange={v => setAudience(a => ({ ...a, excludeBookedThisMonth: v }))}
+      />
       <div className="space-y-2">
         <AudiencePicker
           source="customers" label="Guest" hint="From bookings"

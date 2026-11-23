@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useSession } from 'next-auth/react'
+import { payrollPeriodLabel } from '@/lib/payroll'
 import { Plus, Banknote, Lock } from 'lucide-react'
 import { roleMatches } from '@/lib/role-utils'
 import { StatusBadge, type StatusTone } from '@/components/ui/status-badge'
@@ -108,7 +109,7 @@ function PayrollPeriods({ onLocked }: { onLocked: () => void }) {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         year: form.year, month: form.month,
-        cutoffDate: `${form.year}-${pad(form.month)}-20`,
+        cutoffDate: `${form.year}-${pad(form.month)}-19`, // last day of the 20th–19th window
         payDate: `${form.year}-${pad(form.month)}-25`,
       }),
     })
@@ -155,7 +156,7 @@ function PayrollPeriods({ onLocked }: { onLocked: () => void }) {
                 <div>
                   <p className="font-semibold text-sm">{MONTH_NAMES[p.month - 1]} {p.year}</p>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    {p._count.entries} {p._count.entries === 1 ? 'employee' : 'employees'}
+                    {payrollPeriodLabel(p.year, p.month)} · {p._count.entries} {p._count.entries === 1 ? 'employee' : 'employees'}
                     {p.payDate ? ` · Pay date ${formatDate(p.payDate)}` : ''}
                   </p>
                 </div>
@@ -185,7 +186,7 @@ function PayrollPeriods({ onLocked }: { onLocked: () => void }) {
                 <Input id="payroll-period-year" type="number" value={form.year} onChange={e => setForm(f => ({ ...f, year: Number(e.target.value) }))} />
               </div>
             </div>
-            <p className="text-xs text-muted-foreground">Cutoff defaults to the 20th, pay date to the 25th of the selected month — both editable later.</p>
+            <p className="text-xs text-muted-foreground">Covers {Number.isFinite(form.year) && form.year > 0 ? payrollPeriodLabel(form.year, form.month) : '20th of the previous month – 19th of the selected month'} (attendance, national holidays and crew trip days). Pay date defaults to the 25th of the selected month.</p>
           </div>
           <DialogFooter className="px-6 py-4 border-t bg-muted/50">
             <Button variant="outline" onClick={() => setModal(false)}>Cancel</Button>

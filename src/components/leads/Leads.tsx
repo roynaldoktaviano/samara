@@ -18,6 +18,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { UserPlus, Plus, Edit, MessageCircle, Send, Search, Mail, Phone, ChevronRight, ChevronLeft, Trash2, X, Globe, RotateCw, Download, ArrowUp, ArrowDown, Target, AlertTriangle, Loader2, Ship, AtSign, Instagram, Facebook, MessagesSquare, HelpCircle, Briefcase } from 'lucide-react'
 import LeadEditSheet from '@/components/leads/LeadEditSheet'
 import LostReasonDialog from '@/components/leads/LostReasonDialog'
+import { leadDealName, type DealTripType } from '@/lib/deal-name'
 import WonPaymentDialog from '@/components/leads/WonPaymentDialog'
 import { isHttpUrl } from '@/lib/url-safety'
 import { WebsiteJourney } from '@/components/shared/WebsiteJourney'
@@ -904,7 +905,7 @@ export default function Leads({ onOpenWhatsapp, onOpenMetaChat, onOpenEmail, onO
       {/* ── Add / Edit Lead Sheet ─────────────────────────────────────────── */}
       <WonPaymentDialog
         open={!!wonTarget}
-        dealName={wonTarget?.name}
+        dealName={wonTarget ? (detail?.id === wonTarget.id && detail.dealName) || leadDealName({ ...wonTarget, tripType: (wonTarget as { tripType?: DealTripType | null }).tripType ?? null }) : undefined}
         busy={stageBusy}
         onCancel={() => setWonTarget(null)}
         onConfirm={paymentStatus => wonTarget && changeStage(wonTarget, 'CLOSED_WON', { paymentStatus })}

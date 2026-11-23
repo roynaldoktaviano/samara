@@ -721,7 +721,7 @@ export default function SalesPipeline({ onOpenChat, onOpenMetaChat, onOpenBookin
       <LeadEditSheet open={!!editLeadId} leadId={editLeadId} dealId={editDealId} onClose={() => { setEditLeadId(null); setEditDealId(null) }} onSaved={() => { setEditLeadId(null); setEditDealId(null); load() }} />
       <WonPaymentDialog
         open={!!wonTarget}
-        dealName={wonTarget?.name}
+        dealName={wonTarget ? leadDealName(wonTarget) : undefined}
         busy={busy}
         onCancel={() => setWonTarget(null)}
         onConfirm={paymentStatus => wonTarget && changeStage(wonTarget, 'CLOSED_WON', { paymentStatus })}

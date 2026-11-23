@@ -453,6 +453,12 @@ model Lead {
   budgetMin          Float? // optional — never required to advance stage
   budgetMax          Float?
   budgetCurrency     String?
+  // Ads opt-out recorded by sales for a lead that never saw the website banner (phone, email,
+  // agent / OTA, DM): 'denied' | null — consent itself only comes from the guest. Blocks every
+  // Google / Meta upload (src/lib/ad-consent.ts manualConsentRows).
+  adConsent          String?
+  adConsentAt        DateTime?
+  adConsentById      String?
   // Private Charter / Open Trip — same choice as on the Booking it turns into.
   tripType           TripType?
   // Agreed trip price — filled from Send Booking Confirmation on (chat Lead panel / Lead form).
@@ -4488,6 +4494,13 @@ model LeaveRequest {
   crewApprovedBy          User?     @relation("LeaveCrewApprovedBy", fields: [crewApprovedById], references: [id], onDelete: SetNull)
   crewApprovedAt          DateTime?
   crewDecisionNote        String?
+  // Parallel approval (2026-11-23): Captain, Cruise Director, manager and HR all get the
+  // request at once and the first approve wins (→ APPROVED + Attendance). A supervisor's
+  // reject is NOT final — it's recorded here (with the *ApprovedBy/At/Note fields above as
+  // "decided by") and HR can still approve; only HR's reject closes the request.
+  captainRejected         Boolean   @default(false)
+  crewRejected            Boolean   @default(false)
+  managerRejected         Boolean   @default(false)
 
   // Non-crew stage 1 (or crew whose yacht has no CD/Captain): true when the employee's
   // manager (Employee.managerId) had an ERP login at request time — that manager must

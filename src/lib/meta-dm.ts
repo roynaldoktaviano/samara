@@ -484,7 +484,8 @@ export async function handleMetaMessagingEvents(db: PrismaClient, tenantId: stri
           const justLinked = !!leadId && !before?.leadId
           if (leadId && (justLinked || (before && isNewContactSession(before.lastInboundAt, now)))) {
             await recordLeadContact(db, { leadId, channel: platform, brand, instagramConversationId: conversation.id, message: preview, isFirstContact: created })
-            // Deal rules (parity B): new deal for this brand, or a note on its open deal (src/lib/deal-chat.ts).
+            // Deal rules: a note on this brand's open deal only — DMs never open a deal by themselves;
+            // sales use the chat panel's "Create deal" (src/lib/deal-chat.ts).
             if (!stale) {
               await runChatDealMaker(db, { leadId, brand, channel: platform === 'MESSENGER' ? 'MESSENGER' : 'INSTAGRAM', text: preview, at: now })
                 .catch(e => console.error('[meta-dm] deal maker failed', e))

@@ -6,8 +6,7 @@ import { getDb } from '@/lib/get-db'
 import { roleMatches } from '@/lib/role-utils'
 import { sendPushToUsers } from '@/lib/push'
 import { emitTenantEvent } from '@/lib/realtime-bus'
-import { matchEmployeesToYachts } from '@/lib/payroll'
-import { LEAVE_TYPE_LABEL, leaveKind, parseLeaveType, usesLeaveBalance, type LeaveType } from '@/lib/leave-request'
+import { LEAVE_TYPE_LABEL, leaveKind, parseLeaveType, usesLeaveBalance, approveLeaveRequest, type LeaveType } from '@/lib/leave-request'
 
 const ALLOWED = ['ADMIN', 'SUPER_ADMIN', 'HR']
 
@@ -55,31 +54,40 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   if (action !== 'approve' && action !== 'reject') return NextResponse.json({ error: 'Invalid action' }, { status: 400 })
 
+  // Parallel approval (see src/lib/leave-request.ts): HR can decide at any point while the
+  // request is pending — no waiting on the Captain/CD/manager, and HR's decision overrides
+  // a supervisor's reject. Approve → APPROVED + balance + Attendance (approveLeaveRequest).
   const existing = await db.leaveRequest.findUnique({
     where: { id },
-    include: { employee: { select: { id: true, fullName: true, leaveBalance: true, userId: true, location: { select: { name: true } } } } },
+    omit: { attachments: true },
+    include: { employee: { select: { userId: true } } },
   })
   if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-  // Crew requests must clear the Cruise Director/Captain stage first (see
-  // ./crew-approval/route.ts) — HR can't jump ahead of an unresolved crew stage.
-  if (existing.requiresCrewApproval && existing.status === 'PENDING') {
-    return NextResponse.json({ error: 'Waiting on the Cruise Director/Captain to approve first' }, { status: 409 })
-  }
-  if (existing.requiresManagerApproval && existing.status === 'PENDING') {
-    return NextResponse.json({ error: "Waiting on the employee's manager to approve first" }, { status: 409 })
-  }
   if (existing.status !== 'PENDING' && existing.status !== 'PENDING_HR_APPROVAL') {
     return NextResponse.json({ error: 'This request has already been decided' }, { status: 409 })
   }
+  const note = decisionNote?.trim() || null
 
-  const updated = await db.leaveRequest.update({
+  if (action === 'approve') {
+    const ok = await approveLeaveRequest(db, { id, approverUserId: session.user.id, note, approvedByLabel: 'HR', byHr: true })
+    if (!ok) return NextResponse.json({ error: 'This request was already decided — refresh and try again' }, { status: 409 })
+  } else {
+    const res = await db.leaveRequest.updateMany({
+      where: { id, status: { in: ['PENDING', 'PENDING_HR_APPROVAL'] } },
+      data: { status: 'REJECTED', decidedById: session.user.id, decidedAt: new Date(), decisionNote: note },
+    })
+    if (res.count === 0) return NextResponse.json({ error: 'This request was already decided — refresh and try again' }, { status: 409 })
+    if (existing.employee.userId) {
+      const title = `${LEAVE_TYPE_LABEL[existing.type]} request rejected`
+      const body = `Your ${leaveKind(existing.type)} request (${existing.days} day${existing.days !== 1 ? 's' : ''}) was rejected by HR.`
+      await db.notification.create({ data: { userId: existing.employee.userId, type: 'LEAVE_DECIDED', title, body } }).catch(() => {})
+      sendPushToUsers(db, [existing.employee.userId], { title, body }).catch(() => {})
+    }
+  }
+
+  const updated = await db.leaveRequest.findUnique({
     where: { id },
-    data: {
-      status: action === 'approve' ? 'APPROVED' : 'REJECTED',
-      decidedById: session.user.id,
-      decidedAt: new Date(),
-      decisionNote: decisionNote?.trim() || null,
-    },
+    omit: { attachments: true },
     include: {
       employee: { select: { id: true, fullName: true, employeeNumber: true, leaveBalance: true } },
       requestedBy: { select: { id: true, name: true } },
@@ -87,45 +95,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     },
   })
 
-  if (action === 'approve') {
-    // Only annual leave draws down the balance — WFH isn't time off and sick leave is separate.
-    if (usesLeaveBalance(existing.type)) {
-      await db.employee.update({
-        where: { id: existing.employeeId },
-        data: { leaveBalance: (existing.employee.leaveBalance ?? 0) - existing.days },
-      })
-    }
-
-    // Auto-reflect the approved leave in Attendance Recap — one CUTI row per day in
-    // range, so HR never has to manually mirror an approved request into the grid. Office
-    // staff skip weekend dates here too (they were never working days, see the days
-    // count in countLeaveDays), leaving those cells as the normal "not a working day"
-    // placeholder instead of a leave dot; crew get every day since they always work.
-    const yachts = await db.yacht.findMany({ select: { id: true, name: true } })
-    const isCrew = matchEmployeesToYachts(
-      [{ id: existing.employee.id, locationName: existing.employee.location?.name ?? null }],
-      yachts,
-    ).has(existing.employee.id)
-    const dates: Date[] = []
-    for (const d = new Date(existing.startDate); d <= existing.endDate; d.setUTCDate(d.getUTCDate() + 1)) {
-      if (isCrew || (d.getUTCDay() !== 0 && d.getUTCDay() !== 6)) dates.push(new Date(d))
-    }
-    const attendanceStatus = existing.type === 'WFH' ? 'WFH' : existing.type === 'SICK' ? 'SAKIT' : 'CUTI'
-    await Promise.all(dates.map(date => db.attendanceRecord.upsert({
-      where: { employeeId_date: { employeeId: existing.employeeId, date } },
-      create: { id: crypto.randomUUID(), employeeId: existing.employeeId, date, status: attendanceStatus, leaveRequestId: existing.id, setById: session.user.id },
-      update: { status: attendanceStatus, leaveRequestId: existing.id, setById: session.user.id },
-    })))
-  }
-
-  if (existing.employee.userId) {
-    const title = `${LEAVE_TYPE_LABEL[existing.type]} request ${action === 'approve' ? 'approved' : 'rejected'}`
-    const body = `Your ${leaveKind(existing.type)} request (${existing.days} day${existing.days !== 1 ? 's' : ''}) was ${action === 'approve' ? 'approved' : 'rejected'}.`
-    await db.notification.create({ data: { userId: existing.employee.userId, type: 'LEAVE_DECIDED', title, body } }).catch(() => {})
-    sendPushToUsers(db, [existing.employee.userId], { title, body }).catch(() => {})
-  }
-
   emitTenantEvent(session.user.tenantId, 'hr-leave-requests')
+  emitTenantEvent(session.user.tenantId, 'my-approvals')
 
   return NextResponse.json(updated)
 }

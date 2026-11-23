@@ -33,11 +33,13 @@ interface LeaveRequest {
   trips: Trip[]
   needsFreelance: boolean
   freelanceRecommendations: FreelanceRecommendation[]
-  // Crew-only first stage — true when a Cruise Director/Captain was resolved for this
-  // employee's yacht at request time (see resolveYachtCrewApprovers). Once they approve,
-  // status moves PENDING → PENDING_HR_APPROVAL and these fields fill in; HR can't decide
-  // while this is true and status is still PENDING.
+  // Supervisor slots — parallel with HR since 2026-11-23 (src/lib/leave-request.ts): crew
+  // → the yacht's Captain + Cruise Director, others → the manager. Any one approval
+  // finalizes the request; a supervisor's reject (*Rejected) isn't final — HR decides.
   requiresCrewApproval: boolean
+  captainRejected: boolean
+  crewRejected: boolean
+  managerRejected: boolean
   crewApprovedBy: { id: string; name: string | null } | null
   crewApprovedAt: string | null
   crewDecisionNote: string | null
@@ -65,13 +67,7 @@ const STATUS_TONE: Record<string, StatusTone> = {
 }
 
 function statusLabel(r: LeaveRequest): string {
-  if (r.status === 'PENDING' && r.requiresCrewApproval) {
-    if (r.requiresCaptainApproval && !r.captainApprovedAt) return 'Awaiting Captain'
-    if (r.requiresCdApproval) return 'Awaiting Cruise Director'
-    return 'Awaiting Cruise Director/Captain'
-  }
-  if (r.status === 'PENDING') return r.requiresManagerApproval ? 'Awaiting Manager' : 'Pending'
-  if (r.status === 'PENDING_HR_APPROVAL') return 'Awaiting HR'
+  if (r.status === 'PENDING' || r.status === 'PENDING_HR_APPROVAL') return 'Pending'
   return r.status.charAt(0) + r.status.slice(1).toLowerCase()
 }
 
@@ -217,9 +213,8 @@ export default function LeaveRequestsPage() {
     setSelected(prev => (prev && list.find(r => r.id === prev.id)) ?? null)
   }
 
-  // "Pending" buckets both PENDING (still with the Cruise Director/Captain, if
-  // requiresCrewApproval) and PENDING_HR_APPROVAL (that stage cleared, now with HR) — the
-  // status badge/label still shows the precise stage per row (see statusLabel).
+  // "Pending" buckets PENDING and legacy PENDING_HR_APPROVAL rows — the "Waiting: …" line
+  // shows who can still decide (supervisor(s) and/or HR, in parallel).
   const filtered = statusFilter === 'All' ? requests
     : statusFilter === 'PENDING' ? requests.filter(r => r.status === 'PENDING' || r.status === 'PENDING_HR_APPROVAL')
     : requests.filter(r => r.status === statusFilter)
@@ -298,47 +293,36 @@ export default function LeaveRequestsPage() {
                 </div>
               )}
 
-              {selected.requiresCrewApproval && (() => {
-                const legacy = !selected.requiresCaptainApproval && !selected.requiresCdApproval
-                const steps = [
-                  ...(selected.requiresCaptainApproval ? [{ key: 'captain', label: 'Captain', at: selected.captainApprovedAt, by: selected.captainApprovedBy, note: selected.captainDecisionNote }] : []),
-                  ...(selected.requiresCdApproval || legacy ? [{ key: 'cd', label: legacy ? 'Cruise Director/Captain' : 'Cruise Director', at: selected.crewApprovedAt, by: selected.crewApprovedBy, note: selected.crewDecisionNote }] : []),
+              {(selected.requiresCrewApproval || selected.requiresManagerApproval) && (() => {
+                const legacy = selected.requiresCrewApproval && !selected.requiresCaptainApproval && !selected.requiresCdApproval
+                const slots = [
+                  ...(selected.requiresManagerApproval ? [{ key: 'manager', label: 'Manager', at: selected.managerApprovedAt, by: selected.managerApprovedBy, note: selected.managerDecisionNote, rejected: selected.managerRejected }] : []),
+                  ...(selected.requiresCaptainApproval ? [{ key: 'captain', label: 'Captain', at: selected.captainApprovedAt, by: selected.captainApprovedBy, note: selected.captainDecisionNote, rejected: selected.captainRejected }] : []),
+                  ...(selected.requiresCdApproval || legacy ? [{ key: 'cd', label: legacy ? 'Cruise Director/Captain' : 'Cruise Director', at: selected.crewApprovedAt, by: selected.crewApprovedBy, note: selected.crewDecisionNote, rejected: selected.crewRejected }] : []),
                 ]
-                const currentKey = steps.find(st => !st.at)?.key
-                return steps.map(st => (
-                  <div key={st.key} className="text-xs">
-                    <p className="text-muted-foreground uppercase tracking-wide font-semibold mb-1">{st.label} Approval</p>
-                    {st.at ? (
-                      <div className="text-muted-foreground">
-                        Approved {formatDate(st.at)}{st.by?.name && ` by ${st.by.name}`}
-                        {st.note && <p className="mt-1.5 rounded-lg bg-muted/40 px-3 py-2 text-foreground">{st.note}</p>}
+                const open = selected.status === 'PENDING' || selected.status === 'PENDING_HR_APPROVAL'
+                return (
+                  <div className="text-xs space-y-2">
+                    <p className="text-muted-foreground uppercase tracking-wide font-semibold">Supervisor Approval <span className="normal-case font-normal">(any one approval, or HR, finalizes it)</span></p>
+                    {slots.map(st => (
+                      <div key={st.key}>
+                        <p className="font-medium">{st.label}</p>
+                        {st.at ? (
+                          <div className={st.rejected ? 'text-destructive' : 'text-muted-foreground'}>
+                            {st.rejected ? 'Rejected' : 'Approved'} {formatDate(st.at)}{st.by?.name && ` by ${st.by.name}`}
+                            {st.rejected && open && <span className="text-muted-foreground"> — HR makes the final decision</span>}
+                            {st.note && <p className="mt-1.5 rounded-lg bg-muted/40 px-3 py-2 text-foreground">{st.note}</p>}
+                          </div>
+                        ) : open ? (
+                          <p className="text-warning">Not decided yet — HR can also approve.</p>
+                        ) : (
+                          <p className="text-muted-foreground">No action needed.</p>
+                        )}
                       </div>
-                    ) : selected.status === 'REJECTED' ? (
-                      <p className="text-muted-foreground">{st.key === currentKey ? `Rejected${selected.decidedBy?.name ? ` by ${selected.decidedBy.name}` : ''} before reaching HR.` : 'Not reached.'}</p>
-                    ) : st.key === currentKey ? (
-                      <p className="text-warning">Waiting on the {st.label} to approve.</p>
-                    ) : (
-                      <p className="text-muted-foreground">Next, after the {steps[0].label}.</p>
-                    )}
+                    ))}
                   </div>
-                ))
+                )
               })()}
-
-              {selected.requiresManagerApproval && (
-                <div className="text-xs">
-                  <p className="text-muted-foreground uppercase tracking-wide font-semibold mb-1">Manager Approval</p>
-                  {selected.managerApprovedAt ? (
-                    <div className="text-muted-foreground">
-                      {selected.status === 'REJECTED' && selected.decidedAt === selected.managerApprovedAt ? 'Rejected' : 'Approved'} {formatDate(selected.managerApprovedAt)}{selected.managerApprovedBy?.name && ` by ${selected.managerApprovedBy.name}`}
-                      {selected.managerDecisionNote && <p className="mt-1.5 rounded-lg bg-muted/40 px-3 py-2 text-foreground">{selected.managerDecisionNote}</p>}
-                    </div>
-                  ) : selected.status === 'REJECTED' ? (
-                    <p className="text-muted-foreground">Rejected before reaching HR.</p>
-                  ) : (
-                    <p className="text-warning">Waiting on the employee&apos;s manager to approve first.</p>
-                  )}
-                </div>
-              )}
 
               <div className="text-xs text-muted-foreground border-t pt-3">
                 Requested {formatDate(selected.requestedAt)}{selected.requestedBy?.name && ` by ${selected.requestedBy.name}`}
@@ -359,7 +343,8 @@ export default function LeaveRequestsPage() {
                   title={selected.type === 'SICK' ? 'Counts against annual leave instead' : undefined}>
                   {selected.type === 'LEAVE' ? <Home /> : <CalendarDays />} {selected.type === 'LEAVE' ? 'Convert to WFH' : 'Convert to Leave'}
                 </Button>
-                {(selected.status === 'PENDING_HR_APPROVAL' || (!selected.requiresCrewApproval && !selected.requiresManagerApproval)) && (
+                {/* HR can decide any time while pending (parallel with supervisors). */}
+                {(
                   <div className="flex gap-2 ml-auto">
                     <Button variant="outline" onClick={() => setDecision({ req: selected, action: 'reject' })}
                       className="hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30 dark:hover:bg-destructive/10">

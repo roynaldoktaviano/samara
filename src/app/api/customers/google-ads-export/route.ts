@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getDb } from '@/lib/get-db'
 import { requireRole, type AppRole } from '@/lib/auth-guard'
-import { adUploadDecision, UPLOADABLE_MATCH_WHERE, type ConsentInquiry } from '@/lib/ad-consent'
+import { adUploadDecision, manualConsentRows, UPLOADABLE_MATCH_WHERE, type ConsentInquiry } from '@/lib/ad-consent'
 import { findLinkedLeadId } from '@/lib/customer-lead-link'
 
 const ALLOWED: AppRole[] = ['ADMIN', 'MARKETING', 'SUPER_ADMIN']
@@ -60,7 +60,10 @@ export async function GET() {
   for (const c of customers) {
     const leadId = await findLinkedLeadId(db, c)
     const leadRows = leadId
-      ? await db.inquiry.findMany({ where: { leadId }, select: { adConsent: true, consentRegion: true } })
+      ? [
+          ...await db.inquiry.findMany({ where: { leadId }, select: { adConsent: true, consentRegion: true } }),
+          ...manualConsentRows(await db.lead.findUnique({ where: { id: leadId }, select: { adConsent: true } })),
+        ]
       : []
     if (adUploadDecision([...(consentByCustomer.get(c.id) ?? []), ...leadRows], c.nationality).ok) allowed.add(c.id)
   }

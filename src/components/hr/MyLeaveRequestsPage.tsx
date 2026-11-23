@@ -29,8 +29,8 @@ interface LeaveRequest {
   trips: Trip[]
   needsFreelance: boolean
   freelanceRecommendations: FreelanceRecommendation[]
-  // Crew-only first stage — true when a Cruise Director/Captain was resolved for your
-  // yacht at request time. Once they approve, status moves PENDING → PENDING_HR_APPROVAL.
+  // Supervisor slots (crew: Captain + Cruise Director; others: manager) — parallel with
+  // HR since 2026-11-23, the first approval finalizes the request.
   requiresCrewApproval: boolean
   crewApprovedBy: { id: string; name: string | null } | null
   crewApprovedAt: string | null
@@ -59,13 +59,8 @@ const STATUS_TONE: Record<string, StatusTone> = {
 }
 
 function statusLabel(r: LeaveRequest): string {
-  if (r.status === 'PENDING' && r.requiresCrewApproval) {
-    if (r.requiresCaptainApproval && !r.captainApprovedAt) return 'Awaiting Captain'
-    if (r.requiresCdApproval) return 'Awaiting Cruise Director'
-    return 'Awaiting Cruise Director/Captain'
-  }
-  if (r.status === 'PENDING') return r.requiresManagerApproval ? 'Awaiting Manager' : 'Pending'
-  if (r.status === 'PENDING_HR_APPROVAL') return 'Awaiting HR'
+  // Parallel approval (supervisor(s) + HR at once) — "Waiting: …" shows who can still decide.
+  if (r.status === 'PENDING' || r.status === 'PENDING_HR_APPROVAL') return 'Pending'
   return r.status.charAt(0) + r.status.slice(1).toLowerCase()
 }
 

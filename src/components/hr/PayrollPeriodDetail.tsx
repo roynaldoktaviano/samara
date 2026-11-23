@@ -17,7 +17,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { NativeSelect } from '@/components/ui/native-select'
 import { Label } from '@/components/ui/label'
 import { formatDate, formatMoney } from '@/lib/format'
-import type { OtherIncomeItem } from '@/lib/payroll'
+import { payrollPeriodLabel, type OtherIncomeItem } from '@/lib/payroll'
 
 interface PayslipEntry {
   id: string
@@ -155,9 +155,10 @@ export default function PayrollPeriodDetail({ periodId, onBack, onLocked }: { pe
       body: JSON.stringify({ action, ...extra }),
     })
     const data = await res.json()
-    if (!res.ok) { setActionError(data.error ?? 'An error occurred'); setBusy(false); return }
+    if (!res.ok) { setActionError(data.error ?? 'An error occurred'); setBusy(false); return false }
     setBusy(false)
     load()
+    return true
   }
 
   async function decide() {
@@ -199,6 +200,17 @@ export default function PayrollPeriodDetail({ periodId, onBack, onLocked }: { pe
     })
     setSavingEntry(false)
     if (res.ok) { setEditEntry(null); load() }
+  }
+
+  // Re-runnable: adds missing active employees and refreshes existing entries from current
+  // profile/attendance/trip data; manual Commission, BPJS, PPh21 and Loan figures are kept.
+  async function generateEntries() {
+    if (period && period.entries.length > 0 && !(await confirm({
+      title: 'Regenerate entries?',
+      description: `Recalculates every entry from current employee data, attendance and trips (${payrollPeriodLabel(period.year, period.month)}) and adds any new active employees. Commission, BPJS, PPh21 and Loan you entered are kept; other manual edits are overwritten.`,
+      confirmLabel: 'Regenerate',
+    }))) return
+    if (await runAction('generate-entries')) toast.success('Entries generated')
   }
 
   async function removeEntry(entry: PayslipEntry) {
@@ -244,7 +256,7 @@ export default function PayrollPeriodDetail({ periodId, onBack, onLocked }: { pe
           </div>
           <div className="text-xs text-muted-foreground mt-1 space-y-0.5">
             <p>
-              {filteredEntries.length}{filteredEntries.length !== period.entries.length ? ` of ${period.entries.length}` : ''} {filteredEntries.length === 1 ? 'employee' : 'employees'} · Total take-home {formatMoney(totalTakeHome)}
+              Period {payrollPeriodLabel(period.year, period.month)} · {filteredEntries.length}{filteredEntries.length !== period.entries.length ? ` of ${period.entries.length}` : ''} {filteredEntries.length === 1 ? 'employee' : 'employees'} · Total take-home {formatMoney(totalTakeHome)}
               {period.payDate ? ` · Pay date ${formatDate(period.payDate)}` : ''}
             </p>
             {period.submittedBy && <p>Submitted by {period.submittedBy.name ?? '—'}{period.submittedAt ? ` on ${formatDate(period.submittedAt)}` : ''}</p>}
@@ -256,8 +268,8 @@ export default function PayrollPeriodDetail({ periodId, onBack, onLocked }: { pe
 
         <div className="flex items-center gap-2 flex-wrap justify-end">
           {isOpen && canManage && (
-            <Button variant="outline" onClick={() => runAction('generate-entries')} disabled={busy}>
-              Generate Entries
+            <Button variant="outline" onClick={generateEntries} disabled={busy}>
+              {period.entries.length > 0 ? 'Regenerate Entries' : 'Generate Entries'}
             </Button>
           )}
           {isOpen && canManage && period.entries.length > 0 && (

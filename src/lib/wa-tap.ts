@@ -101,7 +101,7 @@ export function tapFromPayload(p: Record<string, unknown>): Omit<Prisma.WaTapCre
 }
 
 /** Stores a tap (a repeat delivery of the same ref only fills gaps), then tries to match it. */
-export async function recordWaTap(db: Db, payload: Record<string, unknown>): Promise<{ ok: boolean; tapId?: string; matched?: boolean }> {
+export async function recordWaTap(db: Db, payload: Record<string, unknown>): Promise<{ ok: boolean; tapId?: string; matched?: boolean; lateMatchConversationId?: string | null }> {
   const data = tapFromPayload(payload)
   if (!data) return { ok: false }
   const rawPayload = JSON.parse(JSON.stringify(payload)) as Prisma.InputJsonValue
@@ -121,8 +121,11 @@ export async function recordWaTap(db: Db, payload: Record<string, unknown>): Pro
       return raced
     })
   }
-  const matched = tap.matchedConversationId ? true : await matchTapToChat(db, tap.id)
-  return { ok: true, tapId: tap.id, matched }
+  if (tap.matchedConversationId) return { ok: true, tapId: tap.id, matched: true }
+  const matched = await matchTapToChat(db, tap.id)
+  // Matched just now to a chat that already started → the caller opens its deal (runLateTapChatDeal).
+  const lateMatchConversationId = matched ? (await db.waTap.findUnique({ where: { id: tap.id }, select: { matchedConversationId: true } }))?.matchedConversationId ?? null : null
+  return { ok: true, tapId: tap.id, matched, lateMatchConversationId }
 }
 
 // ── Matching ─────────────────────────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 import type { PrismaClient } from '@prisma/client'
 import { findLinkedLeadId } from './customer-lead-link'
-import { adUploadDecision, isUploadableMatch } from './ad-consent'
+import { adUploadDecision, isUploadableMatch, manualConsentRows } from './ad-consent'
 
 export const GOOGLE_ADS_CONVERSION_HEADER = ['Google Click ID', 'Conversion Name', 'Conversion Time', 'Conversion Value', 'Conversion Currency']
 
@@ -74,7 +74,9 @@ export async function getGoogleAdsConversions(db: PrismaClient, since: Date, con
     const leadInquiries = leadId
       ? await db.inquiry.findMany({ where: { leadId }, orderBy: { createdAt: 'desc' }, select: { gclid: true, adConsent: true, consentRegion: true, matchConfidence: true } })
       : []
-    const all = [...c.inquiries, ...leadInquiries]
+    // + consent sales recorded by hand on the lead (ad-consent.ts).
+    const manual = leadId ? manualConsentRows(await db.lead.findUnique({ where: { id: leadId }, select: { adConsent: true } })) : []
+    const all = [...c.inquiries, ...leadInquiries, ...manual.map(m => ({ ...m, gclid: null, matchConfidence: null }))]
     // Consent gate (src/lib/ad-consent.ts): declined anywhere, or EU/UK/CH without a real
     // banner accept → never sent to Google.
     if (!adUploadDecision(all, c.nationality).ok) {

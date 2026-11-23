@@ -7,7 +7,7 @@ import { getDb } from '@/lib/get-db'
 import { roleMatches } from '@/lib/role-utils'
 import { requirePayrollUnlock } from '@/lib/payroll-unlock'
 import { sendPushToUsers } from '@/lib/push'
-import { buildPayslipEntryDraft, computeTotals, countWeekdaysInMonth, countTripDaysInPeriod, matchEmployeesToYachts, TRIP_BOOKING_STATUSES } from '@/lib/payroll'
+import { buildPayslipEntryDraft, computeTotals, countWeekdaysInRange, countTripDaysInPeriod, matchEmployeesToYachts, payrollPeriodRange, TRIP_BOOKING_STATUSES } from '@/lib/payroll'
 import { getVesselLocationIds } from '@/lib/hr/vessel-locations'
 
 const ALLOWED = ['ADMIN', 'SUPER_ADMIN', 'HR', 'FINANCE']
@@ -55,20 +55,31 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (body.action === 'generate-entries') {
     if (period.status !== 'OPEN') return NextResponse.json({ error: 'Entries can only be generated while the period is Open' }, { status: 409 })
 
-    const existingEmployeeIds = new Set(
-      (await db.payslipEntry.findMany({ where: { payrollPeriodId: id }, select: { employeeId: true } })).map(e => e.employeeId),
-    )
+    // Re-runnable: adds an entry for every active employee who doesn't have one yet AND
+    // refreshes every existing entry from current data (profile salary/allowances,
+    // attendance, national holidays, trip days, snapshot fields). Figures HR/Finance enter
+    // by hand — Commission, all BPJS, PPh21, Loan — are kept as they are on existing
+    // entries, so regenerating never wipes manual input.
+    const existingEntries = await db.payslipEntry.findMany({
+      where: { payrollPeriodId: id },
+      select: {
+        id: true, employeeId: true, commission: true, pph21: true, loanDeduction: true,
+        bpjsJkkCompany: true, bpjsJkmCompany: true, bpjsJhtCompany: true, bpjsJpCompany: true, bpjsKesehatanCompany: true,
+        bpjsJhtEmployee: true, bpjsJpEmployee: true, bpjsKesehatanEmployee: true,
+      },
+    })
+    const existingByEmployeeId = new Map(existingEntries.map(e => [e.employeeId, e]))
     const employees = await db.employee.findMany({
-      where: { isActive: true, id: { notIn: [...existingEmployeeIds] } },
+      where: { OR: [{ isActive: true }, { id: { in: [...existingByEmployeeId.keys()] } }] },
       include: { role: { select: { title: true } }, legalEntity: { select: { name: true } }, location: { select: { name: true } } },
     })
-    if (employees.length === 0) return NextResponse.json({ error: 'No new active employees to add — everyone already has an entry' }, { status: 409 })
+    if (employees.length === 0) return NextResponse.json({ error: 'No active employees to generate entries for' }, { status: 409 })
 
-    // Meal Allowance baseline: Mon–Fri working days in this period's month, minus
-    // national holidays that fall on a weekday (shared across everyone), minus each
-    // employee's own non-HADIR Attendance Recap days that month (see src/lib/payroll.ts).
-    const monthStart = new Date(period.year, period.month - 1, 1)
-    const monthEnd = new Date(period.year, period.month, 0, 23, 59, 59, 999)
+    // Meal Allowance baseline: Mon–Fri working days in this payroll window (20th of the
+    // previous month – 19th of this month, see payrollPeriodRange), minus national
+    // holidays that fall on a weekday (shared across everyone), minus each employee's own
+    // non-HADIR Attendance Recap days in the window (see src/lib/payroll.ts).
+    const { start: monthStart, end: monthEnd } = payrollPeriodRange(period.year, period.month)
     const [nonHadirRecords, holidays] = await Promise.all([
       db.attendanceRecord.findMany({
         where: { employeeId: { in: employees.map(e => e.id) }, status: { notIn: ['HADIR', 'WFH'] }, date: { gte: monthStart, lte: monthEnd } },
@@ -113,7 +124,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     // office-only, so they never reduce vessel crew's count (see lib/hr/vessel-locations.ts),
     // and a holiday that excludes an office location doesn't reduce theirs either, since that
     // day was a normal working day for them (see NationalHoliday.excludedLocationIds).
-    const baseWorkingDays = countWeekdaysInMonth(period.year, period.month)
+    const baseWorkingDays = countWeekdaysInRange(monthStart, monthEnd)
     const weekdayHolidays = holidays.filter(h => { const dow = h.date.getDay(); return dow !== 0 && dow !== 6 })
     const vesselLocationIds = await getVesselLocationIds(db)
     const workingDaysByLocationId = new Map<string, number>()
@@ -142,6 +153,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     })
     const nextInstallmentByEmployee = new Map<string, (typeof duePendingInstallments)[number]>()
     for (const inst of duePendingInstallments) {
+      if (existingByEmployeeId.has(inst.employeeId)) continue // existing entries keep their Loan figure
       if (inst.dueYear > period.year || (inst.dueYear === period.year && inst.dueMonth > period.month)) continue
       if (!nextInstallmentByEmployee.has(inst.employeeId)) nextInstallmentByEmployee.set(inst.employeeId, inst)
     }
@@ -154,8 +166,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         workingDays: workingDaysFor(emp.locationId),
         nonHadirWorkingDays: nonHadirWorkingDaysByEmployee.get(emp.id) ?? 0,
       }, tripDays)
-      const nextInstallment = nextInstallmentByEmployee.get(emp.id)
-      const entryId = crypto.randomUUID()
+      const existing = existingByEmployeeId.get(emp.id)
+      if (existing) {
+        const { id: _entryId, employeeId: _employeeId, ...manual } = existing
+        Object.assign(draft, manual)
+      }
+      const nextInstallment = existing ? undefined : nextInstallmentByEmployee.get(emp.id)
+      const entryId = existing?.id ?? crypto.randomUUID()
       if (nextInstallment) {
         draft.loanDeduction = nextInstallment.amount
         installmentLinks.push({ installmentId: nextInstallment.id, payslipEntryId: entryId })
@@ -182,7 +199,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         ...totals,
       }
     })
-    await db.payslipEntry.createMany({ data: rows })
+    const newRows = rows.filter(r => !existingByEmployeeId.has(r.employeeId))
+    const refreshRows = rows.filter(r => existingByEmployeeId.has(r.employeeId))
+    if (newRows.length) await db.payslipEntry.createMany({ data: newRows })
+    if (refreshRows.length) {
+      await db.$transaction(refreshRows.map(({ id: entryId, payrollPeriodId: _p, employeeId: _e, ...data }) =>
+        db.payslipEntry.update({ where: { id: entryId }, data }),
+      ))
+    }
     if (installmentLinks.length) {
       await db.$transaction(installmentLinks.map(l =>
         db.loanInstallment.update({ where: { id: l.installmentId }, data: { payslipEntryId: l.payslipEntryId } }),

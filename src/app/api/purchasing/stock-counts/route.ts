@@ -35,9 +35,14 @@ export async function POST(req: NextRequest) {
   if (!locationId) return NextResponse.json({ error: 'Location is required' }, { status: 400 })
   const countedById = bodyCountedById ?? session.user.id
 
-  // Build count number
-  const lastCount = await db.stockCount.findFirst({ orderBy: { createdAt: 'desc' }, select: { countNumber: true } })
-  const lastNum = lastCount ? parseInt(lastCount.countNumber.replace('SC-', '')) : 0
+  // Build count number — highest numeric SC-#### so far. The table also holds Stock Opname
+  // Awal rows (ISO-####), and taking just the newest row produced "SC-0NaN" (and then a
+  // unique-constraint failure on the next count).
+  const scNumbers = await db.stockCount.findMany({ where: { countNumber: { startsWith: 'SC-' } }, select: { countNumber: true } })
+  const lastNum = scNumbers.reduce((max, c) => {
+    const n = /^SC-(\d+)$/.exec(c.countNumber)
+    return n ? Math.max(max, Number(n[1])) : max
+  }, 0)
   const countNumber = `SC-${String(lastNum + 1).padStart(4, '0')}`
 
   // Load current stock at this location

@@ -6,6 +6,7 @@ import { getTenantSecret } from '@/lib/tenant-secrets'
 import { logWebhookFailure } from '@/lib/webhook-log'
 import { providedWebhookSecret, webhookSecretMatches } from '@/lib/webhook-secret'
 import { recordWaTap } from '@/lib/wa-tap'
+import { runLateTapChatDeal } from '@/lib/deal-chat'
 
 // WhatsApp-button taps from the website (Button Click to Chat, ref "SL-XXXXX"), forwarded
 // server-to-server by WordPress — the samara-erp-tracking plugin relays every tap the site
@@ -55,6 +56,8 @@ export async function POST(request: NextRequest) {
       if (!r.ok) { rejected++; continue }
       stored++
       if (r.matched) matched++
+      // The chat came in before its tap, so it was "direct" and got no deal — open it now (src/lib/deal-chat.ts).
+      if (r.lateMatchConversationId) await runLateTapChatDeal(db, r.lateMatchConversationId).catch(e => console.error('[wa-tap] late deal failed', e))
     }
     if (rejected) {
       logWebhookFailure({ source: 'WA_TAP', tenantSlug: tenant.slug, reason: 'invalid_ref', rawPayload: { rejected: String(rejected), sample: JSON.stringify(taps[0]).slice(0, 2000) } })

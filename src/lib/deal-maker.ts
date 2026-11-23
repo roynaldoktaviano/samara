@@ -3,7 +3,7 @@ import { sendPushToUser } from '@/lib/push'
 import { pickNextSalesUserId } from '@/lib/whatsapp-distribution'
 import { isSalesUserStillEmployed } from '@/lib/sales-availability'
 import { normalizeEmail } from '@/lib/contact-identity'
-import { TRIP_TYPE_NAME } from '@/lib/deal-name'
+import { formatDealName } from '@/lib/deal-name'
 
 /**
  * Deal maker — the ERP's version of Freshsales snippet 92 (go-live parity checklist, section B).
@@ -94,7 +94,7 @@ export async function flushDealPushes(db: PrismaClient, pushes: PushNotice[]) {
 /** Every lead / guest id that is this same person (exact email or E.164), incl. archived leads. */
 async function personIds(db: Db, p: { leadId?: string | null; customerId?: string | null }) {
   const [lead, cust] = await Promise.all([
-    p.leadId ? db.lead.findUnique({ where: { id: p.leadId }, select: { id: true, email: true, phoneE164: true, ownerId: true, name: true, deletedAt: true } }) : null,
+    p.leadId ? db.lead.findUnique({ where: { id: p.leadId }, select: { id: true, email: true, phoneE164: true, ownerId: true, name: true, deletedAt: true, destination: { select: { name: true } } } }) : null,
     p.customerId ? db.customer.findUnique({ where: { id: p.customerId }, select: { id: true, email: true, phoneE164: true, ownerId: true, name: true } }) : null,
   ])
   const email = normalizeEmail(lead?.email ?? cust?.email)
@@ -113,7 +113,7 @@ async function personIds(db: Db, p: { leadId?: string | null; customerId?: strin
   const cardLeadId = lead?.id ?? leads.find(l => !l.deletedAt)?.id ?? leads[0]?.id ?? null
   // Contact owner: the guest's owner (handles the person now), else the lead's.
   const contactOwnerId = cust?.ownerId ?? lead?.ownerId ?? custs.find(c => c.ownerId)?.ownerId ?? leads.find(l => l.ownerId && !l.deletedAt)?.ownerId ?? null
-  return { leadIds, customerIds, cardLeadId, contactOwnerId, name: lead?.name ?? cust?.name ?? 'Unknown', cardLeadOwnerId: lead?.ownerId ?? leads.find(l => l.id === cardLeadId)?.ownerId ?? null }
+  return { leadIds, customerIds, cardLeadId, contactOwnerId, name: lead?.name ?? cust?.name ?? 'Unknown', destination: lead?.destination?.name ?? null, cardLeadOwnerId: lead?.ownerId ?? leads.find(l => l.id === cardLeadId)?.ownerId ?? null }
 }
 
 export interface DealMakerInput {
@@ -140,7 +140,9 @@ export interface DealMakerInput {
 
 export type DealMakerResult = { dealId: string; action: 'created' | 'joined' | 'merged'; ownerId: string | null; pushes: PushNotice[] }
 
-const dealLabel = (name: string, tripType: TripType | null) => [tripType ? TRIP_TYPE_NAME[tripType] : null, name].filter(Boolean).join(' · ')
+/** Deal name in tasks / notifications — the same format as every deal screen (src/lib/deal-name.ts). */
+const dealLabel = (person: { name: string; destination: string | null }, d: { tripType: TripType | null; productInterest?: string | null; travelStartDate?: Date | null; travelEndDate?: Date | null }) =>
+  formatDealName({ tripType: d.tripType, yacht: d.productInterest, startDate: d.travelStartDate, endDate: d.travelEndDate, destination: person.destination, guestName: person.name })
 
 export async function runDealMaker(db: Db, input: DealMakerInput): Promise<DealMakerResult> {
   const at = input.at ?? new Date()
@@ -193,7 +195,10 @@ export async function runDealMaker(db: Db, input: DealMakerInput): Promise<DealM
       data: { dealId: target.id, kind: 'ENQUIRY', body: `${input.enquiry ? 'Enquired again' : 'Contacted again'} via ${via}${input.summary ? ` — ${input.summary}` : ''}`.slice(0, 4000), createdById: input.actingUserId ?? null, createdAt: at },
     })
     if (input.enquiry && target.ownerId) {
-      const label = dealLabel(person.name, target.tripType ?? input.tripType)
+      const label = dealLabel(person, {
+        tripType: target.tripType ?? input.tripType, productInterest: target.productInterest ?? input.productInterest,
+        travelStartDate: target.travelStartDate ?? input.travelStartDate, travelEndDate: target.travelEndDate ?? input.travelEndDate,
+      })
       const title = `Follow up within 4h: ${label} enquired again`
       const body = `New enquiry via ${via} on an open deal${input.summary ? ` — ${input.summary}` : ''}`.slice(0, 1000)
       await db.todo.create({
@@ -249,7 +254,7 @@ export async function runDealMaker(db: Db, input: DealMakerInput): Promise<DealM
     if (count) await db.leadAssignmentLog.create({ data: { leadId: person.cardLeadId, toUserId: ownerId, reason: 'AUTO_DISTRIBUTION' } })
   }
   if (ownerId && ownerId !== input.actingUserId) {
-    const title = `New enquiry: ${dealLabel(person.name, input.tripType)}`
+    const title = `New enquiry: ${dealLabel(person, input)}`
     const body = `via ${via}${input.summary ? ` — ${input.summary}` : ''}`.slice(0, 1000)
     await db.notification.create({ data: { userId: ownerId, type: 'LEAD_ASSIGNED', title: title.slice(0, 300), body } })
     pushes.push({ userId: ownerId, title, body })
@@ -278,12 +283,20 @@ export async function runDealMakerLocked(db: PrismaClient, input: DealMakerInput
 }
 
 /** One-line summary of an enquiry for the deal timeline. */
-export function enquirySummary(p: { tripType?: string | null; guestCount?: number | null; checkIn?: Date | null; checkOut?: Date | null; message?: string | null }): string {
+export function enquirySummary(p: {
+  tripType?: string | null; guestCount?: number | null; checkIn?: Date | null; checkOut?: Date | null
+  destination?: string | null; duration?: string | null; budget?: { budgetMin: number; budgetMax: number; budgetCurrency: string } | null
+  message?: string | null
+}): string {
   const fmt = (d: Date) => d.toISOString().slice(0, 10)
+  const money = (n: number) => n.toLocaleString('en-US')
   return [
     p.tripType?.trim() || null,
+    p.destination?.trim() || null,
     p.guestCount ? `${p.guestCount} pax` : null,
     p.checkIn ? `${fmt(p.checkIn)}${p.checkOut ? ` → ${fmt(p.checkOut)}` : ''}` : null,
+    p.duration?.trim() || null,
+    p.budget ? `budget ${p.budget.budgetCurrency} ${money(p.budget.budgetMin)}${p.budget.budgetMax !== p.budget.budgetMin ? `–${money(p.budget.budgetMax)}` : ''}` : null,
     p.message?.replace(/\s+/g, ' ').trim().slice(0, 300) || null,
   ].filter(Boolean).join(' · ')
 }

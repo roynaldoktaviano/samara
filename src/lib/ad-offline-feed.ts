@@ -1,6 +1,6 @@
 import { createHash } from 'crypto'
 import type { LeadStage, Prisma, PrismaClient, WhatsappBrand } from '@prisma/client'
-import { CONSENT_BANNER_REGIONS, isEeaUkChNationality } from '@/lib/ad-consent'
+import { CONSENT_BANNER_REGIONS, isEeaUkChNationality, isRealGrant, manualConsentRows } from '@/lib/ad-consent'
 
 // Offline conversion feeds for Google (Data Manager via Sheets) and Meta (Conversions API) —
 // go-live parity D. Spec: "Samara Yachting ERP – Google Offline Feed Mapping.xlsx" (Jay, 19 Nov) +
@@ -10,7 +10,8 @@ import { CONSENT_BANNER_REGIONS, isEeaUkChNationality } from '@/lib/ad-consent'
 // Rows (one per deal + action, ever):
 //   AC_PC / AC_OT    deal first reaches In Active Communication or any later stage (FU1/FU2, booking,
 //                    invoice, won) — fixed value IDR 18,167,000 (PC) / 5,087,000 (OT)
-//   INV_PC / INV_OT  deal first reaches Send Invoice 1 (or Won) — deal amount + currency
+//   INV_PC / INV_OT  deal reaches Send Invoice 1 — deal amount + currency. Only that stage: a deal
+//                    that goes Booking Confirmation → Won without an invoice stage gets no INV row (Roy, 23 Nov)
 //   BOOKING          deal first reaches Send Booking Confirmation or later — booking value
 //   Conversion time = the DealStageChange timestamp (parity C2). No trip type → "Stage unknown".
 // Never written (Exclusions tab): 1 consent denied anywhere · 2 deal on the never-upload list ·
@@ -40,7 +41,7 @@ const AC_DEFAULT_VALUE = { PRIVATE_CHARTER: 18167000, OPEN_TRIP: 5087000 } as co
 export const NEVER_UPLOAD_ORDER_IDS = new Set(['113001507993', '113001505078'])
 
 const AC_STAGES: LeadStage[] = ['ACTIVE_COMMUNICATION', 'FOLLOW_UP_1', 'FOLLOW_UP_2', 'BOOKING_CONFIRMATION', 'INVOICE_SENT', 'CLOSED_WON']
-const INV_STAGES: LeadStage[] = ['INVOICE_SENT', 'CLOSED_WON']
+const INV_STAGES: LeadStage[] = ['INVOICE_SENT']
 const BOOKING_STAGES: LeadStage[] = ['BOOKING_CONFIRMATION', 'INVOICE_SENT', 'CLOSED_WON']
 
 export const BRAND_TAB: Record<string, string> = { SAMARA: 'Samara', OTIUM: 'Otium', MISCHIEF: 'Mischief' }
@@ -105,7 +106,7 @@ export async function computeOfflineFeed(db: PrismaClient, now = new Date()) {
       amount: true, currency: true, neverUpload: true, deletedAt: true, leadId: true, customerId: true,
       stageChanges: { select: { toStage: true, changedAt: true }, orderBy: { changedAt: 'asc' } },
       booking: { select: { totalPrice: true, currency: true } },
-      lead: { select: { email: true, phoneE164: true, nationality: true, freshsalesContactId: true } },
+      lead: { select: { email: true, phoneE164: true, nationality: true, freshsalesContactId: true, adConsent: true } },
       customer: { select: { email: true, phoneE164: true, nationality: true, freshsalesContactId: true } },
     },
   })
@@ -159,14 +160,20 @@ export async function computeOfflineFeed(db: PrismaClient, now = new Date()) {
     const phoneE164 = d.lead?.phoneE164 ?? d.customer?.phoneE164 ?? null
     const personInq = [...(d.leadId ? inqByLead.get(d.leadId) ?? [] : []), ...(d.customerId ? inqByCust.get(d.customerId) ?? [] : [])]
     const dealInq = personInq.filter(q => q.dealId === d.id)
-    const ids = dealInq.length ? dealInq : personInq
+    // No enquiry linked to this deal → the person's other enquiries, minus Low WhatsApp matches (their
+    // click IDs may be someone else's — handover §2 "Low never uploaded").
+    const ids = dealInq.length ? dealInq : personInq.filter(q => q.matchConfidence !== 'LOW')
     const fsc = [d.lead?.freshsalesContactId, d.customer?.freshsalesContactId].map(id => (id ? fsContact.get(id) : undefined)).filter(Boolean) as typeof fsContacts
     const fsd = d.freshsalesDealId ? fsDeal.get(d.freshsalesDealId) : undefined
 
-    const consents = [...personInq.map(q => ({ c: q.adConsent, r: q.consentRegion })), ...fsc.map(c => ({ c: c.consent, r: c.region }))]
+    // + consent sales recorded by hand on the lead (phone / email / agent leads — ad-consent.ts).
+    const consents = [
+      ...personInq.map(q => ({ c: q.adConsent, r: q.consentRegion })), ...fsc.map(c => ({ c: c.consent, r: c.region })),
+      ...manualConsentRows(d.lead).map(m => ({ c: m.adConsent, r: m.consentRegion })),
+    ]
     const denied = consents.some(x => x.c === 'denied')
     const eea = isEeaContact({ nationality: person?.nationality, phoneE164, email, regions: consents.map(x => x.r) })
-    const realGrant = consents.some(x => x.c === 'granted' && !!x.r && CONSENT_BANNER_REGIONS.has(x.r))
+    const realGrant = consents.some(x => isRealGrant({ adConsent: x.c, consentRegion: x.r }))
     const granted = consents.some(x => x.c === 'granted')
     const low = dealInq.some(q => q.matchConfidence === 'LOW')
 

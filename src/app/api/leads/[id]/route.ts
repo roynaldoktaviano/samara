@@ -51,14 +51,23 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       },
     })
     const wanted = req.nextUrl.searchParams.get('deal')
-    const focus = (wanted && deals.find(d => d.id === wanted)) || deals.find(d => d.stage !== 'CLOSED_WON' && d.stage !== 'CLOSED_LOST') || deals[0] || null
-    const overlay = focus ? {
+    const explicit = (wanted && deals.find(d => d.id === wanted)) || null
+    const openDeal = deals.find(d => d.stage !== 'CLOSED_WON' && d.stage !== 'CLOSED_LOST') || null
+    const focus = explicit || openDeal || deals[0] || null
+    // Only Won / Lost deals left → the form shows the lead's own trip fields (what sales fill in for the
+    // next deal, see PUT and POST ./deal), not the closed deal's.
+    const overlay = explicit || openDeal ? {
       stage: focus.stage, tripType: focus.tripType, tripAmount: focus.amount, tripAmountCurrency: focus.currency,
       travelStartDate: focus.travelStartDate ?? lead.travelStartDate, travelEndDate: focus.travelEndDate ?? lead.travelEndDate,
       guestCount: focus.guestCount ?? lead.guestCount,
       productInterest: focus.productInterest ?? lead.productInterest,
     } : {}
-    return NextResponse.json({ ...lead, ...overlay, dealName: leadDealName({ ...lead, ...overlay }), guestId, deals, dealId: focus?.id ?? null })
+    const named = deals.map(d => ({ ...d, name: leadDealName({
+      name: lead.name, tripType: d.tripType, productInterest: d.productInterest ?? lead.productInterest,
+      travelStartDate: d.travelStartDate ?? lead.travelStartDate, travelEndDate: d.travelEndDate ?? lead.travelEndDate,
+      destination: lead.destination, booking: d.booking?.id && lead.booking?.id === d.booking.id ? lead.booking : null,
+    }) }))
+    return NextResponse.json({ ...lead, ...overlay, dealName: leadDealName({ ...lead, ...overlay }), guestId, deals: named, dealId: focus?.id ?? null, hasOpenDeal: !!openDeal })
   } catch (error) {
     console.error('Error fetching lead:', error)
     return NextResponse.json({ error: 'Failed to fetch lead' }, { status: 500 })
@@ -107,7 +116,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       firstName, lastName, nationality, email, phone, instagram, notes,
       productInterest, destinationId, travelStartDate, travelEndDate, travelSeason,
       guestCount, leadQuality, budgetMin, budgetMax, budgetCurrency,
-      tripType, tripAmount, tripAmountCurrency, entrySourceManual, dealId,
+      tripType, tripAmount, tripAmountCurrency, entrySourceManual, dealId, adConsent,
     } = body
 
     const name = [firstName, lastName].filter(Boolean).join(' ') || body.name
@@ -116,9 +125,12 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     // Trip type / amount / dates / pax belong to the deal (the board card's `dealId`, else the lead's
     // primary deal). A Won / Lost deal is read-only unless ADMIN — refused before anything is saved.
     const role = chatRole((session.user as { role?: string }).role)
+    // Without an explicit deal, only an OPEN primary deal takes them — with only Won / Lost deals left
+    // they stay on the lead, ready for the next deal ("Create deal", POST ./deal).
+    const primary = typeof dealId === 'string' && dealId ? null : await primaryDealOfLead(db, id)
     const deal = typeof dealId === 'string' && dealId
       ? await db.deal.findFirst({ where: { id: dealId, leadId: id }, select: { id: true, stage: true } })
-      : await primaryDealOfLead(db, id)
+      : primary && primary.stage !== 'CLOSED_WON' && primary.stage !== 'CLOSED_LOST' ? primary : null
     if (deal) {
       const num = (v: unknown) => v != null && v !== '' && Number.isFinite(Number(v)) ? Number(v) : null
       const open = deal.stage !== 'CLOSED_WON' && deal.stage !== 'CLOSED_LOST'
@@ -147,9 +159,18 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         ? { entrySourceManual: null, entrySource: null }
         : {}
 
+    // Ads opt-out recorded by sales (src/lib/ad-consent.ts): only 'denied' — consent must come from the
+    // guest, never from sales. Who + when only when it actually changes.
+    const consentPatch = adConsent === undefined ? {} : await (async () => {
+      const next = adConsent === 'denied' ? 'denied' : null
+      const cur = await db.lead.findUnique({ where: { id }, select: { adConsent: true } })
+      return cur?.adConsent === next ? {} : { adConsent: next, adConsentAt: next ? new Date() : null, adConsentById: next ? session.user.id : null }
+    })()
+
     const lead = await db.lead.update({
       where: { id },
       data: {
+        ...consentPatch,
         name, firstName, lastName, nationality, email, phone, notes,
         // Channel picked by hand wins over the automatic one (src/lib/lead-entry-source.ts);
         // clearing it lets the next classification run fill entrySource again.

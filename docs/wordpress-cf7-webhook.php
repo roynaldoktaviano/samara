@@ -1,5 +1,9 @@
 <?php
 /**
+ * Plugin Name: Samara ERP Tracking
+ * Description: Page-view tracker, Contact Form 7 → ERP, WhatsApp-tap relay → ERP. Secrets live in wp-config.php.
+ * Version:     2026.11.23
+ *
  * Samara ERP — website tracking + Contact Form 7 → ERP.
  *
  * FULL REPLACEMENT for the previous snippet — install the same file on every
@@ -14,6 +18,8 @@
  *   define('SAMARA_ERP_PAGEVIEW_SECRET', '<Website Pageview Tracker Secret>');  // server only too
  * The two values MUST be different.
  */
+
+if (!defined('ABSPATH')) exit; // only ever runs inside WordPress
 
 const SAMARA_ERP_BASE   = 'https://erp.samarayachting.com/api/webhooks';
 const SAMARA_ERP_TENANT = 'samara';
@@ -137,6 +143,9 @@ add_action('wpcf7_mail_sent', function ($contact_form) {
     foreach ($submission->get_posted_data() as $key => $value) {
         $data[$key] = is_array($value) ? implode(', ', $value) : (string) $value;
     }
+
+    // CF7 form ID — the ERP ignores forms that are never a lead (newsletter 90693, handover §2).
+    $data['form_id'] = (string) $contact_form->id();
 
     // Page the form was submitted from (incl. its ?utm_… query string).
     $page_url = (string) $submission->get_meta('url');

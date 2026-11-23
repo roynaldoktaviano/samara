@@ -3,7 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { matchEmployeesToYachts } from '@/lib/payroll'
-import { resolveCrewStageApprover } from '@/lib/leave-request'
+import { resolveYachtCrewApprovers, resolveCrewLeaveApprover, supervisorStageFor } from '@/lib/leave-request'
 import { RECRUITMENT_REQUEST_INCLUDE } from '@/lib/hr/recruitment'
 
 // Three independent things a logged-in user might be waiting to act on — despite the
@@ -14,9 +14,9 @@ import { RECRUITMENT_REQUEST_INCLUDE } from '@/lib/hr/recruitment'
 //    (a PR's manager can hold any Role).
 //  - Quotation/supplier-selection approvals: resolved via PurchaseRequestItem.quotationApproverId,
 //    set directly to a User.id by resolveQuotationApproverId at submission time.
-//  - Crew leave requests: resolved via User.role BOAT_CAPTAIN (step 1) / CRUISE_DIRECTOR
-//    (step 2) + assignedYachtId matching the requester's yacht (Employee.location.name ===
-//    Yacht.name) — see src/lib/leave-request.ts's crewLeaveStage/resolveCrewStageApprover.
+//  - Crew leave requests: resolved via User.role BOAT_CAPTAIN / CRUISE_DIRECTOR (parallel,
+//    either can decide) + assignedYachtId matching the requester's yacht
+//    (Employee.location.name === Yacht.name) — see src/lib/leave-request.ts's supervisorStageFor.
 //  - Recruitment requests: resolved via RecruitmentRequestApproval.approverId (the approver
 //    chain set in HR › Recruitment › Approvers), still undecided while AWAITING_APPROVAL.
 export async function GET() {
@@ -62,9 +62,9 @@ export async function GET() {
     }),
   ])
 
-  // Crew leave requests waiting on this user specifically — only those whose *current*
-  // crew step (Captain, then Cruise Director — see crewLeaveStage) resolves to this user
-  // for their assigned yacht, never every CD/Captain-role user in the company.
+  // Crew leave requests this user (the yacht's Captain or Cruise Director) can still
+  // decide — parallel approval, so both see it at once until one of them or HR decides
+  // (see supervisorStageFor). Only for their own assigned yacht.
   const crewLeaveRequests: Omit<Awaited<ReturnType<typeof db.leaveRequest.findMany>>[number], 'attachments'>[] = []
   if (user?.assignedYachtId && (user.role === 'CRUISE_DIRECTOR' || user.role === 'BOAT_CAPTAIN')) {
     const pending = await db.leaveRequest.findMany({
@@ -82,17 +82,21 @@ export async function GET() {
       yachts,
     )
     const mine = pending.filter(r => yachtIdByEmployeeId.get(r.employee.id) === user.assignedYachtId)
-    for (const r of mine) {
-      const approver = await resolveCrewStageApprover(db, r, user.assignedYachtId)
-      if (approver?.id === session.user.id) crewLeaveRequests.push(r)
+    if (mine.length) {
+      const { captain, cd } = await resolveYachtCrewApprovers(db, user.assignedYachtId)
+      const legacy = await resolveCrewLeaveApprover(db, user.assignedYachtId)
+      for (const r of mine) {
+        if (supervisorStageFor(r, session.user.id, { captainId: captain?.id, cdId: cd?.id, legacyCrewApproverId: legacy?.id })) crewLeaveRequests.push(r)
+      }
     }
   }
 
-  // Leave requests waiting on this user as the employee's manager (non-crew stage 1 —
-  // LeaveRequest.requiresManagerApproval), identity-based like business trips above.
+  // Leave requests this user can still decide as the employee's manager (non-crew,
+  // LeaveRequest.requiresManagerApproval) — parallel with HR, identity-based like business
+  // trips above.
   const managerLeaveApprovals = employee
     ? await db.leaveRequest.findMany({
-        where: { status: 'PENDING', requiresManagerApproval: true, employee: { managerId: employee.id } },
+        where: { status: 'PENDING', requiresManagerApproval: true, managerApprovedAt: null, managerRejected: false, employee: { managerId: employee.id } },
         orderBy: { requestedAt: 'asc' },
         omit: { attachments: true },
         include: { employee: { select: { id: true, fullName: true, employeeNumber: true, leaveBalance: true } } },

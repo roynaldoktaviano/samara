@@ -1,10 +1,12 @@
-import type { WhatsappBrand } from '@prisma/client'
+import type { PrismaClient, WhatsappBrand } from '@prisma/client'
 import { NextRequest, NextResponse } from 'next/server'
 import { resolveTenantBySlugFull } from '@/lib/resolve-tenant'
 import { getTenantSecret } from '@/lib/tenant-secrets'
 import { logActivity } from '@/lib/activity'
 import { brandForInquiry } from '@/lib/whatsapp-lead'
-import { contactLockKeys, enquirySummary, flushDealPushes, lockContact, runDealMaker, tripTypeFromText } from '@/lib/deal-maker'
+import { matchDestinationId, parseBudget } from '@/lib/form-trip-details'
+import { contactLockKeys, enquirySummary, flushDealPushes, lockContact, runDealMaker, tripTypeFromText, type PushNotice } from '@/lib/deal-maker'
+import { isDealMakerOn } from '@/lib/deal-maker-switch'
 import { inferDealYacht } from '@/lib/deal-product-interest'
 import { isHttpUrl } from '@/lib/url-safety'
 import { logWebhookFailure } from '@/lib/webhook-log'
@@ -104,6 +106,19 @@ export async function POST(request: NextRequest) {
       return json({ error: 'Unauthorized' }, 401)
     }
 
+    // ── Forms that are never a lead (handover §2: newsletter 90693) ──────────
+    // The plugin sends the CF7 form ID (docs/wordpress-cf7-webhook.php). Form IDs are per site, so
+    // entries are "host:id" (a bare id matches every site). The list lives in SystemSetting
+    // "cf7_ignored_form_ids" (comma-separated) so a new newsletter form needs no deploy.
+    const formId = pick(data, 'form_id', '_wpcf7')
+    if (formId) {
+      const formHost = (() => { try { return new URL(pick(data, 'page-url', 'page_url', 'form_page_url', 'url')).hostname.replace(/^www\./, '') } catch { return '' } })()
+      const ignored = await ignoredCf7FormIds(db)
+      if (ignored.has(formId) || (formHost && ignored.has(`${formHost}:${formId}`))) {
+        return json({ ok: true, skipped: 'ignored_form', formId })
+      }
+    }
+
     // ── Extract fields ────────────────────────────────────────────────────────
     // 'field_*' aliases are the Samara "Request Quote" CF7 form's actual tag names.
     const firstName = pick(data, 'field_FirstName', 'first-name', 'first_name', 'firstName', 'your-first-name')
@@ -119,6 +134,10 @@ export async function POST(request: NextRequest) {
     const checkOut  = pick(data, 'field_CheckOut', 'check-out-date', 'checkout', 'check_out', 'end-date',   'check-out')
     const tripType  = pick(data, 'field_TripType', 'trip-type',  'trip_type',  'tripType',  'trip')
     const message   = pick(data, 'field_Request',  'request',    'message',    'your-message', 'Request', 'Message')
+    // Charter-form extras (handover §2 "Trip details"): src/lib/form-trip-details.ts
+    const destinationText = pick(data, 'field_Destination', 'destination')
+    const durationText    = pick(data, 'field_Duration', 'duration')
+    const budget          = parseBudget(pick(data, 'field_Budget', 'budget'))
     // First-touch attribution ("Original" touch in Freshsales terms) — the form's ft_*
     // fields, persisted client-side (e.g. cookie) from the visitor's very first session,
     // as opposed to this specific submission's own traffic source below.
@@ -201,6 +220,9 @@ export async function POST(request: NextRequest) {
       // "Never overwrite": the form only fills fields that are still empty; the name is only
       // replaced when the current one is a stand-in (an email / number / chat handle).
       const match = await findContactByIdentity(tx, { email, phoneE164 })
+      // Destination + budget onto the Lead, only where still empty (never overwrite).
+      const destinationId = await matchDestinationId(tx, destinationText)
+      const tripExtras = { destinationId, ...(budget ?? {}) }
       const incoming = { firstName: firstName || null, lastName: lastName || null, email: email || null, phone: phone || null }
 
       if (match?.type === 'customer') {
@@ -211,8 +233,10 @@ export async function POST(request: NextRequest) {
         ownerId = match.id
       } else if (match?.type === 'lead') {
         ownerType = 'lead'
-        const cur = await tx.lead.findUniqueOrThrow({ where: { id: match.id }, select: { name: true, firstName: true, lastName: true, email: true, phone: true, nationality: true } })
-        const fill = fillEmptyOnly(cur, { ...incoming, nationality: ipCountry || null })
+        const cur = await tx.lead.findUniqueOrThrow({ where: { id: match.id }, select: { name: true, firstName: true, lastName: true, email: true, phone: true, nationality: true, destinationId: true, budgetMin: true, budgetMax: true, budgetCurrency: true } })
+        // Budget fields move together: only when the lead has no budget at all.
+        const budgetFill = cur.budgetMin == null && cur.budgetMax == null ? budget ?? {} : {}
+        const fill = { ...fillEmptyOnly(cur, { ...incoming, nationality: ipCountry || null, destinationId }), ...budgetFill }
         const realName = [firstName, lastName].filter(Boolean).join(' ')
         const rename = realName && isPlaceholderName(cur.name, cur)
           ? { name: realName, firstName: firstName || null, lastName: lastName || null }
@@ -231,6 +255,7 @@ export async function POST(request: NextRequest) {
             email:       email     || null,
             phone:       phone     || null,
             nationality: ipCountry || null,
+            ...tripExtras,
           },
           select: { id: true },
         })
@@ -293,14 +318,15 @@ export async function POST(request: NextRequest) {
       // (B1): Otium / Mischief trip types and sites go to their own pipeline.
       const checkInDate = parseDate(checkIn), checkOutDate = parseDate(checkOut)
       const guests = numGuests ? parseInt10(numGuests) : null
-      const dm = await runDealMaker(tx, {
+      // Switched off by an admin (src/lib/deal-maker-switch.ts) → lead + enquiry only, no automatic deal.
+      const dm = !(await isDealMakerOn(tx, 'WEBSITE_FORM')) ? { pushes: [] as PushNotice[] } : await runDealMaker(tx, {
         ...(ownerType === 'customer' ? { customerId: ownerId } : { leadId: ownerId }),
         brand,
         tripType: tripTypeFromText(tripType),
         channel: 'WEBSITE_FORM',
         enquiry: true,
         inquiryId: inquiry.id,
-        summary: enquirySummary({ tripType, guestCount: guests, checkIn: checkInDate, checkOut: checkOutDate, message }),
+        summary: enquirySummary({ tripType, guestCount: guests, checkIn: checkInDate, checkOut: checkOutDate, destination: destinationText, duration: durationText, budget, message }),
         travelStartDate: checkInDate, travelEndDate: checkOutDate, guestCount: guests,
         productInterest: inferDealYacht({ text: tripType, url: url || null, brand, tripType: tripTypeFromText(tripType) }),
       })
@@ -334,4 +360,10 @@ export async function POST(request: NextRequest) {
     console.error('[CF7 webhook]', error)
     return json({ error: 'Internal server error' }, 500)
   }
+}
+
+const DEFAULT_IGNORED_CF7_FORMS = 'samaraliveaboard.com:90693'
+async function ignoredCf7FormIds(db: PrismaClient): Promise<Set<string>> {
+  const row = await db.systemSetting.findUnique({ where: { key: 'cf7_ignored_form_ids' } }).catch(() => null)
+  return new Set((row?.textValue ?? DEFAULT_IGNORED_CF7_FORMS).toLowerCase().split(/[\s,]+/).filter(Boolean).map(e => e.replace(/^www\./, '')))
 }

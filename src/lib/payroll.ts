@@ -36,6 +36,40 @@ export interface DateRange {
   end: Date
 }
 
+// Payroll for month M covers the 20th of the previous month through the 19th of M
+// (company rule) — e.g. November 2026 = 20 Oct 2026 – 19 Nov 2026. Attendance (Meal
+// Allowance), national holidays and crew trip days (Uang Layar) all use this window.
+export const PAYROLL_PERIOD_START_DAY = 20
+
+export function payrollPeriodRange(year: number, month: number): DateRange {
+  return {
+    start: new Date(year, month - 2, PAYROLL_PERIOD_START_DAY),
+    end: new Date(year, month - 1, PAYROLL_PERIOD_START_DAY - 1, 23, 59, 59, 999),
+  }
+}
+
+// Mon–Fri days between start and end (inclusive) — the Meal Allowance baseline for a
+// payroll period window.
+export function countWeekdaysInRange(start: Date, end: Date): number {
+  let count = 0
+  const d = new Date(start.getFullYear(), start.getMonth(), start.getDate())
+  while (d <= end) {
+    const dow = d.getDay()
+    if (dow !== 0 && dow !== 6) count++
+    d.setDate(d.getDate() + 1)
+  }
+  return count
+}
+
+const SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+// "20 Oct – 19 Nov 2026" (or "20 Dec 2026 – 19 Jan 2027" across a year boundary).
+export function payrollPeriodLabel(year: number, month: number): string {
+  const { start, end } = payrollPeriodRange(year, month)
+  const s = `${start.getDate()} ${SHORT_MONTHS[start.getMonth()]}${start.getFullYear() !== end.getFullYear() ? ` ${start.getFullYear()}` : ''}`
+  return `${s} – ${end.getDate()} ${SHORT_MONTHS[end.getMonth()]} ${end.getFullYear()}`
+}
+
 // Bookings in these statuses represent a trip that's actually happening/happened —
 // excludes not-yet-confirmed (pending/on_hold) and cancelled bookings. Shared by crew
 // Uang Layar (payroll generation) and Leave Request trip-coverage lookup.

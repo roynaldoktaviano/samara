@@ -4,10 +4,9 @@ import type { Prisma } from '@prisma/client'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 
-import { sendPushToUsers } from '@/lib/push'
 import { emitTenantEvent } from '@/lib/realtime-bus'
 import { matchEmployeesToYachts, TRIP_BOOKING_STATUSES } from '@/lib/payroll'
-import { sanitizeFreelanceRecommendations, resolveYachtCrewApprovers, countLeaveDays, resolveLeaveWaitingOn, LEAVE_SKIP_MANAGER_ROLES, notifyLeaveReachedHr, parseLeaveType, leaveKind, leaveOffLabel, LEAVE_TYPE_LABEL, usesLeaveBalance, sanitizeLeaveAttachments } from '@/lib/leave-request'
+import { sanitizeFreelanceRecommendations, countLeaveDays, resolveLeaveWaitingOn, resolveLeaveRouting, leaveRoutingFlags, notifyLeaveSubmitted, parseLeaveType, usesLeaveBalance, sanitizeLeaveAttachments } from '@/lib/leave-request'
 
 // Who a leave request falls back to notifying when the requester's Employee record has
 // no manager (or no manager with a login) — same list HR/Admin already see the full
@@ -63,10 +62,7 @@ export async function GET() {
   }
 
   const waitingOn = await resolveLeaveWaitingOn(db, requests.map(r => ({
-    id: r.id, status: r.status, requiresCrewApproval: r.requiresCrewApproval, requiresManagerApproval: r.requiresManagerApproval,
-    requiresCaptainApproval: r.requiresCaptainApproval, captainApprovedAt: r.captainApprovedAt,
-    requiresCdApproval: r.requiresCdApproval, crewApprovedAt: r.crewApprovedAt,
-    managerName: employee.manager?.fullName ?? null, yachtId,
+    ...r, managerName: employee.manager?.fullName ?? null, yachtId: yachtId,
   })))
 
   return NextResponse.json({
@@ -82,7 +78,6 @@ export async function POST(req: NextRequest) {
   const db = await getDb(session)
   const { startDate, endDate, reason, needsFreelance, freelanceRecommendations, attachments: rawAttachments, type: rawType } = await req.json()
   const type = parseLeaveType(rawType)
-  const label = leaveOffLabel(type)
   // Sick leave must come with the doctor's letter (surat sakit).
   const attachments = type === 'SICK' ? sanitizeLeaveAttachments(rawAttachments) : []
   if (type === 'SICK' && attachments.length === 0) {
@@ -107,30 +102,15 @@ export async function POST(req: NextRequest) {
   const end = new Date(endDate)
   if (end < start) return NextResponse.json({ error: 'End date cannot be before the start date' }, { status: 400 })
 
-  // Crew (Work Location matches a Yacht name — same match as payroll's Uang Layar) goes
-  // through their yacht's Captain then Cruise Director first, then HR for final sign-off;
-  // everyone else (and crew whose yacht has nobody in either role yet) goes to
-  // manager/HR. See resolveYachtCrewApprovers. Also determines whether weekends
-  // count toward this request's day total — see countLeaveDays.
+  // Parallel approval: the direct supervisor(s) — crew: their yacht's Captain + Cruise
+  // Director; everyone else: Employee.manager (notify-only for Marc) — and HR all get it at
+  // once; the first approval finalizes it. See resolveLeaveRouting in src/lib/leave-request.ts.
+  // yachtId (crew) also decides whether weekends count toward the day total (countLeaveDays).
   const yachts = await db.yacht.findMany({ select: { id: true, name: true } })
-  const yachtId = matchEmployeesToYachts([{ id: employee.id, locationName: employee.location?.name ?? null }], yachts).get(employee.id)
-  // Crew stage = Captain → Cruise Director (whichever the yacht has; someone never
-  // approves their own request, so a Captain/CD filing their own leave skips that step).
-  const yachtApprovers = yachtId ? await resolveYachtCrewApprovers(db, yachtId) : { captain: null, cd: null }
-  const captainApprover = yachtApprovers.captain && yachtApprovers.captain.id !== employee.userId ? yachtApprovers.captain : null
-  const cdApprover = yachtApprovers.cd && yachtApprovers.cd.id !== employee.userId ? yachtApprovers.cd : null
-  const crewApprover = captainApprover ?? cdApprover
+  const routing = await resolveLeaveRouting(db, employee, yachts)
+  const yachtId = routing.yachtId
 
   const days = countLeaveDays(start, end, !!yachtId)
-
-  // Shore staff → the employee's manager approves first if they have an ERP login (and
-  // isn't the employee themself), then HR — same as BusinessTrip. No manager login, or a
-  // role in LEAVE_SKIP_MANAGER_ROLES (Sales team) → straight to HR.
-  const skipManager = !!employee.user?.role && LEAVE_SKIP_MANAGER_ROLES.includes(employee.user.role)
-  // Crew (yachtId set) never go through the manager — even a Captain on a yacht with no
-  // CD (nobody left to approve on board) goes straight to HR.
-  const managerUserId = !yachtId && !skipManager && employee.manager?.userId && employee.manager.userId !== employee.userId
-    ? employee.manager.userId : null
 
   // Block over-requesting past what's left — leaveBalance can be null (no policy tracked
   // for this employee yet), in which case there's nothing to cap against. WFH / sick leave never
@@ -151,42 +131,13 @@ export async function POST(req: NextRequest) {
       attachments,
       needsFreelance: type !== 'WFH' && !!needsFreelance,
       freelanceRecommendations: (type !== 'WFH' && needsFreelance ? sanitizeFreelanceRecommendations(freelanceRecommendations) : []) as unknown as Prisma.InputJsonValue,
-      requiresCrewApproval: !!crewApprover,
-      requiresCaptainApproval: !!captainApprover,
-      requiresCdApproval: !!cdApprover,
-      requiresManagerApproval: !!managerUserId,
+      ...leaveRoutingFlags(routing),
       requestedById: session.user.id,
     },
     include: { decidedBy: { select: { id: true, name: true } } },
   })
 
-  if (crewApprover) {
-    // Crew stage — only the first approver (Captain, or the CD if there's no Captain) is
-    // notified; the CD/HR hear about it as each stage clears (see the crew-approval route).
-    const title = `Crew ${leaveKind(type)} request needs your approval`
-    const body = `${employee.fullName} requested ${days} day${days !== 1 ? 's' : ''} ${label} (${startDate} to ${endDate}).`
-    await db.notification.create({
-      data: { userId: crewApprover.id, type: 'LEAVE_APPROVAL_NEEDED', title, body },
-    }).catch(() => {})
-    sendPushToUsers(db, [crewApprover.id], { title, body }).catch(() => {})
-  } else {
-    // Same routing as the HR-filed flow: notify the employee's manager if they have a
-    // login, otherwise every HR/Admin/Super Admin so it never sits unseen.
-    const title = `${LEAVE_TYPE_LABEL[type]} request needs your approval`
-    const body = `${employee.fullName} requested ${days} day${days !== 1 ? 's' : ''} ${label} (${startDate} to ${endDate}).`
-    if (managerUserId) {
-      await db.notification.create({
-        data: { userId: managerUserId, type: 'LEAVE_APPROVAL_NEEDED', title, body },
-      }).catch(() => {})
-      sendPushToUsers(db, [managerUserId], { title, body }).catch(() => {})
-    } else {
-      // Straight to HR — crew also send the FYI to Purchasing/Accounting (see
-      // notifyLeaveReachedHr), same as when a crew request clears the on-board steps.
-      await notifyLeaveReachedHr(db, {
-        employeeName: employee.fullName, type, days, startDate: start, endDate: end, approvedByLabel: null, isCrew: !!yachtId,
-      })
-    }
-  }
+  await notifyLeaveSubmitted(db, routing, { employeeName: employee.fullName, type, days, startDate: start, endDate: end })
 
   emitTenantEvent(session.user.tenantId, 'hr-leave-requests')
   emitTenantEvent(session.user.tenantId, 'my-approvals')

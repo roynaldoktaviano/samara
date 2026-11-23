@@ -69,10 +69,12 @@ interface CrewLeaveApproval {
   freelanceRecommendations: FreelanceRecommendation[]
   requestedAt: string
   employee: { id: string; fullName: string; employeeNumber: string; leaveBalance: number | null }
-  // Set when this is the Cruise Director's step — the Captain already approved.
+  // Set when the Captain already decided — with parallel approval that can only be a
+  // reject (an approve finalizes the request), shown to the Cruise Director.
   captainApprovedBy?: { id: string; name: string | null } | null
   captainApprovedAt?: string | null
   captainDecisionNote?: string | null
+  captainRejected?: boolean
   // Which stage-1 approval this user holds: 'crew' = yacht Cruise Director/Captain
   // (…/crew-approval, can edit the freelance fields), 'manager' = employee's manager
   // (…/manager-approval). Set client-side from which API list it came in.
@@ -369,8 +371,8 @@ export default function MyApprovalsPage() {
                 {r.reason && <p className="text-sm text-muted-foreground">{r.reason}</p>}
                 {r.type === 'SICK' && <SickLetterButton requestId={r.id} employeeName={r.employee.fullName} />}
                 {r.captainApprovedAt && (
-                  <p className="text-xs text-success">
-                    Approved by Captain{r.captainApprovedBy?.name ? ` ${r.captainApprovedBy.name}` : ''} · {formatDate(r.captainApprovedAt)}
+                  <p className={`text-xs ${r.captainRejected ? 'text-destructive' : 'text-success'}`}>
+                    {r.captainRejected ? 'Rejected' : 'Approved'} by Captain{r.captainApprovedBy?.name ? ` ${r.captainApprovedBy.name}` : ''} · {formatDate(r.captainApprovedAt)}
                     {r.captainDecisionNote && <span className="block text-muted-foreground mt-0.5">&ldquo;{r.captainDecisionNote}&rdquo;</span>}
                   </p>
                 )}
@@ -651,6 +653,7 @@ export default function MyApprovalsPage() {
               <DialogTitle className="font-semibold text-base leading-snug">Reject {crewRejectModal.employee.fullName}&apos;s leave request?</DialogTitle>
             </DialogHeader>
             <div className="px-6 py-4 space-y-2">
+              <p className="text-xs text-muted-foreground">HR still makes the final decision and can approve it anyway.</p>
               <Label htmlFor="approval-crew-reject-note" className="text-xs font-medium text-muted-foreground">Note (optional)</Label>
               <Textarea id="approval-crew-reject-note" rows={3} autoFocus value={crewRejectNote} onChange={e => setCrewRejectNote(e.target.value)}
                 className="resize-none" />

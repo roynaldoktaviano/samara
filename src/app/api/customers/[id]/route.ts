@@ -141,7 +141,36 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
         booking: { select: { tripType: true, startDate: true, endDate: true, destination: true, yacht: { select: { name: true } }, destinationRef: { select: { name: true } }, openTrip: { select: { destination: true } }, customer: { select: { name: true } } } },
       },
     })
-    const leads = pipelineLeads.map(l => ({ id: l.id, dealName: leadDealName(l), stage: l.stage, ownerName: l.owner?.name ?? null, createdAt: l.createdAt }))
+    // One row per Deal of this person (src/lib/deal-maker.ts), named from the deal + its lead / booking
+    // in the one deal format (src/lib/deal-name.ts). Leads from before the Deal model fall back to the lead.
+    const leadById = new Map(pipelineLeads.map(l => [l.id, l]))
+    const deals = await db.deal.findMany({
+      where: { deletedAt: null, OR: [{ customerId: id }, ...(pipelineLeads.length ? [{ leadId: { in: pipelineLeads.map(l => l.id) } }] : [])] },
+      orderBy: { createdAt: 'desc' },
+      take: 30,
+      select: {
+        id: true, leadId: true, stage: true, createdAt: true, tripType: true, productInterest: true, travelStartDate: true, travelEndDate: true,
+        owner: { select: { name: true } },
+        booking: { select: { tripType: true, startDate: true, endDate: true, destination: true, yacht: { select: { name: true } }, destinationRef: { select: { name: true } }, openTrip: { select: { destination: true } }, customer: { select: { name: true } } } },
+      },
+    })
+    const dealLeadIds = new Set(deals.map(d => d.leadId).filter(Boolean))
+    const leads = [
+      ...deals.map(d => {
+        const l = d.leadId ? leadById.get(d.leadId) : undefined
+        return {
+          id: d.id,
+          dealName: leadDealName({
+            name: l?.name ?? customer.name, tripType: d.tripType, productInterest: d.productInterest ?? l?.productInterest,
+            travelStartDate: d.travelStartDate ?? l?.travelStartDate, travelEndDate: d.travelEndDate ?? l?.travelEndDate,
+            destination: l?.destination ?? null, booking: d.booking,
+          }),
+          stage: d.stage, ownerName: d.owner?.name ?? null, createdAt: d.createdAt,
+        }
+      }),
+      ...pipelineLeads.filter(l => !dealLeadIds.has(l.id))
+        .map(l => ({ id: l.id, dealName: leadDealName(l), stage: l.stage, ownerName: l.owner?.name ?? null, createdAt: l.createdAt })),
+    ]
 
     return NextResponse.json({ ...customer, tripHistory, pipelineLeads: leads })
   } catch (error) {

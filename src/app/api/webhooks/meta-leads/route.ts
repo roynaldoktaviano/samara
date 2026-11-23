@@ -5,6 +5,7 @@ import { resolveTenantBySlugFull } from '@/lib/resolve-tenant'
 import { getTenantSecret } from '@/lib/tenant-secrets'
 import { logActivity } from '@/lib/activity'
 import { brandForInquiry } from '@/lib/whatsapp-lead'
+import { isDealMakerOn } from '@/lib/deal-maker-switch'
 import { contactLockKeys, enquirySummary, flushDealPushes, lockContact, runDealMaker, tripTypeFromText, type PushNotice } from '@/lib/deal-maker'
 import { inferDealYacht } from '@/lib/deal-product-interest'
 import { logWebhookFailure } from '@/lib/webhook-log'
@@ -317,7 +318,8 @@ async function ingestLead(db: PrismaClient, lead: MetaLead): Promise<IngestResul
     const guests = isFinite(guestCount) ? guestCount : null
     const dealBrand = brandForInquiry(website, tripType)
     const dealTripType = tripTypeFromText(vessel || lead.formName || null)
-    const dm = await runDealMaker(tx, {
+    // Switched off by an admin (src/lib/deal-maker-switch.ts) → lead + enquiry only, no automatic deal.
+    const dm = !(await isDealMakerOn(tx, 'META_FORM')) ? { pushes: [] as PushNotice[] } : await runDealMaker(tx, {
       ...(ownerType === 'customer' ? { customerId: ownerId } : { leadId: ownerId }),
       brand: dealBrand,
       tripType: dealTripType,

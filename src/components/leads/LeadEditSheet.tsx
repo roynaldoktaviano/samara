@@ -25,6 +25,8 @@ export interface LeadFormState {
   tripType: string; tripAmount: string; tripAmountCurrency: string
   // '' = detected automatically; else a LEAD_ENTRY_SOURCES key picked by sales
   entrySourceManual: string
+  // Ads opt-out recorded by sales: 'denied' or '' (consent itself only comes from the guest) — src/lib/ad-consent.ts
+  adConsent: string
 }
 
 export const LEAD_FORM_EMPTY: LeadFormState = {
@@ -35,6 +37,7 @@ export const LEAD_FORM_EMPTY: LeadFormState = {
   budgetMin: '', budgetMax: '', budgetCurrency: 'USD',
   tripType: '', tripAmount: '', tripAmountCurrency: 'USD',
   entrySourceManual: '',
+  adConsent: '',
 }
 
 export function toLeadFormState(data: any): LeadFormState {
@@ -61,10 +64,12 @@ export function toLeadFormState(data: any): LeadFormState {
     tripAmount:      data.tripAmount != null ? String(data.tripAmount) : '',
     tripAmountCurrency: data.tripAmountCurrency ?? 'USD',
     entrySourceManual: data.entrySourceManual ?? '',
+    adConsent: data.adConsent ?? '',
   }
 }
 
 const AUTO_CHANNEL = '__auto__'
+const NO_CONSENT = '__none__'
 
 function NationalitySelect({ id, value, onChange }: { id?: string; value: string; onChange: (v: string) => void }) {
   const [open, setOpen] = useState(false)
@@ -263,6 +268,15 @@ export function ProfileFields({ form, setForm, narrow }: { form: LeadFormState; 
             <SelectContent>
               <SelectItem value={AUTO_CHANNEL}>Automatic (detected)</SelectItem>
               {LEAD_ENTRY_SOURCES.map(src => <SelectItem key={src} value={src}>{LEAD_ENTRY_SOURCE_LABEL[src]}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </Field>
+        <Field label="Ads Opt-out" htmlFor="lead-ad-consent" col2 hint="If the guest asked not to have their details used for advertising, mark it here — they are then never sent to Google or Meta. Consent itself can only come from the guest on the website.">
+          <Select value={form.adConsent || NO_CONSENT} onValueChange={v => setForm({ ...form, adConsent: v === NO_CONSENT ? '' : v })}>
+            <SelectTrigger id="lead-ad-consent"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NO_CONSENT}>Nothing recorded</SelectItem>
+              <SelectItem value="denied">Guest declined ads use</SelectItem>
             </SelectContent>
           </Select>
         </Field>
