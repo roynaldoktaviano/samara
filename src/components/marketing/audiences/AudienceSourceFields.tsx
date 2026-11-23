@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
+import { NativeSelect } from '@/components/ui/native-select'
 import { Loader2, ChevronDown, ChevronRight, CalendarX2 } from 'lucide-react'
 import AudiencePicker from '@/components/marketing/campaigns/AudiencePicker'
 
@@ -236,22 +237,16 @@ function LeadConditions({ audience, setAudience }: {
 
 interface BookedGuest { customerId: string; name: string | null; email: string; reason: string }
 
-// Last 12 months as "YYYY-MM" in WITA (UTC+8), newest first — index 0 is the current month.
-function recentMonths(n = 12): { key: string; label: string }[] {
-  const local = new Date(Date.now() + 8 * 3600_000)
-  const y = local.getUTCFullYear(), m = local.getUTCMonth()
-  return Array.from({ length: n }, (_, i) => {
-    const d = new Date(Date.UTC(y, m - i, 1))
-    return {
-      key: `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`,
-      label: d.toLocaleString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' }),
-    }
-  })
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+
+// Current year in WITA (UTC+8).
+function currentYear(): number {
+  return new Date(Date.now() + 8 * 3600_000).getUTCFullYear()
 }
 
-// Applies across every source (matched by email), so it sits above them all. "This month
+// Applies across every source (matched by email), so it sits above them all. Month "This month
 // (auto)" is re-resolved at send time, so a campaign saved in November but sent in December
-// excludes December's bookers; the fixed month chips stay exactly as picked.
+// excludes December's bookers; a picked month + year stays exactly as picked.
 function BookedMonthsExclusion({ enabled, current, months, onChange }: {
   enabled: boolean
   current: boolean
@@ -261,12 +256,21 @@ function BookedMonthsExclusion({ enabled, current, months, onChange }: {
   const [data, setData] = useState<{ label: string; guests: BookedGuest[] } | null>(null)
   const [loading, setLoading] = useState(false)
   const [open, setOpen] = useState(false)
-  const options = recentMonths()
-  const currentKey = options[0].key
-  // A fixed chip for the current month is redundant with "auto" — treat them as separate though,
-  // since the fixed one keeps meaning November after the month rolls over.
   const query = `current=${current ? 1 : 0}&months=${months.join(',')}`
   const nothingPicked = !current && months.length === 0
+
+  // Single pick: either "auto" or one fixed YYYY-MM.
+  const fixed = !current && months[0] ? months[0] : null
+  const thisYear = currentYear()
+  const selYear = fixed ? Number(fixed.slice(0, 4)) : thisYear
+  const selMonth = fixed ? fixed.slice(5, 7) : 'auto'
+  const years = Array.from({ length: 4 }, (_, i) => thisYear - i)
+  if (!years.includes(selYear)) years.push(selYear)
+
+  const pick = (month: string, year: number) =>
+    month === 'auto'
+      ? onChange({ excludeBookedCurrent: true, excludeBookedMonths: [] })
+      : onChange({ excludeBookedCurrent: false, excludeBookedMonths: [`${year}-${month}`] })
 
   useEffect(() => {
     if (!enabled || nothingPicked) { setData(null); return }
@@ -280,12 +284,7 @@ function BookedMonthsExclusion({ enabled, current, months, onChange }: {
     return () => { cancelled = true }
   }, [enabled, query, nothingPicked])
 
-  const toggleMonth = (key: string) =>
-    onChange({ excludeBookedMonths: months.includes(key) ? months.filter(k => k !== key) : [...months, key].sort().reverse() })
-
   const count = data?.guests.length ?? 0
-  const chip = (active: boolean) =>
-    `text-xs px-2.5 py-1 rounded-full border transition-colors ${active ? 'bg-primary text-primary-foreground border-primary' : 'bg-card text-muted-foreground hover:border-primary/60'}`
 
   return (
     <div className="border rounded-lg p-4 space-y-2">
@@ -295,20 +294,20 @@ function BookedMonthsExclusion({ enabled, current, months, onChange }: {
         Exclude guests who booked in…
       </label>
       <p className="text-xs text-muted-foreground ml-6">
-        Skips anyone whose booking was confirmed or who had a payment requested in the selected month(s) — matched by email across all sources below. &quot;This month (auto)&quot; switches to the new month automatically.
+        Skips anyone whose booking was confirmed or who had a payment requested in the selected month — matched by email across all sources below. &quot;This month (auto)&quot; switches to the new month automatically.
       </p>
       {enabled && (
         <div className="ml-6 space-y-2">
-          <div className="flex flex-wrap gap-1.5">
-            <button type="button" onClick={() => onChange({ excludeBookedCurrent: !current })} className={chip(current)}>
-              This month (auto)
-            </button>
-            {options.map(o => (
-              <button key={o.key} type="button" onClick={() => toggleMonth(o.key)} className={chip(months.includes(o.key))}
-                title={o.key === currentKey ? 'Fixed to this month — stays the same after the month rolls over' : undefined}>
-                {o.label}
-              </button>
-            ))}
+          <div className="flex flex-wrap gap-2">
+            <NativeSelect value={selMonth} onChange={e => pick(e.target.value, selYear)} className="w-44">
+              <option value="auto">This month (auto)</option>
+              {MONTH_NAMES.map((name, i) => (
+                <option key={name} value={String(i + 1).padStart(2, '0')}>{name}</option>
+              ))}
+            </NativeSelect>
+            <NativeSelect value={String(selYear)} onChange={e => pick(selMonth, Number(e.target.value))} disabled={selMonth === 'auto'} className="w-28">
+              {years.map(y => <option key={y} value={y}>{y}</option>)}
+            </NativeSelect>
           </div>
           {nothingPicked ? (
             <p className="text-xs text-muted-foreground">Pick at least one month — nothing is excluded right now.</p>
