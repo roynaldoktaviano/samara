@@ -264,8 +264,9 @@ function BookedMonthsExclusion({ enabled, current, months, onChange }: {
   const thisYear = currentYear()
   const selYear = fixed ? Number(fixed.slice(0, 4)) : thisYear
   const selMonth = fixed ? fixed.slice(5, 7) : 'auto'
-  const years = Array.from({ length: 4 }, (_, i) => thisYear - i)
-  if (!years.includes(selYear)) years.push(selYear)
+  // 3 years back … 3 years ahead
+  const years = Array.from({ length: 7 }, (_, i) => thisYear - 3 + i)
+  if (!years.includes(selYear)) { years.push(selYear); years.sort((a, b) => a - b) }
 
   const pick = (month: string, year: number) =>
     month === 'auto'
