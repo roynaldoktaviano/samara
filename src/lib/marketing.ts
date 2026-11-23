@@ -27,6 +27,9 @@ export interface AudienceSources {
    * in the CURRENT calendar month — resolved at preview AND send time, so the month
    * rolls over automatically. See guestsBookedThisMonth. */
   excludeBookedThisMonth?: boolean
+  /** Fixed months ("YYYY-MM", WITA) to exclude bookers of — on top of / instead of the
+   * rolling current month above. */
+  excludeBookedMonths?: string[]
 }
 
 export interface AudienceMember {
@@ -55,14 +58,26 @@ async function customerIdsWithMinSpend(db: PrismaClient, minSpend: number): Prom
 // Company runs on Bali time (WITA, UTC+8) — month boundaries follow that, not the server's UTC clock.
 const MONTH_TZ_OFFSET_H = 8
 
-export function currentMonthRange(now = new Date()): { start: Date; end: Date; label: string } {
-  const local = new Date(now.getTime() + MONTH_TZ_OFFSET_H * 3600_000)
-  const y = local.getUTCFullYear()
-  const m = local.getUTCMonth()
+function monthRangeFor(y: number, m: number): { start: Date; end: Date; label: string; key: string } {
   const start = new Date(Date.UTC(y, m, 1) - MONTH_TZ_OFFSET_H * 3600_000)
   const end = new Date(Date.UTC(y, m + 1, 1) - MONTH_TZ_OFFSET_H * 3600_000)
   const label = new Date(Date.UTC(y, m, 1)).toLocaleString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' })
-  return { start, end, label }
+  const key = `${y}-${String(m + 1).padStart(2, '0')}`
+  return { start, end, label, key }
+}
+
+export function currentMonthRange(now = new Date()): { start: Date; end: Date; label: string; key: string } {
+  const local = new Date(now.getTime() + MONTH_TZ_OFFSET_H * 3600_000)
+  return monthRangeFor(local.getUTCFullYear(), local.getUTCMonth())
+}
+
+/** "YYYY-MM" → WITA month range, null if malformed. */
+export function monthRangeFromKey(key: string): { start: Date; end: Date; label: string; key: string } | null {
+  const m = /^(\d{4})-(\d{2})$/.exec(key)
+  if (!m) return null
+  const month = Number(m[2]) - 1
+  if (month < 0 || month > 11) return null
+  return monthRangeFor(Number(m[1]), month)
 }
 
 export interface BookedThisMonthGuest {
@@ -82,16 +97,32 @@ const LIVE_PAYMENT_STATUSES = ['requested', 'invoice_ready', 'pending_confirmati
  * one of their bookings. Marketing doesn't want to pitch them again right after.
  */
 export async function guestsBookedThisMonth(db: PrismaClient, now = new Date()): Promise<{ label: string; guests: BookedThisMonthGuest[] }> {
-  const { start, end, label } = currentMonthRange(now)
-  const fmt = (d: Date) => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'Asia/Makassar' })
+  return guestsBookedInMonths(db, { current: true }, now)
+}
+
+/** Same rule as guestsBookedThisMonth, over the rolling current month and/or fixed "YYYY-MM" months. */
+export async function guestsBookedInMonths(
+  db: PrismaClient,
+  opts: { current?: boolean; months?: string[] },
+  now = new Date(),
+): Promise<{ label: string; guests: BookedThisMonthGuest[] }> {
+  const ranges = new Map<string, { start: Date; end: Date; label: string }>()
+  if (opts.current) { const r = currentMonthRange(now); ranges.set(r.key, r) }
+  for (const k of opts.months ?? []) { const r = monthRangeFromKey(k); if (r) ranges.set(r.key, r) }
+  const sorted = [...ranges.entries()].sort(([a], [b]) => b.localeCompare(a)).map(([, r]) => r)
+  const label = sorted.map(r => r.label).join(', ')
+  if (sorted.length === 0) return { label, guests: [] }
+
+  const fmt = (d: Date) => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: sorted.length > 1 ? 'numeric' : undefined, timeZone: 'Asia/Makassar' })
+  const inRanges = { OR: sorted.map(r => ({ createdAt: { gte: r.start, lt: r.end } })) }
 
   const [bookings, payments] = await Promise.all([
     db.booking.findMany({
-      where: { createdAt: { gte: start, lt: end }, status: { in: [...BOOKED_STATUSES] } },
+      where: { ...inRanges, status: { in: [...BOOKED_STATUSES] } },
       select: { createdAt: true, status: true, customer: { select: { id: true, name: true, email: true } } },
     }),
     db.payment.findMany({
-      where: { createdAt: { gte: start, lt: end }, status: { in: [...LIVE_PAYMENT_STATUSES] } },
+      where: { ...inRanges, status: { in: [...LIVE_PAYMENT_STATUSES] } },
       select: { createdAt: true, booking: { select: { customer: { select: { id: true, name: true, email: true } } } } },
     }),
   ])
@@ -233,8 +264,8 @@ export async function resolveAudience(db: PrismaClient, sources: AudienceSources
     }
   }
 
-  if (sources.excludeBookedThisMonth && byEmail.size > 0) {
-    const { guests } = await guestsBookedThisMonth(db)
+  if ((sources.excludeBookedThisMonth || sources.excludeBookedMonths?.length) && byEmail.size > 0) {
+    const { guests } = await guestsBookedInMonths(db, { current: !!sources.excludeBookedThisMonth, months: sources.excludeBookedMonths })
     for (const g of guests) byEmail.delete(g.email.toLowerCase())
   }
 

@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Samara ERP Tracking
  * Description: Page-view tracker, Contact Form 7 → ERP, WhatsApp-tap relay → ERP. Secrets live in wp-config.php.
- * Version:     2026.11.23.2
+ * Version:     2026.11.23.3
  *
  * Samara ERP — website tracking + Contact Form 7 → ERP.
  *
@@ -199,10 +199,14 @@ add_action('wpcf7_mail_sent', function ($contact_form) {
 
 // True when Meta's cookies must not be read or sent: ad consent denied in the EU/UK/CH or with no
 // region (handover §2; same rule as the ERP's dropMetaCookies). Forms say ad_consent /
-// consent_region, snippet 63 taps may say consent / region.
-function samara_erp_meta_blocked($data) {
-    $consent = strtolower(trim((string) (isset($data['ad_consent']) ? $data['ad_consent'] : (isset($data['consent']) ? $data['consent'] : ''))));
-    $region  = strtolower(trim((string) (isset($data['consent_region']) ? $data['consent_region'] : (isset($data['region']) ? $data['region'] : ''))));
+// consent_region; snippet 63 taps may also say consent / region ($is_tap).
+function samara_erp_meta_blocked($data, $is_tap = false) {
+    $pick = function ($keys) use ($data) {
+        foreach ($keys as $k) if (isset($data[$k]) && trim((string) $data[$k]) !== '') return strtolower(trim((string) $data[$k]));
+        return '';
+    };
+    $consent = $pick($is_tap ? array('ad_consent', 'consent') : array('ad_consent'));
+    $region  = $pick($is_tap ? array('consent_region', 'region') : array('consent_region'));
     return $consent === 'denied' && in_array($region, array('', 'none', 'eu', 'eea', 'uk', 'ch'), true);
 }
 
@@ -246,7 +250,7 @@ add_filter('rest_post_dispatch', function ($response, $server, $request) {
         }
     }
     // Snippet 63 logs _fbc/_fbp with the tap; on a denial they must not leave the site (handover §2).
-    if (samara_erp_meta_blocked($tap)) $tap = samara_erp_strip_meta_cookies($tap);
+    if (samara_erp_meta_blocked($tap, true)) $tap = samara_erp_strip_meta_cookies($tap);
     $tap['ip'] = samara_erp_visitor_ip();
     $tap['ua'] = isset($_SERVER['HTTP_USER_AGENT']) ? substr(sanitize_text_field(wp_unslash($_SERVER['HTTP_USER_AGENT'])), 0, 1000) : '';
     if (empty($tap['tapped_at'])) $tap['tapped_at'] = gmdate('c');

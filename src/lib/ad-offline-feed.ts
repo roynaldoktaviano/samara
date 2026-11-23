@@ -142,6 +142,10 @@ export async function computeOfflineFeed(db: PrismaClient, now = new Date()) {
   const stageUnknown: FeedRow[] = []
   const excluded: FeedExclusion[] = []
   const meta: MetaEvent[] = []
+  // Deals that fail a consent / confidence gate on THIS run (handover §6 gates 1, 2, 3, 5 — checked
+  // every run, "uploads read the current value at run time"): rows prepared for them earlier stop
+  // being re-emitted (buildGoogleFeed), but nothing is retracted from Google (gate 6).
+  const held = new Map<string, string>()
 
   for (const d of deals) {
     if (d.deletedAt) continue
@@ -196,6 +200,7 @@ export async function computeOfflineFeed(db: PrismaClient, now = new Date()) {
       : low ? '4 · WhatsApp match Low'
       : !(gclid || gbraid || wbraid || em || ph) ? '5 · No identifier'
       : null
+    if (exclusion && !exclusion.startsWith('5 ·')) held.set(d.id, exclusion)
 
     const events: { action: GoogleAction | null; at: Date | null; value: number | null; currency: string | null; stageLabel: string }[] = []
     const tt = d.tripType
@@ -225,7 +230,7 @@ export async function computeOfflineFeed(db: PrismaClient, now = new Date()) {
       if (bookAt && bookAt >= since && bv != null) meta.push({ brand: d.brand, dealId: d.id, orderId, eventName: 'Purchase', eventTime: bookAt, em, ph, fbc, fbp, value: bv, currency: d.booking?.currency ?? d.currency ?? 'USD', userAgent: base.User_Agent })
     }
   }
-  return { candidates, stageUnknown, excluded, meta }
+  return { candidates, stageUnknown, excluded, meta, held }
 }
 
 // ── ledger ──────────────────────────────────────────────────────────────────────
@@ -240,7 +245,7 @@ const CHANGE_KEYS = ['Conversion_Time', 'Conversion_Value', 'Conversion_Currency
 export async function buildGoogleFeed(db: PrismaClient, opts: { persist: boolean; now?: Date }) {
   const now = opts.now ?? new Date()
   const since = new Date(now.getTime() - FEED_WINDOW_MS)
-  const { candidates, stageUnknown, excluded, meta } = await computeOfflineFeed(db, now)
+  const { candidates, stageUnknown, excluded, meta, held } = await computeOfflineFeed(db, now)
   const ledger = await db.adUploadLedger.findMany({ where: { platform: 'GOOGLE' }, include: { changes: { select: { newRow: true, status: true } } } })
   const byKey = new Map(ledger.map(l => [`${l.action}|${l.orderId}`, l]))
   let added = 0, queued = 0
@@ -275,6 +280,18 @@ export async function buildGoogleFeed(db: PrismaClient, opts: { persist: boolean
   const tabs: Record<string, FeedRow[]> = { Samara: [], Otium: [], Mischief: [] }
   for (const l of byKey.values()) {
     if (l.conversionTime < since) continue
+    // Prepared earlier, but the deal now fails a gate (denied, never-upload, EEA without opt-in, Low):
+    // held — not re-emitted — and not retracted (handover §6 gates 1–6). It is already listed under
+    // Excluded with that reason; say there that it had been prepared.
+    const heldReason = l.dealId ? held.get(l.dealId) : undefined
+    if (heldReason) {
+      for (const x of excluded) {
+        if (x.orderId === l.orderId && x.stage === (l.row as FeedRow).Stage && !x.reason.includes('prepared earlier')) {
+          x.reason += ' — prepared earlier: held, not retracted'
+        }
+      }
+      continue
+    }
     const tab = BRAND_TAB[l.brand] ?? l.brand
     ;(tabs[tab] ??= []).push(l.row as FeedRow)
   }

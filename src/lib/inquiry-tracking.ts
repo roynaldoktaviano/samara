@@ -52,10 +52,14 @@ export function stripMetaCookies<T extends Record<string, unknown>>(data: T, dro
   return Object.fromEntries(Object.entries(data).filter(([k]) => !META_COOKIE_KEY.test(k))) as T
 }
 
-/** Same, deciding from the payload's own consent fields (website form / tap). */
-export function withoutDeniedMetaCookies<T extends Record<string, unknown>>(data: T): T {
-  const adConsent = normalizeAdConsent(pickClean(data, ['ad_consent', 'consent']))
-  const consentRegion = consentRegionFrom(data, ['consent_region', 'region'])
+/**
+ * Same, deciding from the payload's own consent fields — the keys the columns are read from:
+ * a website form says ad_consent / consent_region (trackingFromPayload); a tap may also say
+ * consent / region (src/lib/wa-tap.ts tapFromPayload).
+ */
+export function withoutDeniedMetaCookies<T extends Record<string, unknown>>(data: T, kind: 'form' | 'tap' = 'form'): T {
+  const adConsent = normalizeAdConsent(pickClean(data, kind === 'tap' ? ['ad_consent', 'consent'] : ['ad_consent']))
+  const consentRegion = consentRegionFrom(data, kind === 'tap' ? ['consent_region', 'region'] : ['consent_region'])
   return stripMetaCookies(data, dropMetaCookies(adConsent, consentRegion))
 }
 

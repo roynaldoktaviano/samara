@@ -24,10 +24,15 @@ const ORIGIN_LABEL = { AD: 'Click-to-WhatsApp ad', TAP: 'website WhatsApp button
  * panel's "Create deal" button (POST /api/leads/[id]/deal, createDealFromLead below). A tap that
  * reaches us after the chat started opens the deal then (runLateTapChatDeal).
  * Trip type is unknown from a chat → it joins any open deal of the brand; sales set PC / OT.
- * Only Sales chats count (a WhatsApp chat triaged Guest / Vendor / Spam opens no deal).
+ * Only Sales chats count (a WhatsApp chat triaged Vendor / Spam opens no deal). One exception: a
+ * WhatsApp number that belongs to an existing Guest (chat category GUEST, no Lead) — a returning
+ * guest writing from an ad or a website tap is a new enquiry, so it opens / joins the guest's deal
+ * like a website form does (handover §11 no. 13, returning-guest rule). Pass `customerId` then.
  */
 export async function runChatDealMaker(db: PrismaClient, p: {
-  leadId: string
+  /** The chat's Lead — or, for a returning guest's chat with no Lead, `customerId`. */
+  leadId?: string | null
+  customerId?: string | null
   brand: WhatsappBrand | null | undefined
   channel: Extract<DealChannel, 'WHATSAPP' | 'INSTAGRAM' | 'MESSENGER'>
   whatsappConversationId?: string
@@ -38,16 +43,25 @@ export async function runChatDealMaker(db: PrismaClient, p: {
   /** Manual "Sales" triage / "Create lead": only make sure the lead has an open deal for this brand — no note. */
   ensureOnly?: boolean
 }): Promise<void> {
+  const guestOnly = !p.leadId && !!p.customerId
+  if (!p.leadId && !guestOnly) return
+  const fromAdOrTap = p.channel === 'WHATSAPP' && (p.origin?.kind === 'AD' || p.origin?.kind === 'TAP')
   if (p.whatsappConversationId) {
     const conv = await db.whatsappConversation.findUnique({ where: { id: p.whatsappConversationId }, select: { category: true } })
-    if (conv?.category !== 'SALES') return
+    // A chat triaged Guest (returning guest, with or without a Lead) only counts when it came from an
+    // ad or a website tap — a real new enquiry. Everything else needs a Sales chat.
+    const ok = guestOnly ? conv?.category === 'GUEST' && fromAdOrTap
+      : conv?.category === 'SALES' || (conv?.category === 'GUEST' && fromAdOrTap)
+    if (!ok) return
   }
   // WhatsApp deal maker switched off by an admin (src/lib/deal-maker-switch.ts) — the chat stays a lead.
   if (p.channel === 'WHATSAPP' && !(await isDealMakerOn(db, 'WHATSAPP'))) return
-  const lead = await db.lead.findUnique({ where: { id: p.leadId }, select: { stage: true, deletedAt: true } })
-  if (!lead) return
+  const lead = p.leadId ? await db.lead.findUnique({ where: { id: p.leadId }, select: { stage: true, deletedAt: true } }) : null
+  if (p.leadId && !lead) return
+  if (guestOnly && !(await db.customer.findFirst({ where: { id: p.customerId!, deletedAt: null }, select: { id: true } }))) return
+  const personDeal = p.leadId ? { leadId: p.leadId } : { customerId: p.customerId! }
   const brand = p.brand ?? 'SAMARA'
-  const openDeal = await db.deal.findFirst({ where: { leadId: p.leadId, brand, deletedAt: null, stage: { in: OPEN_STAGES } }, select: { id: true } })
+  const openDeal = await db.deal.findFirst({ where: { ...personDeal, brand, deletedAt: null, stage: { in: OPEN_STAGES } }, select: { id: true } })
   if (p.ensureOnly && openDeal) return
   // Manual "Sales" triage / "Create lead" on a WhatsApp chat: the chat's own origin decides.
   if (p.ensureOnly && p.channel === 'WHATSAPP' && p.whatsappConversationId && !p.origin) {
@@ -60,14 +74,15 @@ export async function runChatDealMaker(db: PrismaClient, p: {
   const originLabel = p.origin ? ORIGIN_LABEL[p.origin.kind] : null
   // A lead just made from a chat staff already answered (its first deal) starts at Initial Message
   // Sent — ensureLeadForConversation set that stage on the lead. Any later deal starts at New Enquiry.
-  const hasDeals = !!(await db.deal.findFirst({ where: { leadId: p.leadId }, select: { id: true } }))
-  const initialStage: LeadStage = !hasDeals && !lead.deletedAt && (CONVERSATION_STAGES as readonly LeadStage[]).includes(lead.stage) ? lead.stage : 'NEW'
+  const hasDeals = !!(await db.deal.findFirst({ where: personDeal, select: { id: true } }))
+  const initialStage: LeadStage = lead && !hasDeals && !lead.deletedAt && (CONVERSATION_STAGES as readonly LeadStage[]).includes(lead.stage) ? lead.stage : 'NEW'
   // Yacht from the website page the WhatsApp button was tapped on (or the ad's link), else the brand.
   const origInq = p.origin?.inquiryId
     ? await db.inquiry.findUnique({ where: { id: p.origin.inquiryId }, select: { url: true, landingUrl: true } })
     : null
   await runDealMakerLocked(db, {
-    leadId: p.leadId,
+    leadId: p.leadId ?? null,
+    customerId: guestOnly ? p.customerId : null,
     brand,
     tripType: null,
     productInterest: inferDealYacht({ text: p.text, url: origInq?.url ?? origInq?.landingUrl, brand }),
@@ -100,11 +115,13 @@ export async function whatsappChatOrigin(db: PrismaClient, conversationId: strin
  */
 export async function runLateTapChatDeal(db: PrismaClient, conversationId: string): Promise<void> {
   const conv = await db.whatsappConversation.findUnique({ where: { id: conversationId }, select: { leadId: true, brand: true, category: true } })
-  if (!conv?.leadId || conv.category !== 'SALES') return
+  // A Sales chat with its Lead, or a returning guest's chat (GUEST, with or without a Lead) — see runChatDealMaker.
+  if (!conv || !(conv.category === 'SALES' ? !!conv.leadId : conv.category === 'GUEST')) return
   const origin = await whatsappChatOrigin(db, conversationId)
-  if (origin?.kind !== 'TAP') return
-  const inq = await db.inquiry.findUnique({ where: { id: origin.inquiryId! }, select: { message: true, createdAt: true } })
-  await runChatDealMaker(db, { leadId: conv.leadId, brand: conv.brand, channel: 'WHATSAPP', whatsappConversationId: conversationId, origin, text: inq?.message, at: inq?.createdAt })
+  if (origin?.kind !== 'TAP' || !origin.inquiryId) return
+  const inq = await db.inquiry.findUnique({ where: { id: origin.inquiryId }, select: { message: true, createdAt: true, customerId: true } })
+  if (!conv.leadId && !inq?.customerId) return
+  await runChatDealMaker(db, { leadId: conv.leadId, customerId: conv.leadId ? null : inq?.customerId, brand: conv.brand, channel: 'WHATSAPP', whatsappConversationId: conversationId, origin, text: inq?.message, at: inq?.createdAt })
 }
 
 export type CreateDealResult = { ok: true; dealId: string; created: boolean } | { ok: false; status: number; error: string }

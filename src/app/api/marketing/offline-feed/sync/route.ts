@@ -5,7 +5,7 @@ import { getTenantDb } from '@/lib/tenant-db'
 import { getTenantSecret } from '@/lib/tenant-secrets'
 import { rebuildOfflineFeedSheet } from '@/lib/google-sheets'
 
-// Cron-only (instrumentation-node.ts, every 3h): runs the go-live offline feed per tenant — ledger,
+// Cron-only (instrumentation-node.ts, daily 05:45 + 06:15 WITA as in the handover): runs the go-live offline feed per tenant — ledger,
 // Google Sheet (googleOfflineFeedSheetId), Meta CAPI when enabled. src/lib/ad-offline-feed.ts
 export async function GET(req: NextRequest) {
   const secret = process.env.CRON_SECRET

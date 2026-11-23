@@ -24,9 +24,12 @@ export interface AudienceState {
   agentLeads: AudienceSourceState
   internal: AudienceSourceState
   manualEmails: string
-  // Drop guests who booked / had a payment requested in the CURRENT month (rolls over
-  // automatically — resolved server-side at preview and send time).
-  excludeBookedThisMonth: boolean
+  // Drop guests who booked / had a payment requested in the chosen month(s).
+  // excludeBookedCurrent = rolling "this month" (rolls over automatically — resolved
+  // server-side at preview and send time); excludeBookedMonths = fixed "YYYY-MM" months.
+  excludeBooked: boolean
+  excludeBookedCurrent: boolean
+  excludeBookedMonths: string[]
 }
 
 export interface YachtSummary { id: string; name: string }
@@ -40,7 +43,9 @@ export const emptyAudience = (): AudienceState => ({
   agentLeads: emptySource(),
   internal: emptySource(),
   manualEmails: '',
-  excludeBookedThisMonth: true,
+  excludeBooked: true,
+  excludeBookedCurrent: true,
+  excludeBookedMonths: [],
 })
 
 function toFilter(s: AudienceSourceState, extra?: Record<string, unknown>) {
@@ -78,7 +83,8 @@ export function buildAudienceSources(a: AudienceState) {
     ...(a.agentLeads.enabled && { agentLeads: toFilter(a.agentLeads) }),
     ...(a.internal.enabled && { internal: toFilter(a.internal) }),
     manualEmails: a.manualEmails.split(/[\n,]/).map(s => s.trim()).filter(Boolean),
-    ...(a.excludeBookedThisMonth && { excludeBookedThisMonth: true }),
+    ...(a.excludeBooked && a.excludeBookedCurrent && { excludeBookedThisMonth: true }),
+    ...(a.excludeBooked && a.excludeBookedMonths.length > 0 && { excludeBookedMonths: a.excludeBookedMonths }),
   }
 }
 
@@ -100,7 +106,11 @@ export function audienceStateFromSources(sources: any): AudienceState {
     agentLeads: fill(sources?.agentLeads),
     internal: fill(sources?.internal),
     manualEmails: (sources?.manualEmails ?? []).join('\n'),
-    excludeBookedThisMonth: !!sources?.excludeBookedThisMonth,
+    ...(() => {
+      const months: string[] = Array.isArray(sources?.excludeBookedMonths) ? sources.excludeBookedMonths : []
+      const current = !!sources?.excludeBookedThisMonth
+      return { excludeBooked: current || months.length > 0, excludeBookedCurrent: current || months.length === 0, excludeBookedMonths: months }
+    })(),
   }
 }
 
@@ -226,45 +236,89 @@ function LeadConditions({ audience, setAudience }: {
 
 interface BookedGuest { customerId: string; name: string | null; email: string; reason: string }
 
-// Applies across every source (matched by email), so it sits above them all. The list is
-// always "this month" at the moment it's viewed — and the send itself re-resolves it, so a
-// campaign saved in November but sent in December excludes December's bookers.
-function BookedThisMonthExclusion({ enabled, onChange }: { enabled: boolean; onChange: (v: boolean) => void }) {
+// Last 12 months as "YYYY-MM" in WITA (UTC+8), newest first — index 0 is the current month.
+function recentMonths(n = 12): { key: string; label: string }[] {
+  const local = new Date(Date.now() + 8 * 3600_000)
+  const y = local.getUTCFullYear(), m = local.getUTCMonth()
+  return Array.from({ length: n }, (_, i) => {
+    const d = new Date(Date.UTC(y, m - i, 1))
+    return {
+      key: `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`,
+      label: d.toLocaleString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' }),
+    }
+  })
+}
+
+// Applies across every source (matched by email), so it sits above them all. "This month
+// (auto)" is re-resolved at send time, so a campaign saved in November but sent in December
+// excludes December's bookers; the fixed month chips stay exactly as picked.
+function BookedMonthsExclusion({ enabled, current, months, onChange }: {
+  enabled: boolean
+  current: boolean
+  months: string[]
+  onChange: (patch: Partial<Pick<AudienceState, 'excludeBooked' | 'excludeBookedCurrent' | 'excludeBookedMonths'>>) => void
+}) {
   const [data, setData] = useState<{ label: string; guests: BookedGuest[] } | null>(null)
   const [loading, setLoading] = useState(false)
   const [open, setOpen] = useState(false)
+  const options = recentMonths()
+  const currentKey = options[0].key
+  // A fixed chip for the current month is redundant with "auto" — treat them as separate though,
+  // since the fixed one keeps meaning November after the month rolls over.
+  const query = `current=${current ? 1 : 0}&months=${months.join(',')}`
+  const nothingPicked = !current && months.length === 0
 
   useEffect(() => {
-    if (!enabled || data) return
+    if (!enabled || nothingPicked) { setData(null); return }
+    let cancelled = false
     setLoading(true)
-    fetch('/api/marketing/booked-this-month')
+    fetch(`/api/marketing/booked-this-month?${query}`)
       .then(r => r.ok ? r.json() : null)
-      .then(setData)
+      .then(d => { if (!cancelled) setData(d) })
       .catch(() => {})
-      .finally(() => setLoading(false))
-  }, [enabled, data])
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [enabled, query, nothingPicked])
+
+  const toggleMonth = (key: string) =>
+    onChange({ excludeBookedMonths: months.includes(key) ? months.filter(k => k !== key) : [...months, key].sort().reverse() })
 
   const count = data?.guests.length ?? 0
+  const chip = (active: boolean) =>
+    `text-xs px-2.5 py-1 rounded-full border transition-colors ${active ? 'bg-primary text-primary-foreground border-primary' : 'bg-card text-muted-foreground hover:border-primary/60'}`
 
   return (
     <div className="border rounded-lg p-4 space-y-2">
       <label className="flex items-center gap-2 font-medium text-sm">
-        <input type="checkbox" checked={enabled} onChange={e => onChange(e.target.checked)} />
+        <input type="checkbox" checked={enabled} onChange={e => onChange({ excludeBooked: e.target.checked })} />
         <CalendarX2 className="h-4 w-4 text-muted-foreground" />
-        Exclude guests who booked this month
+        Exclude guests who booked in…
       </label>
       <p className="text-xs text-muted-foreground ml-6">
-        Skips anyone whose booking was confirmed or who had a payment requested in the current month — matched by email across all sources below. Switches to the new month automatically.
+        Skips anyone whose booking was confirmed or who had a payment requested in the selected month(s) — matched by email across all sources below. &quot;This month (auto)&quot; switches to the new month automatically.
       </p>
       {enabled && (
         <div className="ml-6 space-y-2">
-          {loading ? (
+          <div className="flex flex-wrap gap-1.5">
+            <button type="button" onClick={() => onChange({ excludeBookedCurrent: !current })} className={chip(current)}>
+              This month (auto)
+            </button>
+            {options.map(o => (
+              <button key={o.key} type="button" onClick={() => toggleMonth(o.key)} className={chip(months.includes(o.key))}
+                title={o.key === currentKey ? 'Fixed to this month — stays the same after the month rolls over' : undefined}>
+                {o.label}
+              </button>
+            ))}
+          </div>
+          {nothingPicked ? (
+            <p className="text-xs text-muted-foreground">Pick at least one month — nothing is excluded right now.</p>
+          ) : loading ? (
             <p className="text-xs text-muted-foreground flex items-center gap-1.5"><Loader2 className="h-3 w-3 animate-spin" /> Loading…</p>
           ) : data ? (
             <>
               <button type="button" onClick={() => setOpen(o => !o)} disabled={count === 0}
-                className="text-xs font-medium flex items-center gap-1 disabled:cursor-default" style={{ color: 'var(--primary-strong)' }}>
-                {count > 0 && (open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />)}
+                className="text-xs font-medium flex items-center gap-1 text-left disabled:cursor-default" style={{ color: 'var(--primary-strong)' }}>
+                {count > 0 && (open ? <ChevronDown className="h-3.5 w-3.5 shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0" />)}
                 {data.label}: {count} guest{count === 1 ? '' : 's'} excluded{count > 0 && (open ? ' — hide' : ' — show who')}
               </button>
               {open && count > 0 && (
@@ -280,7 +334,7 @@ function BookedThisMonthExclusion({ enabled, onChange }: { enabled: boolean; onC
               )}
             </>
           ) : (
-            <p className="text-xs text-muted-foreground">Couldn't load this month's list.</p>
+            <p className="text-xs text-muted-foreground">Couldn&apos;t load the list.</p>
           )}
         </div>
       )}
@@ -295,9 +349,11 @@ export function AudienceSourceFields({ audience, setAudience, yachts }: {
 }) {
   return (
     <div className="space-y-5">
-      <BookedThisMonthExclusion
-        enabled={audience.excludeBookedThisMonth}
-        onChange={v => setAudience(a => ({ ...a, excludeBookedThisMonth: v }))}
+      <BookedMonthsExclusion
+        enabled={audience.excludeBooked}
+        current={audience.excludeBookedCurrent}
+        months={audience.excludeBookedMonths}
+        onChange={patch => setAudience(a => ({ ...a, ...patch }))}
       />
       <div className="space-y-2">
         <AudiencePicker

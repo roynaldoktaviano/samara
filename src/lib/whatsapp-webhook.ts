@@ -374,6 +374,17 @@ export function createWhatsappWebhookHandlers(endpointBrand?: WhatsappBrand) {
           if (chatLeadId && (chatLeadJustLinked || isSessionStart || origin?.kind === 'AD')) {
             await runChatDealMaker(db, { leadId: chatLeadId, brand, channel: 'WHATSAPP', whatsappConversationId: conversation.id, origin, text: preview, at: sentAt })
               .catch(e => console.error('[whatsapp webhook] deal maker failed', e))
+          } else if (!chatLeadId && origin?.inquiryId && (origin.kind === 'AD' || origin.kind === 'TAP')) {
+            // A returning guest (number on a Guest, chat GUEST, no Lead) writing from an ad / website
+            // tap is a new enquiry → the guest's deal, like a website form (handover §11 no. 13).
+            // Best-effort: never fails the webhook (Meta would retry and the message is deduped).
+            const inquiryId = origin.inquiryId
+            await (async () => {
+              const inq = await db.inquiry.findUnique({ where: { id: inquiryId }, select: { customerId: true } })
+              if (inq?.customerId) {
+                await runChatDealMaker(db, { customerId: inq.customerId, brand, channel: 'WHATSAPP', whatsappConversationId: conversation.id, origin, text: preview, at: sentAt })
+              }
+            })().catch(e => console.error('[whatsapp webhook] guest deal maker failed', e))
           }
 
           // Notice for whichever sales rep this chat is assigned to — in-app bell (toast +

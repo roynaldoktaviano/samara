@@ -34,6 +34,29 @@ async function recoverInterruptedSends() {
   }
 }
 
+const WITA_OFFSET_MS = 8 * 60 * 60 * 1000 // WITA = UTC+8, no daylight saving
+
+/** Ms until the next of the given WITA wall-clock times ([hour, minute]). */
+export function msUntilNextWita(times: [number, number][], now = Date.now()): number {
+  const wita = new Date(now + WITA_OFFSET_MS)
+  let best = Infinity
+  for (const [h, m] of times) {
+    let at = Date.UTC(wita.getUTCFullYear(), wita.getUTCMonth(), wita.getUTCDate(), h, m) - WITA_OFFSET_MS
+    if (at <= now + 1000) at += 24 * 60 * 60 * 1000
+    best = Math.min(best, at)
+  }
+  return best - now
+}
+
+/** Runs `fn` every day at fixed WITA times (re-armed after each run, so it never drifts). */
+function scheduleDailyAtWita(times: [number, number][], name: string, fn: () => Promise<void>) {
+  const arm = () => setTimeout(async () => {
+    try { await fn() } catch (err) { console.error(`[scheduler] ${name} failed:`, err) }
+    arm()
+  }, msUntilNextWita(times))
+  arm()
+}
+
 export async function startNodeInstrumentation() {
   await recoverInterruptedSends()
 
@@ -219,14 +242,13 @@ export async function startNodeInstrumentation() {
   }, googleAdsSyncIntervalMs)
 
   // Go-live offline feed (parity D, src/lib/ad-offline-feed.ts): ledger + feed sheet + Meta CAPI
-  // (when enabled). Only tenants with googleOfflineFeedSheetId set take part.
-  setInterval(async () => {
-    try {
-      await fetch(`http://127.0.0.1:${port}/api/marketing/offline-feed/sync`, { headers: cronHeaders })
-    } catch (err) {
-      console.error('[scheduler] offline-feed sync tick failed:', err)
-    }
-  }, googleAdsSyncIntervalMs)
+  // (when enabled). Only tenants with googleOfflineFeedSheetId set take part. Same schedule as the
+  // box runners it replaces (handover §6): booking writer ~05:45 and stage writer ~06:15 WITA, daily —
+  // ahead of the Data Manager imports (06:53 / 06:57 / 17:20, set in Data Manager). One run writes
+  // every tab, so both slots rewrite the whole sheet.
+  scheduleDailyAtWita([[5, 45], [6, 15]], 'offline-feed sync', async () => {
+    await fetch(`http://127.0.0.1:${port}/api/marketing/offline-feed/sync`, { headers: cronHeaders })
+  })
 
   // Instagram Login tokens live 60 days — extend any within 15 days of expiry, per tenant
   // (see refreshIgLoginTokens in src/lib/instagram-login.ts). Daily, plus once at boot so a

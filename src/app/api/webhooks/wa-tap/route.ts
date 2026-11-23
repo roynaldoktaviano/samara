@@ -6,6 +6,7 @@ import { getTenantSecret } from '@/lib/tenant-secrets'
 import { logWebhookFailure } from '@/lib/webhook-log'
 import { providedWebhookSecret, webhookSecretMatches } from '@/lib/webhook-secret'
 import { recordWaTap } from '@/lib/wa-tap'
+import { withoutDeniedMetaCookies } from '@/lib/inquiry-tracking'
 import { runLateTapChatDeal } from '@/lib/deal-chat'
 
 // WhatsApp-button taps from the website (Button Click to Chat, ref "SL-XXXXX"), forwarded
@@ -60,7 +61,7 @@ export async function POST(request: NextRequest) {
       if (r.lateMatchConversationId) await runLateTapChatDeal(db, r.lateMatchConversationId).catch(e => console.error('[wa-tap] late deal failed', e))
     }
     if (rejected) {
-      logWebhookFailure({ source: 'WA_TAP', tenantSlug: tenant.slug, reason: 'invalid_ref', rawPayload: { rejected: String(rejected), sample: JSON.stringify(taps[0]).slice(0, 2000) } })
+      logWebhookFailure({ source: 'WA_TAP', tenantSlug: tenant.slug, reason: 'invalid_ref', rawPayload: { rejected: String(rejected), sample: JSON.stringify(withoutDeniedMetaCookies(taps[0], 'tap')).slice(0, 2000) } })
     }
     return json({ ok: true, stored, matched, rejected })
   } catch (error) {

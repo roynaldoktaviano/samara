@@ -26,7 +26,9 @@ import { fillEmptyOnly, findContactByIdentity, normalizeEmail, toE164 } from '@/
 //    with subscribed_fields=leadgen).
 //
 // 2. Flat payload (Zapier / Make / manual re-post of a Meta CSV export row) —
-//    POST https://<app-domain>/api/webhooks/meta-leads?tenant=<slug>&secret=<secret>
+//    POST https://<app-domain>/api/webhooks/meta-leads?tenant=<slug>
+//    with the secret in a header (X-Webhook-Secret: <secret>, or Authorization: Bearer <secret>,
+//    or an HMAC-SHA256 of the body) — never in the URL or body.
 //    JSON keyed by the same column names as the Meta lead CSV export:
 //    id, created_time, ad_id, ad_name, adset_id, adset_name, campaign_id, campaign_name,
 //    form_id, form_name, is_organic, platform, full_name, email, phone_number, plus

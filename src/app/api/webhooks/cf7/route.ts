@@ -206,8 +206,10 @@ export async function POST(request: NextRequest) {
     // requests locking the same pair can't deadlock. Held through the deal maker below too, so one
     // person's double submit / form + WhatsApp can't open two deals (parity B3).
     const lockKeys = contactLockKeys(email, phoneE164)
-    // Hidden "brand" field on the form (parity E10: Otium / Mischief sites, Samara's form 53463 and the
-    // /yacht/otium/ form) wins; else the trip type / site decides.
+    // A hidden "brand" field on the form wins (optional; none of the live forms send one as of 23 Nov);
+    // else the trip type / site decides: "Mischief (#SL)" (form 53463) → Mischief, while the
+    // /yacht/otium/ form 52668 ("Private Charter (#SL)" / "Signature Voyage (#SL)") stays Samara with
+    // yacht Otium, as in the handover (§2).
     const brandField = (pick(data, 'brand', 'erp_brand', 'site_brand') || '').trim().toLowerCase()
     const brand: WhatsappBrand = /otium/.test(brandField) ? 'OTIUM' : /mischief/.test(brandField) ? 'MISCHIEF' : /samara/.test(brandField) ? 'SAMARA' : brandForInquiry(website, tripType)
 
