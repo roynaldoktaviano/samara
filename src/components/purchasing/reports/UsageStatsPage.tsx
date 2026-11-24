@@ -47,7 +47,8 @@ const PRESETS = [
 const ITEM_TYPES = [
   { value: 'BEVERAGE', label: 'Beverage' },
   { value: 'FOOD', label: 'Food' },
-  { value: 'HOUSEKEEPING', label: 'Housekeeping' },
+  { value: 'FUEL', label: 'Fuel' },
+  { value: 'SUPPLY', label: 'Supply' },
 ]
 const SHIP_COLORS = ['#bdac7e', '#0f766e', '#be185d', '#4f46e5', '#ea580c', '#64748b']
 

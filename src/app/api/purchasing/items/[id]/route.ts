@@ -28,12 +28,16 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   const db = await getDb(session)
   const body = await req.json()
   const { sku, name, type, category, baseUnit, purchaseUnit, conversionFactor, standardCost, sellingPrice, valuationMethod, minStock, minStockUnit, reorderQty, treatment, isActive, imageKey, isSoldInPos, isStockTracked, currentLocationId } = body
-  if (!sku || !name || !type || !category || !baseUnit || !purchaseUnit) {
-    return NextResponse.json({ error: 'sku, name, type, category, baseUnit and purchaseUnit are required' }, { status: 400 })
+  if (!sku || !name || !type || !baseUnit || !purchaseUnit) {
+    return NextResponse.json({ error: 'sku, name, category, baseUnit and purchaseUnit are required' }, { status: 400 })
   }
   const typeConfig = await db.purchaseItemTypeConfig.findUnique({ where: { code: type } })
   if (!typeConfig || !typeConfig.isActive) {
     return NextResponse.json({ error: 'Invalid type' }, { status: 400 })
+  }
+  // Sub-Category is required only when the Category has any (Fuel has none).
+  if (!category && await db.purchaseItemCategory.count({ where: { typeCode: type, isActive: true } }) > 0) {
+    return NextResponse.json({ error: 'Sub-category is required' }, { status: 400 })
   }
   const skuConflict = await db.purchaseItem.findFirst({ where: { sku: sku.trim().toUpperCase(), NOT: { id } } })
   if (skuConflict) return NextResponse.json({ error: `SKU "${sku}" is already in use` }, { status: 409 })
@@ -63,7 +67,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         sku: sku.trim().toUpperCase(),
         name: name.trim(),
         type,
-        category,
+        category: category ?? '',
         baseUnit,
         purchaseUnit,
         conversionFactor: factor,

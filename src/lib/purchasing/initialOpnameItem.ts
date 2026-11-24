@@ -20,11 +20,13 @@ export async function parseOpnameItemForm(db: PrismaClient, body: Record<string,
   const category = str(body.category)
   const baseUnit = str(body.baseUnit)
   const purchaseUnit = str(body.purchaseUnit)
-  if (!sku || !name || !type || !category || !baseUnit || !purchaseUnit) {
-    return { error: 'SKU, name, type, category, base unit and purchase unit are required' } as const
+  if (!sku || !name || !type || !baseUnit || !purchaseUnit) {
+    return { error: 'SKU, name, category, base unit and purchase unit are required' } as const
   }
-  const typeConfig = await db.purchaseItemTypeConfig.findUnique({ where: { code: type } })
+  const typeConfig = await db.purchaseItemTypeConfig.findUnique({ where: { code: type }, include: { categories: { where: { isActive: true }, select: { id: true } } } })
   if (!typeConfig || !typeConfig.isActive) return { error: 'Invalid type' } as const
+  // Sub-Category is required only when the Category has any (Fuel has none).
+  if (!category && typeConfig.categories.length > 0) return { error: 'Sub-category is required' } as const
   const skuConflict = await db.purchaseItem.findFirst({ where: { sku, ...(editingId ? { NOT: { id: editingId } } : {}) }, select: { id: true } })
   if (skuConflict) return { error: `SKU "${sku}" is already in use` } as const
 

@@ -100,7 +100,7 @@ export async function guestsBookedThisMonth(db: PrismaClient, now = new Date()):
   return guestsBookedInMonths(db, { current: true }, now)
 }
 
-/** Same rule as guestsBookedThisMonth, over the rolling current month and/or fixed "YYYY-MM" months. */
+/** Same rule as guestsBookedThisMonth (plus: a confirmed+ booking whose trip starts in the month), over the rolling current month and/or fixed "YYYY-MM" months. */
 export async function guestsBookedInMonths(
   db: PrismaClient,
   opts: { current?: boolean; months?: string[] },
@@ -116,7 +116,11 @@ export async function guestsBookedInMonths(
   const fmt = (d: Date) => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: sorted.length > 1 ? 'numeric' : undefined, timeZone: 'Asia/Makassar' })
   const inRanges = { OR: sorted.map(r => ({ createdAt: { gte: r.start, lt: r.end } })) }
 
-  const [bookings, payments] = await Promise.all([
+  // Trip date in the month — a guest sailing in December shouldn't get a December pitch
+  // even if they booked months earlier.
+  const tripInRanges = { OR: sorted.map(r => ({ startDate: { gte: r.start, lt: r.end } })) }
+
+  const [bookings, payments, trips] = await Promise.all([
     db.booking.findMany({
       where: { ...inRanges, status: { in: [...BOOKED_STATUSES] } },
       select: { createdAt: true, status: true, customer: { select: { id: true, name: true, email: true } } },
@@ -124,6 +128,10 @@ export async function guestsBookedInMonths(
     db.payment.findMany({
       where: { ...inRanges, status: { in: [...LIVE_PAYMENT_STATUSES] } },
       select: { createdAt: true, booking: { select: { customer: { select: { id: true, name: true, email: true } } } } },
+    }),
+    db.booking.findMany({
+      where: { ...tripInRanges, status: { in: [...BOOKED_STATUSES] } },
+      select: { startDate: true, customer: { select: { id: true, name: true, email: true } } },
     }),
   ])
 
@@ -136,6 +144,7 @@ export async function guestsBookedInMonths(
   }
   for (const b of bookings) add(b.customer, 'Booking confirmed', b.createdAt)
   for (const p of payments) add(p.booking.customer, 'Payment requested', p.createdAt)
+  for (const t of trips) add(t.customer, 'Trip', t.startDate)
 
   const guests = [...byId.values()].sort((a, b) => b.at.localeCompare(a.at))
   return { label, guests }

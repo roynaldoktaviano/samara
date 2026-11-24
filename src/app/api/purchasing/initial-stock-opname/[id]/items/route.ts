@@ -27,7 +27,7 @@ async function generateSku(db: Awaited<ReturnType<typeof getDb>>, name: string) 
 }
 
 async function getDefaultTypeCode(db: Awaited<ReturnType<typeof getDb>>) {
-  const preferred = await db.purchaseItemTypeConfig.findFirst({ where: { code: 'MAINTENANCE', isActive: true } })
+  const preferred = await db.purchaseItemTypeConfig.findFirst({ where: { code: 'SUPPLY', isActive: true } })
   if (preferred) return preferred.code
   const any = await db.purchaseItemTypeConfig.findFirst({ where: { isActive: true }, orderBy: { createdAt: 'asc' } })
   return any?.code ?? null

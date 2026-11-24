@@ -95,7 +95,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
           id: crypto.randomUUID(),
           sku,
           name: trimmedName,
-          type: 'MAINTENANCE',
+          type: 'SUPPLY',
           category: 'Non-Stock',
           baseUnit: unit,
           purchaseUnit: unit,

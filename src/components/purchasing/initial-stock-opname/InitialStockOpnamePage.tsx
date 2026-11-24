@@ -1,23 +1,23 @@
 'use client'
 
 // Temporary onboarding-only feature — see memory project-initial-stock-opname-temporary.
-// Sets the very first baseline stock per location (gudang & kapal). No approval step
+// Sets the very first baseline stock per location (gudang & kapal) — one opname for both
+// stock and ship Inventory: on a ship, products of Type = Asset go to Inventory on finish
+// (Room column = Inventory room, Sub-Category = Inventory category). No approval step
 // (Admin/Finance Director finalize directly), items can be freely added/removed while
 // still a draft, and a completed opname can only be corrected by whoever created it.
 
 import { useState, useEffect, useCallback, type Dispatch, type SetStateAction } from 'react'
 import { useSession } from 'next-auth/react'
-import { Plus, X, ChevronRight, CheckCircle2, PackagePlus, AlertTriangle, Trash2, CheckCheck, Search, Pencil, ArrowRightLeft, Package } from 'lucide-react'
+import { Plus, X, ChevronRight, CheckCircle2, PackagePlus, AlertTriangle, Trash2, CheckCheck, Search, Pencil, ArrowRightLeft, Package, Boxes } from 'lucide-react'
 import { renderLocationOptions } from '@/components/purchasing/LocationOptions'
-import InventoryQuickAdd from './InventoryQuickAdd'
 import { formatDate } from '@/lib/format'
 import { displayQty, hasPurchaseUnit, type UnitInfo } from '@/lib/purchasing/units'
 import { StockQty } from '@/components/purchasing/StockQty'
 import { StatusBadge, type StatusTone } from '@/components/ui/status-badge'
-import { ItemFormFields, EMPTY_ITEM_FORM, newItemForm, type ItemForm, type ItemTypeConfig } from '@/components/purchasing/items/ItemFormFields'
+import { ItemFormFields, EMPTY_ITEM_FORM, newItemForm, needsSubCategory, type ItemForm, type ItemTypeConfig } from '@/components/purchasing/items/ItemFormFields'
 
-interface Location { id: string; name: string; type: string; parentId: string | null }
-interface InventoryRoomOption { id: string; name: string; locationId: string }
+interface Location { id: string; name: string; type: string; parentId: string | null; yachtId?: string | null }
 interface CatalogItem { id: string; sku: string; name: string; baseUnit: string; purchaseUnit: string; conversionFactor: number; category: string }
 interface Placement { room: string | null; bin: string | null }
 interface OpnameItem {
@@ -31,8 +31,13 @@ interface Opname {
   location: Location
   countedBy: { id: string; name: string }
   items?: OpnameItem[]
+  // Ship Inventory room names at this location — suggested in the Room column.
+  inventoryRooms?: string[]
   _count?: { items: number }
 }
+
+const isShipLocation = (l: Location) => l.type === 'VESSEL' || !!l.yachtId
+const isAssetRow = (ci: OpnameItem) => ci.item?.treatment === 'ASSET'
 
 const STATUS: Record<string, { label: string; tone: StatusTone }> = {
   DRAFT:     { label: 'Draft',   tone: 'neutral' },
@@ -121,7 +126,7 @@ function AddItemModal({ opnameId, existingItemIds, onClose, onAdded }: {
 
   const canSubmit = qty !== '' && (mode === 'existing'
     ? !!selectedId
-    : !!(form.sku.trim() && form.name.trim() && form.type && form.category && form.baseUnit && form.purchaseUnit))
+    : !!(form.sku.trim() && form.name.trim() && form.type && (form.category || !needsSubCategory(typeConfigs, form.type)) && form.baseUnit && form.purchaseUnit))
 
   return (
     <ProductModalShell title="Add Product" onClose={onClose} error={error} footer={<>
@@ -296,7 +301,7 @@ function ConvertToStockModal({ opnameId, row, onClose, onConverted }: {
     setSaving(false)
   }
 
-  const canSubmit = loaded && qty !== '' && !!(current.sku.trim() && current.name.trim() && current.type && current.category && current.baseUnit && current.purchaseUnit)
+  const canSubmit = loaded && qty !== '' && !!(current.sku.trim() && current.name.trim() && current.type && (current.category || !needsSubCategory(typeConfigs, current.type)) && current.baseUnit && current.purchaseUnit)
 
   return (
     <ProductModalShell title="Convert to Stock Item" subtitle={row.item?.sku} onClose={onClose} error={error} footer={<>
@@ -345,15 +350,8 @@ export default function InitialStockOpnamePage() {
   const [convertRow, setConvertRow] = useState<OpnameItem | null>(null)
 
   const [createOpen, setCreateOpen] = useState(false)
-  const [createMode, setCreateMode] = useState<'STOCK' | 'INVENTORY'>('STOCK')
   const [createLocationId, setCreateLocationId] = useState('')
   const [creating, setCreating] = useState(false)
-  const [createRooms, setCreateRooms] = useState<InventoryRoomOption[]>([])
-  const [createRoomId, setCreateRoomId] = useState('')
-  const [addingRoom, setAddingRoom] = useState(false)
-  const [newRoomName, setNewRoomName] = useState('')
-  const [savingRoom, setSavingRoom] = useState(false)
-  const [inventoryView, setInventoryView] = useState<{ locationId: string; locationName: string; roomId: string; roomName: string } | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -384,60 +382,10 @@ export default function InitialStockOpnamePage() {
   const eligibleLocations = locations.filter(l => !completedLocationIds.includes(l.id) && !inProgressLocationIds.has(l.id))
 
   function openCreate() {
-    setCreateMode('STOCK')
     // No auto-pick: list order and the grouped dropdown order differ, so defaulting to
     // eligibleLocations[0] could submit a location other than the one shown.
     setCreateLocationId('')
-    setCreateRooms([]); setCreateRoomId(''); setAddingRoom(false); setNewRoomName('')
     setCreateOpen(true)
-  }
-
-  async function loadRoomsForLocation(locationId: string) {
-    setCreateRooms([]); setCreateRoomId('')
-    if (!locationId) return
-    const res = await fetch(`/api/inventory/rooms?locationId=${locationId}`)
-    if (res.ok) {
-      const rooms = await res.json()
-      setCreateRooms(rooms)
-      if (rooms.length) setCreateRoomId(rooms[0].id)
-    }
-  }
-
-  function switchCreateMode(mode: 'STOCK' | 'INVENTORY') {
-    setCreateMode(mode)
-    setAddingRoom(false); setNewRoomName('')
-    setCreateLocationId('')
-    setCreateRooms([]); setCreateRoomId('')
-  }
-
-  function changeCreateLocation(locationId: string) {
-    setCreateLocationId(locationId)
-    if (createMode === 'INVENTORY') loadRoomsForLocation(locationId)
-  }
-
-  async function addCreateRoom() {
-    if (!newRoomName.trim() || !createLocationId) return
-    setSavingRoom(true)
-    const res = await fetch('/api/inventory/rooms', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: newRoomName, locationId: createLocationId }),
-    })
-    if (res.ok) {
-      const room = await res.json()
-      setCreateRooms(r => [...r, room])
-      setCreateRoomId(room.id)
-      setNewRoomName('')
-      setAddingRoom(false)
-    }
-    setSavingRoom(false)
-  }
-
-  function submitCreate() {
-    if (createMode === 'STOCK') { createOpname(); return }
-    const loc = locations.find(l => l.id === createLocationId)
-    const room = createRooms.find(r => r.id === createRoomId)
-    if (!loc || !room) return
-    setInventoryView({ locationId: loc.id, locationName: loc.name, roomId: room.id, roomName: room.name })
-    setCreateOpen(false)
   }
 
   async function reloadDetailKeepingQty() {
@@ -499,7 +447,8 @@ export default function InitialStockOpnamePage() {
   async function save(finalize = false) {
     if (!detail) return
     setSaveError('')
-    if (finalize && !confirm('Finish this Initial Stock Opname? Stock will be applied to the system immediately.')) return
+    const assetCount = isShipLocation(detail.location) ? (detail.items ?? []).filter(isAssetRow).length : 0
+    if (finalize && !confirm(`Finish this Initial Stock Opname? Stock will be applied to the system immediately.${assetCount ? `\n\n${assetCount} Asset product(s) will be added to the ship Inventory (room = Room column, empty → "General").` : ''}`)) return
     setSaving(true)
     const res = await fetch(`/api/purchasing/initial-stock-opname/${detail.id}`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
@@ -527,18 +476,6 @@ export default function InitialStockOpnamePage() {
     await fetch(`/api/purchasing/initial-stock-opname/${opname.id}`, { method: 'DELETE' })
     if (detail?.id === opname.id) setDetail(null)
     load()
-  }
-
-  if (inventoryView) {
-    return (
-      <InventoryQuickAdd
-        locationId={inventoryView.locationId}
-        locationName={inventoryView.locationName}
-        initialRoomId={inventoryView.roomId}
-        initialRoomName={inventoryView.roomName}
-        onBack={() => setInventoryView(null)}
-      />
-    )
   }
 
   if (detail) {
@@ -604,12 +541,24 @@ export default function InitialStockOpnamePage() {
             <tr key={i}>{[...Array(5)].map((_, j) => <td key={j} className="px-4 py-3"><div className="h-4 rounded bg-muted animate-pulse" /></td>)}</tr>
           ))
           const textCls = 'w-full border rounded-md px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring/50 focus:border-ring bg-card'
-          const roomSuggestions = Array.from(new Set(stockRows.map(r => r.placement?.room?.trim()).filter((v): v is string => !!v))).sort()
+          const onShip = isShipLocation(detail.location)
+          const roomSuggestions = Array.from(new Set([...(detail.inventoryRooms ?? []), ...stockRows.map(r => r.placement?.room?.trim())].filter((v): v is string => !!v))).sort()
+          const assetRowCount = onShip ? stockRows.filter(isAssetRow).length : 0
           return (
             <>
+              {onShip && (
+                <div className="flex items-start gap-3 bg-muted/40 border rounded-lg px-4 py-3">
+                  <Boxes className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
+                  <p className="text-sm text-muted-foreground">
+                    Ship equipment goes in this same list — add it as a product with <span className="font-medium text-foreground">Type = Asset</span>.
+                    On finish, Asset rows are added to the ship <span className="font-medium text-foreground">Inventory</span> (Room column = Inventory room, Sub-Category = Inventory category) instead of stock.
+                    {assetRowCount > 0 && <> <span className="font-medium text-foreground">{assetRowCount}</span> Asset row(s) now.</>}
+                  </p>
+                </div>
+              )}
               <div className="rounded-xl border overflow-hidden">
                 <div className="px-5 py-3 bg-muted/40 border-b flex items-center gap-2">
-                  <h3 className="text-sm font-semibold">Stock Items</h3>
+                  <h3 className="text-sm font-semibold">Items</h3>
                   <span className="text-xs text-muted-foreground">({stockRows.length})</span>
                 </div>
                 <div className="overflow-x-auto"><table className="w-full text-sm">
@@ -647,7 +596,14 @@ export default function InitialStockOpnamePage() {
                               )}
                               <div className="min-w-0">
                                 <p className="font-medium text-sm">{ci.itemName}</p>
-                                {ci.item && <p className="text-xs text-muted-foreground font-mono mt-0.5">{ci.item.sku}</p>}
+                                <div className="flex items-center gap-1.5 mt-0.5">
+                                  {ci.item && <p className="text-xs text-muted-foreground font-mono">{ci.item.sku}</p>}
+                                  {isAssetRow(ci) && (
+                                    <StatusBadge tone={onShip ? 'info' : 'neutral'} title={onShip ? 'Goes to the ship Inventory on finish' : 'Asset — kept as stock at this location until it reaches a ship'}>
+                                      {onShip ? 'Asset → Inventory' : 'Asset'}
+                                    </StatusBadge>
+                                  )}
+                                </div>
                               </div>
                             </div>
                           </td>
@@ -792,7 +748,7 @@ export default function InitialStockOpnamePage() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold tracking-tight">Initial Stock Opname</h2>
-          <p className="text-muted-foreground text-sm mt-1">Set up the first stock or inventory baseline per location (warehouse & vessel)</p>
+          <p className="text-muted-foreground text-sm mt-1">Set up the first stock & inventory baseline per location (warehouse & vessel) — ship equipment = Type Asset</p>
         </div>
         <button onClick={openCreate}
           className="flex items-center gap-2 bg-primary hover:bg-primary-hover text-primary-foreground text-sm font-medium px-4 py-2 rounded-md transition-colors">
@@ -864,61 +820,29 @@ export default function InitialStockOpnamePage() {
               <button onClick={() => setCreateOpen(false)}><X className="h-5 w-5 text-muted-foreground" /></button>
             </div>
             <div className="p-6 space-y-4">
-              <div className="flex gap-1.5 bg-muted/50 rounded-lg p-1">
-                <button onClick={() => switchCreateMode('STOCK')} className={`flex-1 text-sm py-1.5 rounded-md transition-colors ${createMode === 'STOCK' ? 'bg-card shadow-sm font-medium' : 'text-muted-foreground'}`}>Stock Items</button>
-                <button onClick={() => switchCreateMode('INVENTORY')} className={`flex-1 text-sm py-1.5 rounded-md transition-colors ${createMode === 'INVENTORY' ? 'bg-card shadow-sm font-medium' : 'text-muted-foreground'}`}>Inventory</button>
-              </div>
-
               <div className="space-y-1.5">
                 <label className="text-sm font-medium">Location *</label>
-                {createMode === 'STOCK' && eligibleLocations.length === 0 ? (
+                {eligibleLocations.length === 0 ? (
                   <p className="text-xs text-muted-foreground bg-muted/40 rounded-lg px-3 py-2.5">All locations already have an Initial Stock Opname (completed or in draft) — open its row in the list to continue the draft.</p>
                 ) : (
                   <select className="w-full h-9 border rounded-md px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring/50 focus:border-ring bg-card"
-                    value={createLocationId} onChange={e => changeCreateLocation(e.target.value)}>
+                    value={createLocationId} onChange={e => setCreateLocationId(e.target.value)}>
                     <option value="" disabled>— Select location —</option>
-                    {renderLocationOptions(createMode === 'STOCK' ? eligibleLocations : locations, { renderLabel: l => `${l.name} (${l.type})` })}
+                    {renderLocationOptions(eligibleLocations, { renderLabel: l => `${l.name} (${l.type})` })}
                   </select>
                 )}
               </div>
 
-              {createMode === 'STOCK' ? (
-                <div className="text-xs text-muted-foreground bg-muted/40 rounded-lg px-3 py-2.5">
-                  Products already in stock at this location will appear automatically. New products can be added directly during the opname.
-                </div>
-              ) : (
-                <div className="space-y-1.5">
-                  <label className="text-sm font-medium">Room *</label>
-                  {createRooms.length > 0 && (
-                    <select className="w-full h-9 border rounded-md px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring/50 focus:border-ring bg-card"
-                      value={createRoomId} onChange={e => setCreateRoomId(e.target.value)}>
-                      {createRooms.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-                    </select>
-                  )}
-                  {createRooms.length === 0 && !addingRoom && (
-                    <p className="text-xs text-muted-foreground">No rooms at this location yet.</p>
-                  )}
-                  {!addingRoom ? (
-                    <button onClick={() => setAddingRoom(true)} className="text-xs text-primary hover:underline">+ New room</button>
-                  ) : (
-                    <div className="flex items-center gap-2">
-                      <input value={newRoomName} onChange={e => setNewRoomName(e.target.value)} placeholder="New room name"
-                        className="flex-1 h-9 border rounded-md px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring/50 focus:border-ring" />
-                      <button onClick={addCreateRoom} disabled={!newRoomName.trim() || savingRoom} className="px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary-hover disabled:opacity-50">
-                        {savingRoom ? '...' : 'Add'}
-                      </button>
-                      <button onClick={() => { setAddingRoom(false); setNewRoomName('') }} className="text-xs text-muted-foreground hover:underline">Cancel</button>
-                    </div>
-                  )}
-                  <p className="text-xs text-muted-foreground bg-muted/40 rounded-lg px-3 py-2.5">Items already in this room will appear automatically. No stock quantity needed — just the item name & category.</p>
-                </div>
-              )}
+              <div className="text-xs text-muted-foreground bg-muted/40 rounded-lg px-3 py-2.5">
+                Products already in stock at this location will appear automatically. New products can be added directly during the opname.
+                On a vessel, add ship equipment here too with <span className="font-medium text-foreground">Type = Asset</span> — it goes to the ship Inventory when the opname is finished.
+              </div>
             </div>
             <div className="flex justify-end gap-3 px-6 py-4 border-t bg-muted/30">
               <button onClick={() => setCreateOpen(false)} className="px-4 py-2 text-sm border rounded-md hover:bg-muted">Cancel</button>
-              <button onClick={submitCreate} disabled={creating || !createLocationId || (createMode === 'INVENTORY' && !createRoomId)}
+              <button onClick={createOpname} disabled={creating || !createLocationId}
                 className="px-4 py-2 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary-hover disabled:opacity-50 font-medium">
-                {creating ? 'Creating…' : createMode === 'STOCK' ? 'Create Opname' : 'Start'}
+                {creating ? 'Creating…' : 'Create Opname'}
               </button>
             </div>
           </div>

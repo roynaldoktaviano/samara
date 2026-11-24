@@ -29,7 +29,9 @@ export function normalizeTreatment(t: string | null | undefined): Treatment | nu
 
 /** Starting value for a new item of this Category (PurchaseItem.type) — editable afterwards. */
 export function defaultTreatmentForType(type: string | null | undefined): Treatment {
-  return type === 'BEVERAGE' ? 'TRADING' : 'CONSUMABLE'
+  if (type === 'BEVERAGE') return 'TRADING'
+  if (type === 'ASSET') return 'ASSET'
+  return 'CONSUMABLE'
 }
 
 /** A PO line's effective treatment: its own snapshot, else the item master's, else CONSUMABLE. */

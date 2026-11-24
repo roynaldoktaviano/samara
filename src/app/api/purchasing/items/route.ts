@@ -76,8 +76,8 @@ export async function POST(req: NextRequest) {
   const db = await getDb(session)
   const body = await req.json()
   const { sku, name, type, category, baseUnit, purchaseUnit, conversionFactor, standardCost, sellingPrice, valuationMethod, minStock, minStockUnit, reorderQty, treatment, imageKey, isSoldInPos, isStockTracked } = body
-  if (!sku || !name || !type || !category || !baseUnit || !purchaseUnit) {
-    return NextResponse.json({ error: 'sku, name, type, category, baseUnit and purchaseUnit are required' }, { status: 400 })
+  if (!sku || !name || !type || !baseUnit || !purchaseUnit) {
+    return NextResponse.json({ error: 'sku, name, category, baseUnit and purchaseUnit are required' }, { status: 400 })
   }
   // Non-Stock Item creation is discontinued — the new Inventory module (per-location
   // Rooms/Categories/Items + Stock Opname) replaces it. Existing isStockTracked=false
@@ -90,6 +90,10 @@ export async function POST(req: NextRequest) {
   if (!typeConfig || !typeConfig.isActive) {
     return NextResponse.json({ error: 'Invalid type' }, { status: 400 })
   }
+  // Sub-Category is required only when the Category has any (Fuel has none).
+  if (!category && await db.purchaseItemCategory.count({ where: { typeCode: type, isActive: true } }) > 0) {
+    return NextResponse.json({ error: 'Sub-category is required' }, { status: 400 })
+  }
   const existing = await db.purchaseItem.findUnique({ where: { sku } })
   if (existing) return NextResponse.json({ error: `SKU "${sku}" is already in use` }, { status: 409 })
   const item = await db.purchaseItem.create({
@@ -98,7 +102,7 @@ export async function POST(req: NextRequest) {
       sku: sku.trim().toUpperCase(),
       name: name.trim(),
       type,
-      category,
+      category: category ?? '',
       baseUnit,
       purchaseUnit,
       conversionFactor: Number(conversionFactor) || 1,

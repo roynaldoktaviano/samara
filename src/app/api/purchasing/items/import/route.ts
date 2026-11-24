@@ -83,7 +83,9 @@ export async function POST(req: NextRequest) {
   const locations = await db.stockLocation.findMany({ where: { isActive: true }, select: { id: true, name: true } })
   const locationByName = new Map(locations.map(l => [l.name.trim().toLowerCase(), l.id]))
 
-  const activeTypes = await db.purchaseItemTypeConfig.findMany({ where: { isActive: true }, select: { code: true, label: true } })
+  const activeTypes = await db.purchaseItemTypeConfig.findMany({ where: { isActive: true }, select: { code: true, label: true, _count: { select: { categories: { where: { isActive: true } } } } } })
+  // Categories without Sub-Categories (Fuel) import with an empty sub-category instead of "Other".
+  const typesWithoutSub = new Set(activeTypes.filter(t => t._count.categories === 0).map(t => t.code))
   const activeTypeCodes = new Set(activeTypes.map(t => t.code))
   // Category cells may hold the code (BEVERAGE) or the label (Beverage).
   const typeCodeByLabel = new Map(activeTypes.map(t => [t.label.trim().toUpperCase(), t.code]))
@@ -140,10 +142,10 @@ export async function POST(req: NextRequest) {
     }
 
     const typeRaw        = ((iType >= 0   ? row[iType]   : '') || '').trim().toUpperCase()
-    const type           = activeTypeCodes.has(typeRaw) ? typeRaw : (typeCodeByLabel.get(typeRaw) ?? 'MAINTENANCE')
+    const type           = activeTypeCodes.has(typeRaw) ? typeRaw : (typeCodeByLabel.get(typeRaw) ?? (activeTypeCodes.has('SUPPLY') ? 'SUPPLY' : 'MAINTENANCE'))
     // Type column (new layout only): Trading/Consumable/Asset; blank/unknown → the category's default.
     const treatmentCell  = normalizeTreatment(((iTreat >= 0 ? row[iTreat] : '') || '').trim().toUpperCase())
-    const category       = (iCat >= 0     ? row[iCat]    : '') || 'Other'
+    const category       = (iCat >= 0     ? row[iCat]    : '') || (typesWithoutSub.has(type) ? '' : 'Other')
     const baseUnit       = (iBase >= 0    ? row[iBase]   : '') || 'pcs'
     const purchaseUnit   = (iPurch >= 0   ? row[iPurch]  : '') || baseUnit
     const conversionFactor = parseFloat(iConv >= 0   ? row[iConv]   : '') || 1

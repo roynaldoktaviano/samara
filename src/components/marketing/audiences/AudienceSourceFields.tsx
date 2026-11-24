@@ -295,7 +295,7 @@ function BookedMonthsExclusion({ enabled, current, months, onChange }: {
         Exclude guests who booked in…
       </label>
       <p className="text-xs text-muted-foreground ml-6">
-        Skips anyone whose booking was confirmed or who had a payment requested in the selected month — matched by email across all sources below. &quot;This month (auto)&quot; switches to the new month automatically.
+        Skips anyone whose booking was confirmed, who had a payment requested, or whose trip starts in the selected month — matched by email across all sources below. &quot;This month (auto)&quot; switches to the new month automatically.
       </p>
       {enabled && (
         <div className="ml-6 space-y-2">
