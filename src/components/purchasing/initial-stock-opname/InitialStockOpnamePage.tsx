@@ -405,6 +405,7 @@ export default function InitialStockOpnamePage() {
     setDetailLoading(true)
     setDetail(opname)
     setSaveError('')
+    setRowSearch('')
     const res = await fetch(`/api/purchasing/initial-stock-opname/${opname.id}`)
     if (res.ok) setDetail(await res.json())
     setDetailLoading(false)
@@ -437,6 +438,9 @@ export default function InitialStockOpnamePage() {
   // Unit each row is counted in — purchase unit (bottle/box) by default, base unit (pcs/ml) on
   // request. Display-only: the qty is always stored in base units.
   const [rowUnit, setRowUnit] = useState<Record<string, 'PURCHASE' | 'BASE'>>({})
+  // Live filter over the opname rows (name / SKU / category / room / rack) — display-only,
+  // Save/Finish still send every row.
+  const [rowSearch, setRowSearch] = useState('')
 
   async function removeItem(itemId: string) {
     if (!detail) return
@@ -534,16 +538,25 @@ export default function InitialStockOpnamePage() {
         )}
 
         {(() => {
-          const stockRows = (detail.items ?? []).filter(ci => !isNonStock(ci))
-          const nonStockRows = (detail.items ?? []).filter(isNonStock)
+          const allStockRows = (detail.items ?? []).filter(ci => !isNonStock(ci))
+          const allNonStockRows = (detail.items ?? []).filter(isNonStock)
+          const terms = rowSearch.trim().toLowerCase().split(/\s+/).filter(Boolean)
+          const matches = (ci: OpnameItem) => {
+            if (!terms.length) return true
+            const hay = [ci.itemName, ci.item?.sku, ci.item?.category, ci.placement?.room, ci.placement?.bin]
+              .filter(Boolean).join(' ').toLowerCase()
+            return terms.every(t => hay.includes(t))
+          }
+          const stockRows = allStockRows.filter(matches)
+          const nonStockRows = allNonStockRows.filter(matches)
           const inputCls = 'w-24 border rounded-md px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-1 focus:ring-ring/50 focus:border-ring tabular-nums [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none'
           const skeleton = [...Array(3)].map((_, i) => (
             <tr key={i}>{[...Array(5)].map((_, j) => <td key={j} className="px-4 py-3"><div className="h-4 rounded bg-muted animate-pulse" /></td>)}</tr>
           ))
           const textCls = 'w-full border rounded-md px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring/50 focus:border-ring bg-card'
           const onShip = isShipLocation(detail.location)
-          const roomSuggestions = Array.from(new Set([...(detail.inventoryRooms ?? []), ...stockRows.map(r => r.placement?.room?.trim())].filter((v): v is string => !!v))).sort()
-          const assetRowCount = onShip ? stockRows.filter(isAssetRow).length : 0
+          const roomSuggestions = Array.from(new Set([...(detail.inventoryRooms ?? []), ...allStockRows.map(r => r.placement?.room?.trim())].filter((v): v is string => !!v))).sort()
+          const assetRowCount = onShip ? allStockRows.filter(isAssetRow).length : 0
           return (
             <>
               {onShip && (
@@ -557,9 +570,24 @@ export default function InitialStockOpnamePage() {
                 </div>
               )}
               <div className="rounded-xl border overflow-hidden">
-                <div className="px-5 py-3 bg-muted/40 border-b flex items-center gap-2">
+                <div className="px-5 py-3 bg-muted/40 border-b flex flex-wrap items-center gap-2">
                   <h3 className="text-sm font-semibold">Items</h3>
-                  <span className="text-xs text-muted-foreground">({stockRows.length})</span>
+                  <span className="text-xs text-muted-foreground">
+                    ({terms.length ? `${stockRows.length} of ${allStockRows.length}` : allStockRows.length})
+                  </span>
+                  <div className="relative ml-auto w-full sm:w-72">
+                    <Search className="h-4 w-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+                    <input value={rowSearch} onChange={e => setRowSearch(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Escape') setRowSearch('') }}
+                      placeholder="Search product, SKU, category, room…"
+                      className="w-full h-8 border rounded-md pl-8 pr-8 text-sm bg-card focus:outline-none focus:ring-1 focus:ring-ring/50 focus:border-ring" />
+                    {rowSearch && (
+                      <button onClick={() => setRowSearch('')} title="Clear search"
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <div className="overflow-x-auto"><table className="w-full text-sm">
                   <thead className="bg-muted/30 text-xs text-muted-foreground border-b">
@@ -572,8 +600,10 @@ export default function InitialStockOpnamePage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y">
-                    {detailLoading ? skeleton : !stockRows.length ? (
+                    {detailLoading ? skeleton : !allStockRows.length ? (
                       <tr><td colSpan={5} className="text-center py-10 text-muted-foreground text-sm">No stock products yet. Click "Add Product" to get started.</td></tr>
+                    ) : !stockRows.length ? (
+                      <tr><td colSpan={5} className="text-center py-10 text-muted-foreground text-sm">No products match &ldquo;{rowSearch.trim()}&rdquo;.</td></tr>
                     ) : stockRows.map(ci => {
                       const units: UnitInfo = ci.item ?? {}
                       const canSwitch = hasPurchaseUnit(units)
@@ -671,7 +701,9 @@ export default function InitialStockOpnamePage() {
                   <div className="px-5 py-3 bg-muted/40 border-b">
                     <div className="flex items-center gap-2">
                       <h3 className="text-sm font-semibold">Non-Stock Items</h3>
-                      <span className="text-xs text-muted-foreground">({nonStockRows.length})</span>
+                      <span className="text-xs text-muted-foreground">
+                        ({terms.length ? `${nonStockRows.length} of ${allNonStockRows.length}` : allNonStockRows.length})
+                      </span>
                     </div>
                     <p className="text-xs text-muted-foreground mt-0.5">Not counted toward stock when the opname is finished. Click "Convert to Stock" to make it a Stock Item.</p>
                   </div>
