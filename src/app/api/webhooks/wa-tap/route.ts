@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
       if (!r.ok) { rejected++; continue }
       stored++
       if (r.matched) matched++
-      // The chat came in before its tap, so it was "direct" and got no deal — open it now (src/lib/deal-chat.ts).
+      // The chat came in before its tap, so it was "direct" — mark its deal as a website enquiry now (src/lib/deal-chat.ts).
       if (r.lateMatchConversationId) await runLateTapChatDeal(db, r.lateMatchConversationId).catch(e => console.error('[wa-tap] late deal failed', e))
     }
     if (rejected) {

@@ -7,6 +7,8 @@ import { BriefcaseBusiness, Loader2, UserPlus, UserRound } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { Input } from '@/components/ui/input'
+import { WON_CURRENCY_OPTIONS } from '@/components/leads/WonPaymentDialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useConfirm } from '@/components/ui/confirm-dialog'
 import { LEAD_FORM_EMPTY, ProfileFields, QualificationFields, TRIP_TYPE_OPTIONS, toLeadFormState, type LeadFormState } from '@/components/leads/LeadEditSheet'
@@ -26,8 +28,8 @@ export const CHAT_LEAD_PANEL_KEY = 'chat-lead-panel-open'
  * keeps the conversation and the lead side by side while they talk.
  *
  * A chat with no Lead yet gets one via POST /api/{whatsapp|instagram}/conversations/[id]/lead.
- * A lead with no open deal (e.g. a guest who WhatsApped the number directly — no deal by itself,
- * src/lib/deal-chat.ts) gets "Create deal": the deal is built from the lead's fields below and
+ * A lead with no open deal (an Instagram / Messenger DM, or a WhatsApp lead whose last deal is
+ * closed — src/lib/deal-chat.ts) gets "Create deal": the deal is built from the lead's fields below and
  * its name is formatted from them (src/lib/deal-name.ts), never typed.
  * Auto stage moves (src/lib/lead-stage-auto.ts) are picked up on the 'chat-changed' event
  * without overwriting unsaved edits in the form.
@@ -68,6 +70,8 @@ export default function ChatLeadSection({ channel, conversationId, leadId, assig
   // Won needs the payment status first (parity C3 — Won = deposit received).
   const [wonPending, setWonPending] = useState(false)
   const [wonPayment, setWonPayment] = useState<DealPaymentStatus | ''>('')
+  const [wonAmount, setWonAmount] = useState('')
+  const [wonCurrency, setWonCurrency] = useState('USD')
 
   const dirty = JSON.stringify(form) !== JSON.stringify(saved)
   const closedStage = stage === 'CLOSED_WON' || stage === 'CLOSED_LOST'
@@ -201,7 +205,7 @@ export default function ChatLeadSection({ channel, conversationId, leadId, assig
     }
   }
 
-  async function moveStage(target: LeadStage, extra?: { lostReason: LeadLostReason; lostNote: string } | { paymentStatus: DealPaymentStatus }) {
+  async function moveStage(target: LeadStage, extra?: { lostReason: LeadLostReason; lostNote: string } | { paymentStatus: DealPaymentStatus; amount: number; currency: string }) {
     if (!leadId) return
     setStageBusy(true)
     try {
@@ -224,7 +228,13 @@ export default function ChatLeadSection({ channel, conversationId, leadId, assig
     const target = v as LeadStage
     if (target === stage) return
     if (target === 'CLOSED_LOST') { setWonPending(false); setLostReason(''); setLostNote(''); setLostPending(true); return }
-    if (target === 'CLOSED_WON') { setLostPending(false); setWonPayment(''); setWonPending(true); return }
+    if (target === 'CLOSED_WON') {
+      setLostPending(false); setWonPayment('')
+      setWonAmount(Number(form.tripAmount) > 0 ? form.tripAmount : '')
+      setWonCurrency((WON_CURRENCY_OPTIONS as readonly string[]).includes(form.tripAmountCurrency) ? form.tripAmountCurrency : 'USD')
+      setWonPending(true)
+      return
+    }
     setLostPending(false)
     setWonPending(false)
     moveStage(target)
@@ -262,7 +272,7 @@ export default function ChatLeadSection({ channel, conversationId, leadId, assig
       {!hasOpenDeal && (
         <div className="rounded-md border border-dashed p-2.5 space-y-2">
           <p className="text-[11px] text-muted-foreground">
-            {hasDeals ? 'No open deal — the earlier one is closed.' : 'No deal yet — this chat doesn\u2019t open one by itself.'}{' '}
+            {hasDeals ? 'No open deal — the earlier one is closed.' : channel === 'whatsapp' ? 'No deal yet.' : 'No deal yet — this chat doesn\u2019t open one by itself.'}{' '}
             Fill in trip type, yacht, dates and pax below, then create the deal. Its name is made from them.
           </p>
           {canEdit && (
@@ -295,10 +305,20 @@ export default function ChatLeadSection({ channel, conversationId, leadId, assig
                 {WON_PAYMENT_STATUSES.map(s => <SelectItem key={s} value={s} className="text-xs">{DEAL_PAYMENT_STATUS_LABEL[s]}</SelectItem>)}
               </SelectContent>
             </Select>
+            <div className="flex items-center gap-2">
+              <Input type="number" min={0} inputMode="decimal" aria-label="Deal amount" placeholder="Deal amount *" className="h-8 min-w-0 text-xs"
+                value={wonAmount} onChange={e => setWonAmount(e.target.value)} />
+              <Select value={wonCurrency} onValueChange={setWonCurrency}>
+                <SelectTrigger aria-label="Currency" className="h-8 w-20 shrink-0 text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {WON_CURRENCY_OPTIONS.map(c => <SelectItem key={c} value={c} className="text-xs">{c}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
             <div className="flex gap-2">
               <Button size="sm" variant="outline" className="h-7 flex-1 text-xs" onClick={() => setWonPending(false)} disabled={stageBusy}>Cancel</Button>
-              <Button size="sm" className="h-7 flex-1 text-xs" disabled={!wonPayment} loading={stageBusy}
-                onClick={() => wonPayment && moveStage('CLOSED_WON', { paymentStatus: wonPayment })}>Mark Won</Button>
+              <Button size="sm" className="h-7 flex-1 text-xs" disabled={!wonPayment || !(Number(wonAmount) > 0)} loading={stageBusy}
+                onClick={() => wonPayment && Number(wonAmount) > 0 && moveStage('CLOSED_WON', { paymentStatus: wonPayment, amount: Number(wonAmount), currency: wonCurrency })}>Mark Won</Button>
             </div>
           </div>
         )}

@@ -17,12 +17,13 @@ const ORIGIN_LABEL = { AD: 'Click-to-WhatsApp ad', TAP: 'website WhatsApp button
  *  - an open deal → a note on it; plus the 4h follow-up task only when the chat came from an ad or
  *    the website WhatsApp button (a real enquiry). A customer simply carrying on an ongoing chat
  *    after a quiet day is not a new enquiry, so it doesn't spawn tasks.
- * WhatsApp (Freshsales deal maker rule, handover §2): only a chat from a Click-to-WhatsApp ad or a
- * website button tap (Ref SL-XXXXX / 30-min timing) opens a deal by itself. A chat straight to the
- * number (WHATSAPP_DIRECT) and every Instagram / Messenger DM only get a note on an open deal; sales
- * open the deal with the chat
- * panel's "Create deal" button (POST /api/leads/[id]/deal, createDealFromLead below). A tap that
- * reaches us after the chat started opens the deal then (runLateTapChatDeal).
+ * WhatsApp: every Sales chat opens a deal by itself — Click-to-WhatsApp ad, website button tap
+ * (Ref SL-XXXXX / 30-min timing) AND a chat straight to the number (WHATSAPP_DIRECT), so the pipeline
+ * moves on with the conversation (Roy, 24 Nov — reverses the 23 Nov "direct = no deal" rule). Only
+ * ad / tap chats count as a real enquiry (4h follow-up task on an open deal). Instagram / Messenger
+ * DMs still only get a note on an open deal; sales open the deal with the chat panel's "Create deal"
+ * button (POST /api/leads/[id]/deal, createDealFromLead below). A tap that reaches us after the chat
+ * started upgrades it then (runLateTapChatDeal).
  * Trip type is unknown from a chat → it joins any open deal of the brand; sales set PC / OT.
  * Only Sales chats count (a WhatsApp chat triaged Vendor / Spam opens no deal). One exception: a
  * WhatsApp number that belongs to an existing Guest (chat category GUEST, no Lead) — a returning
@@ -67,9 +68,9 @@ export async function runChatDealMaker(db: PrismaClient, p: {
   if (p.ensureOnly && p.channel === 'WHATSAPP' && p.whatsappConversationId && !p.origin) {
     p = { ...p, origin: await whatsappChatOrigin(db, p.whatsappConversationId) }
   }
-  // Only a WhatsApp chat from an ad / website tap opens a deal by itself. A direct WhatsApp chat and every
-  // Instagram / Messenger DM get at most a note on an open deal — sales use "Create deal" (Roy, 23 Nov).
-  const opensDeal = p.channel === 'WHATSAPP' && (p.origin?.kind === 'AD' || p.origin?.kind === 'TAP')
+  // Every WhatsApp Sales chat (ad, website tap or direct) opens a deal by itself (Roy, 24 Nov). Instagram /
+  // Messenger DMs get at most a note on an open deal — sales use "Create deal".
+  const opensDeal = p.channel === 'WHATSAPP'
   if (!opensDeal && (p.ensureOnly || !openDeal)) return
   const originLabel = p.origin ? ORIGIN_LABEL[p.origin.kind] : null
   // A lead just made from a chat staff already answered (its first deal) starts at Initial Message
@@ -137,7 +138,8 @@ export async function createDealFromLead(db: PrismaClient, p: {
   brand: WhatsappBrand
   channel: Extract<DealChannel, 'WHATSAPP' | 'INSTAGRAM' | 'MESSENGER' | 'MANUAL'>
   whatsappConversationId?: string | null
-  actingUserId: string
+  /** Who pressed "Create deal" — null from a backfill script (the deal owner is then notified). */
+  actingUserId: string | null
 }): Promise<CreateDealResult> {
   const lead = await db.lead.findUnique({
     where: { id: p.leadId },
@@ -152,7 +154,12 @@ export async function createDealFromLead(db: PrismaClient, p: {
 
   // Where the conversation already is: we wrote → Initial Message Sent; they answered us → In Active
   // Communication (only with a trip type, parity C3); else New Enquiry.
-  const out = lead.lastOutboundAt, inb = lead.lastInboundAt
+  // The chat thread's own timestamps count too — replies copied in from Freshchat don't touch the lead's.
+  const conv = p.whatsappConversationId
+    ? await db.whatsappConversation.findUnique({ where: { id: p.whatsappConversationId }, select: { lastInboundAt: true, lastOutboundAt: true } })
+    : null
+  const later = (a?: Date | null, b?: Date | null) => (a && b ? (a > b ? a : b) : a ?? b ?? null)
+  const out = later(lead.lastOutboundAt, conv?.lastOutboundAt), inb = later(lead.lastInboundAt, conv?.lastInboundAt)
   const initialStage: LeadStage = !out ? 'NEW' : inb && inb > out && lead.tripType ? 'ACTIVE_COMMUNICATION' : 'INITIAL_MESSAGE_SENT'
   const origin = p.whatsappConversationId ? await whatsappChatOrigin(db, p.whatsappConversationId) : null
   const made = await runDealMakerLocked(db, {

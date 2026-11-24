@@ -43,6 +43,25 @@ enum TripType {
   OPEN_TRIP
 }
 
+// How a deal was booked (marketing audit 2026-11-24): agent revenue stays out of ad ROAS.
+enum DealBookingType {
+  DIRECT
+  AGENT
+  REPEAT
+}
+
+// How the guest reached out for this deal — the standard list marketing reports on.
+enum DealEnquiryChannel {
+  WEB_FORM
+  WHATSAPP
+  EMAIL
+  META_LEAD_FORM
+  INSTAGRAM
+  MESSENGER
+  AGENT
+  PHONE
+}
+
 enum BookingStatus {
   on_hold
   pending
@@ -365,6 +384,7 @@ model Customer {
   inquiries              Inquiry[]
   deals                  Deal[]
   pageViews              PageView[]
+  contactAttribution     ContactAttribution?
   freshsalesContacts     FreshsalesContact[]
   freshchatConversations FreshchatConversation[]
 
@@ -505,6 +525,7 @@ model Lead {
   // (newest open, else newest), kept by DB trigger refresh_lead_from_deals — write the Deal.
   deals                  Deal[]
   pageViews              PageView[]
+  contactAttribution     ContactAttribution?
   whatsappConversations  WhatsappConversation[]
   instagramConversations InstagramConversation[]
   contacts               LeadContact[]
@@ -530,29 +551,43 @@ model Lead {
 // Won / Lost deals are read-only (only ADMIN can reopen; the Freshsales sync is the exception
 // until cutover). Lead.stage etc. mirror the person's primary deal via DB trigger.
 model Deal {
-  id               String          @id @default(cuid())
+  id               String              @id @default(cuid())
   // Order ID in Google / Meta conversion uploads: the Freshsales deal ID for deals that exist in
   // Freshsales (migrated, or born during dual-write and matched), else "ERP-<n>" — never numeric,
   // so it can't collide with a Freshsales ID.
-  orderId          String?         @unique
-  freshsalesDealId String?         @unique
+  orderId          String?             @unique
+  freshsalesDealId String?             @unique
   leadId           String?
-  lead             Lead?           @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  lead             Lead?               @relation(fields: [leadId], references: [id], onDelete: SetNull)
   customerId       String?
-  customer         Customer?       @relation(fields: [customerId], references: [id], onDelete: SetNull)
-  brand            WhatsappBrand   @default(SAMARA)
+  customer         Customer?           @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  brand            WhatsappBrand       @default(SAMARA)
   tripType         TripType?
   // Yacht of this enquiry ("Samara I" / "Samara II" / "Otium" / "Mischief" / "Samara I + Samara II") —
   // Freshsales Product Interest minus its PC / OT half (that's tripType). src/lib/deal-product-interest.ts
   productInterest  String?
   // Never sent to Google / Meta offline feeds (Freshsales never_upload.json). src/lib/ad-offline-feed.ts
-  neverUpload      Boolean         @default(false)
-  stage            LeadStage       @default(NEW)
+  neverUpload      Boolean             @default(false)
+  // Test / dummy deal (Abel, Ursula Wastian, "Test" …): left out of every report and every Google /
+  // Meta upload. src/lib/deal-quality.ts
+  isTest           Boolean             @default(false)
+  // Direct / Agent / Repeat — detected when the deal is made (src/lib/deal-quality.ts
+  // detectBookingType), sales can change it. Agent revenue is left out of ad ROAS.
+  bookingType      DealBookingType?
+  // How the guest reached out (standard list); required before In Active Communication
+  enquiryChannel   DealEnquiryChannel?
+  // Trip type the enquiry asked for — set once when the deal is made, never changed (tripType is
+  // what sales book)
+  enquiryTripType  TripType?
+  // amount in USD and the rate used (USD per 1 unit of `currency`); src/lib/deal-amount.ts
+  amountUsd        Float?
+  fxRate           Float?
+  stage            LeadStage           @default(NEW)
   stageUpdatedAt   DateTime?
   stageUpdatedById String?
-  stageUpdatedBy   User?           @relation("DealStageUpdatedBy", fields: [stageUpdatedById], references: [id], onDelete: SetNull)
+  stageUpdatedBy   User?               @relation("DealStageUpdatedBy", fields: [stageUpdatedById], references: [id], onDelete: SetNull)
   ownerId          String?
-  owner            User?           @relation("DealOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  owner            User?               @relation("DealOwner", fields: [ownerId], references: [id], onDelete: SetNull)
   ownerAssignedAt  DateTime?
   amount           Float?
   currency         String?
@@ -562,21 +597,22 @@ model Deal {
   // Won = deposit received). Set from the booking's payments when the booking moves the deal.
   paymentStatus    String?
   bookingId        String?
-  booking          Booking?        @relation("DealBooking", fields: [bookingId], references: [id], onDelete: SetNull)
+  booking          Booking?            @relation("DealBooking", fields: [bookingId], references: [id], onDelete: SetNull)
   travelStartDate  DateTime?
   travelEndDate    DateTime?
   guestCount       Int?
   // How it came in: WEBSITE_FORM, META_FORM, WHATSAPP, INSTAGRAM, MESSENGER, MANUAL, BOOKING,
   // FRESHSALES (made by the Freshsales sync) or MIGRATED (from the pre-Deal lead card).
   channel          String?
-  createdAt        DateTime        @default(now())
-  updatedAt        DateTime        @updatedAt
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
   deletedAt        DateTime?
 
   inquiries    Inquiry[]
   notes        DealNote[]
   todos        Todo[]
   stageChanges DealStageChange[]
+  attribution  DealAttribution?
 
   @@index([leadId])
   @@index([customerId])
@@ -747,7 +783,7 @@ model WaTap {
 // Reassigned from leadId to customerId when a Lead converts into a Guest via
 // booking creation — see POST /api/bookings.
 model Inquiry {
-  id                     String    @id @default(cuid())
+  id                     String         @id @default(cuid())
   source                 String
   leadId                 String?
   customerId             String?
@@ -814,8 +850,8 @@ model Inquiry {
   // its "Ref SL-XXXXX" code and how sure the match is (CONFIDENT / MEDIUM / LOW — LOW is never
   // uploaded until sales change it).
   waRef                  String?
-  waTapId                String?   @unique
-  waTap                  WaTap?    @relation(fields: [waTapId], references: [id], onDelete: SetNull)
+  waTapId                String?        @unique
+  waTap                  WaTap?         @relation(fields: [waTapId], references: [id], onDelete: SetNull)
   matchConfidence        String?
   matchConfidenceById    String?
   matchConfidenceAt      DateTime?
@@ -825,6 +861,13 @@ model Inquiry {
   // late upgrades the direct one instead of adding a second row.
   whatsappConversationId String?
   ctwaClid               String? // Meta's Click-to-WhatsApp click ID (needed for Conversions API for messaging)
+  // Brand whose site / form / WhatsApp number / page received this enquiry (acquisition brand) —
+  // may differ from the brand the guest finally books. src/lib/contact-attribution.ts
+  brand                  WhatsappBrand?
+  // tripType (the form's own words) mapped to the standard list; never changed afterwards
+  tripTypeStd            TripType?
+  // When the first-touch visit (utm* / gclid … above) happened — the plugin's ft_ts cookie
+  firstTouchAt           DateTime?
   adSourceId             String? // ad or post ID
   adSourceType           String? // "ad" | "post"
   adSourceUrl            String?
@@ -833,7 +876,7 @@ model Inquiry {
   adMediaType            String? // "image" | "video"
   adMediaUrl             String?
   rawPayload             Json?
-  createdAt              DateTime  @default(now())
+  createdAt              DateTime       @default(now())
 
   // The pipeline deal this enquiry opened or was added to (src/lib/deal-maker.ts).
   dealId   String?
@@ -5663,6 +5706,121 @@ model FreshchatMessage {
   raw            Json?
 
   @@index([conversationId, createdAt])
+}
+
+// DEPRECATED 2026-11-24 — per-person attribution, replaced the same day by DealAttribution (ads are
+// attributed per deal). Nothing reads or writes it; kept only so `prisma db push` doesn't drop it.
+// Safe to drop: DROP TABLE "ContactAttribution"; then remove this model + the two back-relations.
+model ContactAttribution {
+  id                 String         @id @default(cuid())
+  leadId             String?        @unique
+  lead               Lead?          @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  customerId         String?        @unique
+  customer           Customer?      @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  firstSource        String?
+  firstMedium        String?
+  firstCampaign      String?
+  firstTerm          String?
+  firstContent       String?
+  firstLandingUrl    String?
+  firstReferrer      String?
+  firstGclid         String?
+  firstGbraid        String?
+  firstWbraid        String?
+  firstFbclid        String?
+  firstBrand         WhatsappBrand?
+  firstAt            DateTime?
+  firstOrigin        String?
+  lastPaidNetwork    String?
+  lastPaidSource     String?
+  lastPaidMedium     String?
+  lastPaidCampaign   String?
+  lastPaidTerm       String?
+  lastPaidContent    String?
+  lastPaidLandingUrl String?
+  lastPaidGclid      String?
+  lastPaidGbraid     String?
+  lastPaidWbraid     String?
+  lastPaidFbclid     String?
+  lastPaidCtwaClid   String?
+  lastPaidBrand      WhatsappBrand?
+  lastPaidAt         DateTime?
+  lastPaidOrigin     String?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  @@index([lastPaidAt])
+}
+
+// One per DEAL (a person with two deals can come from two different ads, years apart):
+// FIRST touch = the visit behind this deal's enquiry (set once, never overwritten); LAST PAID = the
+// newest ad click inside this deal's window (after the person's previous deal, until Won / Lost);
+// adRole = ACQUIRED (ad click brought this deal in) / ASSISTED (ad click while it was open) / NONE.
+// src/lib/deal-attribution.ts (marketing audit 2026-11-24)
+model DealAttribution {
+  id                 String         @id @default(cuid())
+  dealId             String         @unique
+  deal               Deal           @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  // The enquiry the first touch was taken from — the only source allowed to COMPLETE it later (a
+  // WhatsApp chat's enquiry that gets the website tap's landing / gclid a few seconds afterwards).
+  firstInquiryId     String?
+  firstSource        String?
+  firstMedium        String?
+  firstCampaign      String?
+  firstTerm          String?
+  firstContent       String?
+  firstLandingUrl    String?
+  firstReferrer      String?
+  firstGclid         String?
+  firstGbraid        String?
+  firstWbraid        String?
+  firstFbclid        String?
+  firstBrand         WhatsappBrand?
+  firstAt            DateTime?
+  // CF7 / META_LEAD_AD / WHATSAPP / WHATSAPP_AD / FRESHSALES … — what recorded it
+  firstOrigin        String?
+  lastPaidNetwork    String? // "Google Ads" | "Meta Ads"
+  lastPaidSource     String?
+  lastPaidMedium     String?
+  lastPaidCampaign   String?
+  lastPaidTerm       String?
+  lastPaidContent    String?
+  lastPaidLandingUrl String?
+  lastPaidGclid      String?
+  lastPaidGbraid     String?
+  lastPaidWbraid     String?
+  lastPaidFbclid     String?
+  lastPaidCtwaClid   String?
+  lastPaidBrand      WhatsappBrand?
+  lastPaidAt         DateTime?
+  lastPaidOrigin     String?
+  adRole             String? // ACQUIRED | ASSISTED | NONE
+  adNetwork          String? // "Google Ads" | "Meta Ads"
+  adEvidence         String?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  @@index([lastPaidAt])
+  @@index([adRole])
+}
+
+// ERP-side corrections to a Freshsales deal (marketing data audit 2026-11-24). Freshsales is never
+// written to and the archive row is overwritten by every pull, so fixes live here and are applied
+// on read: the FS → ERP deal sync, Won Attribution, exports. src/lib/deal-quality.ts
+model FreshsalesDealFix {
+  dealId      String    @id // FreshsalesDeal.id
+  // true / false = decided (by hand or by the one-off audit script); null = the name rule decides
+  isTest      Boolean?
+  // Booking type for reports: true = agent booking, false = direct; null = detected automatically
+  isAgent     Boolean?
+  amount      Float?
+  currency    String?
+  // When the deal really became Won (Freshsales "closed date" is typed by hand)
+  wonAt       DateTime?
+  note        String?
+  updatedById String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 }
 
 model FreshsalesSyncState {

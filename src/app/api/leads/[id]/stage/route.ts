@@ -19,7 +19,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   const role = chatRole((session.user as { role?: string }).role)
   try {
     const { id } = await params
-    const { stage, lostReason, lostNote, paymentStatus } = await request.json()
+    const { stage, lostReason, lostNote, paymentStatus, amount, currency } = await request.json()
     if (!isLeadStage(stage)) return NextResponse.json({ error: 'Invalid stage' }, { status: 400 })
 
     const lead = await db.lead.findFirst({ where: { id, ...leadOwnerScope(role, session.user.id) }, select: { id: true, name: true, stage: true, tripType: true } })
@@ -31,7 +31,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       deal = { id: made.dealId, stage: 'NEW' }
     }
     const from = deal.stage
-    const r = await changeDealStage(db, { dealId: deal.id, stage, lostReason, lostNote, paymentStatus, user: { id: session.user.id, name: session.user.name, role } })
+    const r = await changeDealStage(db, { dealId: deal.id, stage, lostReason, lostNote, paymentStatus, amount, currency, user: { id: session.user.id, name: session.user.name, role } })
     if (!r.ok) return NextResponse.json({ error: r.error }, { status: r.status })
 
     logActivity({

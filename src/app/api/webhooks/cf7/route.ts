@@ -14,6 +14,8 @@ import { getClientIp, countryFromIp } from '@/lib/geo-country'
 import { providedWebhookSecret, webhookSecretMatches } from '@/lib/webhook-secret'
 import { cleanValue, trackingFromPayload, withoutDeniedMetaCookies } from '@/lib/inquiry-tracking'
 import { fillEmptyOnly, findContactByIdentity, isPlaceholderName, normalizeEmail, toE164 } from '@/lib/contact-identity'
+import { finalizeInquiry } from '@/lib/contact-attribution'
+import { recordVisitorPaidViews } from '@/lib/page-view-attribution'
 
 // Called server-to-server only, by the WordPress site (a PHP hook on
 // wpcf7_mail_sent) with the secret in the X-Webhook-Secret header, so the
@@ -172,6 +174,8 @@ export async function POST(request: NextRequest) {
     // No request-IP/UA fallback: the caller is the WordPress server, so those would be the
     // site's own — the plugin forwards the visitor's as visitor_ip / user_agent.
     const tracking = trackingFromPayload(data)
+    // The visitor has a first-visit capture (new plugin: always ft_ts; older: any ft_* value)
+    const hasFt = !!(tracking.firstTouchAt || ftUtmSource || ftUtmMedium || ftUtmCampaign || ftUtmTerm || ftUtmContent || ftGclid || ftGbraid || ftWbraid || ftFbclid)
     const rawUrl = pick(data, 'page-url', 'page_url', 'form_page_url', 'url', 'form-url')
     const url = isHttpUrl(rawUrl) ? rawUrl : ''
     const website = (() => { try { return url ? new URL(url).hostname : '' } catch { return '' } })()
@@ -290,17 +294,18 @@ export async function POST(request: NextRequest) {
           message:      message  || null,
           website:      website || null,
           url:          url     || null,
-          // First touch — prefers the form's ft_* capture; falls back to the bare field so
-          // this keeps working even before ft_* fields exist on a given form.
-          utmSource:    ftUtmSource   || utmSource   || null,
-          utmMedium:    ftUtmMedium   || utmMedium   || null,
-          utmCampaign:  ftUtmCampaign || utmCampaign || null,
-          utmTerm:      ftUtmTerm     || utmTerm     || null,
-          utmContent:   ftUtmContent  || utmContent  || null,
-          gclid:        ftGclid       || gclid       || null,
-          gbraid:       ftGbraid      || gbraid      || null,
-          wbraid:       ftWbraid      || wbraid      || null,
-          fbclid:       ftFbclid      || fbclid      || null,
+          // First touch — every field from ONE visit (marketing audit 2026-11-24): the plugin's
+          // first-visit capture (ft_* + ft_ts) when the visitor has one — blank there means a direct
+          // first visit, not "use this visit's value" — else this submission's own visit.
+          utmSource:    (hasFt ? ftUtmSource   : utmSource)   || null,
+          utmMedium:    (hasFt ? ftUtmMedium   : utmMedium)   || null,
+          utmCampaign:  (hasFt ? ftUtmCampaign : utmCampaign) || null,
+          utmTerm:      (hasFt ? ftUtmTerm     : utmTerm)     || null,
+          utmContent:   (hasFt ? ftUtmContent  : utmContent)  || null,
+          gclid:        (hasFt ? ftGclid       : gclid)       || null,
+          gbraid:       (hasFt ? ftGbraid      : gbraid)      || null,
+          wbraid:       (hasFt ? ftWbraid      : wbraid)      || null,
+          fbclid:       (hasFt ? ftFbclid      : fbclid)      || null,
           // This submission's own touch — always the bare (non-ft_) fields.
           lastSource:   utmSource   || null,
           lastMedium:   utmMedium   || null,
@@ -334,6 +339,10 @@ export async function POST(request: NextRequest) {
         productInterest: inferDealYacht({ text: tripType, url: url || null, brand, tripType: tripTypeFromText(tripType) }),
       })
 
+      // Normalised UTMs, acquisition brand, standard trip type + the ad attribution of this person's
+      // deals (incl. the one just made) — src/lib/contact-attribution.ts
+      await finalizeInquiry(tx, inquiry.id, { brand })
+
       return { ownerType, ownerId, duplicate: false, pushes: dm.pushes }
     }, { timeout: 20000 })
 
@@ -351,10 +360,11 @@ export async function POST(request: NextRequest) {
     // Only claims rows still unowned — an existing owner (from a prior submission)
     // is left alone.
     if (visitorId) {
-      db.pageView.updateMany({
-        where: { visitorId, leadId: null, customerId: null },
-        data: ownerType === 'customer' ? { customerId: ownerId } : { leadId: ownerId },
-      }).catch(() => {})
+      const owner = ownerType === 'customer' ? { customerId: ownerId } : { leadId: ownerId }
+      db.pageView.updateMany({ where: { visitorId, leadId: null, customerId: null }, data: owner })
+        // Ad landings among them (e.g. a gclid visit before / after the form) → last paid touch
+        .then(() => recordVisitorPaidViews(db, visitorId, owner))
+        .catch(() => {})
     }
 
     return json({ ok: true, ownerType, ownerId })

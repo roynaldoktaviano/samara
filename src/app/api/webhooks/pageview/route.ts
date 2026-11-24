@@ -5,6 +5,8 @@ import { resolveTenantBySlugFull } from '@/lib/resolve-tenant'
 import { getTenantSecret } from '@/lib/tenant-secrets'
 import { isHttpUrl } from '@/lib/url-safety'
 import { logWebhookFailure } from '@/lib/webhook-log'
+import { refreshPersonDeals } from '@/lib/deal-attribution'
+import { AD_URL_RE, ownerOfVisitor } from '@/lib/page-view-attribution'
 import { providedWebhookSecret, webhookSecretMatches } from '@/lib/webhook-secret'
 
 // Called server-to-server only, by the tenant's WordPress site: the browser
@@ -107,6 +109,9 @@ export async function POST(request: NextRequest) {
       return isNaN(t) || t < now - MAX_PAST_MS || t > now + MAX_FUTURE_MS ? new Date(now) : new Date(t)
     })()
 
+    // A visitor an earlier form already tied to a lead / guest: this view joins their journey, and
+    // an ad landing (gclid / utm …) counts for the deal whose window it falls in (src/lib/deal-attribution.ts).
+    const owner = await ownerOfVisitor(db, visitorId)
     await db.pageView.create({
       data: {
         visitorId,
@@ -114,8 +119,12 @@ export async function POST(request: NextRequest) {
         referrer:   rawReferrer.length <= MAX_URL_LENGTH && isHttpUrl(rawReferrer) ? rawReferrer : null,
         title:      title || null,
         occurredAt,
+        ...(owner?.customerId ? { customerId: owner.customerId } : owner?.leadId ? { leadId: owner.leadId } : {}),
       },
     })
+    if (owner && AD_URL_RE.test(rawUrl)) {
+      await refreshPersonDeals(db, owner).catch(e => console.error('[pageview] deal attribution', e))
+    }
 
     return json({ ok: true })
   } catch (error) {

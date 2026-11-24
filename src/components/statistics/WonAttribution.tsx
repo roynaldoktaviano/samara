@@ -5,7 +5,7 @@
 // is filtered and grouped client-side.
 import { useEffect, useMemo, useState } from 'react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts'
-import { Trophy, DollarSign, Radar, Target, Search, X, ChevronLeft, ChevronRight, Download } from 'lucide-react'
+import { Trophy, DollarSign, Radar, Megaphone, Search, X, ChevronLeft, ChevronRight, Download, AlertTriangle, Info } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Input } from '@/components/ui/input'
@@ -16,11 +16,19 @@ import { formatDate, formatMoney, formatMoneyCompact, formatNumber } from '@/lib
 
 type TouchKey = 'first' | 'last' | 'latest'
 interface Touch { source: string | null; medium: string | null; campaign: string | null }
+type AdRole = 'acquired' | 'assisted' | 'none'
+type BookingType = 'Direct' | 'Repeat' | 'Agent'
 interface Win {
-  id: string; name: string; date: string | null; amountUsd: number | null; owner: string | null; pipeline: string | null
+  id: string; name: string; date: string | null; closedDate: string | null; amountUsd: number | null; owner: string | null; pipeline: string | null
+  bookingType: BookingType; agentReason: string | null
   agent: string | null; tripType: string | null; landingPage: string | null; enquiryVia: string | null
   touches: Record<TouchKey, Touch>; groups: Record<TouchKey, string>; attributionFrom: AttributionFrom
+  adRole: AdRole; adNetwork: string | null; adEvidence: string | null; issues: string[]
 }
+type BookingFilter = 'direct' | 'agent' | 'all'
+const AD_ROLE_LABEL: Record<AdRole, string> = { acquired: 'Acquired', assisted: 'Assisted', none: 'No ad' }
+const adRoleName = (w: Win) => (w.adRole === 'none' ? 'No ad' : `${AD_ROLE_LABEL[w.adRole]} · ${w.adNetwork ?? 'ad'}`)
+const AD_ROLE_HELP = 'Acquired = an ad click brought the lead in (first touch, or the visit that submitted the enquiry). Assisted = the lead already existed and clicked an ad later. A stored gclid alone no longer counts as Paid Search.'
 type AttributionFrom = 'inquiry' | 'freshsales' | 'lead-match' | 'freshsales-match' | 'agent' | null
 type Dataset = 'freshsales' | 'erp'
 const FROM_LABEL: Record<Exclude<AttributionFrom, null>, string> = {
@@ -45,6 +53,7 @@ const TOUCH_HELP: Record<TouchKey, string> = {
 
 interface Dim { key: string; title: string; get: (w: Win, t: TouchKey) => string | null }
 const DIMS: Dim[] = [
+  { key: 'adRole', title: 'Ad role', get: w => adRoleName(w) },
   { key: 'channel', title: 'Channel', get: (w, t) => w.groups[t] },
   { key: 'source', title: 'Source', get: (w, t) => w.touches[t].source?.toLowerCase() ?? null },
   { key: 'medium', title: 'Medium', get: (w, t) => w.touches[t].medium?.toLowerCase() ?? null },
@@ -53,10 +62,11 @@ const DIMS: Dim[] = [
   { key: 'landing', title: 'Landing page', get: w => w.landingPage },
   { key: 'tripType', title: 'Trip type', get: w => w.tripType },
   { key: 'enquiryVia', title: 'Enquiry via', get: w => w.enquiryVia },
+  { key: 'bookingType', title: 'Booking type', get: w => w.bookingType },
   { key: 'agent', title: 'Agent', get: w => w.agent },
   { key: 'owner', title: 'Sales owner', get: w => w.owner },
 ]
-const DIM_BY_KEY = new Map(DIMS.map(d => [d.key, d]))
+const DIM_BY_KEY = new Map([...DIMS, { key: 'issues', title: 'Data issues', get: (w: Win) => (w.issues.length ? 'any' : null) } as Dim].map(d => [d.key, d]))
 
 export default function WonAttribution() {
   const [dataset, setDataset] = useState<Dataset>('freshsales')
@@ -64,15 +74,16 @@ export default function WonAttribution() {
   const [metric, setMetric] = useState<Metric>('count')
   const [year, setYear] = useState('')
   const [pipeline, setPipeline] = useState('')
+  const [booking, setBooking] = useState<BookingFilter>('direct')
   const [hideUntracked, setHideUntracked] = useState(false)
   const [drill, setDrill] = useState<{ dim: string; value: string } | null>(null)
-  const [res, setRes] = useState<{ dataset: Dataset; wins: Win[] } | null>(null)
+  const [res, setRes] = useState<{ dataset: Dataset; wins: Win[]; excludedTests: number } | null>(null)
 
   useEffect(() => {
     let cancelled = false
     fetch(`/api/stats/won-attribution?dataset=${dataset}`)
       .then(r => (r.ok ? r.json() : { wins: [] }))
-      .then(d => { if (!cancelled) setRes({ dataset, wins: d.wins ?? [] }) })
+      .then(d => { if (!cancelled) setRes({ dataset, wins: d.wins ?? [], excludedTests: d.excludedTests ?? 0 }) })
     return () => { cancelled = true }
   }, [dataset])
   const loading = res?.dataset !== dataset
@@ -82,19 +93,22 @@ export default function WonAttribution() {
   const pipelines = useMemo(() => [...new Set(all.map(w => w.pipeline).filter(Boolean) as string[])].sort(), [all])
 
   // Filters that apply to every chart (drill-down only narrows the table)
-  const base = useMemo(() => all.filter(w =>
-    (!year || w.date?.startsWith(year))
-    && (!pipeline || w.pipeline === pipeline)
+  // Wins of the year / pipeline before the booking-type filter — for the "agent left out" note
+  const inYear = useMemo(() => all.filter(w => (!year || w.date?.startsWith(year)) && (!pipeline || w.pipeline === pipeline)), [all, year, pipeline])
+  const base = useMemo(() => inYear.filter(w =>
+    (booking === 'all' || (booking === 'agent') === (w.bookingType === 'Agent'))
     && (!hideUntracked || w.groups[touch] !== NOT_TRACKED),
-  ), [all, year, pipeline, hideUntracked, touch])
+  ), [inYear, booking, hideUntracked, touch])
+  const agentsLeftOut = booking === 'direct' ? inYear.filter(w => w.bookingType === 'Agent') : []
+  const withIssues = base.filter(w => w.issues.length)
 
   const switchDataset = (d: Dataset) => { setDataset(d); setYear(''); setPipeline(''); setDrill(null) }
 
   const tracked = base.filter(w => w.groups[touch] !== NOT_TRACKED)
   const revenue = base.reduce((a, w) => a + (w.amountUsd ?? 0), 0)
-  const topChannel = rank(tracked, DIM_BY_KEY.get('channel')!, touch, 'count')[0]
+  const acquired = base.filter(w => w.adRole === 'acquired'), assisted = base.filter(w => w.adRole === 'assisted')
 
-  const dims = DIMS.filter(d => dataset === 'erp' ? !['enquiryVia'].includes(d.key) : d.key !== 'agent')
+  const dims = DIMS.filter(d => (dataset === 'erp' ? d.key !== 'enquiryVia' : d.key !== 'agent') && (booking === 'all' || d.key !== 'bookingType'))
 
   return (
     <div className="p-4 md:p-6 space-y-5">
@@ -111,9 +125,16 @@ export default function WonAttribution() {
           <option value="">All years</option>
           {years.map(y => <option key={y} value={y}>{y}</option>)}
         </NativeSelect>
-        <NativeSelect aria-label="Pipeline" className="w-auto" value={pipeline} onChange={e => setPipeline(e.target.value)}>
-          <option value="">{dataset === 'erp' ? 'Direct + Agent' : 'All pipelines'}</option>
-          {pipelines.map(p => <option key={p} value={p}>{p}</option>)}
+        {dataset === 'freshsales' && (
+          <NativeSelect aria-label="Pipeline" className="w-auto" value={pipeline} onChange={e => setPipeline(e.target.value)}>
+            <option value="">All pipelines</option>
+            {pipelines.map(p => <option key={p} value={p}>{p}</option>)}
+          </NativeSelect>
+        )}
+        <NativeSelect aria-label="Booking type" className="w-auto" value={booking} onChange={e => { setBooking(e.target.value as BookingFilter); setDrill(null) }}>
+          <option value="direct">Direct + repeat guests</option>
+          <option value="agent">Agent bookings</option>
+          <option value="all">All bookings</option>
         </NativeSelect>
         <label className="flex items-center gap-1.5 text-sm text-muted-foreground cursor-pointer select-none">
           <input type="checkbox" checked={hideUntracked} onChange={e => setHideUntracked(e.target.checked)} className="accent-primary" />
@@ -128,8 +149,24 @@ export default function WonAttribution() {
         <Kpi icon={<DollarSign className="h-4 w-4" />} label="Revenue (USD)" value={loading ? null : formatMoney(revenue, { currency: 'USD', decimals: 0 })} />
         <Kpi icon={<Radar className="h-4 w-4" />} label="With attribution" value={loading ? null : `${formatNumber(tracked.length)} (${base.length ? Math.round((tracked.length / base.length) * 100) : 0}%)`}
           hint={dataset === 'freshsales' ? 'Most older deals predate UTM tracking' : 'Agent bookings count as Agent; other guests via their inquiry, or matched to a Lead / Freshsales contact by email or phone'} />
-        <Kpi icon={<Target className="h-4 w-4" />} label="Top channel" value={loading ? null : topChannel ? `${topChannel.name} · ${topChannel.count}` : '—'} />
+        <Kpi icon={<Megaphone className="h-4 w-4" />} label="Ads: acquired · assisted" value={loading ? null : `${formatNumber(acquired.length)} · ${formatNumber(assisted.length)}`}
+          hint={loading ? undefined : `${formatMoney(acquired.reduce((a, w) => a + (w.amountUsd ?? 0), 0), { currency: 'USD', decimals: 0 })} revenue acquired by ads`} title={AD_ROLE_HELP} />
       </div>
+
+      {!loading && (
+        <div className="flex flex-wrap items-start gap-x-4 gap-y-1 text-xs text-muted-foreground">
+          <span className="inline-flex items-center gap-1"><Info className="h-3.5 w-3.5" />
+            {res?.excludedTests ? `${formatNumber(res.excludedTests)} test deal${res.excludedTests === 1 ? '' : 's'} left out` : 'No test deals'}
+            {agentsLeftOut.length > 0 && ` · ${formatNumber(agentsLeftOut.length)} agent booking${agentsLeftOut.length === 1 ? '' : 's'} (${formatMoney(agentsLeftOut.reduce((a, w) => a + (w.amountUsd ?? 0), 0), { currency: 'USD', decimals: 0 })}) not counted — agent revenue stays out of ad ROAS`}
+            {dataset === 'freshsales' && ' · dates are the real Won date (not the hand-typed closed date)'}
+          </span>
+          {withIssues.length > 0 && (
+            <button type="button" onClick={() => setDrill({ dim: 'issues', value: 'any' })} className="inline-flex items-center gap-1 text-warning hover:underline">
+              <AlertTriangle className="h-3.5 w-3.5" />{formatNumber(withIssues.length)} with data issues — show
+            </button>
+          )}
+        </div>
+      )}
 
       <TrendCard wins={base} loading={loading} metric={metric} byMonth={!!year} />
 
@@ -159,9 +196,9 @@ function Segmented({ value, onChange, options, titles }: { value: string; onChan
   )
 }
 
-function Kpi({ icon, label, value, hint }: { icon: React.ReactNode; label: string; value: string | null; hint?: string }) {
+function Kpi({ icon, label, value, hint, title }: { icon: React.ReactNode; label: string; value: string | null; hint?: string; title?: string }) {
   return (
-    <Card>
+    <Card title={title}>
       <CardContent className="p-4 space-y-1">
         <p className="text-xs text-muted-foreground flex items-center gap-1.5">{icon}{label}</p>
         {value === null ? <Skeleton className="h-7 w-24" /> : <p className="text-2xl font-semibold tabular-nums">{value}</p>}
@@ -333,6 +370,7 @@ function WinsTable({ wins, touch, drill, onClearDrill, loading, dataset, year }:
                 <TableHead>Won</TableHead>
                 <TableHead>{dataset === 'erp' ? 'Booking' : 'Deal'}</TableHead>
                 <TableHead className="text-right">Amount</TableHead>
+                <TableHead>Ad role</TableHead>
                 <TableHead>Channel</TableHead>
                 <TableHead>Source / Medium</TableHead>
                 <TableHead>Campaign</TableHead>
@@ -342,16 +380,26 @@ function WinsTable({ wins, touch, drill, onClearDrill, loading, dataset, year }:
             </TableHeader>
             <TableBody>
               {loading ? [...Array(6)].map((_, i) => (
-                <TableRow key={i}>{[...Array(dataset === 'erp' ? 8 : 7)].map((__, j) => <TableCell key={j}><Skeleton className="h-4 w-20" /></TableCell>)}</TableRow>
+                <TableRow key={i}>{[...Array(dataset === 'erp' ? 9 : 8)].map((__, j) => <TableCell key={j}><Skeleton className="h-4 w-20" /></TableCell>)}</TableRow>
               )) : shown.length === 0 ? (
-                <TableRow><TableCell colSpan={dataset === 'erp' ? 8 : 7} className="py-10 text-center text-muted-foreground">Nothing matches</TableCell></TableRow>
+                <TableRow><TableCell colSpan={dataset === 'erp' ? 9 : 8} className="py-10 text-center text-muted-foreground">Nothing matches</TableCell></TableRow>
               ) : shown.map(w => {
                 const t = w.touches[touch]
                 return (
                   <TableRow key={w.id}>
-                    <TableCell className="text-xs whitespace-nowrap text-muted-foreground">{formatDate(w.date)}</TableCell>
+                    <TableCell className="text-xs whitespace-nowrap text-muted-foreground">
+                      {formatDate(w.date)}
+                      {w.issues.length > 0 && (
+                        <p className="text-[10px] text-warning flex items-center gap-0.5" title={[...w.issues, ...(w.closedDate ? [`Freshsales closed date: ${formatDate(w.closedDate)}`] : [])].join('\n')}>
+                          <AlertTriangle className="h-3 w-3" />{w.issues.length === 1 ? w.issues[0] : `${w.issues.length} issues`}
+                        </p>
+                      )}
+                    </TableCell>
                     <TableCell className="text-sm max-w-[280px] truncate" title={w.name}>{w.name}</TableCell>
                     <TableCell className="text-right text-xs whitespace-nowrap tabular-nums">{w.amountUsd != null ? formatMoney(w.amountUsd, { currency: 'USD', decimals: 0 }) : '—'}</TableCell>
+                    <TableCell className="text-xs whitespace-nowrap" title={w.adEvidence ?? w.agentReason ?? ''}>
+                      <span className={w.adRole === 'none' ? 'text-muted-foreground' : 'font-medium'}>{w.bookingType === 'Agent' ? 'Agent booking' : adRoleName(w)}</span>
+                    </TableCell>
                     <TableCell className="text-xs whitespace-nowrap">
                       <span className={w.groups[touch] === NOT_TRACKED ? 'text-muted-foreground' : ''}>{w.groups[touch]}</span>
                       {(w.attributionFrom === 'lead-match' || w.attributionFrom === 'freshsales-match') && (
@@ -399,6 +447,10 @@ async function exportXlsx(rows: Win[], touch: TouchKey, dataset: Dataset, year: 
     { header: 'Won date', key: 'date', width: 13, style: { numFmt: 'dd mmm yyyy' } },
     { header: dataset === 'erp' ? 'Booking' : 'Deal', key: 'name', width: 48 },
     { header: 'Amount (USD)', key: 'amount', width: 14, style: { numFmt: '#,##0' } },
+    { header: 'Booking type', key: 'bookingType', width: 12 },
+    { header: 'Ad role', key: 'adRole', width: 12 },
+    { header: 'Ad network', key: 'adNetwork', width: 12 },
+    { header: 'Ad evidence', key: 'adEvidence', width: 44 },
     { header: 'Channel', key: 'channel', width: 16 },
     { header: 'Source', key: 'source', width: 22 },
     { header: 'Medium', key: 'medium', width: 26 },
@@ -406,10 +458,11 @@ async function exportXlsx(rows: Win[], touch: TouchKey, dataset: Dataset, year: 
     { header: 'Landing page', key: 'landing', width: 40 },
     { header: 'Trip type', key: 'tripType', width: 18 },
     ...(dataset === 'erp'
-      ? [{ header: 'Booking source', key: 'bookingSource', width: 12 }, { header: 'Agent', key: 'agent', width: 24 }]
-      : [{ header: 'Enquiry via', key: 'enquiryVia', width: 12 }]),
+      ? [{ header: 'Agent', key: 'agent', width: 24 }]
+      : [{ header: 'Enquiry via', key: 'enquiryVia', width: 12 }, { header: 'Agent rule', key: 'agentReason', width: 22 }, { header: 'Freshsales closed date', key: 'closedDate', width: 13, style: { numFmt: 'dd mmm yyyy' } }]),
     { header: 'Owner', key: 'owner', width: 20 },
     { header: 'Attribution from', key: 'from', width: 34 },
+    { header: 'Data issues', key: 'issues', width: 40 },
   ]
   for (const w of rows) {
     const t = w.touches[touch]
@@ -417,17 +470,23 @@ async function exportXlsx(rows: Win[], touch: TouchKey, dataset: Dataset, year: 
       date: w.date ? new Date(w.date) : null,
       name: w.name,
       amount: w.amountUsd,
+      bookingType: w.bookingType,
+      adRole: AD_ROLE_LABEL[w.adRole],
+      adNetwork: w.adNetwork,
+      adEvidence: w.adEvidence,
       channel: w.groups[touch],
       source: t.source,
       medium: t.medium,
       campaign: t.campaign,
       landing: w.landingPage,
       tripType: w.tripType,
-      bookingSource: w.pipeline,
       agent: w.agent,
       enquiryVia: w.enquiryVia,
+      agentReason: w.agentReason,
+      closedDate: w.closedDate ? new Date(w.closedDate) : null,
       owner: w.owner,
       from: w.attributionFrom ? FROM_LABEL[w.attributionFrom] : '',
+      issues: w.issues.join('; '),
     })
   }
   header(ws)
@@ -441,7 +500,7 @@ async function exportXlsx(rows: Win[], touch: TouchKey, dataset: Dataset, year: 
     { header: '% of wins', key: 'pct', width: 10, style: { numFmt: '0%' } },
     { header: 'Revenue (USD)', key: 'revenue', width: 16, style: { numFmt: '#,##0' } },
   ]
-  for (const key of ['channel', 'source', 'medium', 'campaign']) {
+  for (const key of ['adRole', 'channel', 'source', 'medium', 'campaign']) {
     const dim = DIM_BY_KEY.get(key)!
     for (const r of rank(rows, dim, touch, 'count')) {
       sum.addRow({ group: dim.title, name: r.name, count: r.count, pct: rows.length ? r.count / rows.length : 0, revenue: r.revenue })

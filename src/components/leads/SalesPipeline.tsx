@@ -20,7 +20,7 @@ import { WHATSAPP_BRANDS, WHATSAPP_BRAND_LABELS, type WhatsappBrand } from '@/li
 import { WHATSAPP_CHAT_CATEGORY_LABEL, type WhatsappChatCategory } from '@/lib/whatsapp-chat-category'
 import LeadEditSheet from '@/components/leads/LeadEditSheet'
 import LostReasonDialog from '@/components/leads/LostReasonDialog'
-import WonPaymentDialog from '@/components/leads/WonPaymentDialog'
+import WonPaymentDialog, { type WonDetails } from '@/components/leads/WonPaymentDialog'
 import DealBookingHistory from '@/components/leads/DealBookingHistory'
 import FreshsalesHistory from '@/components/freshsales/FreshsalesHistory'
 import { leadDealName, type DealTripType } from '@/lib/deal-name'
@@ -248,7 +248,7 @@ export default function SalesPipeline({ onOpenChat, onOpenMetaChat, onOpenBookin
     return () => { alive = false }
   }, [selectedLeadId, selectedBookingGuest])
 
-  async function changeStage(lead: PipelineLead, stage: LeadStage, extra?: { lostReason: string; lostNote: string } | { paymentStatus: DealPaymentStatus }) {
+  async function changeStage(lead: PipelineLead, stage: LeadStage, extra?: { lostReason: string; lostNote: string } | WonDetails) {
     if (stage === lead.stage) return
     if (stage === 'CLOSED_LOST' && !extra) { setLostTarget(lead); return }
     // Parity C3: trip type before In Active Communication; payment status at Won
@@ -722,9 +722,11 @@ export default function SalesPipeline({ onOpenChat, onOpenMetaChat, onOpenBookin
       <WonPaymentDialog
         open={!!wonTarget}
         dealName={wonTarget ? leadDealName(wonTarget) : undefined}
+        amount={wonTarget?.tripAmount}
+        currency={wonTarget?.tripAmountCurrency}
         busy={busy}
         onCancel={() => setWonTarget(null)}
-        onConfirm={paymentStatus => wonTarget && changeStage(wonTarget, 'CLOSED_WON', { paymentStatus })}
+        onConfirm={won => wonTarget && changeStage(wonTarget, 'CLOSED_WON', won)}
       />
       <LostReasonDialog
         open={!!lostTarget}

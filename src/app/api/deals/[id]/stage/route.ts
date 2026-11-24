@@ -14,10 +14,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const role = chatRole((session?.user as { role?: string })?.role)
   if (!session?.user?.id || !roleMatches(role, ['ADMIN', 'SALES'])) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const { id } = await params
-  const { stage, lostReason, lostNote, paymentStatus } = await req.json()
+  const { stage, lostReason, lostNote, paymentStatus, amount, currency } = await req.json()
   const db = await getDb(session)
   const before = await db.deal.findUnique({ where: { id }, select: { stage: true, orderId: true, lead: { select: { name: true } }, customer: { select: { name: true } } } })
-  const r = await changeDealStage(db, { dealId: id, stage, lostReason, lostNote, paymentStatus, user: { id: session.user.id, name: session.user.name, role } })
+  const r = await changeDealStage(db, { dealId: id, stage, lostReason, lostNote, paymentStatus, amount, currency, user: { id: session.user.id, name: session.user.name, role } })
   if (!r.ok) return NextResponse.json({ error: r.error }, { status: r.status })
   logActivity({
     userId: session.user.id, userName: session.user.name ?? session.user.email ?? 'Unknown', userRole: role,

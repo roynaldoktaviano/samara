@@ -8,6 +8,7 @@ import { leadOwnerScope, canAccessLead } from '@/lib/lead-access'
 import { leadDealName } from '@/lib/deal-name'
 import { chatRole } from '@/lib/role-utils'
 import { primaryDealOfLead, updateDealFields } from '@/lib/deal-stage'
+import { isDealBookingType, isDealEnquiryChannel } from '@/lib/deal-classify'
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getServerSession(authOptions)
@@ -46,7 +47,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       orderBy: { createdAt: 'desc' },
       select: {
         id: true, orderId: true, brand: true, tripType: true, productInterest: true, stage: true, stageUpdatedAt: true, amount: true, currency: true,
-        travelStartDate: true, travelEndDate: true, guestCount: true, channel: true, createdAt: true, lostReason: true,
+        travelStartDate: true, travelEndDate: true, guestCount: true, channel: true, createdAt: true, lostReason: true, isTest: true, bookingType: true, enquiryChannel: true, enquiryTripType: true,
         owner: { select: { id: true, name: true } }, booking: { select: { id: true, bookingCode: true } },
       },
     })
@@ -61,13 +62,15 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       travelStartDate: focus.travelStartDate ?? lead.travelStartDate, travelEndDate: focus.travelEndDate ?? lead.travelEndDate,
       guestCount: focus.guestCount ?? lead.guestCount,
       productInterest: focus.productInterest ?? lead.productInterest,
+      // Marketing classification of that deal (src/lib/deal-classify.ts) — edited in the form's Deal box
+      dealBookingType: focus.bookingType, dealEnquiryChannel: focus.enquiryChannel, dealEnquiryTripType: focus.enquiryTripType,
     } : {}
     const named = deals.map(d => ({ ...d, name: leadDealName({
       name: lead.name, tripType: d.tripType, productInterest: d.productInterest ?? lead.productInterest,
       travelStartDate: d.travelStartDate ?? lead.travelStartDate, travelEndDate: d.travelEndDate ?? lead.travelEndDate,
       destination: lead.destination, booking: d.booking?.id && lead.booking?.id === d.booking.id ? lead.booking : null,
     }) }))
-    return NextResponse.json({ ...lead, ...overlay, dealName: leadDealName({ ...lead, ...overlay }), guestId, deals: named, dealId: focus?.id ?? null, hasOpenDeal: !!openDeal })
+    return NextResponse.json({ ...lead, ...overlay, dealName: leadDealName({ ...lead, ...overlay }), guestId, deals: named, dealId: focus?.id ?? null, hasOpenDeal: !!openDeal, dealIsTest: explicit ? explicit.isTest : null })
   } catch (error) {
     console.error('Error fetching lead:', error)
     return NextResponse.json({ error: 'Failed to fetch lead' }, { status: 500 })
@@ -116,7 +119,8 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       firstName, lastName, nationality, email, phone, instagram, notes,
       productInterest, destinationId, travelStartDate, travelEndDate, travelSeason,
       guestCount, leadQuality, budgetMin, budgetMax, budgetCurrency,
-      tripType, tripAmount, tripAmountCurrency, entrySourceManual, dealId, adConsent,
+      tripType, tripAmount, tripAmountCurrency, entrySourceManual, dealId, adConsent, dealIsTest,
+      dealBookingType, dealEnquiryChannel,
     } = body
 
     const name = [firstName, lastName].filter(Boolean).join(' ') || body.name
@@ -147,6 +151,10 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
           ...(open && guestCount !== undefined && { guestCount: guestCount ? Number(guestCount) : null }),
           // Yacht: the deal's own (Freshsales Product Interest); also kept on the lead below.
           ...(productInterest !== undefined && { productInterest: productInterest || null }),
+          // Test deal flag (admin only, checked in updateDealFields)
+          ...(typeof dealIsTest === 'boolean' && { isTest: dealIsTest }),
+          ...(dealBookingType !== undefined && { bookingType: isDealBookingType(dealBookingType) ? dealBookingType : null }),
+          ...(dealEnquiryChannel !== undefined && { enquiryChannel: isDealEnquiryChannel(dealEnquiryChannel) ? dealEnquiryChannel : null }),
         },
       })
       if (!r.ok) return NextResponse.json({ error: r.error }, { status: r.status })

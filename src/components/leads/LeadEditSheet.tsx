@@ -13,6 +13,9 @@ import { toast } from 'sonner'
 import { NATIONALITIES } from '@/lib/nationalities'
 import { LEAD_ENTRY_SOURCES, LEAD_ENTRY_SOURCE_LABEL } from '@/lib/lead-entry-source'
 import { toE164 } from '@/lib/contact-identity'
+import { useSession } from 'next-auth/react'
+import { roleMatches } from '@/lib/role-utils'
+import { DEAL_BOOKING_TYPES, DEAL_BOOKING_TYPE_LABEL, DEAL_ENQUIRY_CHANNELS, DEAL_ENQUIRY_CHANNEL_LABEL } from '@/lib/deal-classify'
 
 /* ── Types ── */
 export interface LeadFormState {
@@ -27,6 +30,10 @@ export interface LeadFormState {
   entrySourceManual: string
   // Ads opt-out recorded by sales: 'denied' or '' (consent itself only comes from the guest) — src/lib/ad-consent.ts
   adConsent: string
+  // The deal these trip fields belong to (open / board-card deal): marketing classification
+  hasDeal: boolean
+  dealBookingType: string; dealEnquiryChannel: string
+  dealEnquiryTripType: string // read-only — what the enquiry asked for
 }
 
 export const LEAD_FORM_EMPTY: LeadFormState = {
@@ -38,6 +45,7 @@ export const LEAD_FORM_EMPTY: LeadFormState = {
   tripType: '', tripAmount: '', tripAmountCurrency: 'USD',
   entrySourceManual: '',
   adConsent: '',
+  hasDeal: false, dealBookingType: '', dealEnquiryChannel: '', dealEnquiryTripType: '',
 }
 
 export function toLeadFormState(data: any): LeadFormState {
@@ -65,6 +73,10 @@ export function toLeadFormState(data: any): LeadFormState {
     tripAmountCurrency: data.tripAmountCurrency ?? 'USD',
     entrySourceManual: data.entrySourceManual ?? '',
     adConsent: data.adConsent ?? '',
+    hasDeal: data.dealBookingType !== undefined,
+    dealBookingType: data.dealBookingType ?? '',
+    dealEnquiryChannel: data.dealEnquiryChannel ?? '',
+    dealEnquiryTripType: data.dealEnquiryTripType ?? '',
   }
 }
 
@@ -325,7 +337,8 @@ export function QualificationFields({ form, setForm, narrow, stage }: { form: Le
             </SelectContent>
           </Select>
         </Field>
-        <Field label="Trip Type" htmlFor="lead-trip-type" col2={!narrow}>
+        <Field label={form.hasDeal ? 'Trip Type (booked)' : 'Trip Type'} htmlFor="lead-trip-type" col2={!narrow}
+          hint={form.hasDeal && form.dealEnquiryTripType ? `Enquiry asked for: ${TRIP_TYPE_OPTIONS.find(t => t.value === form.dealEnquiryTripType)?.label ?? form.dealEnquiryTripType}` : undefined}>
           <Select value={form.tripType || undefined} onValueChange={v => setForm({ ...form, tripType: v === NONE ? '' : v })}>
             <SelectTrigger id="lead-trip-type" className="w-full"><SelectValue placeholder="Select trip type" /></SelectTrigger>
             <SelectContent>
@@ -386,6 +399,26 @@ export function QualificationFields({ form, setForm, narrow, stage }: { form: Le
             </Select>
           </div>
         </Field>
+        {form.hasDeal && (
+          <>
+            <Field label="Enquiry Channel" htmlFor="deal-enquiry-channel" hint="How the guest reached out — required before In Active Communication.">
+              <Select value={form.dealEnquiryChannel || undefined} onValueChange={v => setForm({ ...form, dealEnquiryChannel: v })}>
+                <SelectTrigger id="deal-enquiry-channel" className="w-full"><SelectValue placeholder="Select channel" /></SelectTrigger>
+                <SelectContent>
+                  {DEAL_ENQUIRY_CHANNELS.map(c => <SelectItem key={c} value={c}>{DEAL_ENQUIRY_CHANNEL_LABEL[c]}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field label="Booking Type" htmlFor="deal-booking-type" hint="Agent bookings stay out of ad ROAS.">
+              <Select value={form.dealBookingType || undefined} onValueChange={v => setForm({ ...form, dealBookingType: v })}>
+                <SelectTrigger id="deal-booking-type" className="w-full"><SelectValue placeholder="Select type" /></SelectTrigger>
+                <SelectContent>
+                  {DEAL_BOOKING_TYPES.map(t => <SelectItem key={t} value={t}>{DEAL_BOOKING_TYPE_LABEL[t]}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </Field>
+          </>
+        )}
       </div>
     </div>
   )
@@ -409,9 +442,14 @@ export default function LeadEditSheet({ open, leadId, dealId, onClose, onSaved }
   const [saving, setSaving]     = useState(false)
   const [leadName, setLeadName] = useState('')
   const [stage, setStage] = useState<string | null>(null)
+  // Board card only: the deal's test flag (admin) — left out of reports and Google / Meta uploads
+  const [dealIsTest, setDealIsTest] = useState<{ was: boolean; now: boolean } | null>(null)
+  const { data: session } = useSession()
+  const isAdmin = roleMatches((session?.user as { role?: string })?.role ?? '', ['ADMIN'])
 
   useEffect(() => {
     if (!open) return
+    setDealIsTest(null)
     if (!leadId) {
       setForm(LEAD_FORM_EMPTY)
       setLeadName('')
@@ -426,6 +464,7 @@ export default function LeadEditSheet({ open, leadId, dealId, onClose, onSaved }
         setLeadName(data.name ?? '')
         setStage(data.stage ?? null)
         setForm(toLeadFormState(data))
+        if (typeof data.dealIsTest === 'boolean') setDealIsTest({ was: data.dealIsTest, now: data.dealIsTest })
       })
       .catch(e => { if (e.name !== 'AbortError') console.error(e) })
       .finally(() => setLoading(false))
@@ -437,7 +476,7 @@ export default function LeadEditSheet({ open, leadId, dealId, onClose, onSaved }
     setSaving(true)
     try {
       const res = isEdit
-        ? await fetch(`/api/leads/${leadId}`, { method: 'PUT',  headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...form, ...(dealId ? { dealId } : {}) }) })
+        ? await fetch(`/api/leads/${leadId}`, { method: 'PUT',  headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...form, ...(dealId ? { dealId } : {}), ...(dealIsTest && dealIsTest.now !== dealIsTest.was ? { dealIsTest: dealIsTest.now } : {}) }) })
         : await fetch('/api/leads',            { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) })
       if (!res.ok) {
         const b = await res.json().catch(() => ({}))
@@ -490,6 +529,15 @@ export default function LeadEditSheet({ open, leadId, dealId, onClose, onSaved }
           <div className="flex-1 overflow-y-auto px-5 py-5 space-y-6">
             <ProfileFields form={form} setForm={setForm} />
             <QualificationFields form={form} setForm={setForm} stage={stage} />
+            {isAdmin && dealIsTest && (
+              <label className="flex items-start gap-2.5 rounded-lg border border-dashed p-3 cursor-pointer">
+                <input type="checkbox" className="mt-0.5 accent-primary" checked={dealIsTest.now} onChange={e => setDealIsTest({ ...dealIsTest, now: e.target.checked })} />
+                <span className="text-sm">
+                  <span className="font-medium">Test deal</span>
+                  <span className="block text-xs text-muted-foreground">Left out of every report and never uploaded to Google / Meta.</span>
+                </span>
+              </label>
+            )}
           </div>
         )}
 

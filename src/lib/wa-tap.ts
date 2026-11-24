@@ -6,6 +6,7 @@ import { isHttpUrl } from '@/lib/url-safety'
 import type { MatchConfidence } from '@/lib/wa-match-confidence'
 import { WA_AD_INQUIRY_SOURCE, WA_DIRECT_INQUIRY_SOURCE } from '@/lib/lead-origin'
 import { ensureLowMatchTask } from '@/lib/wa-low-match'
+import { finalizeInquiry } from '@/lib/contact-attribution'
 
 // WhatsApp click → chat attribution, the rule the Freshsales deal maker used (handover 17 Nov):
 //  • Every tap on a website WhatsApp button is logged with a ref code that the site also puts
@@ -328,6 +329,7 @@ async function linkTap(db: Db, tap: WaTap, session: Session, confidence: MatchCo
   const inquiryId = reuseInquiryId ?? (await sessionInquiry(db, session.conversationId, session.startedAt, WA_DIRECT_INQUIRY_SOURCE))?.id
   if (inquiryId) {
     await db.inquiry.update({ where: { id: inquiryId }, data: { ...data, source: 'WHATSAPP', rawPayload: (tap.rawPayload ?? undefined) as Prisma.InputJsonValue | undefined } })
+    await finalizeInquiry(db, inquiryId).catch(e => console.error('[wa-tap] attribution', e))
     if (confidence === 'LOW') await lateLowMatchTask(db, inquiryId)
     return
   }
@@ -342,6 +344,7 @@ async function linkTap(db: Db, tap: WaTap, session: Session, confidence: MatchCo
     },
     select: { id: true },
   })
+  await finalizeInquiry(db, created.id).catch(e => console.error('[wa-tap] attribution', e))
   if (confidence === 'LOW') await lateLowMatchTask(db, created.id)
 }
 

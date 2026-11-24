@@ -2,6 +2,7 @@ import type { Prisma, PrismaClient } from '@prisma/client'
 import { WA_AD_INQUIRY_SOURCE, WA_DIRECT_INQUIRY_SOURCE } from '@/lib/lead-origin'
 import { chatInquiryOwner, matchWhatsappSession, sessionInquiry, type Session } from '@/lib/wa-tap'
 import { isHttpUrl } from '@/lib/url-safety'
+import { finalizeInquiry } from '@/lib/contact-attribution'
 
 // Where every WhatsApp chat came from, as an Inquiry on its Lead (or Guest) — one per chat session
 // (first message, or first after 24h quiet):
@@ -78,6 +79,7 @@ async function recordAdChat(db: PrismaClient, session: Session, referral: Whatsa
   const placeholder = await sessionInquiry(db, session.conversationId, session.startedAt, WA_DIRECT_INQUIRY_SOURCE)
   if (placeholder) {
     await db.inquiry.update({ where: { id: placeholder.id }, data: { ...data, source: WA_AD_INQUIRY_SOURCE, rawPayload } })
+    await finalizeInquiry(db, placeholder.id).catch(e => console.error('[wa-attribution] attribution', e))
     return placeholder.id
   }
   const row = await db.inquiry.create({
@@ -92,6 +94,7 @@ async function recordAdChat(db: PrismaClient, session: Session, referral: Whatsa
       createdAt: session.startedAt,
     },
   })
+  await finalizeInquiry(db, row.id).catch(e => console.error('[wa-attribution] attribution', e))
   return row.id
 }
 
@@ -115,6 +118,7 @@ async function recordDirectChat(db: PrismaClient, session: Session): Promise<str
       createdAt: session.startedAt,
     },
   })
+  await finalizeInquiry(db, row.id).catch(e => console.error('[wa-attribution] attribution', e))
   return row.id
 }
 

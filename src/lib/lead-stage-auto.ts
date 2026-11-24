@@ -44,7 +44,8 @@ export async function recordLeadInbound(db: PrismaClient, leadId: string, at = n
 /**
  * Staff wrote to the customer from the ERP (or from the Instagram app — Meta echoes those).
  * First message → Initial Message Sent. Writing again ≥ FOLLOW_UP_GAP_HOURS after our last
- * message with no answer in between → 1st Follow-Up, then 2nd Follow-Up.
+ * message with no answer in between → 1st Follow-Up, then 2nd Follow-Up — only from In Active
+ * Communication; a deal at Initial Message Sent (customer never answered) stays put.
  */
 export async function recordLeadOutbound(db: PrismaClient, leadId: string, userId: string | null, at = new Date()): Promise<void> {
   const lead = await db.lead.findUnique({ where: { id: leadId }, select: { lastInboundAt: true, lastOutboundAt: true } })
@@ -58,7 +59,9 @@ export async function recordLeadOutbound(db: PrismaClient, leadId: string, userI
   for (const d of await conversationDeals(db, leadId)) {
     if (d.stage === 'NEW') { await moveDealStage(db, d.id, 'NEW', 'INITIAL_MESSAGE_SENT', userId); continue }
     if (!unanswered || !gapReached) continue
-    if (d.stage === 'INITIAL_MESSAGE_SENT' || d.stage === 'ACTIVE_COMMUNICATION') await moveDealStage(db, d.id, d.stage, 'FOLLOW_UP_1', userId)
+    // Follow-ups only count once the customer has answered (Roy, 2026-11-24): a deal still at
+    // Initial Message Sent stays there however often we chase — the customer never replied.
+    if (d.stage === 'ACTIVE_COMMUNICATION') await moveDealStage(db, d.id, 'ACTIVE_COMMUNICATION', 'FOLLOW_UP_1', userId)
     else if (d.stage === 'FOLLOW_UP_1') await moveDealStage(db, d.id, 'FOLLOW_UP_1', 'FOLLOW_UP_2', userId)
   }
 }
@@ -106,9 +109,9 @@ export async function syncLeadStageFromBooking(db: PrismaClient, bookingId: stri
   const booking = await db.booking.findUnique({
     where: { id: bookingId },
     select: {
-      status: true, depositPaid: true,
+      status: true, depositPaid: true, totalPrice: true,
       payments: { select: { status: true, invoiceGeneratedAt: true } },
-      deals: { where: { deletedAt: null }, select: { id: true, stage: true, paymentStatus: true } },
+      deals: { where: { deletedAt: null }, select: { id: true, stage: true, paymentStatus: true, amount: true } },
     },
   })
   if (!booking || booking.deals.length === 0 || booking.status === 'cancelled' || booking.status === 'on_hold') return
@@ -128,6 +131,11 @@ export async function syncLeadStageFromBooking(db: PrismaClient, bookingId: stri
       await db.deal.update({ where: { id: deal.id }, data: { paymentStatus: payment } })
     }
     if (deal.stage === 'CLOSED_WON' || deal.stage === 'CLOSED_LOST') continue
+    // A Won deal carries its amount (> 0) — take the booking's when the deal has none
+    if (target === 'CLOSED_WON' && !(deal.amount && deal.amount > 0) && booking.totalPrice > 0) {
+      // Booking.totalPrice is always USD
+      await db.deal.update({ where: { id: deal.id }, data: { amount: booking.totalPrice, currency: 'USD', amountUsd: booking.totalPrice, fxRate: 1 } })
+    }
     const rank = BOOKING_STAGES.indexOf(deal.stage)
     if (rank >= targetRank) continue
     await moveDealStage(db, deal.id, deal.stage, target, userId)
@@ -160,7 +168,7 @@ export async function runLeadFollowUpReminders(db: PrismaClient): Promise<number
       data: { followUpRemindedAt: new Date() },
     })
     if (count === 0) continue
-    const next = l.stage === 'FOLLOW_UP_2' ? 'another follow-up or mark it Lost' : l.stage === 'FOLLOW_UP_1' ? 'the 2nd follow-up' : 'the 1st follow-up'
+    const next = l.stage === 'FOLLOW_UP_2' ? 'another follow-up or mark it Lost' : l.stage === 'FOLLOW_UP_1' ? 'the 2nd follow-up' : l.stage === 'ACTIVE_COMMUNICATION' ? 'the 1st follow-up' : 'a follow-up'
     const title = `Follow-up due: ${l.name}`
     const body = `No reply for ${FOLLOW_UP_DUE_DAYS} days since your last message — time for ${next}.`
     await db.notification.create({ data: { userId: l.ownerId, type: 'LEAD_FOLLOW_UP', title, body } }).catch(() => {})

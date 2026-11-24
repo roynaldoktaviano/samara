@@ -89,7 +89,7 @@ export interface MetaEvent {
   em: string; ph: string; fbc: string; fbp: string; value: number | null; currency: string | null; userAgent: string
 }
 
-type InqLite = { dealId: string | null; leadId: string | null; customerId: string | null; createdAt: Date; adConsent: string | null; consentRegion: string | null; matchConfidence: string | null; matchConfidenceById: string | null; gclid: string | null; lastGclid: string | null; gbraid: string | null; lastGbraid: string | null; wbraid: string | null; lastWbraid: string | null; fbc: string | null; fbp: string | null; userAgent: string | null; sessionAttributes: string | null; ipAddress: string | null }
+type InqLite = { brand: WhatsappBrand | null; dealId: string | null; leadId: string | null; customerId: string | null; createdAt: Date; adConsent: string | null; consentRegion: string | null; matchConfidence: string | null; matchConfidenceById: string | null; gclid: string | null; lastGclid: string | null; gbraid: string | null; lastGbraid: string | null; wbraid: string | null; lastWbraid: string | null; fbc: string | null; fbp: string | null; userAgent: string | null; sessionAttributes: string | null; ipAddress: string | null }
 
 const firstOf = <T,>(xs: T[], f: (x: T) => string | null | undefined) => { for (const x of xs) { const v = f(x)?.trim(); if (v) return v } return '' }
 
@@ -103,7 +103,7 @@ export async function computeOfflineFeed(db: PrismaClient, now = new Date()) {
     where: { OR: [{ stageChanges: { some: { changedAt: { gte: since } } } }, { stageUpdatedAt: { gte: since } }] },
     select: {
       id: true, orderId: true, freshsalesDealId: true, brand: true, tripType: true, stage: true, stageUpdatedAt: true,
-      amount: true, currency: true, neverUpload: true, deletedAt: true, leadId: true, customerId: true,
+      amount: true, currency: true, neverUpload: true, isTest: true, deletedAt: true, leadId: true, customerId: true,
       stageChanges: { select: { toStage: true, changedAt: true }, orderBy: { changedAt: 'asc' } },
       booking: { select: { totalPrice: true, currency: true } },
       lead: { select: { email: true, phoneE164: true, nationality: true, freshsalesContactId: true, adConsent: true } },
@@ -115,9 +115,15 @@ export async function computeOfflineFeed(db: PrismaClient, now = new Date()) {
   const custIds = [...new Set(deals.map(d => d.customerId).filter((x): x is string => !!x))]
   const inquiries: InqLite[] = leadIds.length || custIds.length ? await db.inquiry.findMany({
     where: { OR: [...(leadIds.length ? [{ leadId: { in: leadIds } }] : []), ...(custIds.length ? [{ customerId: { in: custIds } }] : [])] },
-    select: { dealId: true, leadId: true, customerId: true, createdAt: true, adConsent: true, consentRegion: true, matchConfidence: true, matchConfidenceById: true, gclid: true, lastGclid: true, gbraid: true, lastGbraid: true, wbraid: true, lastWbraid: true, fbc: true, fbp: true, userAgent: true, sessionAttributes: true, ipAddress: true },
+    select: { brand: true, dealId: true, leadId: true, customerId: true, createdAt: true, adConsent: true, consentRegion: true, matchConfidence: true, matchConfidenceById: true, gclid: true, lastGclid: true, gbraid: true, lastGbraid: true, wbraid: true, lastWbraid: true, fbc: true, fbp: true, userAgent: true, sessionAttributes: true, ipAddress: true },
     orderBy: { createdAt: 'asc' },
   }) : []
+  // Each deal's own last paid ad click (DealAttribution — also gclids picked up from page views while
+  // the deal was open; src/lib/deal-attribution.ts)
+  const dealAttr = new Map((await db.dealAttribution.findMany({
+    where: { dealId: { in: deals.map(d => d.id) } },
+    select: { dealId: true, lastPaidGclid: true, lastPaidGbraid: true, lastPaidWbraid: true, lastPaidBrand: true },
+  })).map(a => [a.dealId, a]))
   const inqByLead = new Map<string, InqLite[]>(), inqByCust = new Map<string, InqLite[]>()
   for (const q of inquiries) {
     if (q.leadId) inqByLead.set(q.leadId, [...(inqByLead.get(q.leadId) ?? []), q])
@@ -148,7 +154,8 @@ export async function computeOfflineFeed(db: PrismaClient, now = new Date()) {
   const held = new Map<string, string>()
 
   for (const d of deals) {
-    if (d.deletedAt) continue
+    // Test deals are never uploaded (marketing audit 2026-11-24)
+    if (d.deletedAt || d.isTest) continue
     const orderId = d.orderId ?? d.freshsalesDealId ?? `ERP-${d.id}`
     const firstAt = (stages: LeadStage[]): Date | null => {
       const ch = d.stageChanges.find(c => stages.includes(c.toStage))
@@ -166,7 +173,8 @@ export async function computeOfflineFeed(db: PrismaClient, now = new Date()) {
     const dealInq = personInq.filter(q => q.dealId === d.id)
     // No enquiry linked to this deal → the person's other enquiries, minus Low WhatsApp matches (their
     // click IDs may be someone else's — handover §2 "Low never uploaded").
-    const ids = dealInq.length ? dealInq : personInq.filter(q => q.matchConfidence !== 'LOW')
+    // Never another deal's enquiry: a person's older deal may come from a different ad (per-deal attribution).
+    const ids = dealInq.length ? dealInq : personInq.filter(q => q.matchConfidence !== 'LOW' && (!q.dealId || q.dealId === d.id))
     const fsc = [d.lead?.freshsalesContactId, d.customer?.freshsalesContactId].map(id => (id ? fsContact.get(id) : undefined)).filter(Boolean) as typeof fsContacts
     const fsd = d.freshsalesDealId ? fsDeal.get(d.freshsalesDealId) : undefined
 
@@ -181,9 +189,14 @@ export async function computeOfflineFeed(db: PrismaClient, now = new Date()) {
     const granted = consents.some(x => x.c === 'granted')
     const low = dealInq.some(q => q.matchConfidence === 'LOW')
 
-    const gclid = firstOf(ids, q => q.gclid ?? q.lastGclid) || fsd?.gclid?.trim() || firstOf(fsc, c => c.gclid)
-    const gbraid = firstOf(ids, q => q.gbraid ?? q.lastGbraid) || fsd?.gbraid?.trim() || ''
-    const wbraid = firstOf(ids, q => q.wbraid ?? q.lastWbraid) || fsd?.wbraid?.trim() || ''
+    // Click ids belong to the Ads account of the brand whose ad was clicked — an enquiry made on another
+    // brand's site (a Mischief ad lead booking Samara) never lends its gclid to this brand's upload
+    // (marketing audit 2026-11-24). Untagged (older) enquiries still count.
+    const clickIds = ids.filter(q => !q.brand || q.brand === d.brand)
+    const paid = [dealAttr.get(d.id)].filter((a): a is NonNullable<typeof a> => !!a && (!a.lastPaidBrand || a.lastPaidBrand === d.brand))
+    const gclid = firstOf(clickIds, q => q.gclid ?? q.lastGclid) || firstOf(paid, a => a.lastPaidGclid) || fsd?.gclid?.trim() || firstOf(fsc, c => c.gclid)
+    const gbraid = firstOf(clickIds, q => q.gbraid ?? q.lastGbraid) || firstOf(paid, a => a.lastPaidGbraid) || fsd?.gbraid?.trim() || ''
+    const wbraid = firstOf(clickIds, q => q.wbraid ?? q.lastWbraid) || firstOf(paid, a => a.lastPaidWbraid) || fsd?.wbraid?.trim() || ''
     const em = hashEmail(email), ph = hashPhone(phoneE164)
     const consentCol = granted && !denied ? 'GRANTED' : ''
     const base = {

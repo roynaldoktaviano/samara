@@ -17,6 +17,7 @@ import { Users, Plus, Edit, Search, Mail, Phone, Ship, ChevronRight, ChevronLeft
 import GuestEditSheet from '@/components/customers/GuestEditSheet'
 import FreshsalesImportModal from '@/components/shared/FreshsalesImportModal'
 import { isHttpUrl } from '@/lib/url-safety'
+import { DealAttributionList } from '@/components/shared/DealAttributionList'
 import { WebsiteJourney } from '@/components/shared/WebsiteJourney'
 import { AdConsentBadge } from '@/components/shared/AdConsentBadge'
 import { InquiryAttributionDialog, WaMatchBadge, hasAttribution, hasWaBadge, type AttributionInquiry } from '@/components/shared/InquiryAttributionDialog'
@@ -767,6 +768,14 @@ export default function Guests({ deepLinkId, onDeepLinkHandled, onOpenBooking }:
                         ))}
                       </div>
                     )}
+                  </div>
+
+                  <Separator />
+
+                  {/* Attribution: first touch + last paid ad click */}
+                  <div>
+                    <p className="text-sm font-semibold mb-3">Ad attribution per deal</p>
+                    <DealAttributionList customerId={detail.id} />
                   </div>
 
                   <Separator />

@@ -4,6 +4,7 @@
 //   INITIAL_MESSAGE_SENT       first staff reply sent from the ERP
 //   ACTIVE_COMMUNICATION       customer answered
 //   FOLLOW_UP_1 / FOLLOW_UP_2  staff wrote again ≥ FOLLOW_UP_GAP_HOURS later with no answer
+//                              (from In Active Communication only — not from Initial Message Sent)
 //   BOOKING_CONFIRMATION       a booking was created for this lead
 //   INVOICE_SENT               the booking's first invoice was generated
 //   CLOSED_WON                 first payment (deposit / DP) confirmed — needs a payment status

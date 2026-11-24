@@ -66,7 +66,7 @@ export function withoutDeniedMetaCookies<T extends Record<string, unknown>>(data
 export type InquiryTracking = Pick<Prisma.InquiryUncheckedCreateInput,
   | 'adConsent' | 'consentRegion' | 'msclkid' | 'lastMsclkid' | 'fbc' | 'fbp'
   | 'firstLandingUrl' | 'landingUrl' | 'firstReferrer' | 'referrer'
-  | 'ipAddress' | 'userAgent' | 'sessionAttributes'>
+  | 'ipAddress' | 'userAgent' | 'sessionAttributes' | 'firstTouchAt'>
 
 /**
  * The extra tracking columns from a website payload (CF7 hidden fields + what the
@@ -94,7 +94,17 @@ export function trackingFromPayload(data: Record<string, unknown>, fallback: { i
     ipAddress: pickClean(data, ['visitor_ip', 'ip', 'ip_address'], 64) ?? cleanValue(fallback.ip ?? null, 64),
     userAgent: pickClean(data, ['user_agent', 'visitor_user_agent', 'ua'], 1000) ?? cleanValue(fallback.userAgent ?? null, 1000),
     sessionAttributes: pickClean(data, ['session_attributes', 'google_session_attributes', 'gsa'], 8000),
+    firstTouchAt: firstTouchTime(pickClean(data, ['ft_ts', 'first_touch_at'], 64)),
   }
+}
+
+/** The plugin's samara_ft_ts cookie (ISO time of the first visit); junk / future values are dropped. */
+function firstTouchTime(v: string | null): Date | null {
+  if (!v) return null
+  const t = new Date(/^\d{10,13}$/.test(v) ? Number(v.length === 10 ? Number(v) * 1000 : v) : v)
+  const ms = t.getTime()
+  if (Number.isNaN(ms) || ms > Date.now() + 5 * 60_000 || ms < Date.UTC(2015, 0, 1)) return null
+  return t
 }
 
 /** Fills only the still-empty tracking columns of an existing inquiry (never overwrites). */

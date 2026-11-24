@@ -19,9 +19,10 @@ import { UserPlus, Plus, Edit, MessageCircle, Send, Search, Mail, Phone, Chevron
 import LeadEditSheet from '@/components/leads/LeadEditSheet'
 import LostReasonDialog from '@/components/leads/LostReasonDialog'
 import { leadDealName, type DealTripType } from '@/lib/deal-name'
-import WonPaymentDialog from '@/components/leads/WonPaymentDialog'
+import WonPaymentDialog, { type WonDetails } from '@/components/leads/WonPaymentDialog'
 import { isHttpUrl } from '@/lib/url-safety'
 import { WebsiteJourney } from '@/components/shared/WebsiteJourney'
+import { DealAttributionList } from '@/components/shared/DealAttributionList'
 import { AdConsentBadge } from '@/components/shared/AdConsentBadge'
 import { InquiryAttributionDialog, WaMatchBadge, hasAttribution, hasWaBadge, type AttributionInquiry } from '@/components/shared/InquiryAttributionDialog'
 import { LEAD_ORIGINS, LEAD_ORIGIN_LABEL, LEAD_ORIGIN_COLOR, INQUIRY_FORM_LABEL, classifyLeadOrigin, formPageLabel, type LeadOrigin } from '@/lib/lead-origin'
@@ -384,7 +385,7 @@ export default function Leads({ onOpenWhatsapp, onOpenMetaChat, onOpenEmail, onO
 
   const closeDetail = () => { setDetailOpen(false); setDetail(null); setInquiries(null); setContacts(null); setPageViews(null) }
 
-  const changeStage = async (lead: Lead, stage: LeadStage, extra?: { lostReason: string; lostNote: string } | { paymentStatus: string }) => {
+  const changeStage = async (lead: Lead, stage: LeadStage, extra?: { lostReason: string; lostNote: string } | WonDetails) => {
     if (stage === 'CLOSED_LOST' && !extra) { setLostTarget(lead); return }
     // Won = deposit received — needs the payment status (parity C3)
     if (stage === 'CLOSED_WON' && !extra) { setWonTarget(lead); return }
@@ -906,9 +907,11 @@ export default function Leads({ onOpenWhatsapp, onOpenMetaChat, onOpenEmail, onO
       <WonPaymentDialog
         open={!!wonTarget}
         dealName={wonTarget ? (detail?.id === wonTarget.id && detail.dealName) || leadDealName({ ...wonTarget, tripType: (wonTarget as { tripType?: DealTripType | null }).tripType ?? null }) : undefined}
+        amount={(wonTarget as { tripAmount?: number | null } | null)?.tripAmount}
+        currency={(wonTarget as { tripAmountCurrency?: string | null } | null)?.tripAmountCurrency}
         busy={stageBusy}
         onCancel={() => setWonTarget(null)}
-        onConfirm={paymentStatus => wonTarget && changeStage(wonTarget, 'CLOSED_WON', { paymentStatus })}
+        onConfirm={won => wonTarget && changeStage(wonTarget, 'CLOSED_WON', won)}
       />
       <LostReasonDialog
         open={!!lostTarget}
@@ -1126,6 +1129,10 @@ export default function Leads({ onOpenWhatsapp, onOpenMetaChat, onOpenEmail, onO
                       })}
                     </div>
                   )}
+                </div>
+                <div className="text-sm">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide mb-2">Ad attribution per deal</p>
+                  <DealAttributionList leadId={detail.id} />
                 </div>
                 <div className="text-sm">
                   <p className="text-xs text-muted-foreground uppercase tracking-wide mb-2">Website Journey</p>

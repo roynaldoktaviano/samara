@@ -1,9 +1,11 @@
-import type { LeadDistributionChannel, LeadStage, Prisma, PrismaClient, TripType, WhatsappBrand } from '@prisma/client'
+import type { DealEnquiryChannel, LeadDistributionChannel, LeadStage, Prisma, PrismaClient, TripType, WhatsappBrand } from '@prisma/client'
 import { sendPushToUser } from '@/lib/push'
 import { pickNextSalesUserId } from '@/lib/whatsapp-distribution'
 import { isSalesUserStillEmployed } from '@/lib/sales-availability'
 import { normalizeEmail } from '@/lib/contact-identity'
 import { formatDealName } from '@/lib/deal-name'
+import { detectBookingType, enquiryChannelOf } from '@/lib/deal-classify'
+import { refreshDealAttribution } from '@/lib/deal-attribution'
 
 /**
  * Deal maker — the ERP's version of Freshsales snippet 92 (go-live parity checklist, section B).
@@ -38,16 +40,16 @@ export const SAME_SUBMIT_MS = 15 * 60 * 1000
 /** Follow-up task deadline for the owner of an open deal that gets a new enquiry. */
 export const REENQUIRY_TASK_MS = 4 * 60 * 60 * 1000
 
-export type DealChannel = 'WEBSITE_FORM' | 'META_FORM' | 'WHATSAPP' | 'INSTAGRAM' | 'MESSENGER' | 'EMAIL' | 'MANUAL' | 'BOOKING' | 'FRESHSALES' | 'MIGRATED'
+export type DealChannel = 'WEBSITE_FORM' | 'META_FORM' | 'WHATSAPP' | 'INSTAGRAM' | 'MESSENGER' | 'EMAIL' | 'PHONE' | 'AGENT' | 'MANUAL' | 'BOOKING' | 'FRESHSALES' | 'MIGRATED'
 
 export const DEAL_CHANNEL_LABEL: Record<DealChannel, string> = {
   WEBSITE_FORM: 'website form', META_FORM: 'Meta Instant Form', WHATSAPP: 'WhatsApp', INSTAGRAM: 'Instagram',
-  MESSENGER: 'Messenger', EMAIL: 'email', MANUAL: 'manual entry', BOOKING: 'booking', FRESHSALES: 'Freshsales', MIGRATED: 'migration',
+  MESSENGER: 'Messenger', EMAIL: 'email', PHONE: 'phone', AGENT: 'agent', MANUAL: 'manual entry', BOOKING: 'booking', FRESHSALES: 'Freshsales', MIGRATED: 'migration',
 }
 
 const DISTRIBUTION_CHANNEL: Record<DealChannel, LeadDistributionChannel> = {
   WEBSITE_FORM: 'WEBSITE', META_FORM: 'WEBSITE', WHATSAPP: 'WHATSAPP', INSTAGRAM: 'INSTAGRAM', MESSENGER: 'INSTAGRAM',
-  EMAIL: 'EMAIL', MANUAL: 'WEBSITE', BOOKING: 'WEBSITE', FRESHSALES: 'WEBSITE', MIGRATED: 'WEBSITE',
+  EMAIL: 'EMAIL', PHONE: 'WEBSITE', AGENT: 'WEBSITE', MANUAL: 'WEBSITE', BOOKING: 'WEBSITE', FRESHSALES: 'WEBSITE', MIGRATED: 'WEBSITE',
 }
 
 /**
@@ -122,6 +124,8 @@ export interface DealMakerInput {
   brand: WhatsappBrand
   tripType: TripType | null
   channel: DealChannel
+  /** Standard enquiry channel when the caller knows it (manual entry); else derived from `channel` / the lead. */
+  enquiryChannel?: DealEnquiryChannel | null
   /** A real enquiry (form, ad, website WhatsApp tap) — joining an open deal also gives its owner a 4h task. */
   enquiry: boolean
   inquiryId?: string | null
@@ -159,7 +163,7 @@ export async function runDealMaker(db: Db, input: DealMakerInput): Promise<DealM
 
   const deals = await db.deal.findMany({
     where: personWhere,
-    select: { id: true, stage: true, tripType: true, brand: true, ownerId: true, createdAt: true, travelStartDate: true, travelEndDate: true, guestCount: true, productInterest: true, leadId: true, customerId: true },
+    select: { id: true, stage: true, tripType: true, brand: true, ownerId: true, createdAt: true, travelStartDate: true, travelEndDate: true, guestCount: true, productInterest: true, leadId: true, customerId: true, bookingType: true, enquiryChannel: true, enquiryTripType: true },
     orderBy: { createdAt: 'desc' },
   })
   const open = deals.filter(d => !isClosedDealStage(d.stage))
@@ -171,9 +175,16 @@ export async function runDealMaker(db: Db, input: DealMakerInput): Promise<DealM
   // another brand's number — but the same trip type, so a PC and an OT request stay two deals (snippet 92).
   const recent = deals.find(d => at.getTime() - d.createdAt.getTime() < SAME_SUBMIT_MS && !isClosedDealStage(d.stage) && sameType(d))
 
+  // Marketing classification (src/lib/deal-classify.ts): how the guest reached out + booking type
+  const leadEntrySource = person.cardLeadId ? (await db.lead.findUnique({ where: { id: person.cardLeadId }, select: { entrySource: true } }))?.entrySource ?? null : null
+  const enquiryChannel = input.enquiryChannel ?? enquiryChannelOf(input.channel, leadEntrySource)
+
   const fillEmpty = async (d: typeof deals[number]) => {
     const data: Prisma.DealUncheckedUpdateInput = {}
     if (!d.tripType && input.tripType) data.tripType = input.tripType
+    if (!d.enquiryTripType && input.tripType && input.enquiry) data.enquiryTripType = input.tripType
+    if (!d.enquiryChannel && enquiryChannel) data.enquiryChannel = enquiryChannel
+    if (!d.bookingType) data.bookingType = await detectBookingType(db, { leadId: d.leadId ?? person.cardLeadId, customerId: d.customerId ?? input.customerId, enquiryChannel: d.enquiryChannel ?? enquiryChannel, at: d.createdAt })
     if (!d.travelStartDate && input.travelStartDate) data.travelStartDate = input.travelStartDate
     if (!d.travelEndDate && input.travelEndDate) data.travelEndDate = input.travelEndDate
     if (d.guestCount == null && input.guestCount) data.guestCount = input.guestCount
@@ -237,6 +248,9 @@ export async function runDealMaker(db: Db, input: DealMakerInput): Promise<DealM
       guestCount: input.guestCount ?? null,
       productInterest: input.productInterest ?? null,
       channel: input.channel,
+      enquiryChannel,
+      enquiryTripType: input.enquiry ? input.tripType : null,
+      bookingType: await detectBookingType(db, { leadId: person.cardLeadId, customerId: input.customerId ?? person.customerIds[0] ?? null, enquiryChannel, at }),
       createdAt: at,
     },
     select: { id: true },
@@ -279,6 +293,8 @@ export async function runDealMakerLocked(db: PrismaClient, input: DealMakerInput
     return runDealMaker(tx, input)
   }, { timeout: 20000 })
   await flushDealPushes(db, result.pushes)
+  // Per-deal ad attribution (chats, manual entry) — best-effort
+  await refreshDealAttribution(db, [result.dealId]).catch(e => console.error('[deal-maker] attribution', e))
   return result
 }
 

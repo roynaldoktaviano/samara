@@ -27,6 +27,10 @@
  *  - No notifications are sent; owner moves are logged as MANUAL assignments.
  */
 import type { LeadLostReason, LeadStage, Prisma, PrismaClient, TripType, WhatsappBrand } from '@prisma/client'
+import { AGENT_CODE_RE, loadDealFixes, looksLikeTest } from '@/lib/deal-quality'
+import { agentEmailSet, enquiryChannelFromFreshsales } from '@/lib/deal-classify'
+import { refreshDealAttribution } from '@/lib/deal-attribution'
+import { tripTypeFromText } from '@/lib/deal-maker'
 import {
   DEAL_DETAIL_INCLUDE, FreshsalesClient, contactRow, dealDetailRow, dealIndexRow, linkContacts, retryDb,
   syncContactConversations, syncContactTimeline, upsertActivity, upsertContactRows,
@@ -114,7 +118,7 @@ function dateOnly(v: unknown) {
 type ArchiveDeal = Awaited<ReturnType<typeof loadDeals>>[number]
 const loadDeals = (db: PrismaClient) => db.freshsalesDeal.findMany({
   where: { isDeleted: false },
-  select: { id: true, name: true, amount: true, currencyFsId: true, pipelineFsId: true, stageFsId: true, stageUpdatedAt: true, lostReasonFsId: true, ownerFsId: true, contactFsIds: true, fsCreatedAt: true, closedDate: true, customFields: true, paymentStatusFsId: true },
+  select: { id: true, name: true, amount: true, baseCurrencyAmount: true, currencyFsId: true, pipelineFsId: true, stageFsId: true, stageUpdatedAt: true, lostReasonFsId: true, ownerFsId: true, contactFsIds: true, fsCreatedAt: true, closedDate: true, customFields: true, paymentStatusFsId: true },
 })
 
 /** Trip details Freshsales knows about a deal — only what it actually has (null = unknown). */
@@ -149,7 +153,10 @@ const DEAL_SELECT = {
   id: true, freshsalesDealId: true, orderId: true, leadId: true, customerId: true, brand: true, tripType: true, productInterest: true, stage: true, stageUpdatedAt: true,
   lostReason: true, lostNote: true, amount: true, currency: true, travelStartDate: true, travelEndDate: true, guestCount: true,
   ownerId: true, createdAt: true, deletedAt: true, channel: true, paymentStatus: true,
+  bookingType: true, enquiryChannel: true, enquiryTripType: true, amountUsd: true, fxRate: true,
 } satisfies Prisma.DealSelect
+// Marketing classification is only filled in where the ERP deal has none — sales may have set it.
+const FILL_ONLY_DEAL_FIELDS = new Set(['bookingType', 'enquiryChannel', 'enquiryTripType'])
 type DealRow = Prisma.DealGetPayload<{ select: typeof DEAL_SELECT }>
 type DealWant = Partial<Omit<DealRow, 'id'>>
 
@@ -173,7 +180,7 @@ export async function reconcileFreshsalesToErp(db: PrismaClient, opts: { apply: 
   const inc = (k: string, n = 1) => { counts[k] = (counts[k] ?? 0) + n }
   const changes: SyncChange[] = []
 
-  const [contacts, allDeals, lookups, fsUsers, users, leads, customers, erpDeals] = await retryDb(db, () => Promise.all([
+  const [contacts, allDeals, lookups, fsUsers, users, leads, customers, erpDeals, fixes] = await retryDb(db, () => Promise.all([
     db.freshsalesContact.findMany({ where: { isDeleted: false }, select: { id: true, name: true, email: true, phone: true, ownerFsId: true, raw: true, fsCreatedAt: true } }),
     loadDeals(db),
     db.freshsalesLookup.findMany({ where: { kind: { in: ['DEAL_STAGE', 'DEAL_PIPELINE', 'DEAL_REASON', 'CURRENCY', 'DEAL_PAYMENT_STATUS'] } } }),
@@ -182,6 +189,7 @@ export async function reconcileFreshsalesToErp(db: PrismaClient, opts: { apply: 
     db.lead.findMany({ select: LEAD_SELECT }),
     db.customer.findMany({ select: { id: true, name: true, email: true, phone: true, freshsalesContactId: true, ownerId: true, deletedAt: true } }),
     db.deal.findMany({ select: DEAL_SELECT }),
+    loadDealFixes(db),
   ]))
   // Leads a Sales rep is chatting with: that rep is the owner, whatever Freshsales says
   const chatOwners = await retryDb(db, () => chatOwnersByLead(db))
@@ -192,8 +200,50 @@ export async function reconcileFreshsalesToErp(db: PrismaClient, opts: { apply: 
   const isOpen = (d: ArchiveDeal) => ((stageOf.get(d.stageFsId ?? '')?.extra as Json | null)?.forecast_type ?? 'Open') === 'Open'
   // Agent Outreach and Old Pipeline deals are not guest deals (parity B6) — no ERP deal, and they
   // don't decide a contact's owner.
-  const deals = allDeals.filter(d => !NON_GUEST_PIPELINES.test(pipelineName.get(d.pipelineFsId ?? '') ?? ''))
-  inc('FS deals skipped (Agent Outreach / Old Pipeline)', allDeals.length - deals.length)
+  const guestDeals = allDeals.filter(d => !NON_GUEST_PIPELINES.test(pipelineName.get(d.pipelineFsId ?? '') ?? ''))
+  inc('FS deals skipped (Agent Outreach / Old Pipeline)', allDeals.length - guestDeals.length)
+  // Test deals (Abel, Ursula Wastian, "Test" …) are never migrated; an ERP deal already made for one
+  // is retired below like any other ineligible deal (marketing audit 2026-11-24, src/lib/deal-quality.ts).
+  const contactNameById = new Map(contacts.map(c => [c.id, c.name]))
+  const deals = guestDeals.filter(d => !(fixes.get(d.id)?.isTest ?? looksLikeTest(d.name, ...d.contactFsIds.map(id => contactNameById.get(id)))))
+  inc('FS deals skipped (test deal)', guestDeals.length - deals.length)
+
+  // Marketing classification of a Freshsales deal (marketing audit 2026-11-24, src/lib/deal-classify.ts)
+  const wonStageIds = new Set(lookups.filter(l => l.kind === 'DEAL_STAGE' && (l.extra as Json | null)?.forecast_type === 'Closed Won').map(l => l.fsId))
+  const contactRawById = new Map(contacts.map(c => [c.id, ((c.raw ?? {}) as Json)]))
+  const contactEmailById = new Map(contacts.map(c => [c.id, c.email?.trim().toLowerCase() ?? '']))
+  const agentMails = await retryDb(db, () => agentEmailSet(db))
+  // First Freshchat conversation per contact → its channel (WhatsApp / Instagram / Messenger / web chat)
+  const firstChatChannel = new Map<string, 'WHATSAPP' | 'INSTAGRAM' | 'MESSENGER' | 'WEB_FORM'>()
+  for (const c of await retryDb(db, () => db.freshchatConversation.findMany({ where: { contactFsId: { not: null } }, select: { contactFsId: true, channelSource: true }, orderBy: { fcCreatedAt: 'asc' } }))) {
+    if (firstChatChannel.has(c.contactFsId!)) continue
+    const ch = c.channelSource === 'WHATSAPP' ? 'WHATSAPP' : c.channelSource === 'INSTA' ? 'INSTAGRAM' : c.channelSource === 'FB_NATIVE' ? 'MESSENGER' : c.channelSource === 'FRESHCHAT' ? 'WEB_FORM' : null
+    if (ch) firstChatChannel.set(c.contactFsId!, ch)
+  }
+  const wonAtByContact = new Map<string, number[]>()
+  for (const d of allDeals) {
+    if (!wonStageIds.has(d.stageFsId ?? '')) continue
+    const t = +(d.stageUpdatedAt ?? d.closedDate ?? d.fsCreatedAt ?? 0)
+    for (const cid of d.contactFsIds) wonAtByContact.set(cid, [...(wonAtByContact.get(cid) ?? []), t])
+  }
+  const classifyFsDeal = (d: ArchiveDeal) => {
+    const raws = d.contactFsIds.map(id => contactRawById.get(id)).filter((r): r is Json => !!r)
+    const tagged = raws.some(r => (Array.isArray(r.tags) && r.tags.includes('Agents')) || r.custom_field?.cf_contact_type === 'Agent')
+    const agentMail = d.contactFsIds.some(id => agentMails.has(contactEmailById.get(id) ?? ''))
+    const isAgent = fixes.get(d.id)?.isAgent ?? (AGENT_CODE_RE.test(d.name) || tagged || agentMail)
+    const created = +(d.fsCreatedAt ?? 0)
+    const repeat = d.contactFsIds.some(id => (wonAtByContact.get(id) ?? []).some(t => t < created))
+    const medium = raws.map(r => r.medium as string | null).find(Boolean)
+    const formTrip = raws.map(r => r.custom_field?.cf_trip_type as string | null).find(Boolean)
+    // The website form fills Trip Type / Referer on the contact it creates
+    const viaForm = raws.some(r => r.custom_field?.cf_trip_type || r.custom_field?.cf_referer_field)
+    const chat = d.contactFsIds.map(id => firstChatChannel.get(id)).find(Boolean) ?? null
+    return {
+      bookingType: (isAgent ? 'AGENT' : repeat ? 'REPEAT' : 'DIRECT') as 'AGENT' | 'REPEAT' | 'DIRECT',
+      enquiryChannel: isAgent ? 'AGENT' as const : enquiryChannelFromFreshsales(medium, d.name) ?? (viaForm ? 'WEB_FORM' as const : chat),
+      enquiryTripType: tripTypeFromText(formTrip) ?? dealTripInfo(d).tripType,
+    }
+  }
 
   // FS owner → ERP user id; undefined = leave the ERP owner alone (Philippe)
   const userByEmail = new Map(users.map(u => [u.email.toLowerCase(), u.id]))
@@ -454,12 +504,22 @@ export async function reconcileFreshsalesToErp(db: PrismaClient, opts: { apply: 
     if (leadId) want.leadId = leadId
     if (stage) {
       want.stage = stage
-      want.stageUpdatedAt = d.stageUpdatedAt ?? d.closedDate ?? d.fsCreatedAt ?? null
+      want.stageUpdatedAt = (stage === 'CLOSED_WON' ? fixes.get(d.id)?.wonAt : null) ?? d.stageUpdatedAt ?? d.closedDate ?? d.fsCreatedAt ?? null
       const reason = stage === 'CLOSED_LOST' ? name('DEAL_REASON', d.lostReasonFsId) : null
       want.lostReason = stage === 'CLOSED_LOST' && reason ? LOST_MAP[reason.toLowerCase()] ?? 'OTHER' : null
       want.lostNote = want.lostReason === 'OTHER' ? reason : null
     }
     if (d.amount !== null) { want.amount = d.amount; want.currency = name('CURRENCY', d.currencyFsId) }
+    // ERP-side correction (FreshsalesDealFix) beats the Freshsales value
+    const fixAmount = fixes.get(d.id)?.amount
+    if (fixAmount != null) { want.amount = fixAmount; want.currency = fixes.get(d.id)?.currency ?? 'USD' }
+    // USD value: Freshsales converts to its base currency (USD) itself; a USD correction is its own value
+    const usd = fixAmount != null && (!fixes.get(d.id)?.currency || fixes.get(d.id)?.currency === 'USD') ? fixAmount : d.baseCurrencyAmount
+    if (usd != null) { want.amountUsd = usd; want.fxRate = want.amount ? usd / want.amount : null }
+    const cls = classifyFsDeal(d)
+    want.bookingType = cls.bookingType
+    if (cls.enquiryChannel) want.enquiryChannel = cls.enquiryChannel
+    if (cls.enquiryTripType) want.enquiryTripType = cls.enquiryTripType
     const pay = name('DEAL_PAYMENT_STATUS', d.paymentStatusFsId)
     const payWanted = (pay && PAYMENT_MAP[pay.toLowerCase()]) || STAGE_PAYMENT[sn.toLowerCase()]
     if (payWanted) want.paymentStatus = payWanted
@@ -493,6 +553,7 @@ export async function reconcileFreshsalesToErp(db: PrismaClient, opts: { apply: 
     const fields: Record<string, [unknown, unknown]> = {}
     for (const [k, v] of Object.entries(want) as [keyof DealRow, unknown][]) {
       const c = cur[k] as unknown
+      if (FILL_ONLY_DEAL_FIELDS.has(k) && c != null) continue
       const same = v instanceof Date || c instanceof Date
         ? (k === 'stageUpdatedAt' || k === 'deletedAt' ? sameTime(c as Date, v as Date) : sameDay(c as Date, v as Date))
         : (c ?? null) === (v ?? null)
@@ -578,6 +639,15 @@ export async function reconcileFreshsalesToErp(db: PrismaClient, opts: { apply: 
   }
   inc('stage history rows imported from Freshsales timeline', await importFreshsalesStageHistory(db))
   await linkContacts(db)
+  // Per-deal ad attribution (src/lib/deal-attribution.ts) for deals this sync made, or closed (their
+  // window ends at Won / Lost)
+  const attrIds = new Set(dealUpdates.filter(u => 'stage' in u.data).map(u => u.id))
+  for (const d of await retryDb(db, () => db.deal.findMany({ where: { deletedAt: null, attribution: null }, select: { id: true }, take: 2000 }))) attrIds.add(d.id)
+  const ids = [...attrIds]
+  for (let i = 0; i < ids.length; i += 50) {
+    await retryDb(db, () => refreshDealAttribution(db, ids.slice(i, i + 50))).catch(e => log(`  deal attribution failed: ${e}`))
+  }
+  if (ids.length) inc('deal ad attribution refreshed', ids.length)
   log('reconcile: written')
   return { counts, changes }
 }

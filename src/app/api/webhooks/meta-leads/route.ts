@@ -12,6 +12,7 @@ import { logWebhookFailure } from '@/lib/webhook-log'
 import { WHATSAPP_GRAPH_VERSION } from '@/lib/whatsapp-brands'
 import { handleMetaMessagingEvents, hasMetaMessagingEvents, type MetaMessagingBody } from '@/lib/meta-dm'
 import { fillEmptyOnly, findContactByIdentity, normalizeEmail, toE164 } from '@/lib/contact-identity'
+import { finalizeInquiry } from '@/lib/contact-attribution'
 
 // Meta (Facebook/Instagram) Lead Ads instant-form leads → Lead + Inquiry, same
 // owner resolution as the website CF7 webhook (existing Customer → existing Lead → new Lead).
@@ -332,6 +333,9 @@ async function ingestLead(db: PrismaClient, lead: MetaLead): Promise<IngestResul
       summary: enquirySummary({ tripType: [lead.formName, departure].filter(Boolean).join(' · ') || null, guestCount: guests, checkIn: range?.checkIn ?? null, checkOut: range?.checkOut ?? null }),
       travelStartDate: range?.checkIn ?? null, travelEndDate: range?.checkOut ?? null, guestCount: guests,
     })
+
+    // Normalised UTMs, acquisition brand, standard trip type + the ad attribution of this person's deals
+    await finalizeInquiry(tx, inquiry.id, { brand: dealBrand })
 
     return { ownerType, ownerId, duplicate: false, pushes: dm.pushes }
   }, { timeout: 20000 })

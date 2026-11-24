@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Samara ERP Tracking
  * Description: Page-view tracker, Contact Form 7 → ERP, WhatsApp-tap relay → ERP. Secrets live in wp-config.php.
- * Version:     2026.11.23.3
+ * Version:     2026.11.24.1
  *
  * Samara ERP — website tracking + Contact Form 7 → ERP.
  *
@@ -57,11 +57,16 @@ add_action('wp_footer', function () {
       }
 
       var params = new URLSearchParams(window.location.search);
+      // First touch (marketing audit 2026-11-24): everything from the SAME first visit — its
+      // utm/click ids, landing page, referrer and time — captured once, never overwritten.
       if (!getCookie('samara_ft_captured')) {
         FT_KEYS.forEach(function (key) {
           var val = params.get(key);
           if (val) setCookie('samara_ft_' + key, val, 90);
         });
+        setCookie('samara_ft_landing_url', window.location.href.slice(0, 1500), 90);
+        if (document.referrer) setCookie('samara_ft_referrer', document.referrer.slice(0, 1000), 90);
+        setCookie('samara_ft_ts', new Date().toISOString(), 90);
         setCookie('samara_ft_captured', '1', 90);
       }
 
@@ -184,6 +189,13 @@ add_action('wpcf7_mail_sent', function ($contact_form) {
         }
         $ft = $cookie('samara_ft_' . $key);
         if ($ft !== '') $data['ft_' . $key] = $ft;
+    }
+    // The rest of the same first visit: landing page, referrer, time (ERP: Inquiry.firstLandingUrl /
+    // firstReferrer / firstTouchAt). A visitor captured before 2026.11.24.1 has no samara_ft_ts — the
+    // ERP then falls back to this visit for the whole first touch.
+    foreach (array('landing_url', 'referrer', 'ts') as $ft_key) {
+        $ft = $cookie('samara_ft_' . $ft_key);
+        if ($ft !== '') $data['ft_' . $ft_key] = $ft;
     }
 
     wp_remote_post(SAMARA_ERP_BASE . '/cf7?tenant=' . SAMARA_ERP_TENANT, array(
