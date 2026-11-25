@@ -480,7 +480,8 @@ function defaultRestockLine(row: StockRow): RestockLine {
 export default function StockPage({ onOpenPo, onOpenRequest, onOpenTransfer }: { onOpenPo?: (poId: string) => void; onOpenRequest?: (requestId: string) => void; onOpenTransfer?: (transferId: string) => void } = {}) {
   const { data: session } = useSession()
   const canEditPlacement = roleMatches((session?.user as { role?: string })?.role ?? '', PLACEMENT_EDITORS)
-  const hidePrices = useHidePrices()
+  // Ship crew get a read-only, quantities-only view of their own yacht's stock.
+  const hidePrices = useHidePrices() || (session?.user as { role?: string })?.role === 'CREW'
   const [data, setData] = useState<StockData | null>(null)
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')

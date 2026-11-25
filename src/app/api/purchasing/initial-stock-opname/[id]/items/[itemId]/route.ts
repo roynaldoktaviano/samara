@@ -7,7 +7,7 @@ import { roleMatches } from '@/lib/role-utils'
 import { OPNAME_ITEM_SELECT, parseOpnameItemForm } from '@/lib/purchasing/initialOpnameItem'
 import { canUseInitialOpname } from '@/lib/purchasing/initialOpnameScope'
 
-const ALLOWED = ['ADMIN', 'SUPER_ADMIN', 'FINANCE_DIRECTOR', 'WAREHOUSE']
+const ALLOWED = ['ADMIN', 'SUPER_ADMIN', 'FINANCE_DIRECTOR', 'WAREHOUSE', 'CREW']
 
 export async function DELETE(_: NextRequest, { params }: { params: Promise<{ id: string; itemId: string }> }) {
   const { id, itemId } = await params
@@ -15,7 +15,7 @@ export async function DELETE(_: NextRequest, { params }: { params: Promise<{ id:
   const role = (session?.user as { role?: string })?.role ?? ''
   if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
-  if (!(await canUseInitialOpname(db, role, id))) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  if (!(await canUseInitialOpname(db, role, id, session.user.id))) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
   const count = await db.stockCount.findUnique({ where: { id } })
   if (!count || count.type !== 'INITIAL') return NextResponse.json({ error: 'Not found' }, { status: 404 })
@@ -40,7 +40,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const role = (session?.user as { role?: string })?.role ?? ''
   if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
-  if (!(await canUseInitialOpname(db, role, id))) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  if (!(await canUseInitialOpname(db, role, id, session.user.id))) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
   const count = await db.stockCount.findUnique({ where: { id } })
   if (!count || count.type !== 'INITIAL') return NextResponse.json({ error: 'Not found' }, { status: 404 })

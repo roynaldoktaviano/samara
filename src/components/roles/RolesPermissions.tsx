@@ -28,7 +28,7 @@ const ROLE_META: Record<RoleKey, { label: string; desc: string; color: string }>
   WAREHOUSE:         { label: 'Warehouse',          desc: 'Check stock for requests, receive & check incoming goods', color: 'bg-teal-100 text-teal-700 dark:bg-teal-500/15 dark:text-teal-300' },
   HR:                { label: 'HR',                 desc: 'People & employee records',                         color: 'bg-pink-100 text-pink-700 dark:bg-pink-500/15 dark:text-pink-300' },
   FINANCE_DIRECTOR:  { label: 'Finance Director',   desc: 'Combined role',                                     color: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-500/15 dark:text-cyan-300' },
-  CREW:              { label: 'Crew',               desc: 'Ship crew — Purchase Request only',                 color: 'bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300' },
+  CREW:              { label: 'Crew',               desc: 'Ship crew — Purchase Request + own ship stock & opname',                 color: 'bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300' },
   BOAT_CAPTAIN:      { label: 'Boat Captain',        desc: 'Purchase Request + approves crew requests',        color: 'bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300' },
   CRUISE_DIRECTOR:   { label: 'Cruise Director',     desc: 'Purchase Request + approves crew requests',        color: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300' },
 }

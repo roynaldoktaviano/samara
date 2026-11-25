@@ -5,7 +5,7 @@ import { getDb } from '@/lib/get-db'
 
 import { roleMatches } from '@/lib/role-utils'
 
-const ALLOWED = ['ADMIN', 'SUPER_ADMIN', 'FINANCE_DIRECTOR', 'WAREHOUSE']
+const ALLOWED = ['ADMIN', 'SUPER_ADMIN', 'FINANCE_DIRECTOR', 'WAREHOUSE', 'CREW']
 
 // What the Add/Edit Product popups need — item types (+ categories/SKU prefixes) and the
 // catalog — scoped to the opname roles, since /api/purchasing/items and /item-types are

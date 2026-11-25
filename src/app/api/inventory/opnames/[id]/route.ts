@@ -7,7 +7,7 @@ import type { PrismaClient } from '@prisma/client'
 import { roleMatches } from '@/lib/role-utils'
 import { opnameLocationAllowed, resolveOpnameScope } from '@/lib/inventory/opnameScope'
 
-const OPNAME_ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE', 'BOAT_CAPTAIN', 'CRUISE_DIRECTOR']
+const OPNAME_ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE', 'BOAT_CAPTAIN', 'CRUISE_DIRECTOR', 'CREW']
 
 /** 404s an opname on a ship outside the user's scope (Boat Captain / Cruise Director → own yacht only). */
 async function outOfScope(db: PrismaClient, role: string, userId: string, opnameId: string) {

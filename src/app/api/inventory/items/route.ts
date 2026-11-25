@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 
 import { roleMatches } from '@/lib/role-utils'
+import { crewScopeYachtId } from '@/lib/purchasing/yachtScope'
 import { nextVal } from '@/lib/counter'
 
 const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE']
@@ -29,7 +30,10 @@ export async function GET(req: NextRequest) {
   const page = pageParam ? Math.max(1, Number(pageParam) || 1) : null
   const pageSize = Math.min(200, Math.max(1, Number(searchParams.get('pageSize')) || 50))
 
+  // Crew: only the inventory on the yacht they work on.
+  const crewYachtId = await crewScopeYachtId(db, role, session.user.id)
   const where = {
+    ...(crewYachtId && { location: { yachtId: crewYachtId } }),
     ...(locationId && { locationId }),
     ...(roomId && { roomId }),
     ...(categoryId && { categoryId }),

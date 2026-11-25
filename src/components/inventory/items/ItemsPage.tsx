@@ -7,8 +7,9 @@ import { MultiFilePicker, FilePreview } from '@/components/ui/file-preview'
 import { StatusBadge, type StatusTone } from '@/components/ui/status-badge'
 import { formatDate, formatMoney } from '@/lib/format'
 import { useHidePrices } from '@/hooks/useHidePrices'
+import { useCrewYacht } from '@/hooks/useCrewYacht'
 
-interface StockLocation { id: string; name: string; type: string; parentId: string | null }
+interface StockLocation { id: string; name: string; type: string; parentId: string | null; yachtId?: string | null }
 interface Room { id: string; name: string; locationId: string }
 interface Category { id: string; name: string; roomId: string }
 interface PurchaseOrder { id: string; poNumber: string; supplierName: string | null; orderedAt: string }
@@ -53,8 +54,14 @@ const BLANK_FORM = {
 }
 
 export default function InventoryItemsPage() {
-  const hidePrices = useHidePrices()
-  const [locations, setLocations] = useState<StockLocation[]>([])
+  // Ship crew: read-only, own yacht only, no prices.
+  const crew = useCrewYacht()
+  const hidePrices = useHidePrices() || crew.isCrew
+  const [allLocations, setLocations] = useState<StockLocation[]>([])
+  const locations = useMemo(
+    () => (crew.isCrew ? allLocations.filter(l => !!crew.yachtId && l.yachtId === crew.yachtId) : allLocations),
+    [allLocations, crew.isCrew, crew.yachtId],
+  )
   const [rooms, setRooms] = useState<Room[]>([])
   const [categories, setCategories] = useState<Category[]>([])
   const [orders, setOrders] = useState<PurchaseOrder[]>([])
@@ -86,8 +93,8 @@ export default function InventoryItemsPage() {
 
   useEffect(() => {
     fetch('/api/purchasing/locations').then(r => r.json()).then(setLocations)
-    fetch('/api/purchasing/orders').then(r => r.ok ? r.json() : []).then((data: PurchaseOrder[]) => setOrders(Array.isArray(data) ? data : []))
-  }, [])
+    if (!crew.isCrew) fetch('/api/purchasing/orders').then(r => r.ok ? r.json() : []).then((data: PurchaseOrder[]) => setOrders(Array.isArray(data) ? data : []))
+  }, [crew.isCrew])
 
   // No "All Places" tab — a vessel/place must always be selected, so default to the
   // first one as soon as the location list loads (mirrors RoomsPage's picker).
@@ -225,9 +232,11 @@ export default function InventoryItemsPage() {
           <h2 className="text-2xl font-bold tracking-tight">Inventory Items</h2>
           <p className="text-muted-foreground text-sm mt-1">Inventory items per place, room, and category</p>
         </div>
-        <button onClick={openAdd} className="flex items-center gap-2 bg-primary hover:bg-primary-hover text-primary-foreground text-sm font-medium px-4 py-2 rounded-md transition-colors">
-          <Plus className="h-4 w-4" /> Add Item
-        </button>
+        {!crew.isCrew && (
+          <button onClick={openAdd} className="flex items-center gap-2 bg-primary hover:bg-primary-hover text-primary-foreground text-sm font-medium px-4 py-2 rounded-md transition-colors">
+            <Plus className="h-4 w-4" /> Add Item
+          </button>
+        )}
       </div>
 
       {/* Vessel/place tabs — one place is always selected, no "All" tab */}
@@ -308,12 +317,14 @@ export default function InventoryItemsPage() {
                         className="p-1.5 text-muted-foreground hover:text-info hover:bg-info/10 rounded-lg transition-colors">
                         <History className="h-3.5 w-3.5" />
                       </button>
-                      <button onClick={() => openEdit(item)} className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors">
-                        <Pencil className="h-3.5 w-3.5" />
-                      </button>
-                      <button onClick={() => { setDeleteConfirm(item); setDeleteError('') }} className="p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg transition-colors">
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
+                      {!crew.isCrew && <>
+                        <button onClick={() => openEdit(item)} className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors">
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                        <button onClick={() => { setDeleteConfirm(item); setDeleteError('') }} className="p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg transition-colors">
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </>}
                     </div>
                   </td>
                 </tr>

@@ -7,11 +7,11 @@ import { roleMatches } from '@/lib/role-utils'
 import { emitTenantEvent } from '@/lib/realtime-bus'
 import { tripFromBooking, tripFromOpenTrip, tripBookingSelect, openTripSelect } from '@/lib/purchasing/tripLink'
 import { nextSeq } from '@/lib/purchasing/docNumber'
-import { resolveAssignedYachtId, yachtTransferWhere } from '@/lib/purchasing/yachtScope'
+import { resolveAssignedYachtId, resolveWorkYachtId, yachtTransferWhere } from '@/lib/purchasing/yachtScope'
 
 const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE']
-// Cruise Director / Boat Captain can list (not create) transfers — only those to or from their own yacht.
-const VIEW_ALLOWED = [...ALLOWED, 'CRUISE_DIRECTOR', 'BOAT_CAPTAIN']
+// Cruise Director / Boat Captain / Crew can list (not create) transfers — only those to or from their own yacht.
+const VIEW_ALLOWED = [...ALLOWED, 'CRUISE_DIRECTOR', 'BOAT_CAPTAIN', 'CREW']
 
 async function generateTrNumber(db: Awaited<ReturnType<typeof getDb>>) {
   const prefix = `TR-${new Date().getFullYear()}${String(new Date().getMonth() + 1).padStart(2, '0')}-`
@@ -25,7 +25,9 @@ export async function GET() {
   if (!session?.user?.id || !roleMatches(role, VIEW_ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
   const transfers = await db.stockTransfer.findMany({
-    where: roleMatches(role, ALLOWED) ? undefined : yachtTransferWhere(await resolveAssignedYachtId(db, session.user.id)),
+    where: roleMatches(role, ALLOWED) ? undefined : yachtTransferWhere(
+      role === 'CREW' ? await resolveWorkYachtId(db, session.user.id) : await resolveAssignedYachtId(db, session.user.id),
+    ),
     orderBy: { createdAt: 'desc' },
     include: { items: { select: { id: true, itemName: true, requestedQty: true, dispatchedQty: true, receivedQty: true, item: { select: { standardCost: true } } } } },
   })

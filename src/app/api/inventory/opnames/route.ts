@@ -7,7 +7,7 @@ import { roleMatches } from '@/lib/role-utils'
 import { nextVal } from '@/lib/counter'
 import { opnameLocationAllowed, resolveOpnameScope } from '@/lib/inventory/opnameScope'
 
-const OPNAME_ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE', 'BOAT_CAPTAIN', 'CRUISE_DIRECTOR']
+const OPNAME_ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE', 'BOAT_CAPTAIN', 'CRUISE_DIRECTOR', 'CREW']
 
 export async function GET() {
   const session = await getServerSession(authOptions)

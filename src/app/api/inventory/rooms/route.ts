@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 
 import { roleMatches } from '@/lib/role-utils'
+import { crewScopeYachtId } from '@/lib/purchasing/yachtScope'
 
 const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE']
 // GET-only: Boat Captain/Cruise Director need the room list to run their own ship's
@@ -20,8 +21,10 @@ export async function GET(req: NextRequest) {
 
   const locationId = req.nextUrl.searchParams.get('locationId') || undefined
 
+  // Crew: only rooms on the yacht they work on.
+  const crewYachtId = await crewScopeYachtId(db, role, session.user.id)
   const rooms = await db.inventoryRoom.findMany({
-    where: locationId ? { locationId } : {},
+    where: { ...(locationId ? { locationId } : {}), ...(crewYachtId && { location: { yachtId: crewYachtId } }) },
     include: { _count: { select: { categories: true, items: true } } },
     orderBy: { name: 'asc' },
   })

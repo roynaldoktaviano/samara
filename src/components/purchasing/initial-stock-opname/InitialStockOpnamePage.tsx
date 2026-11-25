@@ -360,16 +360,25 @@ export default function InitialStockOpnamePage() {
       fetch('/api/purchasing/locations'),
     ])
     let warehouseOnly = false
+    let yachtOnly = false
+    let yachtId: string | null = null
     if (oRes.ok) {
       const data = await oRes.json()
       setOpnames(data.opnames)
       setCompletedLocationIds(data.completedLocationIds)
       warehouseOnly = !!data.warehouseOnly
+      yachtOnly = !!data.yachtOnly
+      yachtId = data.yachtId ?? null
     }
-    // Warehouse accounts only set up gudang, never a ship (the API enforces this too).
+    // Warehouse accounts only set up gudang, never a ship; crew only their own yacht
+    // (the API enforces both too).
     if (lRes.ok) {
       const locs: Location[] = await lRes.json()
-      setLocations(warehouseOnly ? locs.filter(l => l.type === 'WAREHOUSE') : locs)
+      setLocations(
+        warehouseOnly ? locs.filter(l => l.type === 'WAREHOUSE')
+        : yachtOnly ? locs.filter(l => !!yachtId && l.yachtId === yachtId)
+        : locs,
+      )
     }
     setLoading(false)
   }, [])

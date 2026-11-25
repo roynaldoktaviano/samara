@@ -51,3 +51,27 @@ export async function yachtCrewWhere(db: PrismaClient, userId: string): Promise<
   if (!yacht) return { id: '__none__' }
   return { location: { name: { equals: yacht.name.trim(), mode: 'insensitive' } } }
 }
+
+// The yacht a user actually works on, for ship crew (CREW role): their explicitly assigned yacht
+// (User.assignedYachtId) if set, otherwise the yacht whose name matches the work location of the
+// HR employee record linked to this login — the same crew↔yacht link payroll uses. Null if
+// neither resolves, in which case callers show nothing rather than every ship.
+export async function resolveWorkYachtId(db: PrismaClient, userId: string): Promise<string | null> {
+  const user = await db.user.findUnique({
+    where: { id: userId },
+    select: { assignedYachtId: true, employeeProfile: { select: { location: { select: { name: true } } } } },
+  })
+  if (user?.assignedYachtId) return user.assignedYachtId
+  const locName = user?.employeeProfile?.location?.name?.trim()
+  if (!locName) return null
+  const yacht = await db.yacht.findFirst({ where: { deletedAt: null, name: { equals: locName, mode: 'insensitive' } }, select: { id: true } })
+  return yacht?.id ?? null
+}
+
+// For routes shared with office roles: the yacht a CREW-only user is limited to ('__none__' if
+// it can't be resolved, so Prisma filters match nothing), or null when the user isn't crew
+// and keeps the route's normal access.
+export async function crewScopeYachtId(db: PrismaClient, role: string, userId: string): Promise<string | null> {
+  if (role !== 'CREW') return null
+  return (await resolveWorkYachtId(db, userId)) ?? '__none__'
+}

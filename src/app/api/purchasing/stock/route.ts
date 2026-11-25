@@ -5,8 +5,10 @@ import { getDb } from '@/lib/get-db'
 
 import { roleMatches } from '@/lib/role-utils'
 import { computeWarehousePositions, type WarehousePosition, type PositionSource } from '@/lib/purchasing/warehousePosition'
+import { crewScopeYachtId } from '@/lib/purchasing/yachtScope'
 
-const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE']
+// CREW: read-only, limited to the locations of the yacht they work on (vessel + Bar/Galley…).
+const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE', 'CREW']
 
 export async function GET(req: Request) {
   const session = await getServerSession(authOptions)
@@ -17,17 +19,21 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url)
   const locationId = searchParams.get('locationId')
 
+  // Crew see only their own yacht's locations (none if their yacht can't be resolved).
+  const crewYachtId = await crewScopeYachtId(db, role, session.user.id)
+  const scopeLoc = crewYachtId ? { location: { yachtId: crewYachtId } } : {}
+
   const [lots, items, locations, placements] = await Promise.all([
-    db.stockLot.findMany({ where: { quantity: { gt: 0 }, ...(locationId ? { locationId } : {}) } }),
+    db.stockLot.findMany({ where: { quantity: { gt: 0 }, ...(locationId ? { locationId } : {}), ...scopeLoc } }),
     db.purchaseItem.findMany({ select: { id: true, sku: true, name: true, category: true, baseUnit: true, purchaseUnit: true, conversionFactor: true, minStock: true, valuationMethod: true } }),
     db.stockLocation.findMany({ select: { id: true, name: true, type: true, yachtId: true, parentId: true } }),
-    db.stockItemPlacement.findMany({ where: locationId ? { locationId } : {}, select: { itemId: true, locationId: true, room: true, bin: true } }),
+    db.stockItemPlacement.findMany({ where: { ...(locationId ? { locationId } : {}), ...scopeLoc }, select: { itemId: true, locationId: true, room: true, bin: true } }),
   ])
   const placementMap = new Map(placements.map(p => [`${p.itemId}:${p.locationId}`, { room: p.room, bin: p.bin }]))
 
   const itemMap = new Map(items.map(i => [i.id, i]))
   const locMap  = new Map(locations.map(l => [l.id, l]))
-  const warehouseIds = locations.filter(l => l.type === 'WAREHOUSE').map(l => l.id)
+  const warehouseIds = crewYachtId ? [] : locations.filter(l => l.type === 'WAREHOUSE').map(l => l.id)
 
   // Replenishment per item+warehouse comes from the SAME function the PR stock check uses
   // (warehousePosition.ts), so To Be Order / Pending / PO here always match the PR item modal.

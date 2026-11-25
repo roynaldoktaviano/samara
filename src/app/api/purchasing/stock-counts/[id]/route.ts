@@ -7,8 +7,17 @@ import { roleMatches } from '@/lib/role-utils'
 import { effectiveConsumptionMode } from '@/lib/purchasing/consumptionMode'
 import { qtyLabel } from '@/lib/purchasing/units'
 import { allocateBackorders } from '@/lib/purchasing/backorders'
+import { crewScopeYachtId } from '@/lib/purchasing/yachtScope'
 
-const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE']
+const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE', 'CREW']
+
+/** CREW: 404 for counts outside the yacht they work on. */
+async function crewOutOfScope(db: Awaited<ReturnType<typeof getDb>>, role: string, userId: string, countId: string) {
+  const yachtId = await crewScopeYachtId(db, role, userId)
+  if (!yachtId) return false
+  const c = await db.stockCount.findUnique({ where: { id: countId }, select: { location: { select: { yachtId: true } } } })
+  return c?.location?.yachtId !== yachtId
+}
 
 export async function GET(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -16,6 +25,7 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
   const role = (session?.user as { role?: string })?.role ?? ''
   if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
+  if (await crewOutOfScope(db, role, session.user.id, id)) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
   const count = await db.stockCount.findUnique({
     where: { id },
@@ -39,8 +49,11 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   const role = (session?.user as { role?: string })?.role ?? ''
   if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
+  if (await crewOutOfScope(db, role, session.user.id, id)) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
   const { items, status, notes, photoKey } = await req.json()
+  // Approving writes the counted qty into stock — office roles only.
+  if (status === 'APPROVED' && role === 'CREW') return NextResponse.json({ error: 'Crew cannot approve a stock count' }, { status: 403 })
 
   const count = await db.stockCount.findUnique({ where: { id } })
   if (!count) return NextResponse.json({ error: 'Not found' }, { status: 404 })
@@ -152,6 +165,7 @@ export async function DELETE(_: NextRequest, { params }: { params: Promise<{ id:
   const role = (session?.user as { role?: string })?.role ?? ''
   if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
+  if (await crewOutOfScope(db, role, session.user.id, id)) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
   const count = await db.stockCount.findUnique({ where: { id } })
   if (!count) return NextResponse.json({ error: 'Not found' }, { status: 404 })

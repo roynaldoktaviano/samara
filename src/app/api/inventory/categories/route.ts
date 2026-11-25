@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 
 import { roleMatches } from '@/lib/role-utils'
+import { crewScopeYachtId } from '@/lib/purchasing/yachtScope'
 
 const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE']
 // CREW included: they can create Purchase Requests and need to browse the Inventory
@@ -18,8 +19,10 @@ export async function GET(req: NextRequest) {
 
   const roomId = req.nextUrl.searchParams.get('roomId') || undefined
 
+  // Crew: only categories in rooms on the yacht they work on.
+  const crewYachtId = await crewScopeYachtId(db, role, session.user.id)
   const categories = await db.inventoryCategory.findMany({
-    where: roomId ? { roomId } : {},
+    where: { ...(roomId ? { roomId } : {}), ...(crewYachtId && { room: { location: { yachtId: crewYachtId } } }) },
     include: { _count: { select: { items: true } } },
     orderBy: { name: 'asc' },
   })

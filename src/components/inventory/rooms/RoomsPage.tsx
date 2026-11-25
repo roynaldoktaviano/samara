@@ -3,12 +3,15 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Plus, Pencil, Trash2, X, DoorOpen, Tag, Ship, AlertTriangle, ChevronRight } from 'lucide-react'
 import { renderLocationOptions } from '@/components/purchasing/LocationOptions'
+import { useCrewYacht } from '@/hooks/useCrewYacht'
 
-interface StockLocation { id: string; name: string; type: string; parentId: string | null }
+interface StockLocation { id: string; name: string; type: string; parentId: string | null; yachtId?: string | null }
 interface Room { id: string; name: string; locationId: string; isActive: boolean; _count: { categories: number; items: number } }
 interface Category { id: string; name: string; roomId: string; isActive: boolean; _count: { items: number } }
 
 export default function RoomsPage() {
+  // Ship crew: read-only, own yacht only.
+  const crew = useCrewYacht()
   const [locations, setLocations] = useState<StockLocation[]>([])
   const [locationId, setLocationId] = useState('')
 
@@ -25,12 +28,14 @@ export default function RoomsPage() {
   const [deleteError, setDeleteError] = useState('')
 
   useEffect(() => {
-    fetch('/api/purchasing/locations').then(r => r.json()).then((data: StockLocation[]) => {
+    if (!crew.ready) return
+    fetch('/api/purchasing/locations').then(r => r.json()).then((all: StockLocation[]) => {
+      const data = crew.isCrew ? all.filter(l => !!crew.yachtId && l.yachtId === crew.yachtId) : all
       setLocations(data)
-      if (!locationId && data.length) setLocationId(data.find(l => !l.parentId)?.id ?? data[0].id)
+      if (!data.some(l => l.id === locationId)) setLocationId(data.find(l => !l.parentId)?.id ?? data[0]?.id ?? '')
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [crew.ready, crew.isCrew, crew.yachtId])
 
   const loadRooms = useCallback(async () => {
     if (!locationId) { setRooms([]); return }
@@ -117,9 +122,11 @@ export default function RoomsPage() {
         <div className="rounded-xl border overflow-hidden">
           <div className="flex items-center justify-between px-4 py-3 bg-muted/40 border-b">
             <h3 className="text-sm font-semibold flex items-center gap-2"><DoorOpen className="h-4 w-4" /> Rooms</h3>
-            <button onClick={openAddRoom} className="flex items-center gap-1 text-xs font-medium text-primary-strong hover:text-primary-strong/80">
-              <Plus className="h-3.5 w-3.5" /> Add
-            </button>
+            {!crew.isCrew && (
+              <button onClick={openAddRoom} className="flex items-center gap-1 text-xs font-medium text-primary-strong hover:text-primary-strong/80">
+                <Plus className="h-3.5 w-3.5" /> Add
+              </button>
+            )}
           </div>
           <div className="divide-y max-h-[28rem] overflow-y-auto">
             {roomsLoading ? (
@@ -137,12 +144,14 @@ export default function RoomsPage() {
                   <p className="text-xs text-muted-foreground mt-0.5">{r._count.categories} categories · {r._count.items} items</p>
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
+                  {!crew.isCrew && <>
                   <span onClick={e => { e.stopPropagation(); openEditRoom(r) }} className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors">
                     <Pencil className="h-3.5 w-3.5" />
                   </span>
                   <span onClick={e => { e.stopPropagation(); setDeleteConfirm({ kind: 'room', id: r.id, name: r.name }); setDeleteError('') }} className="p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg transition-colors">
                     <Trash2 className="h-3.5 w-3.5" />
                   </span>
+                  </>}
                   <ChevronRight className="h-4 w-4 text-muted-foreground/50" />
                 </div>
               </button>
@@ -157,7 +166,7 @@ export default function RoomsPage() {
               <Tag className="h-4 w-4" /> Item Categories
               {selectedRoom && <span className="text-xs font-normal text-muted-foreground">— {selectedRoom.name}</span>}
             </h3>
-            {selectedRoomId && (
+            {selectedRoomId && !crew.isCrew && (
               <button onClick={openAddCategory} className="flex items-center gap-1 text-xs font-medium text-primary-strong hover:text-primary-strong/80">
                 <Plus className="h-3.5 w-3.5" /> Add
               </button>
@@ -179,14 +188,14 @@ export default function RoomsPage() {
                   <p className="text-sm font-medium">{c.name}</p>
                   <p className="text-xs text-muted-foreground mt-0.5">{c._count.items} items</p>
                 </div>
-                <div className="flex items-center gap-1 shrink-0">
+                {!crew.isCrew && <div className="flex items-center gap-1 shrink-0">
                   <button onClick={() => openEditCategory(c)} className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors">
                     <Pencil className="h-3.5 w-3.5" />
                   </button>
                   <button onClick={() => { setDeleteConfirm({ kind: 'category', id: c.id, name: c.name }); setDeleteError('') }} className="p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg transition-colors">
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
-                </div>
+                </div>}
               </div>
             ))}
           </div>

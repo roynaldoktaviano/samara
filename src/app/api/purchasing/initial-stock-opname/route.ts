@@ -5,11 +5,12 @@ import { getDb } from '@/lib/get-db'
 
 import { roleMatches } from '@/lib/role-utils'
 import { OPNAME_ITEM_SELECT } from '@/lib/purchasing/initialOpnameItem'
-import { isWarehouseOnly } from '@/lib/purchasing/initialOpnameScope'
+import { initialOpnameLocationAllowed, initialOpnameLocationWhere, resolveInitialOpnameScope } from '@/lib/purchasing/initialOpnameScope'
 
 // Temporary onboarding-only feature — see memory project-initial-stock-opname-temporary.
-// Finalizes without an approval step. Admin/Finance Director: any location; Warehouse: warehouse locations only.
-const ALLOWED = ['ADMIN', 'SUPER_ADMIN', 'FINANCE_DIRECTOR', 'WAREHOUSE']
+// Finalizes without an approval step. Admin/Finance Director: any location; Warehouse: warehouse locations only;
+// Crew: only the yacht they work on.
+const ALLOWED = ['ADMIN', 'SUPER_ADMIN', 'FINANCE_DIRECTOR', 'WAREHOUSE', 'CREW']
 
 export async function GET() {
   const session = await getServerSession(authOptions)
@@ -17,9 +18,10 @@ export async function GET() {
   if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
 
-  const warehouseOnly = isWarehouseOnly(role)
+  const scope = await resolveInitialOpnameScope(db, role, session.user.id)
+  const warehouseOnly = scope.kind === 'warehouse'
   const opnames = await db.stockCount.findMany({
-    where: { type: 'INITIAL', ...(warehouseOnly && { location: { type: 'WAREHOUSE' as const } }) },
+    where: { type: 'INITIAL', ...(scope.kind !== 'all' && { location: initialOpnameLocationWhere(scope) }) },
     include: {
       location: { select: { id: true, name: true, type: true } },
       countedBy: { select: { id: true, name: true } },
@@ -35,7 +37,7 @@ export async function GET() {
     select: { locationId: true },
   })
 
-  return NextResponse.json({ opnames, completedLocationIds: completed.map(c => c.locationId), warehouseOnly })
+  return NextResponse.json({ opnames, completedLocationIds: completed.map(c => c.locationId), warehouseOnly, yachtOnly: scope.kind === 'yacht', yachtId: scope.kind === 'yacht' ? scope.yachtId : null })
 }
 
 export async function POST(req: NextRequest) {
@@ -47,9 +49,12 @@ export async function POST(req: NextRequest) {
   const { locationId } = await req.json()
   if (!locationId) return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
 
-  if (isWarehouseOnly(role)) {
-    const location = await db.stockLocation.findUnique({ where: { id: locationId }, select: { type: true } })
-    if (location?.type !== 'WAREHOUSE') return NextResponse.json({ error: 'Warehouse accounts can only set up warehouse locations' }, { status: 403 })
+  const scope = await resolveInitialOpnameScope(db, role, session.user.id)
+  if (scope.kind !== 'all') {
+    const location = await db.stockLocation.findUnique({ where: { id: locationId }, select: { type: true, yachtId: true } })
+    if (!initialOpnameLocationAllowed(scope, location)) {
+      return NextResponse.json({ error: scope.kind === 'warehouse' ? 'Warehouse accounts can only set up warehouse locations' : 'Crew accounts can only set up their own yacht' }, { status: 403 })
+    }
   }
 
   const existing = await db.stockCount.findFirst({ where: { type: 'INITIAL', locationId, status: { not: 'APPROVED' } } })

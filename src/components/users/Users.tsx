@@ -155,9 +155,9 @@ const ROLES: { value: Role; label: string; desc: string; color: string; modules:
   {
     value: 'CREW',
     label: 'Crew',
-    desc: 'Ship crew — file purchase requests',
+    desc: 'Ship crew — purchase requests + own ship stock',
     color: 'bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300',
-    modules: 'Purchasing (Purchase Requests only)',
+    modules: 'Purchase Requests, Item by Location, Transfers (receive), Stock Counts, Stock Opname, Stock Opname Awal, Inventory Items/Rooms (own yacht only)',
   },
   {
     value: 'BOAT_CAPTAIN',
@@ -562,9 +562,9 @@ export default function UsersPage() {
               </div>
             )}
 
-            {(formRole === 'BOAT_CAPTAIN' || formRole === 'CRUISE_DIRECTOR') && (
+            {(formRole === 'BOAT_CAPTAIN' || formRole === 'CRUISE_DIRECTOR' || formRole === 'CREW') && (
               <div className="space-y-1.5">
-                <Label htmlFor="user-assigned-yacht">Assigned Yacht <span className="text-destructive">*</span></Label>
+                <Label htmlFor="user-assigned-yacht">Assigned Yacht {formRole !== 'CREW' && <span className="text-destructive">*</span>}</Label>
                 <Select value={formAssignedYachtId || 'NONE'} onValueChange={v => setFormAssignedYachtId(v === 'NONE' ? '' : v)}>
                   <SelectTrigger id="user-assigned-yacht" className="w-full">
                     <SelectValue />
@@ -576,7 +576,11 @@ export default function UsersPage() {
                     ))}
                   </SelectContent>
                 </Select>
-                <p className="text-[11px] text-muted-foreground">Which yacht this person captains/directs — they only get notified about deliveries to this yacht.</p>
+                <p className="text-[11px] text-muted-foreground">
+                  {formRole === 'CREW'
+                    ? "The yacht whose stock this crew member can see and count. Leave empty to use the linked employee's Work Location."
+                    : 'Which yacht this person captains/directs — they only get notified about deliveries to this yacht.'}
+                </p>
               </div>
             )}
 

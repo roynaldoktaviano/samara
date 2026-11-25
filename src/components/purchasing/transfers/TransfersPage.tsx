@@ -192,11 +192,11 @@ function EmployeeCombobox({ employees, value, onChange }: {
 
 export default function TransfersPage({ deepLinkId, onDeepLinkHandled, onOpenRequest, onOpenPo }: { deepLinkId?: string | null; onDeepLinkHandled?: () => void; onOpenRequest?: (id: string) => void; onOpenPo?: (id: string) => void } = {}) {
   const { data: session } = useSession()
-  const hidePrices = useHidePrices()
+  const hidePrices = useHidePrices() || (session?.user as { role?: string } | undefined)?.role === 'CREW'
   // Cruise Director / Boat Captain only see transfers to/from their own yacht (scoped by the
   // API): they receive what arrives (Cruise Director also dispatches what leaves) — no
   // creating, cancelling or editing.
-  const receiveOnly = ['CRUISE_DIRECTOR', 'BOAT_CAPTAIN'].includes((session?.user as { role?: string })?.role ?? '')
+  const receiveOnly = ['CRUISE_DIRECTOR', 'BOAT_CAPTAIN', 'CREW'].includes((session?.user as { role?: string })?.role ?? '')
   const [transfers, setTransfers] = useState<StockTransfer[]>([])
   const [loading, setLoading] = useState(true)
   // Tablet/mobile card layout (< lg) — same pattern as Purchase Orders/Requests.

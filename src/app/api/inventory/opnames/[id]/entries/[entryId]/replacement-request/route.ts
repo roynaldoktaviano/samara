@@ -8,7 +8,7 @@ import { opnameLocationAllowed, resolveOpnameScope } from '@/lib/inventory/opnam
 import { notifyByRoleForRequest, PURCHASING_ROLES } from '@/lib/notify-purchasing'
 import { sendPushToUser } from '@/lib/push'
 
-const OPNAME_ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE', 'BOAT_CAPTAIN', 'CRUISE_DIRECTOR']
+const OPNAME_ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE', 'BOAT_CAPTAIN', 'CRUISE_DIRECTOR', 'CREW']
 
 async function generatePrNumber(db: Awaited<ReturnType<typeof getDb>>) {
   const year = new Date().getFullYear()

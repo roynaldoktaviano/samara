@@ -7,7 +7,7 @@ import { roleMatches } from '@/lib/role-utils'
 import { canUseInitialOpname } from '@/lib/purchasing/initialOpnameScope'
 import { parseOpnameItemForm } from '@/lib/purchasing/initialOpnameItem'
 
-const ALLOWED = ['ADMIN', 'SUPER_ADMIN', 'FINANCE_DIRECTOR', 'WAREHOUSE']
+const ALLOWED = ['ADMIN', 'SUPER_ADMIN', 'FINANCE_DIRECTOR', 'WAREHOUSE', 'CREW']
 
 // Converts a Non-Stock row of a Stock Opname Awal into a Stock Item, using the same
 // form as Items & Pricing' Add Item. Non-stock rows are either a legacy PurchaseItem with
@@ -24,7 +24,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const role = (session?.user as { role?: string })?.role ?? ''
   if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
-  if (!(await canUseInitialOpname(db, role, id))) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  if (!(await canUseInitialOpname(db, role, id, session.user.id))) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
   const count = await db.stockCount.findUnique({ where: { id } })
   if (!count || count.type !== 'INITIAL') return NextResponse.json({ error: 'Not found' }, { status: 404 })

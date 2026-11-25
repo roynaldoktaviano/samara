@@ -4,9 +4,10 @@ import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 
 import { roleMatches } from '@/lib/role-utils'
+import { crewScopeYachtId } from '@/lib/purchasing/yachtScope'
 
 const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE']
-const VIEW_ALLOWED = [...ALLOWED, 'BOAT_CAPTAIN', 'CRUISE_DIRECTOR']
+const VIEW_ALLOWED = [...ALLOWED, 'BOAT_CAPTAIN', 'CRUISE_DIRECTOR', 'CREW']
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -20,7 +21,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     include: {
       category: { select: { id: true, name: true } },
       room: { select: { id: true, name: true } },
-      location: { select: { id: true, name: true, type: true } },
+      location: { select: { id: true, name: true, type: true, yachtId: true } },
       sourcePo: { select: { id: true, poNumber: true, orderedAt: true, supplierName: true } },
       opnameEntries: {
         include: {
@@ -37,6 +38,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     },
   })
   if (!item) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  const crewYachtId = await crewScopeYachtId(db, role, session.user.id)
+  if (crewYachtId && item.location?.yachtId !== crewYachtId) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
   return NextResponse.json({ ...item, total: item.quantity * item.unitPrice })
 }

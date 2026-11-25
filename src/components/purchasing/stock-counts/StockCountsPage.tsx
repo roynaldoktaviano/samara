@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, Fragment } from 'react'
+import { useSession } from 'next-auth/react'
 import { Plus, X, ChevronRight, CheckCircle2, ClipboardList, AlertTriangle, Trash2, CheckCheck, Camera } from 'lucide-react'
 import { useFileDrop } from '@/hooks/useFileDrop'
 import { PhotoSourceMenu } from '@/components/ui/file-preview'
@@ -11,7 +12,7 @@ import { StatusBadge, type StatusTone } from '@/components/ui/status-badge'
 import { displayQty, hasPurchaseUnit, qtyLabel } from '@/lib/purchasing/units'
 import { StockQty } from '@/components/purchasing/StockQty'
 
-interface Location { id: string; name: string; type: string; parentId: string | null }
+interface Location { id: string; name: string; type: string; parentId: string | null; yachtId?: string | null }
 interface CountItem {
   id: string; itemName: string; systemQty: number; countedQty: number; reason: string | null
   item: { id: string; sku: string; name: string; baseUnit: string; purchaseUnit: string; conversionFactor: number; standardCost: number } | null
@@ -83,7 +84,10 @@ function PhotoUpload({ value, onChange }: { value: string; onChange: (v: string)
 }
 
 export default function StockCountsPage() {
-  const hidePrices = useHidePrices()
+  const { data: session } = useSession()
+  // Ship crew: own yacht only, quantities only, can count but not approve (API enforces too).
+  const isCrew = (session?.user as { role?: string } | undefined)?.role === 'CREW'
+  const hidePrices = useHidePrices() || isCrew
   const [counts, setCounts] = useState<StockCount[]>([])
   const [locations, setLocations] = useState<Location[]>([])
   const [team, setTeam] = useState<{ id: string; name: string; role: string }[]>([])
@@ -103,24 +107,30 @@ export default function StockCountsPage() {
 
   const load = useCallback(async () => {
     setLoading(true)
-    const [cRes, lRes, tRes] = await Promise.all([
+    const [cRes, lRes, tRes, sRes] = await Promise.all([
       fetch('/api/purchasing/stock-counts'),
       fetch('/api/purchasing/locations'),
-      fetch('/api/purchasing/team'),
+      isCrew ? null : fetch('/api/purchasing/team'),
+      isCrew ? fetch('/api/inventory/opnames/scope') : null,
     ])
     if (cRes.ok) setCounts(await cRes.json())
     if (lRes.ok) {
-      const locs: Location[] = await lRes.json()
+      let locs: Location[] = await lRes.json()
+      if (isCrew) {
+        const scope: { yachtId?: string | null } = sRes?.ok ? await sRes.json() : {}
+        locs = locs.filter(l => !!scope.yachtId && l.yachtId === scope.yachtId)
+      }
       setLocations(locs)
-      if (locs.length && !createLocationId) setCreateLocationId(locs[0].id)
+      // Re-pick when the current choice isn't in the (possibly crew-filtered) list.
+      if (!locs.some(l => l.id === createLocationId)) setCreateLocationId(locs[0]?.id ?? '')
     }
-    if (tRes.ok) {
+    if (tRes?.ok) {
       const members = await tRes.json()
       setTeam(members)
       if (members.length && !createCountedById) setCreateCountedById(members[0].id)
     }
     setLoading(false)
-  }, [createLocationId, createCountedById])
+  }, [createLocationId, createCountedById, isCrew])
 
   useEffect(() => { load() }, [load])
 
@@ -227,10 +237,12 @@ export default function StockCountsPage() {
                 className="px-4 py-2 text-sm border rounded-md hover:bg-muted disabled:opacity-50 transition-colors">
                 {saving ? 'Saving…' : 'Save'}
               </button>
-              <button onClick={() => save('APPROVED')} disabled={saving}
-                className="flex items-center gap-2 px-4 py-2 text-sm bg-success hover:bg-success/90 text-success-foreground rounded-md disabled:opacity-50 font-medium transition-colors">
-                <CheckCheck className="h-4 w-4" /> Approve & Apply
-              </button>
+              {!isCrew && (
+                <button onClick={() => save('APPROVED')} disabled={saving}
+                  className="flex items-center gap-2 px-4 py-2 text-sm bg-success hover:bg-success/90 text-success-foreground rounded-md disabled:opacity-50 font-medium transition-colors">
+                  <CheckCheck className="h-4 w-4" /> Approve & Apply
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -478,14 +490,14 @@ export default function StockCountsPage() {
                   {renderLocationOptions(locations, { renderLabel: l => `${l.name} (${l.type})` })}
                 </select>
               </div>
-              <div className="space-y-1.5">
+              {!isCrew && <div className="space-y-1.5">
                 <label className="text-sm font-medium">Counted By *</label>
                 <select
                   className="w-full h-9 border rounded-md px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring/50 focus:border-ring bg-card"
                   value={createCountedById} onChange={e => setCreateCountedById(e.target.value)}>
                   {team.map(u => <option key={u.id} value={u.id}>{u.name} ({u.role})</option>)}
                 </select>
-              </div>
+              </div>}
               <div className="space-y-1.5">
                 <label className="text-sm font-medium">Notes</label>
                 <input
@@ -499,7 +511,7 @@ export default function StockCountsPage() {
             </div>
             <div className="flex justify-end gap-3 px-6 py-4 border-t bg-muted/30">
               <button onClick={() => setCreateOpen(false)} className="px-4 py-2 text-sm border rounded-md hover:bg-muted">Cancel</button>
-              <button onClick={createCount} disabled={creating || !createLocationId || !createCountedById}
+              <button onClick={createCount} disabled={creating || !createLocationId || (!isCrew && !createCountedById)}
                 className="px-4 py-2 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary-hover disabled:opacity-50 font-medium">
                 {creating ? 'Creating…' : 'Create Count'}
               </button>

@@ -4,8 +4,10 @@ import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 
 import { roleMatches } from '@/lib/role-utils'
+import { crewScopeYachtId } from '@/lib/purchasing/yachtScope'
 
-const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE']
+// CREW: own yacht's locations only, and can't approve (see [id]/route.ts).
+const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE', 'CREW']
 
 export async function GET() {
   const session = await getServerSession(authOptions)
@@ -13,7 +15,9 @@ export async function GET() {
   if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
 
+  const crewYachtId = await crewScopeYachtId(db, role, session.user.id)
   const counts = await db.stockCount.findMany({
+    where: crewYachtId ? { location: { yachtId: crewYachtId } } : undefined,
     include: {
       location: { select: { id: true, name: true, type: true } },
       countedBy: { select: { id: true, name: true } },
@@ -33,7 +37,12 @@ export async function POST(req: NextRequest) {
 
   const { locationId, notes, countedById: bodyCountedById } = await req.json()
   if (!locationId) return NextResponse.json({ error: 'Location is required' }, { status: 400 })
-  const countedById = bodyCountedById ?? session.user.id
+  const crewYachtId = await crewScopeYachtId(db, role, session.user.id)
+  if (crewYachtId) {
+    const loc = await db.stockLocation.findUnique({ where: { id: locationId }, select: { yachtId: true } })
+    if (loc?.yachtId !== crewYachtId) return NextResponse.json({ error: 'Crew accounts can only count their own yacht' }, { status: 403 })
+  }
+  const countedById = crewYachtId ? session.user.id : (bodyCountedById ?? session.user.id)
 
   // Build count number — highest numeric SC-#### so far. The table also holds Stock Opname
   // Awal rows (ISO-####), and taking just the newest row produced "SC-0NaN" (and then a

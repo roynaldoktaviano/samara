@@ -9,7 +9,7 @@ import { emitTenantEvent } from '@/lib/realtime-bus'
 import { notifyAssignedYachtCaptains, notifyRequester } from '@/lib/notify-purchasing'
 import { getOrCreateTransferReceiveToken, resolveBaseUrl } from '@/lib/purchasing/receiveLink'
 import { tripFromBooking, tripFromOpenTrip, tripBookingSelect, openTripSelect } from '@/lib/purchasing/tripLink'
-import { resolveAssignedYachtId } from '@/lib/purchasing/yachtScope'
+import { resolveAssignedYachtId, resolveWorkYachtId } from '@/lib/purchasing/yachtScope'
 import { canDispatchFrom, DISPATCH_OWNER_LABEL } from '@/lib/purchasing/dispatchPermission'
 import { backorderShortDispatch, reopenForCancelledTransfer } from '@/lib/purchasing/prLineReopen'
 import { allocateBackorders } from '@/lib/purchasing/backorders'
@@ -21,11 +21,15 @@ const ALLOWED = ['PURCHASING', 'ADMIN', 'SUPER_ADMIN', 'WAREHOUSE']
 // arrives there; dispatching what leaves stays Cruise Director-only (see
 // dispatchPermission.ts). Boat Captain is here because notifyAssignedYachtCaptains already
 // pings them about every transfer heading to their yacht.
-const YACHT_ROLES = ['CRUISE_DIRECTOR', 'BOAT_CAPTAIN']
+// Crew (2026-11-25): same view + receive on the yacht they work on; dispatch stays CD-only.
+const YACHT_ROLES = ['CRUISE_DIRECTOR', 'BOAT_CAPTAIN', 'CREW']
 
-async function yachtRoleCanAccess(db: Awaited<ReturnType<typeof getDb>>, userId: string, transfer: { fromLocationId: string; toLocationId: string }): Promise<boolean> {
+const yachtOf = (db: Awaited<ReturnType<typeof getDb>>, role: string, userId: string) =>
+  role === 'CREW' ? resolveWorkYachtId(db, userId) : resolveAssignedYachtId(db, userId)
+
+async function yachtRoleCanAccess(db: Awaited<ReturnType<typeof getDb>>, role: string, userId: string, transfer: { fromLocationId: string; toLocationId: string }): Promise<boolean> {
   const [yachtId, locs] = await Promise.all([
-    resolveAssignedYachtId(db, userId),
+    yachtOf(db, role, userId),
     db.stockLocation.findMany({ where: { id: { in: [transfer.fromLocationId, transfer.toLocationId] } }, select: { yachtId: true } }),
   ])
   return !!yachtId && locs.some(l => l.yachtId === yachtId)
@@ -74,7 +78,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     },
   })
   if (!transfer) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-  if (!roleMatches(role, ALLOWED) && !(await yachtRoleCanAccess(db, session.user.id, transfer))) {
+  if (!roleMatches(role, ALLOWED) && !(await yachtRoleCanAccess(db, role, session.user.id, transfer))) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
   }
   const dispatch = await canDispatchFrom(db, transfer.fromLocationId, { id: session.user.id, role })
@@ -152,11 +156,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const transfer = await db.stockTransfer.findUnique({ where: { id }, include: { items: true } })
   if (!transfer) return NextResponse.json({ error: 'Not found' }, { status: 404 })
   if (!roleMatches(role, ALLOWED)) {
-    if (!(await yachtRoleCanAccess(db, session.user.id, transfer))) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    if (!(await yachtRoleCanAccess(db, role, session.user.id, transfer))) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     if (action !== 'receive' && action !== 'dispatch') return NextResponse.json({ error: 'Only dispatching/receiving is allowed for your role' }, { status: 403 })
     if (action === 'receive') {
       const [yachtId, toLoc] = await Promise.all([
-        resolveAssignedYachtId(db, session.user.id),
+        yachtOf(db, role, session.user.id),
         db.stockLocation.findUnique({ where: { id: transfer.toLocationId }, select: { yachtId: true } }),
       ])
       if (!yachtId || toLoc?.yachtId !== yachtId) return NextResponse.json({ error: 'You can only receive transfers arriving on your own yacht' }, { status: 403 })
