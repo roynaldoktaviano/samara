@@ -30,7 +30,7 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
   const count = await db.stockCount.findUnique({
     where: { id },
     include: {
-      location: { select: { id: true, name: true, type: true } },
+      location: { select: { id: true, name: true, type: true, parent: { select: { name: true } } } },
       countedBy: { select: { id: true, name: true } },
       approvedBy: { select: { id: true, name: true } },
       items: {

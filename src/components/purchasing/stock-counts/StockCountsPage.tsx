@@ -12,7 +12,9 @@ import { StatusBadge, type StatusTone } from '@/components/ui/status-badge'
 import { displayQty, hasPurchaseUnit, qtyLabel } from '@/lib/purchasing/units'
 import { StockQty } from '@/components/purchasing/StockQty'
 
-interface Location { id: string; name: string; type: string; parentId: string | null; yachtId?: string | null }
+interface Location { id: string; name: string; type: string; parentId: string | null; yachtId?: string | null; parent?: { name: string | null } | null }
+// Sub-locations (Bar, Galley…) read as "Samara I › Bar" so it's clear which ship they're on.
+const locLabel = (l: Location) => (l.parent?.name ? `${l.parent.name} › ${l.name}` : l.name)
 interface CountItem {
   id: string; itemName: string; systemQty: number; countedQty: number; reason: string | null
   item: { id: string; sku: string; name: string; baseUnit: string; purchaseUnit: string; conversionFactor: number; standardCost: number } | null
@@ -225,7 +227,7 @@ export default function StockCountsPage() {
 
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h2 className="text-xl font-bold">Stock Count — {detail.location.name}</h2>
+            <h2 className="text-xl font-bold">Stock Count — {locLabel(detail.location)}</h2>
             <p className="text-sm text-muted-foreground mt-0.5">
               {formatDate(detail.createdAt)} · {detail.countedBy.name}
               {detail.approvedBy && ` · Approved by ${detail.approvedBy.name}`}
@@ -444,7 +446,7 @@ export default function StockCountsPage() {
               {counts.map(count => (
                 <tr key={count.id} className="hover:bg-muted/20 cursor-pointer" onClick={() => openDetail(count)}>
                   <td className="px-4 py-3 font-mono font-medium text-xs">{count.countNumber}</td>
-                  <td className="px-4 py-3 font-medium">{count.location.name}</td>
+                  <td className="px-4 py-3 font-medium">{locLabel(count.location)}</td>
                   <td className="px-4 py-3 text-muted-foreground">{formatDate(count.createdAt)}</td>
                   <td className="px-4 py-3 text-muted-foreground">{count.countedBy.name}</td>
                   <td className="px-4 py-3 text-center text-muted-foreground">{count._count?.items ?? 0}</td>

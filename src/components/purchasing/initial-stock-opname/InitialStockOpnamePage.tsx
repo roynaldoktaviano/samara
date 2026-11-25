@@ -17,7 +17,9 @@ import { StockQty } from '@/components/purchasing/StockQty'
 import { StatusBadge, type StatusTone } from '@/components/ui/status-badge'
 import { ItemFormFields, EMPTY_ITEM_FORM, newItemForm, needsSubCategory, type ItemForm, type ItemTypeConfig } from '@/components/purchasing/items/ItemFormFields'
 
-interface Location { id: string; name: string; type: string; parentId: string | null; yachtId?: string | null }
+interface Location { id: string; name: string; type: string; parentId: string | null; yachtId?: string | null; parent?: { name: string | null } | null }
+// Sub-locations (Bar, Galley…) read as "Samara I › Bar" so it's clear which ship they're on.
+const locLabel = (l: Location) => (l.parent?.name ? `${l.parent.name} › ${l.name}` : l.name)
 interface CatalogItem { id: string; sku: string; name: string; baseUnit: string; purchaseUnit: string; conversionFactor: number; category: string }
 interface Placement { room: string | null; bin: string | null }
 interface OpnameItem {
@@ -508,7 +510,7 @@ export default function InitialStockOpnamePage() {
 
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h2 className="text-xl font-bold">Initial Stock Opname — {detail.location.name}</h2>
+            <h2 className="text-xl font-bold">Initial Stock Opname — {locLabel(detail.location)}</h2>
             <p className="text-sm text-muted-foreground mt-0.5">{formatDate(detail.createdAt)} · Created by {detail.countedBy.name}</p>
           </div>
           {!readOnly && (
@@ -831,7 +833,7 @@ export default function InitialStockOpnamePage() {
               {opnames.map(o => (
                 <tr key={o.id} className="hover:bg-muted/20 cursor-pointer" onClick={() => openDetail(o)}>
                   <td className="px-4 py-3 font-mono font-medium text-xs">{o.countNumber}</td>
-                  <td className="px-4 py-3 font-medium">{o.location.name}</td>
+                  <td className="px-4 py-3 font-medium">{locLabel(o.location)}</td>
                   <td className="px-4 py-3 text-muted-foreground">{formatDate(o.createdAt)}</td>
                   <td className="px-4 py-3 text-muted-foreground">{o.countedBy.name}</td>
                   <td className="px-4 py-3 text-center text-muted-foreground">{o._count?.items ?? 0}</td>

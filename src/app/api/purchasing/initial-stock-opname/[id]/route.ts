@@ -95,7 +95,7 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
   const count = await db.stockCount.findUnique({
     where: { id },
     include: {
-      location: { select: { id: true, name: true, type: true, yachtId: true } },
+      location: { select: { id: true, name: true, type: true, yachtId: true, parent: { select: { name: true } } } },
       countedBy: { select: { id: true, name: true } },
       items: {
         include: { item: { select: OPNAME_ITEM_SELECT } },
@@ -165,7 +165,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       ...(status === 'COMPLETED' ? { status: 'COMPLETED', approvedById: session.user.id, approvedAt: new Date() } : {}),
     },
     include: {
-      location: { select: { id: true, name: true, type: true, yachtId: true } },
+      location: { select: { id: true, name: true, type: true, yachtId: true, parent: { select: { name: true } } } },
       countedBy: { select: { id: true, name: true } },
       items: {
         include: { item: { select: OPNAME_ITEM_SELECT } },

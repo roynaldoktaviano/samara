@@ -19,7 +19,7 @@ export async function GET() {
   const counts = await db.stockCount.findMany({
     where: crewYachtId ? { location: { yachtId: crewYachtId } } : undefined,
     include: {
-      location: { select: { id: true, name: true, type: true } },
+      location: { select: { id: true, name: true, type: true, parent: { select: { name: true } } } },
       countedBy: { select: { id: true, name: true } },
       _count: { select: { items: true } },
     },
@@ -77,7 +77,7 @@ export async function POST(req: NextRequest) {
       },
     },
     include: {
-      location: { select: { id: true, name: true, type: true } },
+      location: { select: { id: true, name: true, type: true, parent: { select: { name: true } } } },
       countedBy: { select: { id: true, name: true } },
       items: { include: { item: { select: { id: true, sku: true, name: true, baseUnit: true } } } },
     },

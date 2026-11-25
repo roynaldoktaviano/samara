@@ -23,7 +23,7 @@ export async function GET() {
   const opnames = await db.stockCount.findMany({
     where: { type: 'INITIAL', ...(scope.kind !== 'all' && { location: initialOpnameLocationWhere(scope) }) },
     include: {
-      location: { select: { id: true, name: true, type: true } },
+      location: { select: { id: true, name: true, type: true, parent: { select: { name: true } } } },
       countedBy: { select: { id: true, name: true } },
       _count: { select: { items: true } },
     },
@@ -98,7 +98,7 @@ export async function POST(req: NextRequest) {
       },
     },
     include: {
-      location: { select: { id: true, name: true, type: true } },
+      location: { select: { id: true, name: true, type: true, parent: { select: { name: true } } } },
       countedBy: { select: { id: true, name: true } },
       items: { include: { item: { select: OPNAME_ITEM_SELECT } } },
     },
