@@ -95,6 +95,12 @@ export interface MetaEvent {
 type InqLite = { brand: WhatsappBrand | null; dealId: string | null; leadId: string | null; customerId: string | null; createdAt: Date; adConsent: string | null; consentRegion: string | null; matchConfidence: string | null; matchConfidenceById: string | null; gclid: string | null; lastGclid: string | null; gbraid: string | null; lastGbraid: string | null; wbraid: string | null; lastWbraid: string | null; fbc: string | null; fbp: string | null; userAgent: string | null; sessionAttributes: string | null; ipAddress: string | null }
 
 const firstOf = <T,>(xs: T[], f: (x: T) => string | null | undefined) => { for (const x of xs) { const v = f(x)?.trim(); if (v) return v } return '' }
+/**
+ * Real GCLID / GBRAID / WBRAID values are case-sensitive and always carry upper-case letters. Freshsales
+ * stores web-visit URLs lower-cased (FreshsalesTimelineEvent → DealAttribution.lastPaid*), and a
+ * lower-cased click ID can never match in Google — dropped instead of uploaded.
+ */
+const clickId = (v: string | null | undefined) => (v && /[A-Z]/.test(v) ? v : null)
 
 /**
  * Every row the feed would write now (before the ledger), plus exclusions and the Meta draft events.
@@ -197,9 +203,9 @@ export async function computeOfflineFeed(db: PrismaClient, now = new Date()) {
     // (marketing audit 2026-11-24). Untagged (older) enquiries still count.
     const clickIds = ids.filter(q => !q.brand || q.brand === d.brand)
     const paid = [dealAttr.get(d.id)].filter((a): a is NonNullable<typeof a> => !!a && (!a.lastPaidBrand || a.lastPaidBrand === d.brand))
-    const gclid = firstOf(clickIds, q => q.gclid ?? q.lastGclid) || firstOf(paid, a => a.lastPaidGclid) || fsd?.gclid?.trim() || firstOf(fsc, c => c.gclid)
-    const gbraid = firstOf(clickIds, q => q.gbraid ?? q.lastGbraid) || firstOf(paid, a => a.lastPaidGbraid) || fsd?.gbraid?.trim() || ''
-    const wbraid = firstOf(clickIds, q => q.wbraid ?? q.lastWbraid) || firstOf(paid, a => a.lastPaidWbraid) || fsd?.wbraid?.trim() || ''
+    const gclid = firstOf(clickIds, q => clickId(q.gclid) ?? clickId(q.lastGclid)) || firstOf(paid, a => clickId(a.lastPaidGclid)) || clickId(fsd?.gclid?.trim()) || firstOf(fsc, c => clickId(c.gclid))
+    const gbraid = firstOf(clickIds, q => clickId(q.gbraid) ?? clickId(q.lastGbraid)) || firstOf(paid, a => clickId(a.lastPaidGbraid)) || clickId(fsd?.gbraid?.trim()) || ''
+    const wbraid = firstOf(clickIds, q => clickId(q.wbraid) ?? clickId(q.lastWbraid)) || firstOf(paid, a => clickId(a.lastPaidWbraid)) || clickId(fsd?.wbraid?.trim()) || ''
     const em = hashEmail(email), ph = hashPhone(phoneE164)
     const consentCol = granted && !denied ? 'GRANTED' : ''
     const base = {

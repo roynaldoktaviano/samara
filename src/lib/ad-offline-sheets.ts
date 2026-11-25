@@ -40,11 +40,15 @@ export const CONVERSION_NAME: Record<GoogleAction, string> = {
 const AC_VALUE_USD = { AC_PC: 1000, AC_OT: 280 } as const
 
 /**
- * false (Roy/Jay, 25 Nov): booking rows use samara-{dealID}-{PC|OT}-BK for every deal, dealID = the
- * Freshsales deal ID for migrated deals. true would keep the old box format for Freshsales deals (the
- * bare deal ID, e.g. "113001495733"), which Google would dedup against the box's earlier uploads.
+ * Deal ID as it appears in Order IDs, always in the Freshsales format (12 digits, Roy 25 Nov):
+ * the Freshsales deal ID for deals that exist there ("113001495733"); for ERP-born deals ("ERP-<n>")
+ * 900000000000 + n ("900000000012") — Freshsales IDs start with 113…, so the two never collide.
  */
-const BOOKING_KEEPS_BOX_ORDER_ID = false
+export function sheetDealId(orderId: string): string | null {
+  if (/^\d+$/.test(orderId)) return orderId
+  const m = /^ERP-(\d+)$/.exec(orderId)
+  return m ? String(900000000000 + Number(m[1])) : null
+}
 
 export type SheetRow = (string | number)[]
 export interface SheetSkip { orderId: string; action: GoogleAction; reason: string }
@@ -55,12 +59,16 @@ export function sheetTime(d: Date): string {
   return new Date(d.getTime() + WITA_MS).toISOString().slice(0, 19).replace('T', ' ') + '+08:00'
 }
 
-/** samara-{dealID}-{PC|OT}-{AC|INV|BK}; dealID = Freshsales deal ID for migrated deals, else ERP-<n>. */
+/**
+ * Booking: the bare deal ID, exactly as the Freshsales box wrote it ("113001495733") — Google dedups
+ * against the box's earlier uploads. AC / INV: samara-{dealID}-{PC|OT}-{AC|INV}, as the box.
+ */
 export function sheetOrderId(c: Pick<FeedCandidate, 'action' | 'orderId' | 'tripSuffix'>): string | null {
-  if (c.action === 'BOOKING' && BOOKING_KEEPS_BOX_ORDER_ID && /^\d+$/.test(c.orderId)) return c.orderId
+  const dealId = sheetDealId(c.orderId)
+  if (!dealId) return null
+  if (c.action === 'BOOKING') return dealId
   if (!c.tripSuffix) return null
-  const kind = c.action.startsWith('AC_') ? 'AC' : c.action.startsWith('INV_') ? 'INV' : 'BK'
-  return `samara-${c.orderId}-${c.tripSuffix}-${kind}`
+  return `samara-${dealId}-${c.tripSuffix}-${c.action.startsWith('AC_') ? 'AC' : 'INV'}`
 }
 
 const consentText = (v: string | number | undefined) => (String(v ?? '').toUpperCase() === 'GRANTED' ? 'Granted' : '')
@@ -91,7 +99,7 @@ export async function buildOfflineSheetRows(db: PrismaClient, now = new Date()) 
   for (const c of candidates) {
     if (c.brand !== 'SAMARA') continue
     const orderId = sheetOrderId(c)
-    if (!orderId) { skipped.push({ orderId: c.orderId, action: c.action, reason: 'No trip type (PC/OT) for the Order ID' }); continue }
+    if (!orderId) { skipped.push({ orderId: c.orderId, action: c.action, reason: sheetDealId(c.orderId) ? 'No trip type (PC/OT) for the Order ID' : 'Deal ID not in Freshsales / ERP-<n> format' }); continue }
     let valueUsd: number
     if (c.action === 'AC_PC' || c.action === 'AC_OT') valueUsd = AC_VALUE_USD[c.action]
     else {
@@ -125,9 +133,9 @@ export function buildTestRows(now = new Date()) {
     const suffix = action.endsWith('PC') ? 'PC' : 'OT'
     const kind = action.startsWith('AC') ? 'AC' : 'INV'
     const valueUsd = action === 'AC_PC' ? 1000 : action === 'AC_OT' ? 280 : action === 'INV_PC' ? 12500 : 2780
-    return sheetRow({ ...base, action, orderId: `test-samara-ERP-90000${i + 1}-${suffix}-${kind}`, valueUsd })
+    return sheetRow({ ...base, action, orderId: `test-samara-90000000000${i + 1}-${suffix}-${kind}`, valueUsd })
   })
-  const booking = [sheetRow({ ...base, action: 'BOOKING', orderId: 'test-samara-ERP-900005-PC-BK', valueUsd: 12500 })]
+  const booking = [sheetRow({ ...base, action: 'BOOKING', orderId: 'test-900000000005', valueUsd: 12500 })]
   return { stages, booking }
 }
 
