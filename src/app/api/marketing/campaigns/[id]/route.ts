@@ -7,6 +7,7 @@ import { renderDesignHtml } from '@/lib/email-fonts'
 import { isLikelyAutomated, UNSUBSCRIBE_URL_MARKER, type RecipientTab } from '@/lib/campaign-recipients'
 
 import { roleMatches } from '@/lib/role-utils'
+import { normalizeEmailType } from '@/lib/campaign-email-type'
 
 const ALLOWED = ['ADMIN', 'MARKETING', 'SUPER_ADMIN']
 
@@ -99,7 +100,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     return NextResponse.json({ error: 'Cannot edit a campaign that has been sent' }, { status: 409 })
   }
 
-  const { name, subject, previewText, fromEmail, fromName, templateId, blocksJson, audienceSources, status, scheduledAt } = await req.json()
+  const { name, subject, previewText, fromEmail, fromName, templateId, blocksJson, audienceSources, status, scheduledAt, emailType } = await req.json()
   const design = blocksJson ? normalizeDesign(blocksJson) : null
 
   const campaign = await db.emailCampaign.update({
@@ -113,6 +114,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       ...(templateId !== undefined && { templateId: templateId || null }),
       ...(design && { blocksJson: JSON.parse(JSON.stringify(design)), bodyHtml: await renderDesignHtml(db, design) }),
       ...(audienceSources !== undefined && { audienceSources }),
+      ...(emailType !== undefined && { emailType: normalizeEmailType(emailType) }),
       ...(status === 'CANCELED' && { status: 'CANCELED' as const, scheduledAt: null }),
       ...(scheduledAt !== undefined && status !== 'CANCELED' && {
         scheduledAt: scheduledAt ? new Date(scheduledAt) : null,

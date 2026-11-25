@@ -89,6 +89,7 @@ export default function CampaignEditor({
   const [previewText, setPreviewText] = useState('')
   const [fromEmail, setFromEmail] = useState('')
   const [fromName, setFromName] = useState('')
+  const [emailType, setEmailType] = useState<'' | 'B2B' | 'B2C'>('')
   const [blocks, setBlocks] = useState<EmailBlock[]>([])
   const customFonts = useEmailFonts()
   const [settings, setSettings] = useState<EmailSettings>(DEFAULT_EMAIL_SETTINGS)
@@ -116,7 +117,7 @@ export default function CampaignEditor({
 
   const reset = useCallback(() => {
     setStep(0); setId(campaignId)
-    setName(''); setSubject(''); setPreviewText(''); setFromEmail(''); setFromName(''); setSaveSender(false)
+    setName(''); setSubject(''); setPreviewText(''); setFromEmail(''); setFromName(''); setSaveSender(false); setEmailType('')
     setBlocks([createBlock('text'), createBlock('footer')])
     setSettings(DEFAULT_EMAIL_SETTINGS)
     setAudience(emptyAudience()); setAudienceCount(null); setScheduledAt('')
@@ -140,6 +141,7 @@ export default function CampaignEditor({
           setId(c.id)
           setName(c.name); setSubject(c.subject); setPreviewText(c.previewText ?? '')
           setFromEmail(c.fromEmail); setFromName(c.fromName ?? '')
+          setEmailType(c.emailType === 'B2B' || c.emailType === 'B2C' ? c.emailType : '')
           setBlocks(design.blocks)
           setSettings(design.settings)
           setAudience(audienceStateFromSources(c.audienceSources))
@@ -302,6 +304,7 @@ export default function CampaignEditor({
     try {
       const payload = {
         name, subject, previewText, fromEmail, fromName,
+        emailType: emailType || null,
         blocksJson: { blocks, settings },
         audienceSources: buildAudienceSources(audience),
         templateId: linkedTemplateId,
@@ -410,6 +413,17 @@ export default function CampaignEditor({
                 <div className="space-y-1.5">
                   <Label>Campaign name <span className="text-destructive">*</span></Label>
                   <Input value={name} onChange={e => setName(e.target.value)} placeholder="Internal name, e.g. July Promo" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Email type <span className="text-muted-foreground font-normal">(optional)</span></Label>
+                  <Select value={emailType || 'NONE'} onValueChange={v => setEmailType(v === 'NONE' ? '' : (v as 'B2B' | 'B2C'))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="NONE">Not set</SelectItem>
+                      <SelectItem value="B2B">B2B (Agents)</SelectItem>
+                      <SelectItem value="B2C">B2C (Guests)</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="space-y-1.5">
                   <Label>Subject <span className="text-destructive">*</span></Label>

@@ -80,6 +80,7 @@ const PUBLIC_PATHS = [
   // instrumentation-node.ts, authenticate via their own CRON_SECRET bearer token
   '/api/marketing/google-ads-conversions/sync',
   '/api/marketing/offline-feed/sync',
+  '/api/marketing/offline-sheets/sync',
   // PWA manifest + service worker — must be fetchable pre-login (browsers request these
   // to decide installability before the user necessarily has a session)
   '/manifest.webmanifest',

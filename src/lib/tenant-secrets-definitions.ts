@@ -13,6 +13,8 @@ export type TenantSecretKey =
   | 'tripSheetGoogleSheetId'
   | 'googleAdsConversionsSheetId'
   | 'googleOfflineFeedSheetId'
+  | 'googleOfflineStagesSheetId'
+  | 'googleOfflineBookingSheetId'
   | 'whatsappSamaraPhoneNumberId'
   | 'whatsappSamaraApiToken'
   | 'whatsappMischiefPhoneNumberId'
@@ -82,6 +84,8 @@ export interface TenantSecrets {
   tripSheetGoogleSheetId?: string
   googleAdsConversionsSheetId?: string
   googleOfflineFeedSheetId?: string
+  googleOfflineStagesSheetId?: string
+  googleOfflineBookingSheetId?: string
   whatsappSamaraPhoneNumberId?: string
   whatsappSamaraApiToken?: string
   whatsappMischiefPhoneNumberId?: string
@@ -159,6 +163,8 @@ export const TENANT_SECRET_DEFINITIONS: {
   { key: 'tripSheetGoogleSheetId', label: 'Trip Sheet Google Sheet ID', description: "This tenant's own spreadsheet for trip sheet sync", envFallback: 'TRIP_SHEET_GOOGLE_SHEET_ID' },
   { key: 'googleAdsConversionsSheetId', label: 'Google Ads Conversions Sheet ID', description: 'Spreadsheet auto-synced with confirmed-deposit bookings, set as a Google Sheets source on a Google Ads conversion action', envFallback: 'GOOGLE_ADS_CONVERSIONS_SHEET_ID' },
   { key: 'googleOfflineFeedSheetId', label: 'Google Offline Feed Sheet ID (CRM stages)', description: 'Spreadsheet the ERP rewrites daily at 05:45 and 06:15 WITA (handover box schedule) with the go-live offline feed: one tab per brand (AC / INV / Booking rows, Data Manager column names), Stage unknown, Excluded, Pending changes, Meta (draft). Point Data Manager at it on switch day', envFallback: 'GOOGLE_OFFLINE_FEED_SHEET_ID' },
+  { key: 'googleOfflineStagesSheetId', label: 'Offline Conversions — Stages Sheet ID', description: 'Company-Drive sheet (tab "Stages", 13 columns) the ERP appends AC / Invoice conversion rows to daily at 00:00 WITA; Data Manager pulls it 01:00–03:00. Shared as Editor with the erp-sheets-writer service account. Writes only when OFFLINE_SHEETS_ENABLED=1. src/lib/ad-offline-sheets.ts', envFallback: 'GOOGLE_OFFLINE_STAGES_SHEET_ID' },
+  { key: 'googleOfflineBookingSheetId', label: 'Offline Conversions — Booking Sheet ID', description: 'Company-Drive sheet (tab "Booking", 12 columns) the ERP appends "CRM - Booking won" rows to daily at 00:00 WITA. Same service account / switch as the Stages sheet', envFallback: 'GOOGLE_OFFLINE_BOOKING_SHEET_ID' },
   { key: 'whatsappSamaraPhoneNumberId', label: 'WhatsApp Phone Number ID — Samara', description: "Meta phone number ID for the Samara brand's WhatsApp Business number", envFallback: 'WHATSAPP_SAMARA_PHONE_NUMBER_ID' },
   { key: 'whatsappSamaraApiToken', label: 'WhatsApp API Token — Samara', description: 'System User (permanent) or temporary access token for the Samara number', envFallback: 'WHATSAPP_SAMARA_API_TOKEN' },
   { key: 'whatsappMischiefPhoneNumberId', label: 'WhatsApp Phone Number ID — Mischief', description: "Meta phone number ID for the Mischief brand's WhatsApp Business number", envFallback: 'WHATSAPP_MISCHIEF_PHONE_NUMBER_ID' },

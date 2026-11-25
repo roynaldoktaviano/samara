@@ -1908,6 +1908,8 @@ model EmailCampaign {
   updatedAt       DateTime            @updatedAt
   recipients      CampaignRecipient[]
   channel         CampaignChannel?
+  /// Optional audience type: "B2B" (agents) or "B2C" (guests). Null = not set.
+  emailType       String?
 
   @@index([status])
   @@index([scheduledAt])

@@ -16,7 +16,8 @@ import { CONSENT_BANNER_REGIONS, isEeaUkChNationality, isRealGrant, manualConsen
 //   Conversion time = the DealStageChange timestamp (parity C2). No trip type → "Stage unknown".
 // Never written (Exclusions tab): 1 consent denied anywhere · 2 deal on the never-upload list ·
 //   3 EU/EEA/UK/CH (nationality, consent region, phone prefix, email TLD) without a real banner grant ·
-//   4 WhatsApp match Low · 5 no identifier (GCLID/GBRAID/WBRAID/email/phone) · 7 no deal amount (INV).
+//   4 WhatsApp match Low · 5 no identifier (GCLID/GBRAID/WBRAID/email/phone) · 7 no deal amount (INV) ·
+//   8 agent booking (Deal.bookingType AGENT or an agent on the booking).
 // 6: a row in the ledger is re-emitted unchanged until 90 days old; a later value / time change is
 //   queued as an AdUploadChange for approval, never re-sent silently.
 
@@ -80,6 +81,8 @@ export interface FeedCandidate {
   brand: WhatsappBrand
   dealId: string
   orderId: string
+  /** Deal trip type as PC / OT (null = no trip type) — part of the Order ID in the ERP sheets (ad-offline-sheets.ts) */
+  tripSuffix: 'PC' | 'OT' | null
   conversionTime: Date
   row: FeedRow
 }
@@ -103,9 +106,9 @@ export async function computeOfflineFeed(db: PrismaClient, now = new Date()) {
     where: { OR: [{ stageChanges: { some: { changedAt: { gte: since } } } }, { stageUpdatedAt: { gte: since } }] },
     select: {
       id: true, orderId: true, freshsalesDealId: true, brand: true, tripType: true, stage: true, stageUpdatedAt: true,
-      amount: true, currency: true, neverUpload: true, isTest: true, deletedAt: true, leadId: true, customerId: true,
+      amount: true, currency: true, neverUpload: true, isTest: true, bookingType: true, deletedAt: true, leadId: true, customerId: true,
       stageChanges: { select: { toStage: true, changedAt: true }, orderBy: { changedAt: 'asc' } },
-      booking: { select: { totalPrice: true, currency: true } },
+      booking: { select: { totalPrice: true, currency: true, agentId: true } },
       lead: { select: { email: true, phoneE164: true, nationality: true, freshsalesContactId: true, adConsent: true } },
       customer: { select: { email: true, phoneE164: true, nationality: true, freshsalesContactId: true } },
     },
@@ -211,6 +214,8 @@ export async function computeOfflineFeed(db: PrismaClient, now = new Date()) {
       : (d.neverUpload || NEVER_UPLOAD_ORDER_IDS.has(orderId)) ? '2 · Never-upload list'
       : eea && !realGrant ? '3 · EU/EEA/UK/CH without opt-in'
       : low ? '4 · WhatsApp match Low'
+      // Agent bookings are never uploaded (Jay, 25 Nov — "jangan upload booking agent")
+      : (d.bookingType === 'AGENT' || d.booking?.agentId) ? '8 · Agent booking'
       : !(gclid || gbraid || wbraid || em || ph) ? '5 · No identifier'
       : null
     if (exclusion && !exclusion.startsWith('5 ·')) held.set(d.id, exclusion)
@@ -231,7 +236,7 @@ export async function computeOfflineFeed(db: PrismaClient, now = new Date()) {
       if (exclusion) { excluded.push({ orderId, stage: ev.stageLabel, brand: brandTab, conversionTime: row.Conversion_Time as string, reason: exclusion }); continue }
       if (!ev.action) { stageUnknown.push(row); continue }
       if (ev.value == null || !ev.currency) { excluded.push({ orderId, stage: ev.stageLabel, brand: brandTab, conversionTime: row.Conversion_Time as string, reason: '7 · No deal amount' }); continue }
-      candidates.push({ platform: 'GOOGLE', action: ev.action, brand: d.brand, dealId: d.id, orderId, conversionTime: ev.at, row })
+      candidates.push({ platform: 'GOOGLE', action: ev.action, brand: d.brand, dealId: d.id, orderId, tripSuffix: suffix, conversionTime: ev.at, row })
     }
 
     // Meta CRM draft (handover §7): no EU / UK guest data at all until consent is decided.

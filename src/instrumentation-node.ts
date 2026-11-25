@@ -250,6 +250,13 @@ export async function startNodeInstrumentation() {
     await fetch(`http://127.0.0.1:${port}/api/marketing/offline-feed/sync`, { headers: cronHeaders })
   })
 
+  // ERP → company-Drive offline-conversion sheets (Stages + Booking, src/lib/ad-offline-sheets.ts):
+  // append-only, daily 00:00 WITA, ahead of the Data Manager pulls at 01:00–03:00. Writes only when
+  // OFFLINE_SHEETS_ENABLED=1 (switched on after Jay has checked the test rows).
+  scheduleDailyAtWita([[0, 0]], 'offline-sheets sync', async () => {
+    await fetch(`http://127.0.0.1:${port}/api/marketing/offline-sheets/sync`, { headers: cronHeaders })
+  })
+
   // Instagram Login tokens live 60 days — extend any within 15 days of expiry, per tenant
   // (see refreshIgLoginTokens in src/lib/instagram-login.ts). Daily, plus once at boot so a
   // server that's been down a while catches up.

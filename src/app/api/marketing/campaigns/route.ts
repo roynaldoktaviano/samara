@@ -7,6 +7,7 @@ import { renderDesignHtml } from '@/lib/email-fonts'
 import { logActivity } from '@/lib/activity'
 
 import { roleMatches } from '@/lib/role-utils'
+import { normalizeEmailType } from '@/lib/campaign-email-type'
 
 const ALLOWED = ['ADMIN', 'MARKETING', 'SUPER_ADMIN']
 
@@ -21,7 +22,7 @@ export async function GET() {
     select: {
       id: true, name: true, subject: true, status: true, fromEmail: true, fromName: true,
       scheduledAt: true, sentAt: true, totalRecipients: true, sentCount: true, failedCount: true,
-      createdByName: true, createdAt: true, updatedAt: true,
+      createdByName: true, createdAt: true, updatedAt: true, emailType: true,
       recipients: { select: { openedAt: true, clickedAt: true } },
     },
   })
@@ -39,7 +40,7 @@ export async function POST(request: NextRequest) {
   if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
 
-  const { name, subject, previewText, fromEmail, fromName, templateId, blocksJson, audienceSources } = await request.json()
+  const { name, subject, previewText, fromEmail, fromName, templateId, blocksJson, audienceSources, emailType } = await request.json()
   if (!name?.trim() || !subject?.trim() || !fromEmail?.trim() || !blocksJson) {
     return NextResponse.json({ error: 'name, subject, fromEmail, and blocksJson are required' }, { status: 400 })
   }
@@ -56,6 +57,7 @@ export async function POST(request: NextRequest) {
       blocksJson: JSON.parse(JSON.stringify(design)),
       bodyHtml: await renderDesignHtml(db, design),
       audienceSources: audienceSources ?? {},
+      emailType: normalizeEmailType(emailType),
       createdByUserId: session!.user.id,
       createdByName: session!.user.name ?? session!.user.email ?? 'Unknown',
     },

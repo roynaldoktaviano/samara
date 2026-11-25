@@ -7,7 +7,7 @@ import { StatusBadge, type StatusTone } from '@/components/ui/status-badge'
 import { formatDate } from '@/lib/format'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from '@/components/ui/alert-dialog'
-import { Send, Plus, Pencil, Trash2, Ban, Eye, Play } from 'lucide-react'
+import { Send, Plus, Pencil, Trash2, Ban, Eye, Play, Copy } from 'lucide-react'
 import { toast } from 'sonner'
 import CampaignEditor from './CampaignEditor'
 import CampaignDetailView from './CampaignDetailView'
@@ -30,6 +30,7 @@ interface Campaign {
   clickedCount: number
   createdByName: string | null
   createdAt: string
+  emailType: 'B2B' | 'B2C' | null
 }
 
 const STATUS_TONE: Record<Campaign['status'], StatusTone> = {
@@ -85,6 +86,21 @@ export default function CampaignsPage() {
     setCancelTarget(null)
   }
 
+  const [duplicatingId, setDuplicatingId] = useState<string | null>(null)
+  const duplicate = async (c: Campaign) => {
+    setDuplicatingId(c.id)
+    try {
+      const res = await fetch(`/api/marketing/campaigns/${c.id}/duplicate`, { method: 'POST' })
+      const data = await res.json().catch(() => null)
+      if (!res.ok || !data?.id) { toast.error(data?.error ?? 'Failed to duplicate campaign'); return }
+      toast.success(`Duplicated as "${data.name}"`)
+      await fetchCampaigns()
+      setEditingId(data.id); setEditorOpen(true)
+    } finally {
+      setDuplicatingId(null)
+    }
+  }
+
   const [continuingId, setContinuingId] = useState<string | null>(null)
   const continueSend = async (c: Campaign) => {
     setContinuingId(c.id)
@@ -125,6 +141,7 @@ export default function CampaignsPage() {
                 <TableRow>
                   <TableHead>Name</TableHead>
                   <TableHead>Subject</TableHead>
+                  <TableHead>Type</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Created by</TableHead>
                   <TableHead>Recipients</TableHead>
@@ -145,6 +162,11 @@ export default function CampaignsPage() {
                   >
                     <TableCell className="font-medium">{c.name}</TableCell>
                     <TableCell className="text-sm text-muted-foreground max-w-[240px] truncate">{c.subject}</TableCell>
+                    <TableCell>
+                      {c.emailType
+                        ? <StatusBadge tone={c.emailType === 'B2B' ? 'info' : 'neutral'}>{c.emailType}</StatusBadge>
+                        : <span className="text-sm text-muted-foreground">—</span>}
+                    </TableCell>
                     <TableCell><StatusBadge tone={STATUS_TONE[c.status]}>{c.status}</StatusBadge></TableCell>
                     <TableCell className="text-sm text-muted-foreground">{c.createdByName ?? '—'}</TableCell>
                     <TableCell className="text-sm">
@@ -169,6 +191,7 @@ export default function CampaignsPage() {
                       {(c.status === 'DRAFT' || c.status === 'SCHEDULED') && (
                         <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => openEdit(c)}><Pencil className="h-3.5 w-3.5" /></Button>
                       )}
+                      <Button variant="ghost" size="sm" className="h-7 w-7 p-0" disabled={duplicatingId === c.id} onClick={() => duplicate(c)} title="Duplicate campaign"><Copy className="h-3.5 w-3.5" /></Button>
                       {c.status === 'SCHEDULED' && (
                         <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-warning" onClick={() => setCancelTarget(c)} title="Cancel scheduled send"><Ban className="h-3.5 w-3.5" /></Button>
                       )}
