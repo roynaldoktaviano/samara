@@ -8,13 +8,17 @@
  *   npx tsx scripts/offline-sheets.ts --preview       real rows from the deals: print what would be appended (no write)
  *   npx tsx scripts/offline-sheets.ts --apply         real rows: append the new ones (what the 00:00 cron does)
  *
+ *   npx tsx scripts/offline-sheets.ts --fix-ac-values [--write]
+ *                                                     ONE-OFF: set the AC rows already in the Stages sheet to the brand's AC
+ *                                                     value (preview unless --write). Only before Data Manager's first pull!
+ *
  * Add --brand mischief / --brand otium to work on that brand's sheets (its deals only); default is Samara.
  *
  * Sheet IDs: GOOGLE_OFFLINE_[MISCHIEF_|OTIUM_]STAGES_SHEET_ID / …BOOKING_SHEET_ID, else the sheets below.
  * Runs against DATABASE_URL (Samara tenant — Mischief / Otium deals live there too).
  */
 import { PrismaClient } from '@prisma/client'
-import { appendOfflineSheetRows, buildOfflineSheetRows, buildTestRows, removeTestRows, STAGES_HEADER, BOOKING_HEADER, type SheetBrand } from '../src/lib/ad-offline-sheets'
+import { appendOfflineSheetRows, buildOfflineSheetRows, buildTestRows, fixAcValues, removeTestRows, STAGES_HEADER, BOOKING_HEADER, type SheetBrand } from '../src/lib/ad-offline-sheets'
 
 const has = (f: string) => process.argv.includes(f)
 const brandArg = (process.argv[process.argv.indexOf('--brand') + 1] ?? '').toUpperCase()
@@ -43,6 +47,14 @@ function show(title: string, header: readonly string[], rows: (string | number)[
 
 async function main() {
   console.log(`Brand: ${brand}`)
+  if (has('--fix-ac-values')) {
+    const changes = await fixAcValues(ids, brand, { dryRun: !has('--write') })
+    console.log(`${has('--write') ? 'Updated' : 'Would update'} ${changes.length} AC row(s)`)
+    const byStage: Record<string, number> = {}
+    for (const c of changes) byStage[`${c.stage} ${c.from} → ${c.to}`] = (byStage[`${c.stage} ${c.from} → ${c.to}`] ?? 0) + 1
+    console.log(byStage)
+    return
+  }
   if (has('--remove-test')) { console.log('Deleted test rows:', await removeTestRows(ids)); return }
   if (has('--test')) {
     const rows = buildTestRows(new Date(), brand)

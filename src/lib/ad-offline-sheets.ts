@@ -14,6 +14,10 @@ import { usdRate } from '@/lib/deal-classify'
 // EEA, never-upload, test, agent, Low match, no identifier, no amount) is computeOfflineFeed's job
 // (src/lib/ad-offline-feed.ts) — this file only formats and writes.
 //
+// Values are always USD (Currency column = USD): AC = the brand's fixed acValueUsd (Roy, 26 Nov 2026:
+// Samara PC 1000 / OT 280, Mischief PC 2500, Otium PC 4500 / SV 500); INV / Booking = the deal / booking
+// amount, converted to USD first when it is in another currency (usdRate).
+//
 // Writes as the service account erp-sheets-writer@samara-ads-dashboard.iam.gserviceaccount.com
 // (Editor on both sheets) — its JSON key comes from OFFLINE_CONV_SA_KEY_FILE (path) or
 // OFFLINE_CONV_SA_KEY_JSON (raw JSON or base64). NOT the trip-sheet service account.
@@ -44,10 +48,9 @@ interface BrandSheetConfig {
   orderIdPrefix: string
   /** Conversion action names — must match the brand's Google Ads account exactly. Actions not listed are not written. */
   conversionName: Partial<Record<GoogleAction, string>>
+  /** Fixed USD value of the Active Communication rows (no deal amount yet). Invoice / Booking: the deal amount in USD. */
+  acValueUsd: { AC_PC: number; AC_OT: number }
 }
-
-/** Active Communication has no amount yet → value 0 for every brand (Roy, 26 Nov 2026). Invoice / Booking: the deal amount. */
-const AC_VALUE_USD = 0
 
 export const BRAND_SHEETS: Record<SheetBrand, BrandSheetConfig> = {
   SAMARA: {
@@ -59,6 +62,7 @@ export const BRAND_SHEETS: Record<SheetBrand, BrandSheetConfig> = {
       INV_OT: 'Samara - CRM - Invoice Sent (OT)',
       BOOKING: 'CRM - Booking won',
     },
+    acValueUsd: { AC_PC: 1000, AC_OT: 280 },
   },
   MISCHIEF: {
     orderIdPrefix: 'mischief',
@@ -67,6 +71,7 @@ export const BRAND_SHEETS: Record<SheetBrand, BrandSheetConfig> = {
       INV_PC: 'Mischief - CRM - Invoice Sent (PC)',
       BOOKING: 'Mischief - CRM - Booking won',
     },
+    acValueUsd: { AC_PC: 2500, AC_OT: 0 }, // no OT action in the Mischief account
   },
   OTIUM: {
     orderIdPrefix: 'otium',
@@ -77,6 +82,7 @@ export const BRAND_SHEETS: Record<SheetBrand, BrandSheetConfig> = {
       INV_OT: 'Otium - CRM - Invoice Sent (OT)',
       BOOKING: 'Otium - CRM - Booking won',
     },
+    acValueUsd: { AC_PC: 4500, AC_OT: 500 }, // AC_OT = Signature Voyage; Stage / names stay "OT", not "SV" (Roy). OT 500 is provisional (26 Nov 2026)
   },
 }
 
@@ -151,7 +157,7 @@ export async function buildOfflineSheetRows(db: PrismaClient, now = new Date(), 
     const orderId = sheetOrderId(c, brand)
     if (!orderId) { skipped.push({ orderId: c.orderId, action: c.action, reason: sheetDealId(c.orderId) ? 'No trip type (PC/OT) for the Order ID' : 'Deal ID not in Freshsales / ERP-<n> format' }); continue }
     let valueUsd: number
-    if (c.action === 'AC_PC' || c.action === 'AC_OT') valueUsd = AC_VALUE_USD
+    if (c.action === 'AC_PC' || c.action === 'AC_OT') valueUsd = cfg.acValueUsd[c.action]
     else {
       const v = Number(c.row.Conversion_Value), cur = String(c.row.Conversion_Currency || 'USD').toUpperCase()
       const rate = await rateOf(cur)
@@ -184,7 +190,7 @@ export function buildTestRows(now = new Date(), brand: SheetBrand = 'SAMARA') {
   const stages = stageActions.map((action, i) => {
     const suffix = action.endsWith('PC') ? 'PC' : 'OT'
     const kind = action.startsWith('AC') ? 'AC' : 'INV'
-    const valueUsd = action === 'AC_PC' || action === 'AC_OT' ? AC_VALUE_USD : action === 'INV_PC' ? 12500 : 2780
+    const valueUsd = action === 'AC_PC' || action === 'AC_OT' ? cfg.acValueUsd[action] : action === 'INV_PC' ? 12500 : 2780
     return sheetRow({ ...base, action, orderId: `test-${cfg.orderIdPrefix}-90000000000${i + 1}-${suffix}-${kind}`, valueUsd })
   })
   const booking = [sheetRow({ ...base, action: 'BOOKING', orderId: `test-90000000000${stages.length + 1}`, valueUsd: 12500 })]
@@ -275,4 +281,33 @@ export async function removeTestRows(ids: OfflineSheetIds) {
     out[tab] = requests.length
   }
   return out
+}
+
+/**
+ * ONE-OFF, only before Data Manager's first pull of a brand's sheets: rewrites Conversion Value (col H)
+ * of the AC_PC / AC_OT rows already in the Stages sheet to the brand's acValueUsd. Used 26 Nov 2026 for
+ * Mischief / Otium (written with value 0, never pulled yet — Roy). After the first pull the sheets are
+ * append-only again: never run this on a sheet Data Manager has already read.
+ */
+export async function fixAcValues(ids: OfflineSheetIds, brand: SheetBrand, opts: { dryRun?: boolean } = {}) {
+  const api = offlineSheetsClient()
+  if (!api) throw new Error('OFFLINE_CONV_SA_KEY_FILE / OFFLINE_CONV_SA_KEY_JSON not set')
+  const cfg = BRAND_SHEETS[brand]
+  await checkHeader(api, ids.stagesSheetId, STAGES_TAB, STAGES_HEADER)
+  const res = await api.spreadsheets.values.get({ spreadsheetId: ids.stagesSheetId, range: `'${STAGES_TAB}'!A2:M`, valueRenderOption: 'UNFORMATTED_VALUE' })
+  const changes: { row: number; orderId: string; stage: string; from: unknown; to: number }[] = []
+  ;(res.data.values ?? []).forEach((r, i) => {
+    const stage = String(r[12] ?? '').trim()
+    if (stage !== 'AC_PC' && stage !== 'AC_OT') return
+    const want = cfg.acValueUsd[stage]
+    if (Number(r[7]) === want && String(r[8] ?? '') === 'USD') return
+    changes.push({ row: i + 2, orderId: String(r[ORDER_ID_IDX] ?? ''), stage, from: r[7], to: want })
+  })
+  if (changes.length && !opts.dryRun) {
+    await api.spreadsheets.values.batchUpdate({
+      spreadsheetId: ids.stagesSheetId,
+      requestBody: { valueInputOption: 'RAW', data: changes.map(c => ({ range: `'${STAGES_TAB}'!H${c.row}:I${c.row}`, values: [[c.to, 'USD']] })) },
+    })
+  }
+  return changes
 }
