@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 
 import { roleMatches } from '@/lib/role-utils'
+import { EMPLOYEE_DOC_KEYS, persistDocFields } from '@/lib/private-files-server'
 import { reroutePendingPrApprovals } from '@/lib/purchasing/rerouteApprovals'
 
 const ALLOWED = ['ADMIN', 'SUPER_ADMIN', 'HR']
@@ -29,7 +30,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     seamanBookFiles, bstFiles, medicalCheckupFiles, ijazahFiles, certificateFiles, contractFiles,
     ktpFiles, kkFiles, npwpFiles, photoFiles,
     freelanceFee, freelanceFeeType, replacingEmployeeId, tripBookingIds,
-  } = await req.json()
+  } = await persistDocFields(await req.json(), EMPLOYEE_DOC_KEYS, 'hr-employee')
 
   if (employeeNumber) {
     const dup = await db.employee.findFirst({ where: { employeeNumber: employeeNumber.trim(), NOT: { id } } })

@@ -17,6 +17,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { toast } from 'sonner'
 import { BookingWizard } from '@/components/bookings/BookingWizard'
 import { CollaborationBudgetCard } from '@/components/bookings/CollaborationBudgetCard'
+import { CollaborationContractsCard } from '@/components/bookings/CollaborationContracts'
 import GuestEditSheet from '@/components/customers/GuestEditSheet'
 import WaitingListManager from '@/components/bookings/WaitingListManager'
 import { cn } from '@/lib/utils'
@@ -2347,6 +2348,13 @@ export default function CalendarView() {
 
                   {bookingFullDetail?.isCollaboration && (
                     <CollaborationBudgetCard
+                      booking={bookingFullDetail}
+                      canEdit={isAdmin || canAddCollaboration}
+                      onSaved={next => setBookingFullDetail((prev: any) => prev ? { ...prev, ...next } : prev)}
+                    />
+                  )}
+                  {bookingFullDetail?.isCollaboration && (
+                    <CollaborationContractsCard
                       booking={bookingFullDetail}
                       canEdit={isAdmin || canAddCollaboration}
                       onSaved={next => setBookingFullDetail((prev: any) => prev ? { ...prev, ...next } : prev)}

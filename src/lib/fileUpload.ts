@@ -1,9 +1,16 @@
+/** PDF check for a stored file — a data URL, or a URL/private ref whose path ends in .pdf. */
 export function isPdfDataUrl(src: string): boolean {
-  return src.startsWith('data:application/pdf')
+  if (!src) return false
+  if (src.startsWith('data:')) return src.startsWith('data:application/pdf')
+  return /\.pdf$/i.test(src.split(/[?#]/)[0])
 }
 
 /** Guesses a file extension from a data URL's mime type, for naming downloads. */
 export function extFromDataUrl(src: string): string {
+  if (src && !src.startsWith('data:')) {
+    const ext = src.split(/[?#]/)[0].match(/\.([a-z0-9]{2,5})$/i)?.[1]?.toLowerCase()
+    return ext === 'jpeg' ? 'jpg' : ext ?? 'jpg'
+  }
   const mime = src.match(/^data:([^;]+);/)?.[1] ?? ''
   if (mime === 'application/pdf') return 'pdf'
   if (mime === 'image/png') return 'png'
@@ -15,7 +22,11 @@ export function extFromDataUrl(src: string): string {
 /** Triggers a browser download of a data URL (image or PDF) under the given filename. */
 export function downloadDataUrl(src: string, filename: string) {
   const a = document.createElement('a')
-  a.href = src
+  // Private HR refs (/api/files/private/…) redirect to a signed R2 URL on another origin,
+  // where `download` is ignored — the route sets Content-Disposition from ?download= instead.
+  a.href = src.startsWith('/api/files/private/')
+    ? `${src.split('?')[0]}?download=${encodeURIComponent(filename)}`
+    : src
   a.download = filename
   document.body.appendChild(a)
   a.click()

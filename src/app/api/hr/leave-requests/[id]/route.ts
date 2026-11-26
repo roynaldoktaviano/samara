@@ -26,16 +26,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (action === 'convert') {
     if (rawNewType !== 'LEAVE' && rawNewType !== 'WFH' && rawNewType !== 'SICK') return NextResponse.json({ error: 'Invalid type' }, { status: 400 })
     const newType: LeaveType = parseLeaveType(rawNewType)
-    const current = await db.leaveRequest.findUnique({ where: { id }, select: { status: true, type: true, attachments: true, employee: { select: { userId: true } } } })
+    const current = await db.leaveRequest.findUnique({ where: { id }, select: { status: true, type: true, employee: { select: { userId: true } } } })
     if (!current) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     if (current.status !== 'PENDING' && current.status !== 'PENDING_HR_APPROVAL') {
       return NextResponse.json({ error: 'Only pending requests can be converted' }, { status: 409 })
     }
     if (current.type === newType) return NextResponse.json({ ok: true })
-    // Sick leave only stands with a doctor's letter on file.
-    if (newType === 'SICK' && current.attachments.length === 0) {
-      return NextResponse.json({ error: "No doctor's letter attached — sick leave needs one" }, { status: 400 })
-    }
     await db.leaveRequest.update({
       where: { id },
       data: { type: newType, ...(newType === 'WFH' ? { needsFreelance: false, freelanceRecommendations: [] } : {}) },

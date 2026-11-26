@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { persistCandidateDocs, persistDataUrls } from '@/lib/private-files-server'
 import { recordBotCall, requireBotAccess } from '@/lib/bot-api-key'
 import { getDb } from '@/lib/get-db'
 
@@ -121,6 +122,10 @@ export async function POST(req: NextRequest) {
     if (e instanceof FileError) return NextResponse.json({ error: e.message }, { status: 400 })
     throw e
   }
+
+  // Files go to private R2 storage — the DB only keeps /api/files/private/… refs.
+  resumeFiles = await persistDataUrls(resumeFiles, 'hr-candidate', 'cv')
+  additionalDocuments = (await persistCandidateDocs(additionalDocuments)) as typeof additionalDocuments
 
   const db = await getDb(auth.session)
 

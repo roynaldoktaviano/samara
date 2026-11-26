@@ -78,11 +78,8 @@ export async function POST(req: NextRequest) {
   const db = await getDb(session)
   const { startDate, endDate, reason, needsFreelance, freelanceRecommendations, attachments: rawAttachments, type: rawType } = await req.json()
   const type = parseLeaveType(rawType)
-  // Sick leave must come with the doctor's letter (surat sakit).
+  // Sick leave may carry the doctor's letter (surat sakit) — optional since 2026-11-26.
   const attachments = type === 'SICK' ? sanitizeLeaveAttachments(rawAttachments) : []
-  if (type === 'SICK' && attachments.length === 0) {
-    return NextResponse.json({ error: "Please attach the doctor's letter (photo or PDF) for sick leave" }, { status: 400 })
-  }
 
   const employee = await db.employee.findUnique({
     where: { userId: session.user.id },

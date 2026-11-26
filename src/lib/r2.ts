@@ -1,4 +1,4 @@
-import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3'
+import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 
 // Cloudflare R2 — S3-compatible object storage, replacing Vercel Blob (cheaper
@@ -89,4 +89,19 @@ export function keyFromR2Url(url: string): string | null {
 export async function presignUpload(key: string, contentType: string, expiresInSeconds = 300): Promise<string> {
   const command = new PutObjectCommand({ Bucket: BUCKET, Key: key, ContentType: contentType })
   return getSignedUrl(client(), command, { expiresIn: expiresInSeconds })
+}
+
+/**
+ * A short-lived signed GET straight to the R2 S3 endpoint — for private objects (HR documents)
+ * that must never be fetched through the public files host. `downloadName` forces a download.
+ */
+export async function presignDownload(key: string, opts: { expiresInSeconds?: number; downloadName?: string } = {}): Promise<string> {
+  const command = new GetObjectCommand({
+    Bucket: BUCKET,
+    Key: key,
+    ...(opts.downloadName && {
+      ResponseContentDisposition: `attachment; filename="${opts.downloadName.replace(/["\\\r\n]/g, '_')}"`,
+    }),
+  })
+  return getSignedUrl(client(), command, { expiresIn: opts.expiresInSeconds ?? 300 })
 }

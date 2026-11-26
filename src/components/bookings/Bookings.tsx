@@ -15,6 +15,7 @@ import { formatDate, formatMoney, formatNumber } from '@/lib/format'
 import { StatusBadge, BookingStatusBadge, type StatusTone } from '@/components/ui/status-badge'
 import { roleMatches } from '@/lib/role-utils'
 import { CollaborationBudgetCard } from '@/components/bookings/CollaborationBudgetCard'
+import { CollaborationContractsCard } from '@/components/bookings/CollaborationContracts'
 import { canManageCollaboration } from '@/lib/collaboration-budget'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
@@ -87,6 +88,7 @@ interface BookingRecord {
   complimentaryReason?: string | null
   isCollaboration?: boolean
   budgetCurrency?: string | null
+  collaborationContracts?: string[]
   budgetItems?: Array<{ id: string; name: string; amount: number }>
   createdBy?: { name: string | null } | null
   services?:     Array<{ id: string; name: string; price: number; quantity: number }>
@@ -3129,6 +3131,16 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
 
                     {db_.isCollaboration && (
                       <CollaborationBudgetCard
+                        booking={db_}
+                        canEdit={canManageCollaboration(userRole)}
+                        onSaved={next => {
+                          setDetailBooking(prev => prev && prev.id === db_.id ? { ...prev, ...next } : prev)
+                          setBookings(prev => prev.map(x => x.id === db_.id ? { ...x, ...next } : x))
+                        }}
+                      />
+                    )}
+                    {db_.isCollaboration && (
+                      <CollaborationContractsCard
                         booking={db_}
                         canEdit={canManageCollaboration(userRole)}
                         onSaved={next => {

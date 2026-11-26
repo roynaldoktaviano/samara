@@ -30,6 +30,7 @@ import {
 } from 'lucide-react'
 import { BudgetStructureEditor, budgetRowsPayload, budgetRowsValid, newBudgetRow, type BudgetRow } from '@/components/bookings/BudgetStructureEditor'
 import type { BudgetCurrency } from '@/lib/collaboration-budget'
+import { CollaborationContractsInput } from '@/components/bookings/CollaborationContracts'
 import type { DateRange } from 'react-day-picker'
 import { NATIONALITIES } from '@/lib/nationalities'
 import { getAgentCommissionPct } from '@/lib/agent-commission'
@@ -212,6 +213,8 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
   /* collaboration book */
   const [budgetCurrency, setBudgetCurrency] = useState<BudgetCurrency>('IDR')
   const [budgetRows,     setBudgetRows]     = useState<BudgetRow[]>(() => [newBudgetRow()])
+  const [contractFiles,  setContractFiles]  = useState<string[]>([])
+  const [contractUploading, setContractUploading] = useState(false)
 
   /* remote data */
   const [yachts,    setYachts]    = useState<YachtOpt[]>([])
@@ -657,7 +660,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
     setManualRate(1); setBaseFocused(false); setSvcFocused(null)
     setVoucherApplied(null); setVoucherError('')
     setCompReason(''); setPicId('')
-    setBudgetCurrency('IDR'); setBudgetRows([newBudgetRow()])
+    setBudgetCurrency('IDR'); setBudgetRows([newBudgetRow()]); setContractFiles([]); setContractUploading(false)
     setBookedCustomerIds([]); setExistingCabinOccupancy({})
     setOriginalHoldCabins({})
     setCabinExtraBeds({})
@@ -863,7 +866,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
       if (tripType === 'OPEN_TRIP') return guests.every(g => !!g.cabinId)
       return true // PC: cabin optional
     }
-    if (step === 3 && collaboration) return compReason.trim().length > 0 && budgetRowsValid(budgetRows)
+    if (step === 3 && collaboration) return compReason.trim().length > 0 && budgetRowsValid(budgetRows) && !contractUploading
     if (step === 3 && complimentary) return !!picId && compReason.trim().length > 0
     if (step === 3) return !!(parseFloat(basePrice) > 0) && !!depositDueDate && !!finalDueDate
     return true
@@ -1020,7 +1023,7 @@ notes:         resolvedNotes,
         ...(complimentary && !collaboration && { isComplimentary: true, complimentaryReason: compReason.trim(), picId }),
         ...(collaboration && {
           isComplimentary: true, isCollaboration: true, complimentaryReason: compReason.trim(),
-          budgetCurrency, budgetItems: budgetRowsPayload(budgetRows),
+          budgetCurrency, budgetItems: budgetRowsPayload(budgetRows), collaborationContracts: contractFiles,
         }),
       }
 
@@ -2844,6 +2847,13 @@ notes:         resolvedNotes,
             rows={budgetRows}
             onRowsChange={setBudgetRows}
           />
+        )}
+
+        {collaboration && (
+          <div className="space-y-1.5">
+            <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Collaboration Contract</Label>
+            <CollaborationContractsInput value={contractFiles} onChange={setContractFiles} onUploadingChange={setContractUploading} />
+          </div>
         )}
       </div>
     )

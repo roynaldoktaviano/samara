@@ -18,6 +18,7 @@ import { SearchableSelect } from '@/components/ui/searchable-select'
 import { StatusBadge, type StatusTone } from '@/components/ui/status-badge'
 import { RupiahInput } from '@/components/ui/rupiah-input'
 import { MultiFilePicker } from '@/components/ui/file-preview'
+import { uploadPrivateFile } from '@/lib/private-files-client'
 import { usePasswordGate } from '@/components/ui/password-gate'
 import { formatDate } from '@/lib/format'
 import { downloadDataUrl, extFromDataUrl } from '@/lib/fileUpload'
@@ -382,6 +383,10 @@ function DetailDialog({ id, onClose, onChanged, onShare }: {
   const [detail, setDetail] = useState<OnboardingDetail | null>(null)
   const [edit, setEdit] = useState<Record<string, unknown>>({})
   const [dirty, setDirty] = useState(false)
+  // Document upload batches still in flight (files go straight to private R2 on pick).
+  const [docUploads, setDocUploads] = useState(0)
+  const trackDocUpload = useCallback((up: boolean) => setDocUploads(n => Math.max(0, n + (up ? 1 : -1))), [])
+  const uploadDoc = useCallback((file: File) => uploadPrivateFile(file, 'hr-employee'), [])
   const [tab, setTab] = useState<DetailTab>('review')
   const [busy, setBusy] = useState<string | null>(null)
   const [revisionOpen, setRevisionOpen] = useState(false)
@@ -417,6 +422,7 @@ function DetailDialog({ id, onClose, onChanged, onShare }: {
 
   async function save(silent = false): Promise<boolean> {
     if (!detail) return false
+    if (docUploads > 0) { toast.error('Please wait until the documents finish uploading'); return false }
     setBusy('save')
     const res = await fetch(`/api/hr/onboarding/${detail.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(edit) })
     const data = await res.json().catch(() => ({}))
@@ -744,7 +750,7 @@ function DetailDialog({ id, onClose, onChanged, onShare }: {
                                 </div>
                               )
                             ) : (
-                              <MultiFilePicker files={files} onChange={next => set(d.key, next)} />
+                              <MultiFilePicker files={files} onChange={next => set(d.key, next)} upload={uploadDoc} onUploadingChange={trackDocUpload} />
                             )}
                           </div>
                         )

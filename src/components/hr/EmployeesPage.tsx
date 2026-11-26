@@ -8,6 +8,7 @@ import { toast } from 'sonner'
 import { useFileDrop } from '@/hooks/useFileDrop'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { MultiFilePicker } from '@/components/ui/file-preview'
+import { uploadPrivateFile } from '@/lib/private-files-client'
 import { RupiahInput } from '@/components/ui/rupiah-input'
 import { usePasswordGate } from '@/components/ui/password-gate'
 import { StatusBadge } from '@/components/ui/status-badge'
@@ -694,6 +695,10 @@ export default function EmployeesPage() {
   const confirm = useConfirm()
   const [form, setForm] = useState({ ...BLANK })
   const [saving, setSaving] = useState(false)
+  // Document upload batches still in flight (HR docs go straight to private R2 on pick).
+  const [docUploads, setDocUploads] = useState(0)
+  const trackDocUpload = useCallback((up: boolean) => setDocUploads(n => Math.max(0, n + (up ? 1 : -1))), [])
+  const uploadEmployeeDoc = useCallback((file: File) => uploadPrivateFile(file, 'hr-employee'), [])
   const [formError, setFormError] = useState('')
 
   const [freelanceModal, setFreelanceModal] = useState(false)
@@ -790,13 +795,21 @@ export default function EmployeesPage() {
 
   async function save() {
     if (!form.fullName.trim()) { setFormError('Full name is required'); return }
+    if (docUploads > 0) { setFormError('Please wait until the documents finish uploading'); return }
     setSaving(true); setFormError('')
     const method = editing ? 'PUT' : 'POST'
     const url = editing ? `/api/hr/employees/${editing.id}` : '/api/hr/employees'
-    const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) })
-    const data = await res.json()
-    if (!res.ok) { setFormError(data.error ?? 'An error occurred'); setSaving(false); return }
-    setModal(false); setSaving(false); load()
+    try {
+      const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) })
+      // A proxy error page (413/502/504) isn't JSON — never leave the button stuck on "Saving…".
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) { setFormError(data.error ?? `Save failed (HTTP ${res.status}) — please try again`); return }
+      setModal(false); load()
+    } catch {
+      setFormError('Network error — please check your connection and try again')
+    } finally {
+      setSaving(false)
+    }
   }
 
   function toggleActive(emp: Employee) {
@@ -1803,32 +1816,32 @@ export default function EmployeesPage() {
               ] as const).map(([key, label]) => (
                 <div key={key} className="space-y-1.5" role="group" aria-labelledby={`emp-${key}-label`}>
                   <p id={`emp-${key}-label`} className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{label}</p>
-                  <MultiFilePicker files={form[key]} onChange={files => setForm(f => ({ ...f, [key]: files }))} />
+                  <MultiFilePicker files={form[key]} onChange={files => setForm(f => ({ ...f, [key]: files }))} upload={uploadEmployeeDoc} onUploadingChange={trackDocUpload} />
                 </div>
               ))}
               <div className="space-y-1.5" role="group" aria-labelledby="emp-seaman-book-files-label">
                 <p id="emp-seaman-book-files-label" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Seaman Book</p>
-                <MultiFilePicker files={form.seamanBookFiles} onChange={files => setForm(f => ({ ...f, seamanBookFiles: files }))} />
+                <MultiFilePicker files={form.seamanBookFiles} onChange={files => setForm(f => ({ ...f, seamanBookFiles: files }))} upload={uploadEmployeeDoc} onUploadingChange={trackDocUpload} />
               </div>
               <div className="space-y-1.5" role="group" aria-labelledby="emp-bst-files-label">
                 <p id="emp-bst-files-label" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">BST (Basic Safety Training)</p>
-                <MultiFilePicker files={form.bstFiles} onChange={files => setForm(f => ({ ...f, bstFiles: files }))} />
+                <MultiFilePicker files={form.bstFiles} onChange={files => setForm(f => ({ ...f, bstFiles: files }))} upload={uploadEmployeeDoc} onUploadingChange={trackDocUpload} />
               </div>
               <div className="space-y-1.5" role="group" aria-labelledby="emp-medical-checkup-files-label">
                 <p id="emp-medical-checkup-files-label" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Medical Check Up</p>
-                <MultiFilePicker files={form.medicalCheckupFiles} onChange={files => setForm(f => ({ ...f, medicalCheckupFiles: files }))} />
+                <MultiFilePicker files={form.medicalCheckupFiles} onChange={files => setForm(f => ({ ...f, medicalCheckupFiles: files }))} upload={uploadEmployeeDoc} onUploadingChange={trackDocUpload} />
               </div>
               <div className="space-y-1.5" role="group" aria-labelledby="emp-ijazah-files-label">
                 <p id="emp-ijazah-files-label" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Diploma</p>
-                <MultiFilePicker files={form.ijazahFiles} onChange={files => setForm(f => ({ ...f, ijazahFiles: files }))} />
+                <MultiFilePicker files={form.ijazahFiles} onChange={files => setForm(f => ({ ...f, ijazahFiles: files }))} upload={uploadEmployeeDoc} onUploadingChange={trackDocUpload} />
               </div>
               <div className="space-y-1.5" role="group" aria-labelledby="emp-certificate-files-label">
                 <p id="emp-certificate-files-label" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Certificates</p>
-                <MultiFilePicker files={form.certificateFiles} onChange={files => setForm(f => ({ ...f, certificateFiles: files }))} />
+                <MultiFilePicker files={form.certificateFiles} onChange={files => setForm(f => ({ ...f, certificateFiles: files }))} upload={uploadEmployeeDoc} onUploadingChange={trackDocUpload} />
               </div>
               <div className="space-y-1.5" role="group" aria-labelledby="emp-contract-files-label">
                 <p id="emp-contract-files-label" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Contract</p>
-                <MultiFilePicker files={form.contractFiles} onChange={files => setForm(f => ({ ...f, contractFiles: files }))} />
+                <MultiFilePicker files={form.contractFiles} onChange={files => setForm(f => ({ ...f, contractFiles: files }))} upload={uploadEmployeeDoc} onUploadingChange={trackDocUpload} />
                 <p className="text-[11px] text-muted-foreground">Expiry is the Contract End date (Details tab, optional) — shows on HR Overview&apos;s Contracts Expiring Soon list.</p>
               </div>
               </>
@@ -1848,8 +1861,8 @@ export default function EmployeesPage() {
             <Button variant="outline" onClick={() => setModal(false)} className="text-muted-foreground">
               Cancel
             </Button>
-            <Button onClick={save} loading={saving}>
-              {saving ? 'Saving…' : editing ? 'Save Changes' : 'Add Employee'}
+            <Button onClick={save} loading={saving} disabled={docUploads > 0}>
+              {saving ? 'Saving…' : docUploads > 0 ? 'Uploading…' : editing ? 'Save Changes' : 'Add Employee'}
             </Button>
           </DialogFooter>
         </DialogContent>

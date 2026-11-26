@@ -8,6 +8,7 @@ import { scheduleTripSheetSync } from '@/lib/google-sheets'
 import { getTenantSecret } from '@/lib/tenant-secrets'
 import { roleMatches } from '@/lib/role-utils'
 import { canManageCollaboration, normalizeBudgetCurrency, parseBudgetItems, type BudgetItemInput } from '@/lib/collaboration-budget'
+import { parseContractUrls } from '@/lib/collaboration-contracts-server'
 import { resolveClawbackRatePerNight } from '@/lib/agent-clawback'
 import { renumberTripYear } from '@/lib/openTripNumbering'
 import { linkBookingDeals } from '@/lib/deal-booking'
@@ -97,7 +98,7 @@ export async function GET(request: NextRequest) {
         refundStatus: true, refundDecision: true, refundReason: true, refundProof: true, refundConfirmedAt: true, refundConfirmedBy: true,
         currency: true, exchangeRate: true, createdAt: true, hasDiving: true, hasSurfing: true, hasPhotoPackage: true,
         useB2BCommission: true, isComplimentary: true, complimentaryReason: true,
-        isCollaboration: true, budgetCurrency: true,
+        isCollaboration: true, budgetCurrency: true, collaborationContracts: true,
         budgetItems: { select: { id: true, name: true, amount: true }, orderBy: { sortOrder: 'asc' } },
         salespersonUser: { select: { name: true } },
         createdBy:       { select: { name: true } },
@@ -202,6 +203,7 @@ export async function POST(request: NextRequest) {
       isCollaboration,     // boolean: Collaboration Book (Marketing) — complimentary + internal budget structure
       budgetCurrency,      // collaboration only: 'IDR' | 'USD'
       budgetItems,         // collaboration only: Array<{ name, amount }>
+      collaborationContracts, // collaboration only: string[] R2 URLs (image/PDF, max 3)
     } = body
 
     // Collaboration Book = a complimentary booking raised by Marketing, carrying a budget structure.
@@ -210,6 +212,7 @@ export async function POST(request: NextRequest) {
     const comp = (!!isComplimentary || collab) && !isOnHold
     const sessionRole = (session.user as { role?: string }).role ?? ''
     let collabBudget: BudgetItemInput[] = []
+    let collabContracts: string[] = []
     if (collab) {
       if (!canManageCollaboration(sessionRole)) {
         return NextResponse.json({ error: 'Only Marketing or Admin can create a collaboration book' }, { status: 403 })
@@ -221,6 +224,9 @@ export async function POST(request: NextRequest) {
       if ('error' in parsed) return NextResponse.json({ error: parsed.error }, { status: 400 })
       if (parsed.items.length === 0) return NextResponse.json({ error: 'Add at least one budget item' }, { status: 400 })
       collabBudget = parsed.items
+      const contracts = parseContractUrls(collaborationContracts)
+      if ('error' in contracts) return NextResponse.json({ error: contracts.error }, { status: 400 })
+      collabContracts = contracts.urls
     } else if (comp) {
       if (!roleMatches(sessionRole, ['ADMIN', 'SUPER_ADMIN'])) {
         return NextResponse.json({ error: 'Only Admin can create a complimentary booking' }, { status: 403 })
@@ -472,6 +478,7 @@ export async function POST(request: NextRequest) {
         complimentaryReason: comp ? String(complimentaryReason).trim() : null,
         isCollaboration:     collab,
         budgetCurrency:      collab ? normalizeBudgetCurrency(budgetCurrency) : null,
+        collaborationContracts: collab ? collabContracts : [],
         budgetItems:         collab
           ? { create: collabBudget.map((b, i) => ({ name: b.name, amount: b.amount, sortOrder: i })) }
           : undefined,

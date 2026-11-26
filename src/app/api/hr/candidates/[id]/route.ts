@@ -4,6 +4,8 @@ import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 
 import { roleMatches } from '@/lib/role-utils'
+import type { Prisma } from '@prisma/client'
+import { persistCandidateDocs, persistDataUrls } from '@/lib/private-files-server'
 import { sendPushToUsers } from '@/lib/push'
 import { emitTenantEvent } from '@/lib/realtime-bus'
 import { CANDIDATE_INCLUDE, CANDIDATE_STATUSES, parseInterviewResult } from '@/lib/candidate-include'
@@ -73,11 +75,11 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       ...(phone !== undefined && { phone: phone?.trim() || null }),
       ...(email !== undefined && { email: email?.trim() || null }),
       ...(source !== undefined && { source: source?.trim() || null }),
-      ...(resumeFiles !== undefined && { resumeFiles: Array.isArray(resumeFiles) ? resumeFiles : [] }),
+      ...(resumeFiles !== undefined && { resumeFiles: await persistDataUrls(resumeFiles, 'hr-candidate', 'cv') }),
       ...(expectedSalary !== undefined && { expectedSalary: expectedSalary !== '' && expectedSalary !== null ? Number(expectedSalary) : null }),
       ...(location !== undefined && { location: location?.trim() || null }),
       ...(readyJoinDate !== undefined && { readyJoinDate: readyJoinDate ? new Date(readyJoinDate) : null }),
-      ...(additionalDocuments !== undefined && { additionalDocuments: Array.isArray(additionalDocuments) ? additionalDocuments : [] }),
+      ...(additionalDocuments !== undefined && { additionalDocuments: Array.isArray(additionalDocuments) ? (await persistCandidateDocs(additionalDocuments)) as Prisma.InputJsonValue : [] }),
       ...(notes !== undefined && { notes: notes?.trim() || null }),
       ...(status !== undefined && { status }),
       ...(assessmentScore !== undefined && { assessmentScore: assessmentScore !== '' && assessmentScore !== null ? Number(assessmentScore) : null }),

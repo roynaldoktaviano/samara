@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 
 import { roleMatches } from '@/lib/role-utils'
+import { EMPLOYEE_DOC_KEYS, persistDocFields } from '@/lib/private-files-server'
 import { matchEmployeesToYachts } from '@/lib/payroll'
 
 const ALLOWED = ['ADMIN', 'SUPER_ADMIN', 'HR']
@@ -67,7 +68,7 @@ export async function POST(req: NextRequest) {
     seamanBookFiles, bstFiles, medicalCheckupFiles, ijazahFiles, certificateFiles, contractFiles,
     ktpFiles, kkFiles, npwpFiles, photoFiles,
     freelanceFee, freelanceFeeType, replacingEmployeeId, tripBookingIds,
-  } = await req.json()
+  } = await persistDocFields(await req.json(), EMPLOYEE_DOC_KEYS, 'hr-employee')
   if (!fullName?.trim()) return NextResponse.json({ error: 'Full name is required' }, { status: 400 })
 
   const number = employeeNumber?.trim() || await generateEmployeeNumber(db)

@@ -44,3 +44,21 @@ export function parseBudgetItems(raw: unknown): { items: BudgetItemInput[] } | {
 export function budgetTotal(items: { amount: number }[]): number {
   return items.reduce((s, i) => s + (i.amount || 0), 0)
 }
+
+// ── Collaboration contract files ────────────────────────────────────────────────────────
+export const MAX_COLLAB_CONTRACTS = 3
+export const COLLAB_CONTRACT_MAX_SIZE = 10 * 1024 * 1024
+export const COLLAB_CONTRACT_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'application/pdf']
+export const COLLAB_CONTRACT_PREFIX = 'collaboration-contracts/'
+
+/** Display name of a stored contract URL: last path segment minus the `<timestamp>-` prefix. */
+export function contractFileName(url: string): string {
+  const last = url.split('?')[0].split('/').pop() ?? 'file'
+  let name = last
+  try { name = decodeURIComponent(last) } catch { /* keep raw */ }
+  return name.replace(/^\d{10,}-/, '') || 'file'
+}
+
+export function isPdfUrl(url: string): boolean {
+  return /\.pdf$/i.test(url.split('?')[0])
+}

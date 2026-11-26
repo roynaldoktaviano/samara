@@ -1,8 +1,9 @@
 'use client'
 
-import { useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { FileText, Camera, Image as ImageIcon } from 'lucide-react'
+import { FileText, Camera, Image as ImageIcon, Loader2 } from 'lucide-react'
+import { toast } from 'sonner'
 import { isPdfDataUrl, readUploadFile } from '@/lib/fileUpload'
 import { useFileDrop } from '@/hooks/useFileDrop'
 
@@ -71,11 +72,41 @@ export function FilePreview({ src, alt, className, onClick }: { src: string; alt
   return <img src={src} alt={alt} className={className} onClick={onClick} />
 }
 
-/** Multi-file picker (images + PDF) — used wherever a nota/receipt/transfer-proof can have more than one file. */
-export function MultiFilePicker({ files, onChange }: { files: string[]; onChange: (files: string[]) => void }) {
+/**
+ * Multi-file picker (images + PDF) — used wherever a nota/receipt/transfer-proof can have more than one file.
+ * By default files become base64 data URLs. Pass `upload` to store each file elsewhere (e.g. private R2
+ * for HR documents) — the picker then holds the returned references and shows a spinner per file.
+ */
+export function MultiFilePicker({ files, onChange, upload, onUploadingChange }: {
+  files: string[]
+  onChange: (files: string[]) => void
+  upload?: (file: File) => Promise<string>
+  /** Called with true when an upload batch starts and false when that batch ends (even if the
+   *  picker unmounted meanwhile) — count them to block Save while any upload is in flight. */
+  onUploadingChange?: (uploading: boolean) => void
+}) {
   const inputRef = useRef<HTMLInputElement>(null)
+  const [pending, setPending] = useState(0)
+  // Latest list, so an upload finishing after another edit appends to the current files.
+  const filesRef = useRef(files)
+  useEffect(() => { filesRef.current = files }, [files])
   function handleFiles(list: FileList | File[]) {
-    Promise.all(Array.from(list).map(f => readUploadFile(f))).then(newOnes => onChange([...files, ...newOnes]))
+    const picked = Array.from(list)
+    if (!picked.length) return
+    if (!upload) {
+      Promise.all(picked.map(f => readUploadFile(f))).then(newOnes => onChange([...filesRef.current, ...newOnes]))
+      return
+    }
+    setPending(n => n + picked.length)
+    onUploadingChange?.(true)
+    Promise.allSettled(picked.map(f => upload(f))).then(results => {
+      const ok = results.flatMap(r => (r.status === 'fulfilled' ? [r.value] : []))
+      const failed = results.find((r): r is PromiseRejectedResult => r.status === 'rejected')
+      if (failed) toast.error(failed.reason instanceof Error ? failed.reason.message : 'Upload failed')
+      if (ok.length) onChange([...filesRef.current, ...ok])
+      setPending(n => Math.max(0, n - picked.length))
+      onUploadingChange?.(false)
+    })
   }
   function removeAt(i: number) { onChange(files.filter((_, idx) => idx !== i)) }
   const { isDragging, dropProps } = useFileDrop(handleFiles)
@@ -83,13 +114,18 @@ export function MultiFilePicker({ files, onChange }: { files: string[]; onChange
     <div className="space-y-2">
       <input ref={inputRef} type="file" multiple accept="image/*,application/pdf" className="hidden"
         onChange={e => { if (e.target.files?.length) handleFiles(e.target.files); e.target.value = '' }} />
-      {files.length > 0 && (
+      {(files.length > 0 || pending > 0) && (
         <div className="grid grid-cols-3 gap-2">
           {files.map((f, i) => (
             <div key={i} className="relative group aspect-square rounded-lg border bg-muted/20 overflow-hidden">
               <FilePreview src={f} alt={`File ${i + 1}`} className="w-full h-full object-cover" />
               <button type="button" onClick={() => removeAt(i)}
                 className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity">✕</button>
+            </div>
+          ))}
+          {Array.from({ length: pending }).map((_, i) => (
+            <div key={`up-${i}`} className="aspect-square rounded-lg border bg-muted/20 flex flex-col items-center justify-center gap-1 text-xs text-muted-foreground">
+              <Loader2 className="h-5 w-5 animate-spin" /> Uploading…
             </div>
           ))}
         </div>

@@ -1,3 +1,5 @@
+import { persistDocFields } from '@/lib/private-files-server'
+import { ONBOARDING_DOC_KEYS } from '@/lib/onboarding-fields'
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
@@ -34,7 +36,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   }
   const body = await req.json().catch(() => ({})) as Record<string, unknown>
   const form = await a.db.onboardingForm.update({
-    where: { id }, data: hrFieldsFromBody(body), omit: DETAIL_OMIT, include: ONBOARDING_INCLUDE,
+    where: { id }, data: hrFieldsFromBody(await persistDocFields(body, ONBOARDING_DOC_KEYS, 'hr-employee')), omit: DETAIL_OMIT, include: ONBOARDING_INCLUDE,
   })
   return NextResponse.json(form)
 }

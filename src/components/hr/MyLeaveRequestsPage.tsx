@@ -117,7 +117,6 @@ export default function MyLeaveRequestsPage() {
   async function save() {
     if (!form.startDate || !form.endDate) { setFormError('Please select a date range'); return }
     if (overBalance) { setFormError(`You only have ${leaveBalance} day${leaveBalance !== 1 ? 's' : ''} of leave remaining`); return }
-    if (form.type === 'SICK' && form.attachments.length === 0) { setFormError("Please attach your doctor's letter (surat sakit)"); return }
     setSaving(true); setFormError('')
     const res = await fetch('/api/hr/leave-requests/mine', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -307,9 +306,9 @@ export default function MyLeaveRequestsPage() {
             </div>
             {form.type === 'SICK' && (
               <div className="space-y-1.5">
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Doctor&apos;s Letter (Surat Sakit) <span className="text-destructive">*</span></p>
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Doctor&apos;s Letter (Surat Sakit) <span className="normal-case font-normal">(optional)</span></p>
                 <MultiFilePicker files={form.attachments} onChange={files => setForm(f => ({ ...f, attachments: files.slice(0, 5) }))} />
-                <p className="text-[11px] text-muted-foreground">Photo or PDF, up to 5 files. Required for sick leave.</p>
+                <p className="text-[11px] text-muted-foreground">Photo or PDF, up to 5 files. Optional.</p>
               </div>
             )}
             {form.type !== 'WFH' && <label className="flex items-center gap-2 text-sm cursor-pointer select-none">

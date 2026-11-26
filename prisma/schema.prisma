@@ -1443,6 +1443,8 @@ model Booking {
   // structure in budgetItems — what the trip needs and what it costs, in budgetCurrency.
   isCollaboration               Boolean                   @default(false)
   budgetCurrency                String?
+  // Collaboration contract files (image/PDF, max 3) — public R2 URLs under collaboration-contracts/.
+  collaborationContracts        String[]                  @default([])
   // Who actually entered the booking. Usually the same as salespersonId; differs for a
   // complimentary booking, where an Admin creates it and assigns a Sales user as PIC.
   createdById                   String?

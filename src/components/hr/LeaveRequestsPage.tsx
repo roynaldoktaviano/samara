@@ -174,7 +174,6 @@ export default function LeaveRequestsPage() {
     if (!form.employeeId) { setFormError('Please select an employee'); return }
     if (!form.startDate || !form.endDate) { setFormError('Please select a date range'); return }
     if (overBalance) { setFormError(`${selectedEmployee!.fullName} only has ${selectedEmployee!.leaveBalance} day${selectedEmployee!.leaveBalance !== 1 ? 's' : ''} of leave remaining`); return }
-    if (form.type === 'SICK' && form.attachments.length === 0) { setFormError("Please attach the doctor's letter (surat sakit)"); return }
     setSaving(true); setFormError('')
     const res = await fetch('/api/hr/leave-requests', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -495,7 +494,7 @@ export default function LeaveRequestsPage() {
             </div>
             {form.type === 'SICK' && (
               <div className="space-y-1.5">
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Doctor&apos;s Letter (Surat Sakit) <span className="text-destructive">*</span></p>
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Doctor&apos;s Letter (Surat Sakit) <span className="normal-case font-normal">(optional)</span></p>
                 <MultiFilePicker files={form.attachments} onChange={files => setForm(f => ({ ...f, attachments: files.slice(0, 5) }))} />
               </div>
             )}

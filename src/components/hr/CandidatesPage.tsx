@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Plus, X, Trash2, Pencil, Sparkles, Phone, Mail, Paperclip, Upload, UserPlus, Download, FileText, FileDown, Briefcase, Link2 } from 'lucide-react'
 import { MultiFilePicker } from '@/components/ui/file-preview'
+import { uploadPrivateFile } from '@/lib/private-files-client'
 import { PhotoLightbox } from '@/components/purchasing/PhotoLightbox'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -13,7 +14,7 @@ import { NativeSelect } from '@/components/ui/native-select'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import { SearchableSelect } from '@/components/ui/searchable-select'
-import { readUploadFile, isPdfDataUrl, downloadDataUrl, extFromDataUrl } from '@/lib/fileUpload'
+import { isPdfDataUrl, downloadDataUrl, extFromDataUrl } from '@/lib/fileUpload'
 import { formatDate, formatMoney } from '@/lib/format'
 import { CreateOnboardingDialog, ShareDialog, STATUS_TONE as ONBOARDING_TONE, type CandidatePrefill, type ShareInfo } from './OnboardingPage'
 import { StatusBadge } from '@/components/ui/status-badge'
@@ -176,6 +177,9 @@ export default function CandidatesPage() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [form, setForm] = useState({ ...BLANK })
   const [saving, setSaving] = useState(false)
+  const [cvUploads, setCvUploads] = useState(0)
+  const trackCvUpload = useCallback((up: boolean) => setCvUploads(n => Math.max(0, n + (up ? 1 : -1))), [])
+  const uploadCv = useCallback((file: File) => uploadPrivateFile(file, 'hr-candidate'), [])
   const [formError, setFormError] = useState('')
   // Offer/Hired candidates move on through an Onboarding Form (HR › Onboarding), which
   // creates the Employee on Start Probation — replaces the old one-click Convert to Employee.
@@ -244,15 +248,23 @@ export default function CandidatesPage() {
 
   async function save() {
     if (!form.fullName.trim()) { setFormError('Full name is required'); return }
+    if (cvUploads > 0) { setFormError('Please wait until the CV finishes uploading'); return }
     setSaving(true); setFormError('')
     const url = editingId ? `/api/hr/candidates/${editingId}` : '/api/hr/candidates'
     const method = editingId ? 'PUT' : 'POST'
-    const res = await fetch(url, {
-      method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form),
-    })
-    const data = await res.json()
-    if (!res.ok) { setFormError(data.error ?? 'An error occurred'); setSaving(false); return }
-    setModal(false); setSaving(false); load()
+    try {
+      const res = await fetch(url, {
+        method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form),
+      })
+      // A proxy error page (413/502/504) isn't JSON — never leave the button stuck on "Saving…".
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) { setFormError(data.error ?? `Save failed (HTTP ${res.status}) — please try again`); return }
+      setModal(false); load()
+    } catch {
+      setFormError('Network error — please check your connection and try again')
+    } finally {
+      setSaving(false)
+    }
   }
 
   function openAddDoc() { setDocEditId(null); setDocForm({ name: '', description: '', fileKey: '' }); setDocError(''); setDocModal(true) }
@@ -267,10 +279,10 @@ export default function CandidatesPage() {
     if (!file) return
     setDocUploading(true); setDocError('')
     try {
-      const fileKey = await readUploadFile(file)
+      const fileKey = await uploadPrivateFile(file, 'hr-candidate')
       setDocForm(f => ({ ...f, name: f.name || file.name.replace(/\.[^.]+$/, ''), fileKey }))
     } catch {
-      setDocError('Could not read that file — try a different image or PDF.')
+      setDocError('Upload failed — try again, or use a different image or PDF.')
     } finally {
       setDocUploading(false)
     }
@@ -642,7 +654,7 @@ export default function CandidatesPage() {
             </div>
             <div className="space-y-1.5">
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">CV</p>
-              <MultiFilePicker files={form.resumeFiles} onChange={files => setForm(f => ({ ...f, resumeFiles: files }))} />
+              <MultiFilePicker files={form.resumeFiles} onChange={files => setForm(f => ({ ...f, resumeFiles: files }))} upload={uploadCv} onUploadingChange={trackCvUpload} />
             </div>
             <div className="space-y-1.5">
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Additional Documents</p>
@@ -682,8 +694,8 @@ export default function CandidatesPage() {
           </div>
           <DialogFooter className="px-6 py-4 border-t bg-muted/50">
             <Button variant="outline" onClick={() => setModal(false)}>Cancel</Button>
-            <Button onClick={save} loading={saving}>
-              {saving ? 'Saving…' : editingId ? 'Save Changes' : 'Add Candidate'}
+            <Button onClick={save} loading={saving} disabled={cvUploads > 0}>
+              {saving ? 'Saving…' : cvUploads > 0 ? 'Uploading…' : editingId ? 'Save Changes' : 'Add Candidate'}
             </Button>
           </DialogFooter>
         </DialogContent>

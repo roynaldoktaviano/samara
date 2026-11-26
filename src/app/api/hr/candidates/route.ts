@@ -4,6 +4,8 @@ import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 
 import { roleMatches } from '@/lib/role-utils'
+import type { Prisma } from '@prisma/client'
+import { persistCandidateDocs, persistDataUrls } from '@/lib/private-files-server'
 import { CANDIDATE_INCLUDE } from '@/lib/candidate-include'
 
 const ALLOWED = ['ADMIN', 'SUPER_ADMIN', 'HR']
@@ -58,11 +60,11 @@ export async function POST(req: NextRequest) {
       phone: phone?.trim() || null,
       email: email?.trim() || null,
       source: source?.trim() || null,
-      resumeFiles: Array.isArray(resumeFiles) ? resumeFiles : [],
+      resumeFiles: await persistDataUrls(resumeFiles, 'hr-candidate', 'cv'),
       expectedSalary: expectedSalary !== undefined && expectedSalary !== '' && expectedSalary !== null ? Number(expectedSalary) : null,
       location: location?.trim() || null,
       readyJoinDate: readyJoinDate ? new Date(readyJoinDate) : null,
-      additionalDocuments: Array.isArray(additionalDocuments) ? additionalDocuments : [],
+      additionalDocuments: Array.isArray(additionalDocuments) ? (await persistCandidateDocs(additionalDocuments)) as Prisma.InputJsonValue : [],
       notes: notes?.trim() || null,
       assessmentScore: assessmentScore !== undefined && assessmentScore !== '' && assessmentScore !== null ? Number(assessmentScore) : null,
       skills: Array.isArray(skills) ? skills : [],
