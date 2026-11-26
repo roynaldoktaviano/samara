@@ -10,23 +10,34 @@ import type { PrismaClient } from '@prisma/client'
 
 const SUSPICIOUS_BOTS = /bot|crawler|spider|scrape|python|curl|wget|axios|fetch|java|ruby|go-http/i
 
-/** Scans every active tenant for an Agent matching this email — mirrors findAgentTenant()
- *  in src/app/api/public/verify-calendar/route.ts, swapping the lookup key from
- *  calendarToken to email since agent-portal login has no per-tenant slug to go on. */
-async function findAgentByEmail(email: string) {
+type PortalLoginRole = 'agent' | 'media'
+
+interface PortalAccountRow {
+  id: string
+  name: string
+  portalPasswordHash: string | null
+  portalActive: boolean
+  portalPasswordSetAt: Date | null
+}
+
+/** Scans every active tenant for an Agent (or MediaAccount) matching this email — mirrors
+ *  findAgentTenant() in src/app/api/public/verify-calendar/route.ts, swapping the lookup key
+ *  from calendarToken to email since portal login has no per-tenant slug to go on. */
+async function findAccountByEmail(email: string, role: PortalLoginRole) {
   const tenants = await centralDb.tenant.findMany({ where: { isActive: true }, select: { id: true, databaseUrl: true } })
   const defaultUrl = process.env.DATABASE_URL
   const candidates = [{ id: null as string | null, url: defaultUrl }, ...tenants.map(t => ({ id: t.id, url: t.databaseUrl }))]
+  const select = { id: true, name: true, portalPasswordHash: true, portalActive: true, portalPasswordSetAt: true } as const
   const seen = new Set<string>()
   for (const c of candidates) {
     if (!c.url || seen.has(c.url)) continue
     seen.add(c.url)
     const client: PrismaClient = c.url === defaultUrl ? defaultDb : getTenantDb(c.url)
-    const agent = await client.agent.findFirst({
-      where: { email: { equals: email, mode: 'insensitive' } },
-      select: { id: true, name: true, portalPasswordHash: true, portalActive: true, portalPasswordSetAt: true },
-    }).catch(() => null)
-    if (agent) return { db: client, tenantId: c.id, agent }
+    // .catch: a tenant DB that hasn't had the MediaAccount table pushed yet must not break login.
+    const account: PortalAccountRow | null = role === 'media'
+      ? await client.mediaAccount.findFirst({ where: { email: { equals: email, mode: 'insensitive' } }, select }).catch(() => null)
+      : await client.agent.findFirst({ where: { email: { equals: email, mode: 'insensitive' } }, select }).catch(() => null)
+    if (account) return { db: client, tenantId: c.id, account }
   }
   return null
 }
@@ -38,24 +49,25 @@ function getIp(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const { email, password } = await request.json().catch(() => ({ email: '', password: '' }))
+  const { email, password, role: rawRole } = await request.json().catch(() => ({ email: '', password: '', role: 'agent' }))
+  const role: PortalLoginRole = rawRole === 'media' ? 'media' : 'agent'
   if (typeof email !== 'string' || !email.trim() || typeof password !== 'string' || !password) {
     return NextResponse.json({ error: 'Email and password are required' }, { status: 400 })
   }
 
-  const rateLimitKey = `${getIp(request)}:${email.trim().toLowerCase()}`
+  const rateLimitKey = `${getIp(request)}:${role}:${email.trim().toLowerCase()}`
   if (isRateLimited(rateLimitKey)) {
     return NextResponse.json({ error: 'Too many failed attempts. Please try again in a few minutes.' }, { status: 429 })
   }
 
-  const found = await findAgentByEmail(email.trim())
-  const portalPasswordHash = found?.agent.portalPasswordHash
+  const found = await findAccountByEmail(email.trim(), role)
+  const portalPasswordHash = found?.account.portalPasswordHash
   if (!found || !portalPasswordHash) {
     recordFailedAttempt(rateLimitKey)
     return NextResponse.json({ error: 'Incorrect email or password' }, { status: 401 })
   }
-  const { tenantId, agent } = found
-  if (!agent.portalActive) {
+  const { tenantId, account } = found
+  if (!account.portalActive) {
     recordFailedAttempt(rateLimitKey)
     return NextResponse.json({ error: 'Portal access for this account is currently disabled' }, { status: 403 })
   }
@@ -74,15 +86,22 @@ export async function POST(request: NextRequest) {
   const isSuspicious = SUSPICIOUS_BOTS.test(userAgent) || getFailedAttemptCount(rateLimitKey) >= 3
   clearAttempts(rateLimitKey)
 
-  found.db.portalAccessLog.create({ data: { agentId: agent.id, ip, userAgent, isSuspicious } }).catch(() => {})
+  if (role === 'media') {
+    found.db.mediaAccount.update({ where: { id: account.id }, data: { lastLoginAt: new Date() } }).catch(() => {})
+  } else {
+    found.db.portalAccessLog.create({ data: { agentId: account.id, ip, userAgent, isSuspicious } }).catch(() => {})
+  }
 
-  const pwv = agent.portalPasswordSetAt ? agent.portalPasswordSetAt.getTime() : 0
-  const jwt = await new SignJWT({ agentId: agent.id, agentName: agent.name, tenantId, pwv })
+  const pwv = account.portalPasswordSetAt ? account.portalPasswordSetAt.getTime() : 0
+  const claims = role === 'media'
+    ? { role, mediaAccountId: account.id, name: account.name, tenantId, pwv }
+    : { role, agentId: account.id, agentName: account.name, name: account.name, tenantId, pwv }
+  const jwt = await new SignJWT(claims)
     .setProtectedHeader({ alg: 'HS256' })
     .setExpirationTime('30d')
     .sign(getAgentPortalSecret())
 
-  const res = NextResponse.json({ ok: true, agentName: agent.name })
+  const res = NextResponse.json({ ok: true, role, name: account.name })
   res.cookies.set(AGENT_PORTAL_COOKIE, jwt, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',

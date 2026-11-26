@@ -3,11 +3,12 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { getDb } from '@/lib/get-db'
 import { leadWebsiteWhere } from '@/lib/lead-website'
+import { INTERNAL_SALES_MARKETING_ROLES } from '@/lib/marketing'
 
 import { roleMatches } from '@/lib/role-utils'
 
 const ALLOWED = ['ADMIN', 'MARKETING', 'SUPER_ADMIN']
-const SOURCES = ['customers', 'leads', 'agents', 'agentLeads', 'internal'] as const
+const SOURCES = ['customers', 'leads', 'agents', 'agentLeads', 'internal', 'internalSalesMarketing'] as const
 type Source = (typeof SOURCES)[number]
 
 /**
@@ -72,6 +73,12 @@ export async function GET(req: NextRequest) {
     ;[members, total] = await Promise.all([
       db.agentLeadContact.findMany({ where, select: { id: true, name: true, email: true }, orderBy: { name: 'asc' }, skip, take: limit }),
       db.agentLeadContact.count({ where }),
+    ])
+  } else if (source === 'internalSalesMarketing') {
+    const where = { role: { in: [...INTERNAL_SALES_MARKETING_ROLES] }, ...searchOr(['name', 'email']) }
+    ;[members, total] = await Promise.all([
+      db.user.findMany({ where, select: { id: true, name: true, email: true }, orderBy: { name: 'asc' }, skip, take: limit }),
+      db.user.count({ where }),
     ])
   } else {
     // internal — User.email is required/unique, no null/blank filtering needed.

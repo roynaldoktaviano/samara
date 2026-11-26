@@ -11,7 +11,7 @@ interface Supplier {
   locations: SupplierLocation[]
   contact: string | null; phone: string | null
   email: string | null; notes: string | null
-  isActive: boolean; createdAt: string
+  isActive: boolean; isMember: boolean; createdAt: string
   _count?: { orders: number }
 }
 interface SupplierDetail extends Supplier {
@@ -37,6 +37,7 @@ const CITY_OPTIONS = [
 const BLANK = {
   name: '', locations: [] as SupplierLocation[],
   contact: '', phone: '', email: '', notes: '',
+  isMember: false,
 }
 
 function CitySelect({ value, onChange, usedCities }: {
@@ -112,6 +113,7 @@ export default function SuppliersPage() {
       locations: Array.isArray(s.locations) ? s.locations : [],
       contact: s.contact ?? '', phone: s.phone ?? '',
       email: s.email ?? '', notes: s.notes ?? '',
+      isMember: !!s.isMember,
     })
     setEditId(s.id); setSaveError(''); setShowForm(true)
   }
@@ -225,6 +227,7 @@ export default function SuppliersPage() {
                   </div>
                   <div className="shrink-0 text-right">
                     <span className="text-xs text-muted-foreground">{s._count?.orders ?? 0} PO</span>
+                    {s.isMember && <p className="text-xs text-primary font-medium">Member</p>}
                     {!s.isActive && <p className="text-xs text-destructive font-medium">Inactive</p>}
                   </div>
                 </div>
@@ -255,6 +258,7 @@ export default function SuppliersPage() {
                 <div>
                   <div className="flex items-center gap-2 flex-wrap">
                     <h2 className="text-2xl font-bold tracking-tight">{detail.name}</h2>
+                    {detail.isMember && <StatusBadge tone="success">Member</StatusBadge>}
                     {!detail.isActive && <StatusBadge tone="neutral">Inactive</StatusBadge>}
                   </div>
                   <p className="text-muted-foreground text-sm mt-0.5">Added {formatDate(detail.createdAt)}</p>
@@ -414,6 +418,14 @@ export default function SuppliersPage() {
                     <textarea className="w-full border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring bg-card resize-none"
                       rows={2} placeholder="Payment terms, etc." value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} />
                   </div>
+                  <label className="col-span-2 flex items-start gap-2.5 rounded-md border px-3 py-2.5 cursor-pointer hover:bg-muted/40 transition-colors">
+                    <input type="checkbox" className="mt-0.5 h-4 w-4 accent-primary cursor-pointer"
+                      checked={form.isMember} onChange={e => setForm(f => ({ ...f, isMember: e.target.checked }))} />
+                    <span className="text-sm">
+                      <span className="font-medium">Is Membership</span>
+                      <span className="block text-xs text-muted-foreground">We already hold a membership with this supplier</span>
+                    </span>
+                  </label>
                 </div>
               </div>
               <div className="flex justify-end gap-2 px-5 py-4 border-t shrink-0">

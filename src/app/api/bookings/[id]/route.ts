@@ -32,6 +32,7 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
         agentContact: { select: { id: true, name: true, email: true, whatsapp: true } },
         openTrip:        { select: { id: true, title: true, destination: true } },
         salespersonUser: { select: { name: true } },
+        budgetItems:     { select: { id: true, name: true, amount: true }, orderBy: { sortOrder: 'asc' } },
         guests: {
           include: {
             customer: { select: { id: true, name: true, phone: true, email: true, passport: true, nationality: true } },

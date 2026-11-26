@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
   const role = (session?.user as { role?: string })?.role ?? ''
   if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
-  const { name, locations, contact, phone, email, notes } = await req.json()
+  const { name, locations, contact, phone, email, notes, isMember } = await req.json()
   if (!name?.trim()) return NextResponse.json({ error: 'Supplier name is required' }, { status: 400 })
   const existing = await db.supplier.findFirst({ where: { name: { equals: name.trim(), mode: 'insensitive' } } })
   if (existing) return NextResponse.json({ error: `Supplier "${name}" already exists` }, { status: 409 })
@@ -41,6 +41,7 @@ export async function POST(req: NextRequest) {
       phone: phone?.trim() || null,
       email: email?.trim() || null,
       notes: notes?.trim() || null,
+      isMember: isMember === true,
       updatedAt: new Date(),
     },
   })

@@ -1,21 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { resolveAgentPortalSession } from '@/lib/agent-portal-access'
+import { resolveAgentPortalSession, getVisibleCategoryIds } from '@/lib/agent-portal-access'
 
-// Drives the portal's Media Kit tab bar — zero AgentVisibleCategory rows means unrestricted
-// (every category shows), otherwise only the agent's explicit allow-list.
+// Drives the portal's resource tabs — zero visible-category rows means unrestricted
+// (every category shows), otherwise only the account's explicit allow-list.
 export async function GET(request: NextRequest) {
   const session = await resolveAgentPortalSession(request)
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const { db } = session
 
   try {
-    const visible = await db.agentVisibleCategory.findMany({
-      where: { agentId: session.agent.id },
-      select: { categoryId: true },
-    })
+    const visibleCategoryIds = await getVisibleCategoryIds(session)
 
     const categories = await db.mediaCategory.findMany({
-      where: visible.length > 0 ? { id: { in: visible.map(v => v.categoryId) } } : undefined,
+      where: visibleCategoryIds.length > 0 ? { id: { in: visibleCategoryIds } } : undefined,
       select: { id: true, name: true },
       orderBy: { sortOrder: 'asc' },
     })

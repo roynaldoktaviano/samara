@@ -22,6 +22,8 @@ export interface AudienceSources {
   agents?: AudienceSourceFilter | boolean
   agentLeads?: AudienceSourceFilter | boolean
   internal?: AudienceSourceFilter | boolean
+  /** Internal staff narrowed to Sales/Marketing (incl. combined roles) + Admin. */
+  internalSalesMarketing?: AudienceSourceFilter | boolean
   manualEmails?: string[]
   /** Drop anyone (by email, across ALL sources) who booked / got a payment requested
    * in the CURRENT calendar month — resolved at preview AND send time, so the month
@@ -31,6 +33,10 @@ export interface AudienceSources {
    * rolling current month above. */
   excludeBookedMonths?: string[]
 }
+
+// Roles that make up the "Internal Sales & Marketing" audience source. Combined
+// roles (see ROLE_ALIASES in role-utils) are listed explicitly since this is a DB filter.
+export const INTERNAL_SALES_MARKETING_ROLES = ['SALES', 'MARKETING', 'SALES_MARKETING', 'MARKETING_DIRECTOR', 'ADMIN'] as const
 
 export interface AudienceMember {
   email: string
@@ -256,6 +262,25 @@ export async function resolveAudience(db: PrismaClient, sources: AudienceSources
       where.OR = [
         { name: { contains: internalFilter.search, mode: 'insensitive' } },
         { email: { contains: internalFilter.search, mode: 'insensitive' } },
+      ]
+    }
+    const users = await db.user.findMany({ where, select: { id: true, name: true, email: true } })
+    for (const u of users) {
+      if (u.email && !excluded.has(u.id) && !byEmail.has(u.email.toLowerCase())) {
+        byEmail.set(u.email.toLowerCase(), { email: u.email, name: u.name, sourceType: 'INTERNAL', sourceId: u.id })
+      }
+    }
+  }
+
+  // Same as Internal, but only Sales / Marketing / Admin staff.
+  const internalSMFilter = asFilter(sources.internalSalesMarketing)
+  if (internalSMFilter) {
+    const excluded = excludeSet(internalSMFilter.excludeIds)
+    const where: Record<string, unknown> = { role: { in: [...INTERNAL_SALES_MARKETING_ROLES] } }
+    if (internalSMFilter.search) {
+      where.OR = [
+        { name: { contains: internalSMFilter.search, mode: 'insensitive' } },
+        { email: { contains: internalSMFilter.search, mode: 'insensitive' } },
       ]
     }
     const users = await db.user.findMany({ where, select: { id: true, name: true, email: true } })

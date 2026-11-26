@@ -7,6 +7,7 @@ import { processExpiredHoldsAndPromote } from '@/lib/waiting-list'
 import { scheduleTripSheetSync } from '@/lib/google-sheets'
 import { getTenantSecret } from '@/lib/tenant-secrets'
 import { roleMatches } from '@/lib/role-utils'
+import { canManageCollaboration, normalizeBudgetCurrency, parseBudgetItems, type BudgetItemInput } from '@/lib/collaboration-budget'
 import { resolveClawbackRatePerNight } from '@/lib/agent-clawback'
 import { renumberTripYear } from '@/lib/openTripNumbering'
 import { linkBookingDeals } from '@/lib/deal-booking'
@@ -96,6 +97,8 @@ export async function GET(request: NextRequest) {
         refundStatus: true, refundDecision: true, refundReason: true, refundProof: true, refundConfirmedAt: true, refundConfirmedBy: true,
         currency: true, exchangeRate: true, createdAt: true, hasDiving: true, hasSurfing: true, hasPhotoPackage: true,
         useB2BCommission: true, isComplimentary: true, complimentaryReason: true,
+        isCollaboration: true, budgetCurrency: true,
+        budgetItems: { select: { id: true, name: true, amount: true }, orderBy: { sortOrder: 'asc' } },
         salespersonUser: { select: { name: true } },
         createdBy:       { select: { name: true } },
         yacht:     { select: { id: true, name: true, model: true, canDiving: true, canSurfing: true, capacity: true } },
@@ -134,6 +137,7 @@ export async function GET(request: NextRequest) {
           endDate: b.endDate,
           status: b.status,
           isComplimentary: b.isComplimentary,
+          isCollaboration: b.isCollaboration,
           totalPrice: null,
           depositPaid: null,
           discount: null,
@@ -195,13 +199,30 @@ export async function POST(request: NextRequest) {
       isComplimentary,     // boolean: free booking from Internal Event — no pricing/payment
       complimentaryReason,
       picId,               // complimentary only: Sales user who owns (is PIC of) the booking
+      isCollaboration,     // boolean: Collaboration Book (Marketing) — complimentary + internal budget structure
+      budgetCurrency,      // collaboration only: 'IDR' | 'USD'
+      budgetItems,         // collaboration only: Array<{ name, amount }>
     } = body
 
+    // Collaboration Book = a complimentary booking raised by Marketing, carrying a budget structure.
+    const collab = !!isCollaboration && !isOnHold
     // Complimentary bookings are created from the Internal Event menu, which is Admin-only.
-    const comp = !!isComplimentary && !isOnHold
-    if (comp) {
-      const role = (session.user as { role?: string }).role ?? ''
-      if (!roleMatches(role, ['ADMIN', 'SUPER_ADMIN'])) {
+    const comp = (!!isComplimentary || collab) && !isOnHold
+    const sessionRole = (session.user as { role?: string }).role ?? ''
+    let collabBudget: BudgetItemInput[] = []
+    if (collab) {
+      if (!canManageCollaboration(sessionRole)) {
+        return NextResponse.json({ error: 'Only Marketing or Admin can create a collaboration book' }, { status: 403 })
+      }
+      if (!String(complimentaryReason ?? '').trim()) {
+        return NextResponse.json({ error: 'Collaboration purpose is required' }, { status: 400 })
+      }
+      const parsed = parseBudgetItems(budgetItems)
+      if ('error' in parsed) return NextResponse.json({ error: parsed.error }, { status: 400 })
+      if (parsed.items.length === 0) return NextResponse.json({ error: 'Add at least one budget item' }, { status: 400 })
+      collabBudget = parsed.items
+    } else if (comp) {
+      if (!roleMatches(sessionRole, ['ADMIN', 'SUPER_ADMIN'])) {
         return NextResponse.json({ error: 'Only Admin can create a complimentary booking' }, { status: 403 })
       }
       if (!String(complimentaryReason ?? '').trim()) {
@@ -209,8 +230,9 @@ export async function POST(request: NextRequest) {
       }
     }
     // PIC of a complimentary booking must be a Sales user — the Admin stays recorded as creator.
+    // A collaboration book is owned by the Marketing user who raised it (salesperson = creator).
     let pic: { id: string; name: string | null } | null = null
-    if (comp) {
+    if (comp && !collab) {
       const u = picId ? await db.user.findUnique({ where: { id: String(picId) }, select: { id: true, name: true, email: true, role: true } }) : null
       if (!u || !roleMatches(u.role, ['SALES'])) {
         return NextResponse.json({ error: 'Choose a Sales user as PIC' }, { status: 400 })
@@ -448,6 +470,11 @@ export async function POST(request: NextRequest) {
         status:         isOnHold ? 'on_hold' : comp ? 'confirmed' : paymentStatus(paid, total),
         isComplimentary:     comp,
         complimentaryReason: comp ? String(complimentaryReason).trim() : null,
+        isCollaboration:     collab,
+        budgetCurrency:      collab ? normalizeBudgetCurrency(budgetCurrency) : null,
+        budgetItems:         collab
+          ? { create: collabBudget.map((b, i) => ({ name: b.name, amount: b.amount, sortOrder: i })) }
+          : undefined,
         guestCount:     isOnHold ? 1 : resolvedGuests.length,
         crewRequired:   crewRequired ?? false,
         hasDiving:      hasDiving ?? false,
@@ -595,7 +622,9 @@ export async function POST(request: NextRequest) {
     logActivity({
       userId, userName, userRole,
       action: 'CREATE', entity: 'Booking', entityId: booking.id,
-      detail: comp
+      detail: collab
+        ? `New collaboration book ${booking.bookingCode} — ${collabBudget.length} budget item(s)`
+        : comp
         ? `New complimentary booking ${booking.bookingCode} — PIC: ${pic?.name ?? '-'}`
         : `New booking ${booking.bookingCode}`,
     }, db).catch(() => {})

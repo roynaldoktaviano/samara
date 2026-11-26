@@ -24,6 +24,7 @@ export interface AudienceState {
   agents: AudienceSourceState
   agentLeads: AudienceSourceState
   internal: AudienceSourceState
+  internalSalesMarketing: AudienceSourceState
   manualEmails: string
   // Drop guests who booked / had a payment requested in the chosen month(s).
   // excludeBookedCurrent = rolling "this month" (rolls over automatically — resolved
@@ -43,6 +44,7 @@ export const emptyAudience = (): AudienceState => ({
   agents: emptySource(),
   agentLeads: emptySource(),
   internal: emptySource(),
+  internalSalesMarketing: emptySource(),
   manualEmails: '',
   excludeBooked: true,
   excludeBookedCurrent: true,
@@ -83,6 +85,7 @@ export function buildAudienceSources(a: AudienceState) {
     ...(a.agents.enabled && { agents: toFilter(a.agents) }),
     ...(a.agentLeads.enabled && { agentLeads: toFilter(a.agentLeads) }),
     ...(a.internal.enabled && { internal: toFilter(a.internal) }),
+    ...(a.internalSalesMarketing.enabled && { internalSalesMarketing: toFilter(a.internalSalesMarketing) }),
     manualEmails: a.manualEmails.split(/[\n,]/).map(s => s.trim()).filter(Boolean),
     ...(a.excludeBooked && a.excludeBookedCurrent && { excludeBookedThisMonth: true }),
     ...(a.excludeBooked && a.excludeBookedMonths.length > 0 && { excludeBookedMonths: a.excludeBookedMonths }),
@@ -106,6 +109,7 @@ export function audienceStateFromSources(sources: any): AudienceState {
     agents: fill(sources?.agents),
     agentLeads: fill(sources?.agentLeads),
     internal: fill(sources?.internal),
+    internalSalesMarketing: fill(sources?.internalSalesMarketing),
     manualEmails: (sources?.manualEmails ?? []).join('\n'),
     ...(() => {
       const months: string[] = Array.isArray(sources?.excludeBookedMonths) ? sources.excludeBookedMonths : []
@@ -394,6 +398,12 @@ export function AudienceSourceFields({ audience, setAudience, yachts }: {
         enabled={audience.internal.enabled} onToggle={v => setAudience(a => ({ ...a, internal: { ...a.internal, enabled: v } }))}
         search={audience.internal.search} onSearchChange={v => setAudience(a => ({ ...a, internal: { ...a.internal, search: v } }))}
         excludeIds={audience.internal.excludeIds} onExcludeIdsChange={ids => setAudience(a => ({ ...a, internal: { ...a.internal, excludeIds: ids } }))}
+      />
+      <AudiencePicker
+        source="internalSalesMarketing" label="Internal Sales & Marketing" hint="Staff with a Sales, Marketing or Admin role"
+        enabled={audience.internalSalesMarketing.enabled} onToggle={v => setAudience(a => ({ ...a, internalSalesMarketing: { ...a.internalSalesMarketing, enabled: v } }))}
+        search={audience.internalSalesMarketing.search} onSearchChange={v => setAudience(a => ({ ...a, internalSalesMarketing: { ...a.internalSalesMarketing, search: v } }))}
+        excludeIds={audience.internalSalesMarketing.excludeIds} onExcludeIdsChange={ids => setAudience(a => ({ ...a, internalSalesMarketing: { ...a.internalSalesMarketing, excludeIds: ids } }))}
       />
       <div className="border rounded-lg p-4 space-y-2">
         <Label className="font-medium text-sm">Manual emails (optional)</Label>

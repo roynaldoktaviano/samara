@@ -16,6 +16,7 @@ import { Separator } from '@/components/ui/separator'
 import { Checkbox } from '@/components/ui/checkbox'
 import { toast } from 'sonner'
 import { BookingWizard } from '@/components/bookings/BookingWizard'
+import { CollaborationBudgetCard } from '@/components/bookings/CollaborationBudgetCard'
 import GuestEditSheet from '@/components/customers/GuestEditSheet'
 import WaitingListManager from '@/components/bookings/WaitingListManager'
 import { cn } from '@/lib/utils'
@@ -934,6 +935,8 @@ export default function CalendarView() {
   const userId   = (session?.user as { id?: string })?.id   ?? ''
   const isAdmin  = ['ADMIN', 'SUPER_ADMIN'].includes(userRole)
   const canEdit = roleMatches(userRole, ['ADMIN', 'SALES'])
+  // Marketing (incl. SALES_MARKETING / MARKETING_DIRECTOR via role aliases) raises Collaboration Books.
+  const canAddCollaboration = roleMatches(userRole, ['MARKETING'])
   // Crew/Boat Captain/Cruise Director get the calendar purely to check dates — the
   // booking/cabin stats strip isn't relevant to their job and stays hidden for them.
   const hideStatsStrip = ['CREW', 'BOAT_CAPTAIN', 'CRUISE_DIRECTOR'].includes(userRole)
@@ -979,6 +982,7 @@ export default function CalendarView() {
   const [wizardYachtId, setWizardYachtId]       = useState<string | undefined>(undefined)
   const [completeBookingId, setCompleteBookingId] = useState<string | undefined>(undefined)
   const [wizardComplimentary, setWizardComplimentary] = useState(false)
+  const [wizardCollaboration, setWizardCollaboration] = useState(false)
   const [otDetailOpen, setOtDetailOpen]         = useState(false)
   const [otDetail, setOtDetail]                 = useState<any>(null)
   const [otDetailLoading, setOtDetailLoading]   = useState(false)
@@ -1780,8 +1784,18 @@ export default function CalendarView() {
           <h3 className="text-2xl font-bold tracking-tight">Trip Calendar</h3>
           <p className="text-sm text-muted-foreground mt-0.5">Manage your yacht bookings and schedule</p>
         </div>
-        {isAdmin && (
+        {(isAdmin || canAddCollaboration) && (
           <div className="flex flex-wrap items-center gap-2">
+            {canAddCollaboration && (
+              <Button
+                variant="outline"
+                onClick={() => { setSelectedDate(''); setWizardCollaboration(true); setWizardOpen(true) }}
+                className="shadow-sm"
+              >
+                Add Collaboration Book
+              </Button>
+            )}
+            {isAdmin && (<>
             <Button
               variant="outline"
               onClick={openAddInternalEvent}
@@ -1795,6 +1809,7 @@ export default function CalendarView() {
             >
               <Plus className="mr-2 h-4 w-4" /> New Booking
             </Button>
+            </>)}
           </div>
         )}
       </div>
@@ -2328,6 +2343,14 @@ export default function CalendarView() {
                         </div>
                       )}
                     </div>
+                  )}
+
+                  {bookingFullDetail?.isCollaboration && (
+                    <CollaborationBudgetCard
+                      booking={bookingFullDetail}
+                      canEdit={isAdmin || canAddCollaboration}
+                      onSaved={next => setBookingFullDetail((prev: any) => prev ? { ...prev, ...next } : prev)}
+                    />
                   )}
 
                   {/* Guests */}
@@ -3104,13 +3127,14 @@ export default function CalendarView() {
       {/* ── New Booking Wizard ── */}
       <BookingWizard
         open={wizardOpen}
-        onOpenChange={v => { setWizardOpen(v); if (!v) { setWizardOpenTripId(undefined); setWizardYachtId(undefined); setCompleteBookingId(undefined); setWizardComplimentary(false) } }}
+        onOpenChange={v => { setWizardOpen(v); if (!v) { setWizardOpenTripId(undefined); setWizardYachtId(undefined); setCompleteBookingId(undefined); setWizardComplimentary(false); setWizardCollaboration(false) } }}
         onSuccess={() => { fetchBookings(); fetchOpenTrips() }}
         preselectedDate={selectedDate}
         preselectedOpenTripId={wizardOpenTripId}
         preselectedYachtId={wizardYachtId}
         completeBookingId={completeBookingId}
         complimentary={wizardComplimentary}
+        collaboration={wizardCollaboration}
       />
 
       {/* ── Waiting List Modal ── */}

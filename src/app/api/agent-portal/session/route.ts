@@ -7,7 +7,7 @@ export async function GET(request: NextRequest) {
   try {
     const session = await resolveAgentPortalSession(request)
     if (!session) return NextResponse.json({ valid: false })
-    return NextResponse.json({ valid: true, agentName: session.agent.name })
+    return NextResponse.json({ valid: true, role: session.role, name: session.account.name })
   } catch {
     return NextResponse.json({ valid: false })
   }

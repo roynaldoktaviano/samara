@@ -14,6 +14,8 @@ import { getEffectiveBookingStatus } from '@/lib/booking-status'
 import { formatDate, formatMoney, formatNumber } from '@/lib/format'
 import { StatusBadge, BookingStatusBadge, type StatusTone } from '@/components/ui/status-badge'
 import { roleMatches } from '@/lib/role-utils'
+import { CollaborationBudgetCard } from '@/components/bookings/CollaborationBudgetCard'
+import { canManageCollaboration } from '@/lib/collaboration-budget'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Separator } from '@/components/ui/separator'
@@ -83,6 +85,9 @@ interface BookingRecord {
   useB2BCommission?: boolean
   isComplimentary?: boolean
   complimentaryReason?: string | null
+  isCollaboration?: boolean
+  budgetCurrency?: string | null
+  budgetItems?: Array<{ id: string; name: string; amount: number }>
   createdBy?: { name: string | null } | null
   services?:     Array<{ id: string; name: string; price: number; quantity: number }>
   clawbackEntries?: Array<{ id: string; amount: number; bookingId: string | null }>
@@ -1446,7 +1451,11 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                           <BookingStatusBadge status={effStatus} />
                         )
                       })()}
-                      {b.isComplimentary && (
+                      {b.isCollaboration ? (
+                        <StatusBadge tone="purple" size="sm" className="mt-1 font-semibold [&>svg]:size-2.5" title={b.complimentaryReason ?? undefined}>
+                          Collaboration
+                        </StatusBadge>
+                      ) : b.isComplimentary && (
                         <StatusBadge tone="success" size="sm" className="mt-1 font-semibold [&>svg]:size-2.5" title={b.complimentaryReason ?? undefined}>
                           <Gift className="w-2.5 h-2.5" /> Complimentary
                         </StatusBadge>
@@ -2830,7 +2839,11 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                           </span>
                         )
                       })()}
-                      {db_.isComplimentary && (
+                      {db_.isCollaboration ? (
+                        <StatusBadge tone="purple" size="sm" className="font-semibold [&>svg]:size-2.5" title={db_.complimentaryReason ? `Purpose: ${db_.complimentaryReason}` : undefined}>
+                          Collaboration
+                        </StatusBadge>
+                      ) : db_.isComplimentary && (
                         <StatusBadge tone="success" size="sm" className="font-semibold [&>svg]:size-2.5" title={db_.complimentaryReason ? `Reason: ${db_.complimentaryReason}` : undefined}>
                           <Gift className="w-2.5 h-2.5" /> Complimentary
                         </StatusBadge>
@@ -3066,11 +3079,11 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                         <div className="divide-y">
                           {(db_.salespersonUser?.name ?? db_.salesperson) && (
                             <div className="flex justify-between px-3 py-2">
-                              <span className="text-muted-foreground">{db_.isComplimentary ? 'PIC (Sales)' : 'Sales'}</span>
+                              <span className="text-muted-foreground">{db_.isCollaboration ? 'PIC (Marketing)' : db_.isComplimentary ? 'PIC (Sales)' : 'Sales'}</span>
                               <span className="font-medium">{db_.salespersonUser?.name ?? db_.salesperson}</span>
                             </div>
                           )}
-                          {db_.isComplimentary && db_.createdBy?.name && (
+                          {db_.isComplimentary && !db_.isCollaboration && db_.createdBy?.name && (
                             <div className="flex justify-between px-3 py-2">
                               <span className="text-muted-foreground">Created by</span>
                               <span className="font-medium">{db_.createdBy.name}</span>
@@ -3078,7 +3091,7 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                           )}
                           {db_.isComplimentary && db_.complimentaryReason && (
                             <div className="flex justify-between gap-4 px-3 py-2">
-                              <span className="text-muted-foreground shrink-0">Complimentary reason</span>
+                              <span className="text-muted-foreground shrink-0">{db_.isCollaboration ? 'Collaboration purpose' : 'Complimentary reason'}</span>
                               <span className="font-medium text-right">{db_.complimentaryReason}</span>
                             </div>
                           )}
@@ -3112,6 +3125,17 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                           )}
                         </div>
                       </div>
+                    )}
+
+                    {db_.isCollaboration && (
+                      <CollaborationBudgetCard
+                        booking={db_}
+                        canEdit={canManageCollaboration(userRole)}
+                        onSaved={next => {
+                          setDetailBooking(prev => prev && prev.id === db_.id ? { ...prev, ...next } : prev)
+                          setBookings(prev => prev.map(x => x.id === db_.id ? { ...x, ...next } : x))
+                        }}
+                      />
                     )}
 
                     {/* Diving toggle — only if yacht supports diving */}

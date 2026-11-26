@@ -7,35 +7,44 @@ import { resolveAgentPortalSession } from '@/lib/agent-portal-access'
 export async function GET(request: NextRequest) {
   const session = await resolveAgentPortalSession(request)
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  // Availability is trade-only — press/media accounts never get the calendar.
+  if (session.role !== 'agent') return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   const { db } = session
 
   const { searchParams } = new URL(request.url)
   const yachtId = searchParams.get('yachtId')
   if (!yachtId) return NextResponse.json({ error: 'yachtId is required' }, { status: 400 })
 
+  // Agents only ever see today onwards — past bookings are our history, not theirs.
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+
   try {
     const [bookings, openTrips, internalEvents] = await Promise.all([
       db.booking.findMany({
-        where: { status: { not: 'cancelled' }, yachtId },
+        where: { status: { not: 'cancelled' }, yachtId, endDate: { gte: today } },
         select: { id: true, startDate: true, endDate: true, status: true, tripType: true },
         orderBy: { startDate: 'asc' },
         take: 1000,
       }),
+      // Explicit selects (not include) — only what the cabin grid needs, so no guest/booking
+      // details leave the server and the query doesn't depend on every Booking column.
       db.openTrip.findMany({
-        where: { status: { not: 'cancelled' }, yachtId },
-        include: {
+        where: { status: { not: 'cancelled' }, yachtId, endDate: { gte: today } },
+        select: {
+          id: true, title: true, destination: true, startDate: true, endDate: true, status: true,
           bookings: {
             where: { status: { not: 'cancelled' } },
-            include: { guests: { include: { cabin: { select: { id: true, name: true } } } } },
+            select: { status: true, guests: { select: { cabinId: true } } },
           },
-          yacht: { include: { cabins: { orderBy: { name: 'asc' } } } },
+          yacht: { select: { cabins: { select: { id: true, name: true }, orderBy: { name: 'asc' } } } },
         },
         orderBy: { startDate: 'asc' },
       }),
       // internalOnly:false events (this yacht, or company-wide) also block this feed —
       // surfaced as a plain "booked" range, same reasoning as public/calendar's route.
       db.internalEvent.findMany({
-        where: { internalOnly: false, OR: [{ yachtId }, { yachtId: null }] },
+        where: { internalOnly: false, endDate: { gte: today }, OR: [{ yachtId }, { yachtId: null }] },
         select: { id: true, startDate: true, endDate: true },
       }),
     ])

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { resolveAgentPortalSession } from '@/lib/agent-portal-access'
+import { resolveAgentPortalSession, getVisibleCategoryIds } from '@/lib/agent-portal-access'
 
 export async function GET(request: NextRequest) {
   const session = await resolveAgentPortalSession(request)
@@ -13,11 +13,7 @@ export async function GET(request: NextRequest) {
     // Zero rows = unrestricted (sees every category); otherwise an explicit allow-list —
     // filtered here too (not just in the /categories tab list) so a restricted category's
     // files never leave the server for this agent's session at all.
-    const visible = await db.agentVisibleCategory.findMany({
-      where: { agentId: session.agent.id },
-      select: { categoryId: true },
-    })
-    const visibleCategoryIds = visible.map(v => v.categoryId)
+    const visibleCategoryIds = await getVisibleCategoryIds(session)
 
     const files = await db.mediaFile.findMany({
       where: {

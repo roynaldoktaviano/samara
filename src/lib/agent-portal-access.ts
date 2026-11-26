@@ -14,13 +14,18 @@ export function getAgentPortalSecret(): Uint8Array {
   return new TextEncoder().encode(secret)
 }
 
+/** Who is signed into the portal: a travel Agent, or a press/media contact (MediaAccount). */
+export type PortalRole = 'agent' | 'media'
+
 export interface AgentPortalPayload {
-  agentId: string
-  agentName: string
+  role: PortalRole
+  /** Agent.id for role 'agent', MediaAccount.id for role 'media'. */
+  subjectId: string
+  name: string
   tenantId: string | null
-  // Epoch ms of Agent.portalPasswordSetAt at the moment this token was issued. Compared
-  // against the current DB value on every request so resetting a password immediately
-  // invalidates any token issued before the reset, even though the JWT itself is still
+  // Epoch ms of portalPasswordSetAt at the moment this token was issued. Compared against
+  // the current DB value on every request so resetting a password immediately invalidates
+  // any token issued before the reset, even though the JWT itself is still
   // cryptographically valid for up to 30 days.
   pwv: number
 }
@@ -31,9 +36,14 @@ export async function verifyAgentPortalAccess(req: NextRequest): Promise<AgentPo
   if (!cookie) return null
   try {
     const { payload } = await jwtVerify(cookie, getAgentPortalSecret())
+    // Tokens issued before media accounts existed carry only agentId/agentName — treat as agent.
+    const role: PortalRole = payload.role === 'media' ? 'media' : 'agent'
+    const subjectId = (role === 'media' ? payload.mediaAccountId : payload.agentId) as string | undefined
+    if (!subjectId) return null
     return {
-      agentId: payload.agentId as string,
-      agentName: payload.agentName as string,
+      role,
+      subjectId,
+      name: ((payload.name ?? payload.agentName) as string) ?? '',
       tenantId: (payload.tenantId as string | null) ?? null,
       pwv: (payload.pwv as number) ?? 0,
     }
@@ -45,15 +55,16 @@ export async function verifyAgentPortalAccess(req: NextRequest): Promise<AgentPo
 export interface AgentPortalSession {
   db: PrismaClient
   tenantId: string | null
-  agent: { id: string; name: string }
+  role: PortalRole
+  account: { id: string; name: string }
 }
 
 /**
  * The one place every agent-portal data route should call to authorize a request — verifies
- * the JWT, then re-checks the Agent row fresh from the DB (portalActive + password version)
- * so a revoked/deactivated/password-reset agent is cut off immediately, not just at their
- * next login. A pure JWT-signature check alone (verifyAgentPortalAccess) is NOT enough for
- * routes that return real data — only use that directly for cases that don't need live state.
+ * the JWT, then re-checks the Agent / MediaAccount row fresh from the DB (portalActive +
+ * password version) so a revoked/deactivated/password-reset account is cut off immediately,
+ * not just at their next login. A pure JWT-signature check alone (verifyAgentPortalAccess) is
+ * NOT enough for routes that return real data.
  */
 export async function resolveAgentPortalSession(req: NextRequest): Promise<AgentPortalSession | null> {
   const payload = await verifyAgentPortalAccess(req)
@@ -62,14 +73,25 @@ export async function resolveAgentPortalSession(req: NextRequest): Promise<Agent
   const db = await resolveTenantById(payload.tenantId)
   if (!db) return null
 
-  const agent = await db.agent.findUnique({
-    where: { id: payload.agentId },
-    select: { id: true, name: true, portalActive: true, portalPasswordSetAt: true },
-  })
-  if (!agent?.portalActive) return null
+  const select = { id: true, name: true, portalActive: true, portalPasswordSetAt: true } as const
+  const account = payload.role === 'media'
+    ? await db.mediaAccount.findUnique({ where: { id: payload.subjectId }, select })
+    : await db.agent.findUnique({ where: { id: payload.subjectId }, select })
+  if (!account?.portalActive) return null
 
-  const currentPwv = agent.portalPasswordSetAt ? agent.portalPasswordSetAt.getTime() : 0
+  const currentPwv = account.portalPasswordSetAt ? account.portalPasswordSetAt.getTime() : 0
   if (currentPwv !== payload.pwv) return null
 
-  return { db, tenantId: payload.tenantId, agent: { id: agent.id, name: agent.name } }
+  return { db, tenantId: payload.tenantId, role: payload.role, account: { id: account.id, name: account.name } }
+}
+
+/**
+ * Media-category allow-list for this session. An empty array means unrestricted (every
+ * category) — same convention for agents (AgentVisibleCategory) and media (MediaAccountVisibleCategory).
+ */
+export async function getVisibleCategoryIds(session: AgentPortalSession): Promise<string[]> {
+  const rows = session.role === 'media'
+    ? await session.db.mediaAccountVisibleCategory.findMany({ where: { mediaAccountId: session.account.id }, select: { categoryId: true } })
+    : await session.db.agentVisibleCategory.findMany({ where: { agentId: session.account.id }, select: { categoryId: true } })
+  return rows.map(r => r.categoryId)
 }

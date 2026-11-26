@@ -12,7 +12,7 @@ import { formatRelative } from '@/lib/format'
 import { motion, AnimatePresence } from 'framer-motion'
 import { toast } from 'sonner'
 import { SidebarProvider, Sidebar, SidebarContent, SidebarGroup, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarHeader, SidebarFooter, SidebarTrigger } from '@/components/ui/sidebar'
-import { Anchor, Calendar, LogOut, ChevronDown, Ship, UserCog, CreditCard, Bell, CheckCheck, Clock, CheckCircle2, XCircle, Briefcase, Tag, Shield, TrendingUp, TrendingDown, Building2, UserPen, Eye, EyeOff, ShoppingCart, ClipboardList, Boxes, ArrowRightLeft, Package, MapPin, IdCard, Wallet, Banknote, Compass, Send, LayoutTemplate, UserPlus, Globe, Image, Layers, FileText, MessageCircle, Mail, Receipt, Percent, PackagePlus, CalendarCheck, CalendarOff, HandCoins } from 'lucide-react'
+import { Anchor, Calendar, LogOut, ChevronDown, Ship, UserCog, CreditCard, Bell, CheckCheck, Clock, CheckCircle2, XCircle, Briefcase, Tag, Shield, TrendingUp, TrendingDown, Building2, UserPen, Eye, EyeOff, ShoppingCart, ClipboardList, Boxes, ArrowRightLeft, Package, MapPin, IdCard, Wallet, Banknote, Compass, Send, LayoutTemplate, UserPlus, Globe, Image, FileText, MessageCircle, Mail, Receipt, Percent, PackagePlus, CalendarCheck, CalendarOff, HandCoins } from 'lucide-react'
 import { chatRole, roleMatches } from '@/lib/role-utils'
 import { type View, type NavItem, NAV_GROUPS, MARKETING_SUB_GROUPS, navigationItems } from '@/lib/nav-items'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
@@ -121,6 +121,7 @@ import AudiencesPage from '@/components/marketing/audiences/AudiencesPage'
 import AutomationsPage from '@/components/marketing/automations/AutomationsPage'
 import CommandCenterPage from '@/components/marketing/dashboard/CommandCenterPage'
 import PerformancePage from '@/components/marketing/performance/PerformancePage'
+import CollaborationBooksReport from '@/components/marketing/reports/CollaborationBooksReport'
 import MediaKit from '@/components/marketing/MediaKit'
 import ContentStudioPage from '@/components/marketing/content/ContentStudioPage'
 import CampaignHubPage from '@/components/marketing/campaign/CampaignHubPage'
@@ -938,7 +939,7 @@ export default function Home() {
       case 'marketing-landing-pages': return <MarketingComingSoon title="Landing Pages" desc="Build and publish campaign pages straight to the brand website." icon={Globe} />
       case 'marketing-assets': return <MediaKit />
       case 'marketing-performance': return <PerformancePage />
-      case 'marketing-reports': return <MarketingComingSoon title="Reports" desc="Recurring reports and campaign result summaries." icon={Layers} />
+      case 'marketing-reports': return <CollaborationBooksReport />
       case 'marketing-settings': return <MarketingBrands />
       case 'my-works':       return <MyWorksPage />
       case 'my-approvals':   return <MyApprovalsPage />

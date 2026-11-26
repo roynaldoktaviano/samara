@@ -558,7 +558,6 @@ export default function InitialStockOpnamePage() {
               .filter(Boolean).join(' ').toLowerCase()
             return terms.every(t => hay.includes(t))
           }
-          const stockRows = allStockRows.filter(matches)
           const nonStockRows = allNonStockRows.filter(matches)
           const inputCls = 'w-24 border rounded-md px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-1 focus:ring-ring/50 focus:border-ring tabular-nums [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none'
           const skeleton = [...Array(3)].map((_, i) => (
@@ -567,55 +566,25 @@ export default function InitialStockOpnamePage() {
           const textCls = 'w-full border rounded-md px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring/50 focus:border-ring bg-card'
           const onShip = isShipLocation(detail.location)
           const roomSuggestions = Array.from(new Set([...(detail.inventoryRooms ?? []), ...allStockRows.map(r => r.placement?.room?.trim())].filter((v): v is string => !!v))).sort()
-          const assetRowCount = onShip ? allStockRows.filter(isAssetRow).length : 0
-          return (
-            <>
-              {onShip && (
-                <div className="flex items-start gap-3 bg-muted/40 border rounded-lg px-4 py-3">
-                  <Boxes className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
-                  <p className="text-sm text-muted-foreground">
-                    Ship equipment goes in this same list — add it as a product with <span className="font-medium text-foreground">Type = Asset</span>.
-                    On finish, Asset rows are added to the ship <span className="font-medium text-foreground">Inventory</span> (Room column = Inventory room, Sub-Category = Inventory category) instead of stock.
-                    {assetRowCount > 0 && <> <span className="font-medium text-foreground">{assetRowCount}</span> Asset row(s) now.</>}
-                  </p>
-                </div>
-              )}
-              <div className="rounded-xl border overflow-hidden">
-                <div className="px-5 py-3 bg-muted/40 border-b flex flex-wrap items-center gap-2">
-                  <h3 className="text-sm font-semibold">Items</h3>
-                  <span className="text-xs text-muted-foreground">
-                    ({terms.length ? `${stockRows.length} of ${allStockRows.length}` : allStockRows.length})
-                  </span>
-                  <div className="relative ml-auto w-full sm:w-72">
-                    <Search className="h-4 w-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
-                    <input value={rowSearch} onChange={e => setRowSearch(e.target.value)}
-                      onKeyDown={e => { if (e.key === 'Escape') setRowSearch('') }}
-                      placeholder="Search product, SKU, category, room…"
-                      className="w-full h-8 border rounded-md pl-8 pr-8 text-sm bg-card focus:outline-none focus:ring-1 focus:ring-ring/50 focus:border-ring" />
-                    {rowSearch && (
-                      <button onClick={() => setRowSearch('')} title="Clear search"
-                        className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
-                        <X className="h-3.5 w-3.5" />
-                      </button>
-                    )}
-                  </div>
-                </div>
-                <div className="overflow-x-auto"><table className="w-full text-sm">
-                  <thead className="bg-muted/30 text-xs text-muted-foreground border-b">
-                    <tr>
-                      <th className="text-left px-4 py-2.5 font-medium">Product</th>
-                      <th className="text-left px-4 py-2.5 font-medium">Category</th>
-                      <th className="text-left px-4 py-2.5 font-medium">Room &amp; Loc</th>
-                      <th className="text-right px-4 py-2.5 font-medium">Current Stock</th>
-                      {!readOnly && <th className="px-4 py-2.5" />}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y">
-                    {detailLoading ? skeleton : !allStockRows.length ? (
-                      <tr><td colSpan={5} className="text-center py-10 text-muted-foreground text-sm">No stock products yet. Click "Add Product" to get started.</td></tr>
-                    ) : !stockRows.length ? (
-                      <tr><td colSpan={5} className="text-center py-10 text-muted-foreground text-sm">No products match &ldquo;{rowSearch.trim()}&rdquo;.</td></tr>
-                    ) : stockRows.map(ci => {
+          // On a ship, Asset rows go to the ship Inventory on finish (not stock) — listed in
+          // their own "Inventory / Assets" table. Off-ship they stay stock, so they stay in Items.
+          const isInventoryRow = (ci: OpnameItem) => onShip && isAssetRow(ci)
+          const allItemRows = allStockRows.filter(ci => !isInventoryRow(ci))
+          const allAssetRows = allStockRows.filter(isInventoryRow)
+          const itemRows = allItemRows.filter(matches)
+          const assetRows = allAssetRows.filter(matches)
+          const tableHead = (qtyLabel: string, categoryLabel = 'Category') => (
+            <thead className="bg-muted/30 text-xs text-muted-foreground border-b">
+              <tr>
+                <th className="text-left px-4 py-2.5 font-medium">Product</th>
+                <th className="text-left px-4 py-2.5 font-medium">{categoryLabel}</th>
+                <th className="text-left px-4 py-2.5 font-medium">Room &amp; Loc</th>
+                <th className="text-right px-4 py-2.5 font-medium">{qtyLabel}</th>
+                {!readOnly && <th className="px-4 py-2.5" />}
+              </tr>
+            </thead>
+          )
+          const renderRow = (ci: OpnameItem) => {
                       const units: UnitInfo = ci.item ?? {}
                       const canSwitch = hasPurchaseUnit(units)
                       const usePurchase = canSwitch && (rowUnit[ci.id] ?? 'PURCHASE') === 'PURCHASE'
@@ -639,10 +608,8 @@ export default function InitialStockOpnamePage() {
                                 <p className="font-medium text-sm">{ci.itemName}</p>
                                 <div className="flex items-center gap-1.5 mt-0.5">
                                   {ci.item && <p className="text-xs text-muted-foreground font-mono">{ci.item.sku}</p>}
-                                  {isAssetRow(ci) && (
-                                    <StatusBadge tone={onShip ? 'info' : 'neutral'} title={onShip ? 'Goes to the ship Inventory on finish' : 'Asset — kept as stock at this location until it reaches a ship'}>
-                                      {onShip ? 'Asset → Inventory' : 'Asset'}
-                                    </StatusBadge>
+                                  {isAssetRow(ci) && !onShip && (
+                                    <StatusBadge tone="neutral" title="Asset — kept as stock at this location until it reaches a ship">Asset</StatusBadge>
                                   )}
                                 </div>
                               </div>
@@ -699,13 +666,70 @@ export default function InitialStockOpnamePage() {
                           )}
                         </tr>
                       )
-                    })}
+          }
+          return (
+            <>
+              <div className="rounded-xl border overflow-hidden">
+                <div className="px-5 py-3 bg-muted/40 border-b flex flex-wrap items-center gap-2">
+                  <h3 className="text-sm font-semibold">Items</h3>
+                  <span className="text-xs text-muted-foreground">
+                    ({terms.length ? `${itemRows.length} of ${allItemRows.length}` : allItemRows.length})
+                  </span>
+                  <div className="relative ml-auto w-full sm:w-72">
+                    <Search className="h-4 w-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+                    <input value={rowSearch} onChange={e => setRowSearch(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Escape') setRowSearch('') }}
+                      placeholder="Search product, SKU, category, room…"
+                      className="w-full h-8 border rounded-md pl-8 pr-8 text-sm bg-card focus:outline-none focus:ring-1 focus:ring-ring/50 focus:border-ring" />
+                    {rowSearch && (
+                      <button onClick={() => setRowSearch('')} title="Clear search"
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <div className="overflow-x-auto"><table className="w-full text-sm">
+                  {tableHead('Current Stock')}
+                  <tbody className="divide-y">
+                    {detailLoading ? skeleton : !allItemRows.length ? (
+                      <tr><td colSpan={5} className="text-center py-10 text-muted-foreground text-sm">No stock products yet. Click "Add Product" to get started.</td></tr>
+                    ) : !itemRows.length ? (
+                      <tr><td colSpan={5} className="text-center py-10 text-muted-foreground text-sm">No products match &ldquo;{rowSearch.trim()}&rdquo;.</td></tr>
+                    ) : itemRows.map(renderRow)}
                   </tbody>
                 </table></div>
                 <datalist id="opname-room-suggestions">
                   {roomSuggestions.map(r => <option key={r} value={r} />)}
                 </datalist>
               </div>
+
+              {onShip && (
+                <div className="rounded-xl border overflow-hidden">
+                  <div className="px-5 py-3 bg-muted/40 border-b">
+                    <div className="flex items-center gap-2">
+                      <Boxes className="h-4 w-4 text-muted-foreground" />
+                      <h3 className="text-sm font-semibold">Inventory / Assets</h3>
+                      <span className="text-xs text-muted-foreground">
+                        ({terms.length ? `${assetRows.length} of ${allAssetRows.length}` : allAssetRows.length})
+                      </span>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Ship equipment (products with Type = Asset). On finish these are added to the ship Inventory — Room = Inventory room (empty → &ldquo;General&rdquo;), Sub-Category = Inventory category — not to stock.
+                    </p>
+                  </div>
+                  <div className="overflow-x-auto"><table className="w-full text-sm">
+                    {tableHead('Qty', 'Sub-Category')}
+                    <tbody className="divide-y">
+                      {detailLoading ? skeleton : !allAssetRows.length ? (
+                        <tr><td colSpan={5} className="text-center py-10 text-muted-foreground text-sm">No assets yet. Click &ldquo;Add Product&rdquo; and set Type = Asset.</td></tr>
+                      ) : !assetRows.length ? (
+                        <tr><td colSpan={5} className="text-center py-10 text-muted-foreground text-sm">No assets match &ldquo;{rowSearch.trim()}&rdquo;.</td></tr>
+                      ) : assetRows.map(renderRow)}
+                    </tbody>
+                  </table></div>
+                </div>
+              )}
 
               {(detailLoading || nonStockRows.length > 0) && (
                 <div className="rounded-xl border overflow-hidden">

@@ -28,6 +28,8 @@ import {
   User, Users, Ship, Map, Plus, Trash2, BookOpen,
   ChevronLeft, ChevronRight, Check, Search, X, Loader2, Tag, AlertCircle, CalendarIcon, Crown, ChevronsUpDown, Gift,
 } from 'lucide-react'
+import { BudgetStructureEditor, budgetRowsPayload, budgetRowsValid, newBudgetRow, type BudgetRow } from '@/components/bookings/BudgetStructureEditor'
+import type { BudgetCurrency } from '@/lib/collaboration-budget'
 import type { DateRange } from 'react-day-picker'
 import { NATIONALITIES } from '@/lib/nationalities'
 import { getAgentCommissionPct } from '@/lib/agent-commission'
@@ -82,6 +84,7 @@ interface Props {
   preselectedYachtId?: string
   completeBookingId?: string  // if set, wizard is in "complete on-hold booking" mode
   complimentary?: boolean     // free booking from Internal Event — skips source + pricing/payment
+  collaboration?: boolean     // Collaboration Book (Marketing) — complimentary flow + internal budget structure, creator is PIC
 }
 
 function getAgeYears(dob: string | Date | null | undefined): number | null {
@@ -120,7 +123,10 @@ const CURRENCIES: Record<CurrencyCode, { symbol: string; label: string; rateToUS
 
 const TODAY = new Date().toISOString().split('T')[0]
 
-export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, preselectedOpenTripId, preselectedYachtId, completeBookingId, complimentary = false }: Props) {
+export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, preselectedOpenTripId, preselectedYachtId, completeBookingId, complimentary: complimentaryProp = false, collaboration = false }: Props) {
+  // A collaboration book runs the whole complimentary flow ($0, no source/pricing/payment);
+  // only the confirm step and the payload differ.
+  const complimentary = complimentaryProp || collaboration
   const { data: session } = useSession()
   const sharingCabin = !!(session?.user as { tenantFeatures?: Record<string, boolean> })?.tenantFeatures?.sharingCabin
   const isAdmin = roleMatches((session?.user as { role?: string })?.role, ['ADMIN', 'SUPER_ADMIN'])
@@ -203,6 +209,9 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
   const [compReason, setCompReason] = useState('')
   const [picId,      setPicId]      = useState('')
   const [salesUsers, setSalesUsers] = useState<{ id: string; name: string }[]>([])
+  /* collaboration book */
+  const [budgetCurrency, setBudgetCurrency] = useState<BudgetCurrency>('IDR')
+  const [budgetRows,     setBudgetRows]     = useState<BudgetRow[]>(() => [newBudgetRow()])
 
   /* remote data */
   const [yachts,    setYachts]    = useState<YachtOpt[]>([])
@@ -270,6 +279,8 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
     if (!open || !complimentary) return
     setSource('DIRECT')
     setPhase('tripType')
+    // Collaboration book: the creator is the PIC, no Sales user to pick.
+    if (collaboration) return
     // PIC must be a Sales user (combined roles like SALES_MARKETING count too).
     fetch('/api/users').then(r => r.ok ? r.json() : []).then((users: { id: string; name: string | null; email: string; role: string }[]) => {
       setSalesUsers(users
@@ -277,7 +288,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
         .map(u => ({ id: u.id, name: u.name || u.email }))
         .sort((a, b) => a.name.localeCompare(b.name)))
     }).catch(() => setSalesUsers([]))
-  }, [open, complimentary])
+  }, [open, complimentary, collaboration])
 
   /* pre-select open trip from calendar — still ask source first */
   useEffect(() => {
@@ -646,6 +657,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
     setManualRate(1); setBaseFocused(false); setSvcFocused(null)
     setVoucherApplied(null); setVoucherError('')
     setCompReason(''); setPicId('')
+    setBudgetCurrency('IDR'); setBudgetRows([newBudgetRow()])
     setBookedCustomerIds([]); setExistingCabinOccupancy({})
     setOriginalHoldCabins({})
     setCabinExtraBeds({})
@@ -851,6 +863,7 @@ export function BookingWizard({ open, onOpenChange, onSuccess, preselectedDate, 
       if (tripType === 'OPEN_TRIP') return guests.every(g => !!g.cabinId)
       return true // PC: cabin optional
     }
+    if (step === 3 && collaboration) return compReason.trim().length > 0 && budgetRowsValid(budgetRows)
     if (step === 3 && complimentary) return !!picId && compReason.trim().length > 0
     if (step === 3) return !!(parseFloat(basePrice) > 0) && !!depositDueDate && !!finalDueDate
     return true
@@ -1004,7 +1017,11 @@ notes:         resolvedNotes,
         guests: guests.map(guestPayload),
         services: services.filter(s => s.name.trim()).map(s => ({ name: s.name, price: s.price, qty: parseInt(s.qty) || 1 })),
         confirmCloseOpenTrips,
-        ...(complimentary && { isComplimentary: true, complimentaryReason: compReason.trim(), picId }),
+        ...(complimentary && !collaboration && { isComplimentary: true, complimentaryReason: compReason.trim(), picId }),
+        ...(collaboration && {
+          isComplimentary: true, isCollaboration: true, complimentaryReason: compReason.trim(),
+          budgetCurrency, budgetItems: budgetRowsPayload(budgetRows),
+        }),
       }
 
       const res = await fetch('/api/bookings', {
@@ -2777,13 +2794,15 @@ notes:         resolvedNotes,
     ]
     return (
       <div className="space-y-4 max-w-xl mx-auto">
-        <div className="flex items-start gap-3 rounded-lg border border-success/30 bg-success/10 px-3 py-2.5">
-          <Gift className="w-4 h-4 text-success mt-0.5 shrink-0" />
-          <div className="text-sm">
-            <p className="font-medium text-foreground">Complimentary booking — no payment</p>
-            <p className="text-xs text-muted-foreground">Saved as Confirmed with a total of {formatMoney(0, { currency: 'USD' })}. No invoice, deposit or due dates.</p>
+        {!collaboration && (
+          <div className="flex items-start gap-3 rounded-lg border border-success/30 bg-success/10 px-3 py-2.5">
+            <Gift className="w-4 h-4 text-success mt-0.5 shrink-0" />
+            <div className="text-sm">
+              <p className="font-medium text-foreground">Complimentary booking — no payment</p>
+              <p className="text-xs text-muted-foreground">Saved as Confirmed with a total of {formatMoney(0, { currency: 'USD' })}. No invoice, deposit or due dates.</p>
+            </div>
           </div>
-        </div>
+        )}
 
         <div className="rounded-lg border divide-y text-sm">
           {rows.filter(([, v]) => v).map(([k, v]) => (
@@ -2794,7 +2813,7 @@ notes:         resolvedNotes,
           ))}
         </div>
 
-        <div className="space-y-1.5">
+        {!collaboration && <div className="space-y-1.5">
           <Label htmlFor="bw-comp-pic" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">PIC (Sales) <span className="text-destructive">*</span></Label>
           <Select value={picId} onValueChange={setPicId}>
             <SelectTrigger id="bw-comp-pic" className="h-9 w-full text-sm"><SelectValue placeholder="Select sales PIC" /></SelectTrigger>
@@ -2805,18 +2824,27 @@ notes:         resolvedNotes,
             </SelectContent>
           </Select>
           <p className="text-[11px] text-muted-foreground">The booking is owned by this sales person; you stay recorded as the creator.</p>
-        </div>
+        </div>}
 
         <div className="space-y-1.5">
-          <Label htmlFor="bw-comp-reason" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Reason <span className="text-destructive">*</span></Label>
+          <Label htmlFor="bw-comp-reason" className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{collaboration ? 'Purpose' : 'Reason'} <span className="text-destructive">*</span></Label>
           <Textarea
             id="bw-comp-reason"
             rows={3}
-            placeholder="e.g. Owner's family trip, influencer collaboration, agent fam trip"
+            placeholder={collaboration ? 'e.g. Influencer collaboration with @name, content shoot for brand X' : "e.g. Owner's family trip, influencer collaboration, agent fam trip"}
             value={compReason}
             onChange={e => setCompReason(e.target.value)}
           />
         </div>
+
+        {collaboration && (
+          <BudgetStructureEditor
+            currency={budgetCurrency}
+            onCurrencyChange={setBudgetCurrency}
+            rows={budgetRows}
+            onRowsChange={setBudgetRows}
+          />
+        )}
       </div>
     )
   }
@@ -3354,7 +3382,7 @@ notes:         resolvedNotes,
     completeBookingId     ? steps[step - 1].label :
     phase === 'source'    ? 'New Booking' :
     phase === 'agentInfo' ? 'Agent Information' :
-    phase === 'tripType'  ? (complimentary ? 'Complimentary Booking' : 'Select Trip Type') :
+    phase === 'tripType'  ? (collaboration ? 'Collaboration Book' : complimentary ? 'Complimentary Booking' : 'Select Trip Type') :
     steps[step - 1].label
 
   return (
@@ -3368,7 +3396,9 @@ notes:         resolvedNotes,
               {completeBookingId && (
                 <Badge className="text-xs bg-warning/15 text-warning border-warning/30 border">Complete Booking</Badge>
               )}
-              {complimentary
+              {collaboration
+                ? <Badge className="text-xs bg-purple-100 text-purple-700 border-purple-200 dark:bg-purple-500/15 dark:text-purple-300 dark:border-purple-500/30 border">Collaboration</Badge>
+                : complimentary
                 ? <Badge className="text-xs bg-success/15 text-success border-success/30 border"><Gift className="w-3 h-3 mr-1" />Complimentary</Badge>
                 : <Badge variant="outline" className="text-xs">{source === 'AGENT' ? 'Via Agent' : 'Direct'}</Badge>}
               <Badge variant="outline" className="text-xs">
@@ -3489,7 +3519,7 @@ notes:         resolvedNotes,
                 disabled={!canNext()}
                 onClick={() => handleSubmit()}
               >
-                {submitting ? 'Saving…' : completeBookingId ? 'Confirm & Complete' : complimentary ? 'Confirm Complimentary' : 'Confirm Booking'}
+                {submitting ? 'Saving…' : completeBookingId ? 'Confirm & Complete' : collaboration ? 'Confirm Collaboration' : complimentary ? 'Confirm Complimentary' : 'Confirm Booking'}
               </Button>
             )}
           </div>

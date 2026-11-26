@@ -1141,9 +1141,10 @@ model MediaCategory {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  mediaFiles      MediaFile[]
-  mediaFolders    MediaFolder[]
-  agentVisibility AgentVisibleCategory[]
+  mediaFiles             MediaFile[]
+  mediaFolders           MediaFolder[]
+  agentVisibility        AgentVisibleCategory[]
+  mediaAccountVisibility MediaAccountVisibleCategory[]
 }
 
 model MediaFile {
@@ -1227,6 +1228,39 @@ model AgentVisibleCategory {
   createdAt  DateTime      @default(now())
 
   @@unique([agentId, categoryId])
+}
+
+// Press / media contacts who sign into the Agent Portal as "Media" — managed by Marketing in
+// the Media Kit, deliberately separate from Agent so journalists never show up in agent lists,
+// commissions or bookings. Media sessions can't see the availability calendar.
+model MediaAccount {
+  id                    String                        @id @default(cuid())
+  name                  String
+  // Stored lower-cased — portal login matches on it.
+  email                 String                        @unique
+  organization          String?
+  note                  String?
+  portalPasswordHash    String?
+  portalPasswordSetAt   DateTime?
+  portalPasswordSetById String?
+  portalActive          Boolean                       @default(false)
+  lastLoginAt           DateTime?
+  createdById           String?
+  visibleCategories     MediaAccountVisibleCategory[]
+  createdAt             DateTime                      @default(now())
+  updatedAt             DateTime                      @updatedAt
+}
+
+// Same semantics as AgentVisibleCategory: zero rows = sees every category.
+model MediaAccountVisibleCategory {
+  id             String        @id @default(cuid())
+  mediaAccountId String
+  mediaAccount   MediaAccount  @relation(fields: [mediaAccountId], references: [id], onDelete: Cascade)
+  categoryId     String
+  category       MediaCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  createdAt      DateTime      @default(now())
+
+  @@unique([mediaAccountId, categoryId])
 }
 
 model Destination {
@@ -1404,6 +1438,11 @@ model Booking {
   // totalPrice stays 0 and status stays 'confirmed' instead of the payment-derived pending/paid.
   isComplimentary               Boolean                   @default(false)
   complimentaryReason           String?
+  // Collaboration Book (Calendar › Add Collaboration Book, Marketing): a complimentary booking
+  // (isComplimentary is also true, so it stays $0 / confirmed) that carries an internal budget
+  // structure in budgetItems — what the trip needs and what it costs, in budgetCurrency.
+  isCollaboration               Boolean                   @default(false)
+  budgetCurrency                String?
   // Who actually entered the booking. Usually the same as salespersonId; differs for a
   // complimentary booking, where an Admin creates it and assigns a Sales user as PIC.
   createdById                   String?
@@ -1419,6 +1458,7 @@ model Booking {
   salespersonUser               User?                     @relation("SalespersonBookings", fields: [salespersonId], references: [id], onDelete: SetNull)
   guests                        BookingGuest[]
   services                      BookingService[]
+  budgetItems                   BookingBudgetItem[]
   payments                      Payment[]
   expenses                      Expense[]
   notifications                 Notification[]
@@ -1446,6 +1486,7 @@ model Booking {
   @@index([destinationId])
   @@index([salespersonId])
   @@index([createdAt])
+  @@index([isCollaboration])
 }
 
 model BookingGuest {
@@ -1471,6 +1512,21 @@ model BookingGuest {
   @@unique([bookingId, customerId])
   @@index([customerId])
   @@index([cabinId])
+}
+
+// Internal budget structure line of a Collaboration Book (Booking.isCollaboration) — never
+// billed to the guest; amount is in Booking.budgetCurrency.
+model BookingBudgetItem {
+  id        String   @id @default(cuid())
+  bookingId String
+  name      String
+  amount    Float
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  booking   Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@index([bookingId])
 }
 
 model BookingService {
@@ -2975,6 +3031,7 @@ model Supplier {
   email     String?
   notes     String?
   isActive  Boolean  @default(true)
+  isMember  Boolean  @default(false) // we hold a membership with this supplier
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

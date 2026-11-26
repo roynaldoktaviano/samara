@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Loader2, Search } from 'lucide-react'
 
-export type AudienceSourceKey = 'customers' | 'leads' | 'agents' | 'agentLeads' | 'internal'
+export type AudienceSourceKey = 'customers' | 'leads' | 'agents' | 'agentLeads' | 'internal' | 'internalSalesMarketing'
 
 interface Member { id: string; name: string | null; email: string | null }
 interface Yacht { id: string; name: string }

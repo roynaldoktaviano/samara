@@ -5,8 +5,8 @@ import { computeOfflineFeed, hashEmail, hashPhone, type FeedCandidate, type Goog
 import { usdRate } from '@/lib/deal-classify'
 
 // ERP → Google Sheets offline conversions, tahap 1 of "Setup Auto Upload Offline Conversion (ERP)"
-// (Jay, 25 Nov 2026, sections A + A2). Two sheets in the company Drive, header-only, that Data
-// Manager pulls daily 01:00–03:00 WITA:
+// (Jay, 25 Nov 2026, sections A + A2). Two sheets per brand (Samara; Mischief + Otium since 26 Nov —
+// see BRAND_SHEETS) in the company Drive, header-only, that Data Manager pulls daily 01:00–03:00 WITA:
 //   Stages  (13 columns, M = Stage)  AC_PC / AC_OT / INV_PC / INV_OT  (later QL_PC / QL_OT)
 //   Booking (12 columns)             CRM - Booking won
 // Append-only (spreadsheets.values.append, RAW, INSERT_ROWS): a row is written once per Order ID and
@@ -28,16 +28,60 @@ export const STAGES_HEADER = [...BOOKING_HEADER, 'Stage'] as const
 const ORDER_ID_COL = 'J' // 10th column in both sheets
 const ORDER_ID_IDX = 9
 
-/** Conversion action names — must match Google Ads exactly (Jay, 25 Nov). */
-export const CONVERSION_NAME: Record<GoogleAction, string> = {
-  AC_PC: 'Samara - CRM - Active Communication (PC)',
-  AC_OT: 'Samara - CRM - Active Communication (OT)',
-  INV_PC: 'Samara - CRM - Invoice Sent (PC)',
-  INV_OT: 'Samara - CRM - Invoice Sent (OT)',
-  BOOKING: 'CRM - Booking won',
+/**
+ * Brands with their own pair of sheets. Each brand's deals go to its own sheets only — a Samara deal
+ * never lands in the Mischief / Otium sheets and vice versa.
+ *   SAMARA   (Jay, 25 Nov 2026): AC_PC / AC_OT / INV_PC / INV_OT + Booking
+ *   MISCHIEF (Jay, 26 Nov 2026): AC_PC / INV_PC (later QL_PC) + Booking — private charter only
+ *   OTIUM    (26 Nov 2026): AC_PC / AC_OT / INV_PC / INV_OT + Booking — Signature Voyage is sold per
+ *            cabin, i.e. Open Trip (freshsales-erp-sync.ts)
+ */
+export type SheetBrand = 'SAMARA' | 'MISCHIEF' | 'OTIUM'
+export const SHEET_BRANDS: SheetBrand[] = ['SAMARA', 'MISCHIEF', 'OTIUM']
+
+interface BrandSheetConfig {
+  /** Order ID prefix for AC / INV rows: {prefix}-{dealID}-{PC|OT}-{AC|INV} */
+  orderIdPrefix: string
+  /** Conversion action names — must match the brand's Google Ads account exactly. Actions not listed are not written. */
+  conversionName: Partial<Record<GoogleAction, string>>
 }
-/** Fixed AC value in USD (the feed's own AC value is IDR — not used here). */
-const AC_VALUE_USD = { AC_PC: 1000, AC_OT: 280 } as const
+
+/** Active Communication has no amount yet → value 0 for every brand (Roy, 26 Nov 2026). Invoice / Booking: the deal amount. */
+const AC_VALUE_USD = 0
+
+export const BRAND_SHEETS: Record<SheetBrand, BrandSheetConfig> = {
+  SAMARA: {
+    orderIdPrefix: 'samara',
+    conversionName: {
+      AC_PC: 'Samara - CRM - Active Communication (PC)',
+      AC_OT: 'Samara - CRM - Active Communication (OT)',
+      INV_PC: 'Samara - CRM - Invoice Sent (PC)',
+      INV_OT: 'Samara - CRM - Invoice Sent (OT)',
+      BOOKING: 'CRM - Booking won',
+    },
+  },
+  MISCHIEF: {
+    orderIdPrefix: 'mischief',
+    conversionName: {
+      AC_PC: 'Mischief - CRM - Active Communication (PC)',
+      INV_PC: 'Mischief - CRM - Invoice Sent (PC)',
+      BOOKING: 'Mischief - CRM - Booking won',
+    },
+  },
+  OTIUM: {
+    orderIdPrefix: 'otium',
+    conversionName: {
+      AC_PC: 'Otium - CRM - Active Communication (PC)',
+      AC_OT: 'Otium - CRM - Active Communication (OT)',
+      INV_PC: 'Otium - CRM - Invoice Sent (PC)',
+      INV_OT: 'Otium - CRM - Invoice Sent (OT)',
+      BOOKING: 'Otium - CRM - Booking won',
+    },
+  },
+}
+
+/** Samara's names — kept for existing imports. */
+export const CONVERSION_NAME = BRAND_SHEETS.SAMARA.conversionName as Record<GoogleAction, string>
 
 /**
  * Deal ID as it appears in Order IDs, always in the Freshsales format (12 digits, Roy 25 Nov):
@@ -61,14 +105,15 @@ export function sheetTime(d: Date): string {
 
 /**
  * Booking: the bare deal ID, exactly as the Freshsales box wrote it ("113001495733") — Google dedups
- * against the box's earlier uploads. AC / INV: samara-{dealID}-{PC|OT}-{AC|INV}, as the box.
+ * against the box's earlier uploads. AC / INV: {brand}-{dealID}-{PC|OT}-{AC|INV}, as the box
+ * (samara-… / mischief-…).
  */
-export function sheetOrderId(c: Pick<FeedCandidate, 'action' | 'orderId' | 'tripSuffix'>): string | null {
+export function sheetOrderId(c: Pick<FeedCandidate, 'action' | 'orderId' | 'tripSuffix'>, brand: SheetBrand = 'SAMARA'): string | null {
   const dealId = sheetDealId(c.orderId)
   if (!dealId) return null
   if (c.action === 'BOOKING') return dealId
   if (!c.tripSuffix) return null
-  return `samara-${dealId}-${c.tripSuffix}-${c.action.startsWith('AC_') ? 'AC' : 'INV'}`
+  return `${BRAND_SHEETS[brand].orderIdPrefix}-${dealId}-${c.tripSuffix}-${c.action.startsWith('AC_') ? 'AC' : 'INV'}`
 }
 
 const consentText = (v: string | number | undefined) => (String(v ?? '').toUpperCase() === 'GRANTED' ? 'Granted' : '')
@@ -76,19 +121,22 @@ const round2 = (n: number) => Math.round(n * 100) / 100
 
 /** One sheet row (12 columns; + Stage for the Stages sheet). */
 export function sheetRow(p: {
-  action: GoogleAction; orderId: string; at: Date; valueUsd: number
+  brand?: SheetBrand; action: GoogleAction; orderId: string; at: Date; valueUsd: number
   gclid: string; gbraid: string; wbraid: string; emailHash: string; phoneHash: string; adUserData: string; adPersonalization: string
 }): SheetRow {
+  const name = BRAND_SHEETS[p.brand ?? 'SAMARA'].conversionName[p.action]
+  if (!name) throw new Error(`No ${p.brand} conversion name for ${p.action}`)
   const row: SheetRow = [
-    p.gclid, p.gbraid, p.wbraid, p.emailHash, p.phoneHash, CONVERSION_NAME[p.action], sheetTime(p.at),
+    p.gclid, p.gbraid, p.wbraid, p.emailHash, p.phoneHash, name, sheetTime(p.at),
     round2(p.valueUsd), 'USD', p.orderId, p.adUserData, p.adPersonalization,
   ]
   if (p.action !== 'BOOKING') row.push(p.action)
   return row
 }
 
-/** Rows the ERP would write now (Samara brand only — Otium / Mischief get their own sheets later). */
-export async function buildOfflineSheetRows(db: PrismaClient, now = new Date()) {
+/** Rows the ERP would write now to one brand's sheets (only that brand's deals; Otium: later). */
+export async function buildOfflineSheetRows(db: PrismaClient, now = new Date(), brand: SheetBrand = 'SAMARA') {
+  const cfg = BRAND_SHEETS[brand]
   const { candidates } = await computeOfflineFeed(db, now)
   const stages: SheetRow[] = [], booking: SheetRow[] = [], skipped: SheetSkip[] = []
   const rates = new Map<string, number | null>()
@@ -97,11 +145,13 @@ export async function buildOfflineSheetRows(db: PrismaClient, now = new Date()) 
     return rates.get(cur) ?? null
   }
   for (const c of candidates) {
-    if (c.brand !== 'SAMARA') continue
-    const orderId = sheetOrderId(c)
+    if (c.brand !== brand) continue
+    // e.g. a Mischief open-trip AC / INV — no such conversion action in the Mischief account
+    if (!cfg.conversionName[c.action]) { skipped.push({ orderId: c.orderId, action: c.action, reason: `No ${brand} conversion action for ${c.action}` }); continue }
+    const orderId = sheetOrderId(c, brand)
     if (!orderId) { skipped.push({ orderId: c.orderId, action: c.action, reason: sheetDealId(c.orderId) ? 'No trip type (PC/OT) for the Order ID' : 'Deal ID not in Freshsales / ERP-<n> format' }); continue }
     let valueUsd: number
-    if (c.action === 'AC_PC' || c.action === 'AC_OT') valueUsd = AC_VALUE_USD[c.action]
+    if (c.action === 'AC_PC' || c.action === 'AC_OT') valueUsd = AC_VALUE_USD
     else {
       const v = Number(c.row.Conversion_Value), cur = String(c.row.Conversion_Currency || 'USD').toUpperCase()
       const rate = await rateOf(cur)
@@ -110,7 +160,7 @@ export async function buildOfflineSheetRows(db: PrismaClient, now = new Date()) 
     }
     const r = c.row
     const row = sheetRow({
-      action: c.action, orderId, at: c.conversionTime, valueUsd,
+      brand, action: c.action, orderId, at: c.conversionTime, valueUsd,
       gclid: String(r.Google_Click_ID ?? ''), gbraid: String(r.GBRAID ?? ''), wbraid: String(r.WBRAID ?? ''),
       emailHash: String(r.Email ?? ''), phoneHash: String(r.Phone_Number ?? ''),
       adUserData: consentText(r.Ad_User_Data), adPersonalization: consentText(r.Ad_Personalization),
@@ -123,19 +173,21 @@ export async function buildOfflineSheetRows(db: PrismaClient, now = new Date()) 
 }
 
 /** Synthetic rows for Jay's format check: 1 per Stage + 1 booking, Order IDs starting "test-", no real guest data. */
-export function buildTestRows(now = new Date()) {
+export function buildTestRows(now = new Date(), brand: SheetBrand = 'SAMARA') {
+  const cfg = BRAND_SHEETS[brand]
   const base = {
-    at: now, gclid: 'TEST-GCLID-ERP', gbraid: '', wbraid: '',
+    brand, at: now, gclid: 'TEST-GCLID-ERP', gbraid: '', wbraid: '',
     emailHash: hashEmail(' Test@SamaraLiveaboard.com '), phoneHash: hashPhone('+6281200000000'),
     adUserData: 'Granted', adPersonalization: 'Granted',
   }
-  const stages = (['AC_PC', 'AC_OT', 'INV_PC', 'INV_OT'] as const).map((action, i) => {
+  const stageActions = (['AC_PC', 'AC_OT', 'INV_PC', 'INV_OT'] as const).filter(a => cfg.conversionName[a])
+  const stages = stageActions.map((action, i) => {
     const suffix = action.endsWith('PC') ? 'PC' : 'OT'
     const kind = action.startsWith('AC') ? 'AC' : 'INV'
-    const valueUsd = action === 'AC_PC' ? 1000 : action === 'AC_OT' ? 280 : action === 'INV_PC' ? 12500 : 2780
-    return sheetRow({ ...base, action, orderId: `test-samara-90000000000${i + 1}-${suffix}-${kind}`, valueUsd })
+    const valueUsd = action === 'AC_PC' || action === 'AC_OT' ? AC_VALUE_USD : action === 'INV_PC' ? 12500 : 2780
+    return sheetRow({ ...base, action, orderId: `test-${cfg.orderIdPrefix}-90000000000${i + 1}-${suffix}-${kind}`, valueUsd })
   })
-  const booking = [sheetRow({ ...base, action: 'BOOKING', orderId: 'test-900000000005', valueUsd: 12500 })]
+  const booking = [sheetRow({ ...base, action: 'BOOKING', orderId: `test-90000000000${stages.length + 1}`, valueUsd: 12500 })]
   return { stages, booking }
 }
 
@@ -198,9 +250,9 @@ export async function appendOfflineSheetRows(ids: OfflineSheetIds, rows: { stage
   return { ok: true as const, stages, booking }
 }
 
-/** Daily run: build from the deals and append what is new. */
-export async function syncOfflineConversionSheets(db: PrismaClient, ids: OfflineSheetIds, opts: { dryRun?: boolean } = {}) {
-  const built = await buildOfflineSheetRows(db)
+/** Daily run: build one brand's rows from the deals and append what is new to that brand's sheets. */
+export async function syncOfflineConversionSheets(db: PrismaClient, ids: OfflineSheetIds, opts: { dryRun?: boolean; brand?: SheetBrand } = {}) {
+  const built = await buildOfflineSheetRows(db, new Date(), opts.brand ?? 'SAMARA')
   const res = await appendOfflineSheetRows(ids, built, opts)
   if (!res.ok) return { ...res, skipped: built.skipped.length }
   return { ok: true as const, stagesAppended: res.stages.appended, bookingAppended: res.booking.appended, alreadyThere: res.stages.alreadyThere + res.booking.alreadyThere, skipped: built.skipped }

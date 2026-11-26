@@ -15,6 +15,10 @@ export type TenantSecretKey =
   | 'googleOfflineFeedSheetId'
   | 'googleOfflineStagesSheetId'
   | 'googleOfflineBookingSheetId'
+  | 'googleOfflineMischiefStagesSheetId'
+  | 'googleOfflineMischiefBookingSheetId'
+  | 'googleOfflineOtiumStagesSheetId'
+  | 'googleOfflineOtiumBookingSheetId'
   | 'whatsappSamaraPhoneNumberId'
   | 'whatsappSamaraApiToken'
   | 'whatsappMischiefPhoneNumberId'
@@ -86,6 +90,10 @@ export interface TenantSecrets {
   googleOfflineFeedSheetId?: string
   googleOfflineStagesSheetId?: string
   googleOfflineBookingSheetId?: string
+  googleOfflineMischiefStagesSheetId?: string
+  googleOfflineMischiefBookingSheetId?: string
+  googleOfflineOtiumStagesSheetId?: string
+  googleOfflineOtiumBookingSheetId?: string
   whatsappSamaraPhoneNumberId?: string
   whatsappSamaraApiToken?: string
   whatsappMischiefPhoneNumberId?: string
@@ -165,6 +173,10 @@ export const TENANT_SECRET_DEFINITIONS: {
   { key: 'googleOfflineFeedSheetId', label: 'Google Offline Feed Sheet ID (CRM stages)', description: 'Spreadsheet the ERP rewrites daily at 05:45 and 06:15 WITA (handover box schedule) with the go-live offline feed: one tab per brand (AC / INV / Booking rows, Data Manager column names), Stage unknown, Excluded, Pending changes, Meta (draft). Point Data Manager at it on switch day', envFallback: 'GOOGLE_OFFLINE_FEED_SHEET_ID' },
   { key: 'googleOfflineStagesSheetId', label: 'Offline Conversions — Stages Sheet ID', description: 'Company-Drive sheet (tab "Stages", 13 columns) the ERP appends AC / Invoice conversion rows to daily at 00:00 WITA; Data Manager pulls it 01:00–03:00. Shared as Editor with the erp-sheets-writer service account. Writes only when OFFLINE_SHEETS_ENABLED=1. src/lib/ad-offline-sheets.ts', envFallback: 'GOOGLE_OFFLINE_STAGES_SHEET_ID' },
   { key: 'googleOfflineBookingSheetId', label: 'Offline Conversions — Booking Sheet ID', description: 'Company-Drive sheet (tab "Booking", 12 columns) the ERP appends "CRM - Booking won" rows to daily at 00:00 WITA. Same service account / switch as the Stages sheet', envFallback: 'GOOGLE_OFFLINE_BOOKING_SHEET_ID' },
+  { key: 'googleOfflineMischiefStagesSheetId', label: 'Offline Conversions — Mischief Stages Sheet ID', description: 'Like the Stages sheet, for Mischief-brand deals only (AC_PC / INV_PC, Order IDs mischief-…). Samara deals stay in the Samara sheets. Same service account / switch', envFallback: 'GOOGLE_OFFLINE_MISCHIEF_STAGES_SHEET_ID' },
+  { key: 'googleOfflineMischiefBookingSheetId', label: 'Offline Conversions — Mischief Booking Sheet ID', description: 'Like the Booking sheet, for Mischief-brand deals only ("Mischief - CRM - Booking won"). Same service account / switch', envFallback: 'GOOGLE_OFFLINE_MISCHIEF_BOOKING_SHEET_ID' },
+  { key: 'googleOfflineOtiumStagesSheetId', label: 'Offline Conversions — Otium Stages Sheet ID', description: 'Like the Stages sheet, for Otium-brand deals only (AC / INV PC + OT, Order IDs otium-…). Same service account / switch', envFallback: 'GOOGLE_OFFLINE_OTIUM_STAGES_SHEET_ID' },
+  { key: 'googleOfflineOtiumBookingSheetId', label: 'Offline Conversions — Otium Booking Sheet ID', description: 'Like the Booking sheet, for Otium-brand deals only ("Otium - CRM - Booking won"). Same service account / switch', envFallback: 'GOOGLE_OFFLINE_OTIUM_BOOKING_SHEET_ID' },
   { key: 'whatsappSamaraPhoneNumberId', label: 'WhatsApp Phone Number ID — Samara', description: "Meta phone number ID for the Samara brand's WhatsApp Business number", envFallback: 'WHATSAPP_SAMARA_PHONE_NUMBER_ID' },
   { key: 'whatsappSamaraApiToken', label: 'WhatsApp API Token — Samara', description: 'System User (permanent) or temporary access token for the Samara number', envFallback: 'WHATSAPP_SAMARA_API_TOKEN' },
   { key: 'whatsappMischiefPhoneNumberId', label: 'WhatsApp Phone Number ID — Mischief', description: "Meta phone number ID for the Mischief brand's WhatsApp Business number", envFallback: 'WHATSAPP_MISCHIEF_PHONE_NUMBER_ID' },

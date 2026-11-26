@@ -47,7 +47,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const role = (session?.user as { role?: string })?.role ?? ''
   if (!session?.user?.id || !roleMatches(role, ALLOWED)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = await getDb(session)
-  const { name, locations, contact, phone, email, notes, isActive } = await req.json()
+  const { name, locations, contact, phone, email, notes, isActive, isMember } = await req.json()
   if (name !== undefined && !name?.trim()) return NextResponse.json({ error: 'Supplier name is required' }, { status: 400 })
   const supplier = await db.supplier.update({
     where: { id },
@@ -59,6 +59,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       ...(email !== undefined && { email: email?.trim() || null }),
       ...(notes !== undefined && { notes: notes?.trim() || null }),
       ...(isActive !== undefined && { isActive }),
+      ...(isMember !== undefined && { isMember: isMember === true }),
       updatedAt: new Date(),
     },
   })

@@ -13,12 +13,13 @@ import {
 } from '@/components/ui/dialog'
 import {
   Image as ImageIcon, FileText, Video, Upload, Trash2, Loader2, Link2, FolderOpen, FolderPlus, FolderUp,
-  ChevronLeft, Settings, Plus, Pencil, Check, X, Megaphone, Star, LayoutGrid, List, FolderInput, MapPin,
+  ChevronLeft, Settings, Plus, Pencil, Check, X, Megaphone, Star, LayoutGrid, List, FolderInput, MapPin, Newspaper,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useFileDrop } from '@/hooks/useFileDrop'
 import { uploadToR2WithProgress } from '@/lib/r2-client'
 import { Checkbox } from '@/components/ui/checkbox'
+import MediaAccountsDialog from '@/components/marketing/MediaAccountsDialog'
 
 const ACCENT = 'var(--primary)'
 
@@ -181,6 +182,7 @@ export default function MediaKit() {
   const [deletingCategoryId, setDeletingCategoryId] = useState<string | null>(null)
 
   // Agent Portal promo — shown as a popup on login (General) or on yacht pick (per-yacht)
+  const [mediaAccountsOpen, setMediaAccountsOpen] = useState(false)
   const [promos, setPromos] = useState<PromoRecord[]>([])
   const [promoDialogOpen, setPromoDialogOpen] = useState(false)
   const [editingPromoId, setEditingPromoId] = useState<string | null>(null)
@@ -882,12 +884,18 @@ export default function MediaKit() {
 
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-xl font-bold tracking-tight">Media Kit</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Files uploaded here appear in the Agent Portal for the selected yacht — or under "General" to show on every yacht.
-        </p>
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <h1 className="text-xl font-bold tracking-tight">Media Kit</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            Files uploaded here appear in the Agent Portal for the selected yacht — or under "General" to show on every yacht.
+          </p>
+        </div>
+        <Button size="sm" variant="outline" onClick={() => setMediaAccountsOpen(true)}>
+          <Newspaper className="h-3.5 w-3.5 mr-1.5" /> Media accounts
+        </Button>
       </div>
+      <MediaAccountsDialog open={mediaAccountsOpen} onOpenChange={setMediaAccountsOpen} categories={categories} />
 
       <div className="flex items-center gap-3 flex-wrap">
         <div className="w-64">

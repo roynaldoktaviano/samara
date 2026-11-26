@@ -8,17 +8,33 @@
  *   npx tsx scripts/offline-sheets.ts --preview       real rows from the deals: print what would be appended (no write)
  *   npx tsx scripts/offline-sheets.ts --apply         real rows: append the new ones (what the 00:00 cron does)
  *
- * Sheet IDs: GOOGLE_OFFLINE_STAGES_SHEET_ID / GOOGLE_OFFLINE_BOOKING_SHEET_ID, else the Samara sheets below.
- * Runs against DATABASE_URL (Samara).
+ * Add --brand mischief / --brand otium to work on that brand's sheets (its deals only); default is Samara.
+ *
+ * Sheet IDs: GOOGLE_OFFLINE_[MISCHIEF_|OTIUM_]STAGES_SHEET_ID / …BOOKING_SHEET_ID, else the sheets below.
+ * Runs against DATABASE_URL (Samara tenant — Mischief / Otium deals live there too).
  */
 import { PrismaClient } from '@prisma/client'
-import { appendOfflineSheetRows, buildOfflineSheetRows, buildTestRows, removeTestRows, STAGES_HEADER, BOOKING_HEADER } from '../src/lib/ad-offline-sheets'
+import { appendOfflineSheetRows, buildOfflineSheetRows, buildTestRows, removeTestRows, STAGES_HEADER, BOOKING_HEADER, type SheetBrand } from '../src/lib/ad-offline-sheets'
 
-const ids = {
-  stagesSheetId: process.env.GOOGLE_OFFLINE_STAGES_SHEET_ID || '1VZonTEH8LUrNWaqTDIXubOdE_SYZsaoFyJdHMDWK4l8',
-  bookingSheetId: process.env.GOOGLE_OFFLINE_BOOKING_SHEET_ID || '1BKPNUR0SeAERNbZRLxnWfmgcFFWcorVUfVw679XHcBw',
-}
 const has = (f: string) => process.argv.includes(f)
+const brandArg = (process.argv[process.argv.indexOf('--brand') + 1] ?? '').toUpperCase()
+const BRAND_IDS: Record<SheetBrand, { stagesSheetId: string; bookingSheetId: string }> = {
+  SAMARA: {
+    stagesSheetId: process.env.GOOGLE_OFFLINE_STAGES_SHEET_ID || '1VZonTEH8LUrNWaqTDIXubOdE_SYZsaoFyJdHMDWK4l8',
+    bookingSheetId: process.env.GOOGLE_OFFLINE_BOOKING_SHEET_ID || '1BKPNUR0SeAERNbZRLxnWfmgcFFWcorVUfVw679XHcBw',
+  },
+  MISCHIEF: {
+    stagesSheetId: process.env.GOOGLE_OFFLINE_MISCHIEF_STAGES_SHEET_ID || '1O4lsFiKUtj26HmP-l3cJdXElhoFkHB82u8fIO9txawA',
+    bookingSheetId: process.env.GOOGLE_OFFLINE_MISCHIEF_BOOKING_SHEET_ID || '16nF6WknNN2Yv8GUewaGeqFcTXYuJpgoeV4OXeVbkEus',
+  },
+  OTIUM: {
+    stagesSheetId: process.env.GOOGLE_OFFLINE_OTIUM_STAGES_SHEET_ID || '1n3ukSci1eHCEbrAQyfJG6BzN37CEXz5HoVvOiwXZgxg',
+    bookingSheetId: process.env.GOOGLE_OFFLINE_OTIUM_BOOKING_SHEET_ID || '1Trg4rN60YZqgXoMJD7_bpsjDfT_tCYKStAraG33nIe8',
+  },
+}
+if (has('--brand') && !(brandArg in BRAND_IDS)) throw new Error(`--brand ${brandArg.toLowerCase()}: samara, mischief or otium`)
+const brand = (has('--brand') ? brandArg : 'SAMARA') as SheetBrand
+const ids = BRAND_IDS[brand]
 
 function show(title: string, header: readonly string[], rows: (string | number)[][]) {
   console.log(`\n${title}: ${rows.length} row(s)`)
@@ -26,9 +42,10 @@ function show(title: string, header: readonly string[], rows: (string | number)[
 }
 
 async function main() {
+  console.log(`Brand: ${brand}`)
   if (has('--remove-test')) { console.log('Deleted test rows:', await removeTestRows(ids)); return }
   if (has('--test')) {
-    const rows = buildTestRows()
+    const rows = buildTestRows(new Date(), brand)
     const res = await appendOfflineSheetRows(ids, rows)
     if (!res.ok) throw new Error(res.reason)
     show('Stages appended', STAGES_HEADER, res.stages.rows)
@@ -38,7 +55,7 @@ async function main() {
   if (has('--preview') || has('--apply')) {
     const db = new PrismaClient()
     try {
-      const built = await buildOfflineSheetRows(db)
+      const built = await buildOfflineSheetRows(db, new Date(), brand)
       const res = await appendOfflineSheetRows(ids, built, { dryRun: !has('--apply') })
       if (!res.ok) throw new Error(res.reason)
       show(has('--apply') ? 'Stages appended' : 'Stages would append', STAGES_HEADER, res.stages.rows)
