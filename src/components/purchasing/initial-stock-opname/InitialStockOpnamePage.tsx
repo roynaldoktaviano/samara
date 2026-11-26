@@ -27,6 +27,8 @@ interface OpnameItem {
   item: (CatalogItem & Partial<ItemForm>) | null
   // Room & Loc of this product at the opname's location (StockItemPlacement — same as Item by Location).
   placement?: Placement | null
+  // Existing ship Inventory item (INV-xxxx) this row counts — no catalog product then.
+  inventoryItem?: { id: string; itemNumber: string; name: string; brand: string | null; quantity: number; room: { name: string } | null; category: { name: string } | null } | null
 }
 interface Opname {
   id: string; countNumber: string; status: string; notes: string | null; createdAt: string
@@ -262,7 +264,7 @@ function EditItemModal({ opnameId, row, onClose, onSaved }: {
 
 // Non-stock row = a non-catalog lot (no item) or a legacy PurchaseItem with
 // isStockTracked=false. Finalizing skips these, so they need converting to count.
-const isNonStock = (ci: OpnameItem) => !ci.item || ci.item.isStockTracked === false
+const isNonStock = (ci: OpnameItem) => !ci.inventoryItem && (!ci.item || ci.item.isStockTracked === false)
 
 function ConvertToStockModal({ opnameId, row, onClose, onConverted }: {
   opnameId: string; row: OpnameItem; onClose: () => void; onConverted: () => void
@@ -463,7 +465,8 @@ export default function InitialStockOpnamePage() {
     if (!detail) return
     setSaveError('')
     const assetCount = isShipLocation(detail.location) ? (detail.items ?? []).filter(isAssetRow).length : 0
-    if (finalize && !confirm(`Finish this Initial Stock Opname? Stock will be applied to the system immediately.${assetCount ? `\n\n${assetCount} Asset product(s) will be added to the ship Inventory (room = Room column, empty → "General").` : ''}`)) return
+    const invCount = (detail.items ?? []).filter(i => i.inventoryItem).length
+    if (finalize && !confirm(`Finish this Initial Stock Opname? Stock will be applied to the system immediately.${invCount ? `\n\n${invCount} ship Inventory item(s) will get the counted Qty (Qty 0 = decommissioned).` : ''}${assetCount ? `\n\n${assetCount} Asset product(s) will be added to the ship Inventory (room = Room column, empty → "General").` : ''}`)) return
     setSaving(true)
     const res = await fetch(`/api/purchasing/initial-stock-opname/${detail.id}`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
@@ -554,7 +557,8 @@ export default function InitialStockOpnamePage() {
           const terms = rowSearch.trim().toLowerCase().split(/\s+/).filter(Boolean)
           const matches = (ci: OpnameItem) => {
             if (!terms.length) return true
-            const hay = [ci.itemName, ci.item?.sku, ci.item?.category, ci.placement?.room, ci.placement?.bin]
+            const hay = [ci.itemName, ci.item?.sku, ci.item?.category, ci.placement?.room, ci.placement?.bin,
+              ci.inventoryItem?.itemNumber, ci.inventoryItem?.room?.name, ci.inventoryItem?.category?.name, ci.inventoryItem?.brand]
               .filter(Boolean).join(' ').toLowerCase()
             return terms.every(t => hay.includes(t))
           }
@@ -568,7 +572,7 @@ export default function InitialStockOpnamePage() {
           const roomSuggestions = Array.from(new Set([...(detail.inventoryRooms ?? []), ...allStockRows.map(r => r.placement?.room?.trim())].filter((v): v is string => !!v))).sort()
           // On a ship, Asset rows go to the ship Inventory on finish (not stock) — listed in
           // their own "Inventory / Assets" table. Off-ship they stay stock, so they stay in Items.
-          const isInventoryRow = (ci: OpnameItem) => onShip && isAssetRow(ci)
+          const isInventoryRow = (ci: OpnameItem) => !!ci.inventoryItem || (onShip && isAssetRow(ci))
           const allItemRows = allStockRows.filter(ci => !isInventoryRow(ci))
           const allAssetRows = allStockRows.filter(isInventoryRow)
           const itemRows = allItemRows.filter(matches)
@@ -584,7 +588,44 @@ export default function InitialStockOpnamePage() {
               </tr>
             </thead>
           )
+          // Existing ship Inventory item: room/category come from the Inventory, only Qty is counted.
+          // No delete — set Qty 0 to decommission it on finish.
+          const renderInventoryRow = (ci: OpnameItem) => {
+            const inv = ci.inventoryItem!
+            return (
+              <tr key={ci.id} className="hover:bg-muted/10">
+                <td className="px-4 py-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-lg border bg-muted/40 flex items-center justify-center shrink-0">
+                      <Boxes className="h-4 w-4 text-muted-foreground/50" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="font-medium text-sm">{ci.itemName}</p>
+                      <p className="text-xs text-muted-foreground font-mono mt-0.5">{inv.itemNumber}{inv.brand ? ` · ${inv.brand}` : ''}</p>
+                    </div>
+                  </div>
+                </td>
+                <td className="px-4 py-3 text-muted-foreground text-sm">{inv.category?.name ?? '—'}</td>
+                <td className="px-4 py-3 text-sm text-muted-foreground">{inv.room?.name ?? '—'}</td>
+                <td className="px-4 py-3 text-right">
+                  {readOnly ? (
+                    <span className="font-medium tabular-nums text-sm">{ci.countedQty} <span className="text-xs text-muted-foreground">pcs</span></span>
+                  ) : (
+                    <div className="flex items-center justify-end gap-1.5">
+                      <input type="number" min={0} step={1} value={ci.countedQty} onChange={e => updateQty(ci.id, Math.max(0, Math.round(Number(e.target.value) || 0)))} className={inputCls} />
+                      <span className="text-xs text-muted-foreground shrink-0 min-w-16">pcs</span>
+                    </div>
+                  )}
+                  {ci.countedQty !== ci.systemQty && (
+                    <p className="text-[11px] text-muted-foreground mt-1 tabular-nums">was {ci.systemQty}</p>
+                  )}
+                </td>
+                {!readOnly && <td className="px-4 py-3" />}
+              </tr>
+            )
+          }
           const renderRow = (ci: OpnameItem) => {
+                      if (ci.inventoryItem) return renderInventoryRow(ci)
                       const units: UnitInfo = ci.item ?? {}
                       const canSwitch = hasPurchaseUnit(units)
                       const usePurchase = canSwitch && (rowUnit[ci.id] ?? 'PURCHASE') === 'PURCHASE'
@@ -715,7 +756,7 @@ export default function InitialStockOpnamePage() {
                       </span>
                     </div>
                     <p className="text-xs text-muted-foreground mt-0.5">
-                      Ship equipment (products with Type = Asset). On finish these are added to the ship Inventory — Room = Inventory room (empty → &ldquo;General&rdquo;), Sub-Category = Inventory category — not to stock.
+                      Ship equipment: the ship&rsquo;s current Inventory items (INV-…, pre-filled with their current Qty) plus products with Type = Asset. On finish the counted Qty is written to the ship Inventory (Qty 0 = decommissioned); new Asset products are added with Room = Inventory room (empty → &ldquo;General&rdquo;), Sub-Category = Inventory category — not to stock.
                     </p>
                   </div>
                   <div className="overflow-x-auto"><table className="w-full text-sm">

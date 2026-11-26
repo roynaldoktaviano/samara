@@ -5,6 +5,7 @@ import { getDb } from '@/lib/get-db'
 
 import { roleMatches } from '@/lib/role-utils'
 import { OPNAME_ITEM_SELECT } from '@/lib/purchasing/initialOpnameItem'
+import { addInventoryRows, isShipLocation, OPNAME_INVENTORY_SELECT } from '@/lib/purchasing/initialOpnameInventory'
 import { initialOpnameLocationAllowed, initialOpnameLocationWhere, resolveInitialOpnameScope } from '@/lib/purchasing/initialOpnameScope'
 
 // Temporary onboarding-only feature — see memory project-initial-stock-opname-temporary.
@@ -98,11 +99,24 @@ export async function POST(req: NextRequest) {
       },
     },
     include: {
-      location: { select: { id: true, name: true, type: true, parent: { select: { name: true } } } },
+      location: { select: { id: true, name: true, type: true, yachtId: true, parent: { select: { name: true } } } },
       countedBy: { select: { id: true, name: true } },
-      items: { include: { item: { select: OPNAME_ITEM_SELECT } } },
+      items: { include: { item: { select: OPNAME_ITEM_SELECT }, inventoryItem: { select: OPNAME_INVENTORY_SELECT } } },
     },
   })
+
+  // On a ship, the existing ship Inventory (INV-xxxx) is counted in the same opname.
+  if (isShipLocation(count.location) && (await addInventoryRows(db, count.id, locationId)) > 0) {
+    const full = await db.stockCount.findUnique({
+      where: { id: count.id },
+      include: {
+        location: { select: { id: true, name: true, type: true, yachtId: true, parent: { select: { name: true } } } },
+        countedBy: { select: { id: true, name: true } },
+        items: { include: { item: { select: OPNAME_ITEM_SELECT }, inventoryItem: { select: OPNAME_INVENTORY_SELECT } } },
+      },
+    })
+    return NextResponse.json(full, { status: 201 })
+  }
 
   return NextResponse.json(count, { status: 201 })
 }

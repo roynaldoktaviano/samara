@@ -8,6 +8,7 @@ import { OPNAME_ITEM_SELECT } from '@/lib/purchasing/initialOpnameItem'
 import { canUseInitialOpname } from '@/lib/purchasing/initialOpnameScope'
 import { normalizeTreatment } from '@/lib/purchasing/treatment'
 import { nextVal } from '@/lib/counter'
+import { addInventoryRows, isShipLocation, OPNAME_INVENTORY_SELECT } from '@/lib/purchasing/initialOpnameInventory'
 
 type Db = Awaited<ReturnType<typeof getDb>>
 
@@ -31,7 +32,6 @@ async function withPlacements<T extends { locationId: string; items: { itemId: s
 // One Initial Stock Opname covers both stock and ship Inventory: on a ship, products of
 // Type = Asset become InventoryItem rows (Room = the row's Room, Category = its Sub-Category)
 // instead of a stock lot — same rule as receiveGoods for ASSET arriving on a ship.
-const isShipLocation = (loc: { type: string; yachtId: string | null }) => loc.type === 'VESSEL' || !!loc.yachtId
 const DEFAULT_INVENTORY_NAME = 'General'
 
 async function applyAssetToInventory(
@@ -92,13 +92,18 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
   const db = await getDb(session)
   if (!(await canUseInitialOpname(db, role, id, session.user.id))) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
+  const head = await db.stockCount.findUnique({ where: { id }, select: { type: true, status: true, locationId: true, location: { select: { type: true, yachtId: true } } } })
+  if (head?.type === 'INITIAL' && head.status === 'DRAFT' && isShipLocation(head.location)) {
+    await addInventoryRows(db, id, head.locationId)
+  }
+
   const count = await db.stockCount.findUnique({
     where: { id },
     include: {
       location: { select: { id: true, name: true, type: true, yachtId: true, parent: { select: { name: true } } } },
       countedBy: { select: { id: true, name: true } },
       items: {
-        include: { item: { select: OPNAME_ITEM_SELECT } },
+        include: { item: { select: OPNAME_ITEM_SELECT }, inventoryItem: { select: OPNAME_INVENTORY_SELECT } },
         orderBy: { itemName: 'asc' },
       },
     },
@@ -168,7 +173,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       location: { select: { id: true, name: true, type: true, yachtId: true, parent: { select: { name: true } } } },
       countedBy: { select: { id: true, name: true } },
       items: {
-        include: { item: { select: OPNAME_ITEM_SELECT } },
+        include: { item: { select: OPNAME_ITEM_SELECT }, inventoryItem: { select: OPNAME_INVENTORY_SELECT } },
         orderBy: { itemName: 'asc' },
       },
     },
@@ -183,6 +188,15 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       : new Map<string, string | null>()
 
     for (const ci of updated.items) {
+      // Existing ship Inventory item → its Jumlah becomes the counted qty (0 = decommissioned).
+      if (ci.inventoryItemId) {
+        const qty = Math.max(0, Math.round(ci.countedQty))
+        await db.inventoryItem.update({
+          where: { id: ci.inventoryItemId },
+          data: qty > 0 ? { quantity: qty, isActive: true } : { isActive: false },
+        })
+        continue
+      }
       if (!ci.itemId) continue
 
       // Asset on a ship → ship Inventory, never stock. Any stock lot it still has here is

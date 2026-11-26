@@ -1,23 +1,5 @@
 <?php
-/**
- * Plugin Name: Samara ERP Tracking
- * Description: Page-view tracker, Contact Form 7 → ERP, WhatsApp-tap relay → ERP. Secrets live in wp-config.php.
- * Version:     2026.11.24.1
- *
- * Samara ERP — website tracking + Contact Form 7 → ERP.
- *
- * FULL REPLACEMENT for the previous snippet — install the same file on every
- * site (samaraliveaboard.com, otiumyacht.com, mischiefvoyage.com).
- *
- * No secret reaches the browser any more: the page-view tracker beacons to this
- * site's own /wp-json/samara/v1/pv, and WordPress forwards it to the ERP with
- * the secret in a header. Form submissions are likewise sent by WordPress.
- *
- * Add to wp-config.php (above "That's all, stop editing!"):
- *   define('SAMARA_ERP_WEBHOOK_SECRET',  '<Website Form Webhook Secret>');      // lead secret — server only
- *   define('SAMARA_ERP_PAGEVIEW_SECRET', '<Website Pageview Tracker Secret>');  // server only too
- * The two values MUST be different.
- */
+
 
 if (!defined('ABSPATH')) exit; // only ever runs inside WordPress
 
