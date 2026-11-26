@@ -24,10 +24,10 @@ export const budgetRowsPayload = (rows: BudgetRow[]) =>
 
 const rowAmount = (r: BudgetRow) => parseFloat(r.amount) || 0
 
-/** Valid = at least one complete row and no half-filled ones (name without amount or vice versa). */
+/** Valid = no half-filled rows (name without amount or vice versa). Budget is optional — all-empty is fine. */
 export function budgetRowsValid(rows: BudgetRow[]): boolean {
   const filled = rows.filter(r => r.name.trim() || r.amount.trim())
-  return filled.length > 0 && filled.every(r => r.name.trim() && r.amount.trim() !== '' && !isNaN(Number(r.amount)) && Number(r.amount) >= 0)
+  return filled.every(r => r.name.trim() && r.amount.trim() !== '' && !isNaN(Number(r.amount)) && Number(r.amount) >= 0)
 }
 
 export function BudgetStructureEditor({ currency, onCurrencyChange, rows, onRowsChange, disabled }: {
@@ -48,7 +48,7 @@ export function BudgetStructureEditor({ currency, onCurrencyChange, rows, onRows
     <div className="space-y-2">
       <div className="flex items-center justify-between gap-3">
         <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-          Budget structure <span className="text-destructive">*</span>
+          Budget structure <span className="normal-case font-normal">(optional)</span>
         </Label>
         <Select value={currency} onValueChange={v => onCurrencyChange(v as BudgetCurrency)} disabled={disabled}>
           <SelectTrigger className="h-8 w-24 text-xs" aria-label="Budget currency"><SelectValue /></SelectTrigger>

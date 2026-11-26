@@ -25,7 +25,6 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   const body = await req.json().catch(() => ({}))
   const parsed = parseBudgetItems(body.budgetItems)
   if ('error' in parsed) return NextResponse.json({ error: parsed.error }, { status: 400 })
-  if (parsed.items.length === 0) return NextResponse.json({ error: 'Add at least one budget item' }, { status: 400 })
   const currency = normalizeBudgetCurrency(body.budgetCurrency)
 
   const updated = await db.$transaction(async tx => {

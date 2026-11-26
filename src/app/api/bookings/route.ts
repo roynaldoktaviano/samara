@@ -222,7 +222,6 @@ export async function POST(request: NextRequest) {
       }
       const parsed = parseBudgetItems(budgetItems)
       if ('error' in parsed) return NextResponse.json({ error: parsed.error }, { status: 400 })
-      if (parsed.items.length === 0) return NextResponse.json({ error: 'Add at least one budget item' }, { status: 400 })
       collabBudget = parsed.items
       const contracts = parseContractUrls(collaborationContracts)
       if ('error' in contracts) return NextResponse.json({ error: contracts.error }, { status: 400 })
