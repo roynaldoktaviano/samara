@@ -5401,6 +5401,11 @@ model InstagramMessage {
   replyTo   InstagramMessage?  @relation("InstagramMessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
   replies   InstagramMessage[] @relation("InstagramMessageReplies")
 
+  // Emoji reactions shown as a small badge on this bubble, like Instagram does (not as a
+  // message of their own): reactionIn = the customer's, reactionOut = ours (from the IG app).
+  reactionIn  String?
+  reactionOut String?
+
   @@index([conversationId, createdAt])
 }
 

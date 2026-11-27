@@ -1,5 +1,6 @@
 'use client'
 
+import { ChatText, plainChatText } from '@/components/chat/ChatText'
 import { chatRole } from '@/lib/role-utils'
 import { useState, useEffect, useRef, useCallback, useLayoutEffect } from 'react'
 import { useSession } from 'next-auth/react'
@@ -87,7 +88,7 @@ function dayLabel(iso: string) {
   return d.getFullYear() === today.getFullYear() ? full.replace(/ \d{4}$/, '') : full
 }
 function quoteSnippet(q: QuotedMessage) {
-  if (q.body) return q.body
+  if (q.body) return plainChatText(q.body)
   if (q.mediaType?.startsWith('image/')) return '📷 Photo'
   if (q.mediaType?.startsWith('video/')) return '🎥 Video'
   if (q.mediaType?.startsWith('audio/')) return '🎤 Audio'
@@ -612,7 +613,7 @@ export default function WhatsAppThread({ conversationId, onConversationUpdate, s
                           <FileText className="h-2.5 w-2.5" /> Template: {m.templateName}
                         </p>
                       )}
-                      {captionOf(m) && <p className="whitespace-pre-wrap break-words">{captionOf(m)}</p>}
+                      {captionOf(m) && <p className="whitespace-pre-wrap break-words"><ChatText text={captionOf(m)!} /></p>}
                       {m.direction === 'IN' && m.receiveOnlyPhoneNumberId && (
                         <p className="text-[10px] mt-1 text-warning" title="The customer wrote to a number the ERP only receives on — replies go out from the main number">Sent to the old number</p>
                       )}

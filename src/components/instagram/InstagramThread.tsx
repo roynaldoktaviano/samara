@@ -1,5 +1,6 @@
 'use client'
 
+import { ChatText } from '@/components/chat/ChatText'
 import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react'
 import { uploadToR2 } from '@/lib/r2-client'
 import { Loader2, Image as ImageIcon, Heart, Reply, X, ArrowLeft, AlertCircle, Clock, RotateCcw, PanelRight } from 'lucide-react'
@@ -17,6 +18,9 @@ const DAY_MS = 24 * 60 * 60 * 1000
 
 // Must match src/lib/meta-dm.ts STORY_REPLY_LABEL (that module is server-only).
 const STORY_REPLY_LABEL = '↩️ Replied to your story'
+// Reactions saved before they were attached to the reacted-to bubble — a separate "Reacted ❤️"
+// row whose target is unknown, so it's shown as a small note rather than a full bubble.
+const LEGACY_REACTION = /^Reacted (\S{1,16})$/u
 
 interface QuotedMessage { id: string; body: string | null; direction: 'IN' | 'OUT'; mediaType: string | null }
 interface Message {
@@ -30,6 +34,8 @@ interface Message {
   errorMessage: string | null
   sentByName: string | null
   replyTo: QuotedMessage | null
+  reactionIn?: string | null
+  reactionOut?: string | null
 }
 interface ConversationDetail {
   id: string; igUsername: string | null; displayName: string | null; profilePicUrl: string | null
@@ -305,6 +311,13 @@ export default function InstagramThread({ conversationId, onConversationUpdate, 
           // Reply to one of our stories: label, then the story itself, then their text (src/lib/meta-dm.ts).
           const storyReply = m.direction === 'IN' && !!m.body?.startsWith(STORY_REPLY_LABEL)
           const bodyText = storyReply ? m.body!.slice(STORY_REPLY_LABEL.length).replace(/^\n/, '') : m.body
+          const legacyReaction = !isPending && !m.mediaType && !m.replyTo ? m.body?.match(LEGACY_REACTION)?.[1] : undefined
+          if (legacyReaction) return (
+            <p key={m.id} className={`text-[11px] text-muted-foreground px-1 ${m.direction === 'OUT' ? 'text-right' : ''}`}>
+              {m.direction === 'OUT' ? 'You' : contactName} reacted {legacyReaction} to a message · <span className="tabular-nums">{formatDate(m.createdAt, 'datetime')}</span>
+            </p>
+          )
+          const reactions = [m.reactionIn, m.reactionOut].filter(Boolean) as string[]
           return (
           <div key={m.id} className={`group flex items-center gap-1.5 ${m.direction === 'OUT' ? 'justify-end' : 'justify-start'}`}>
             {m.direction === 'OUT' && !isPending && (
@@ -337,8 +350,15 @@ export default function InstagramThread({ conversationId, onConversationUpdate, 
               {!mediaSrc && m.mediaType && m.direction === 'IN' && !m.errorMessage && (
                 <p className="flex items-center gap-1.5 text-xs text-muted-foreground"><Loader2 className="h-3 w-3 animate-spin" />Loading {storyReply ? 'story' : 'attachment'}…</p>
               )}
-              {bodyText && <p className="whitespace-pre-wrap break-words">{bodyText}</p>}
+              {bodyText && <p className="whitespace-pre-wrap break-words"><ChatText text={bodyText} /></p>}
             </div>
+            {/* Reactions sit on the bubble's lower edge, like Instagram. */}
+            {reactions.length > 0 && (
+              <span className="relative z-10 -mt-2 mx-3 rounded-full bg-card border shadow-sm px-1.5 text-sm leading-5 select-none"
+                title={[m.reactionIn && `${contactName} reacted ${m.reactionIn}`, m.reactionOut && `You reacted ${m.reactionOut}`].filter(Boolean).join(' · ')}>
+                {reactions.join('')}
+              </span>
+            )}
             {failed ? (
               <p className="flex items-center gap-1 text-[10px] text-destructive mt-0.5 px-1">
                 <span className="inline-flex items-center gap-1 cursor-help" title={m.errorMessage ?? undefined}><AlertCircle className="h-3 w-3 shrink-0" />Not sent</span>

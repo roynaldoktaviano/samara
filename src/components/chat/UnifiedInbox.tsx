@@ -22,6 +22,7 @@ import WhatsAppThread from '@/components/whatsapp/WhatsAppThread'
 import InstagramThread from '@/components/instagram/InstagramThread'
 import FreshchatList from '@/components/freshchat/FreshchatList'
 import FreshchatThread from '@/components/freshchat/FreshchatThread'
+import { plainChatText } from '@/components/chat/ChatText'
 
 interface SalesUser { id: string; name: string | null; email: string }
 
@@ -368,7 +369,7 @@ export default function UnifiedInbox({ onOpenEmail, onOpenBooking, initialWhatsa
                     </div>
                     <div className="flex items-center gap-1.5 mt-0.5">
                       <p className={cn('text-sm md:text-xs truncate flex-1', unread ? 'text-foreground' : 'text-muted-foreground')}>
-                        {item.preview || '—'}
+                        {item.preview ? plainChatText(item.preview) : '—'}
                       </p>
                       {waiting && (
                         <span title="Customer is waiting for a reply"

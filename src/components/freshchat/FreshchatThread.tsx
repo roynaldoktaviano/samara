@@ -2,6 +2,7 @@
 
 // Read-only view of one conversation imported from Freshchat (src/lib/freshchat-import.ts).
 // Those channels are still connected to Freshchat, so there is no composer — replies happen there.
+import { ChatText } from '@/components/chat/ChatText'
 import { useEffect, useState } from 'react'
 import { ArrowLeft, FileText, History, Lock, MessageCircle, Instagram, Facebook, Globe, Download } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -102,7 +103,7 @@ function Bubble({ m }: { m: Message }) {
         note ? 'bg-warning/15 border border-warning/30' : mine ? 'bg-[#d9fdd3] dark:bg-[#005c4b] text-foreground' : 'bg-card border')}>
         {(mine || note) && <p className="text-[10px] font-medium text-muted-foreground mb-0.5">{note ? 'Internal note · ' : ''}{m.actorName ?? (m.actorType === 'bot' ? 'Bot' : 'Agent')}</p>}
         {m.attachments.map((a, i) => <AttachmentView key={i} a={a} />)}
-        {m.text && <p className="whitespace-pre-wrap break-words">{m.text}</p>}
+        {m.text && <p className="whitespace-pre-wrap break-words"><ChatText text={m.text} /></p>}
         <p className="text-[10px] text-muted-foreground text-right mt-0.5">{time}</p>
       </div>
     </div>

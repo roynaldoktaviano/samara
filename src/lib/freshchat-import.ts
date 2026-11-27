@@ -12,6 +12,7 @@
  * ERP Lead / Guest. Messages are pulled newest-first and stop at the first page that is already
  * stored, so a re-sync of a busy conversation only costs its new pages.
  */
+import { htmlToWa } from '@/lib/chat-html'
 import type { Prisma, PrismaClient, WhatsappBrand } from '@prisma/client'
 import { isR2Configured, putToR2 } from './r2'
 
@@ -125,13 +126,15 @@ async function copyAttachment(convId: string, msgId: string, i: number, a: { url
   }
 }
 
-/** Freshchat text as sent: HTML entities ("Kelor &amp; Kanawa"), \r\n, runs of blank lines, or only
+/** Freshchat text as sent: HTML entities and tags (<b>, <i>, <br>) ("Kelor &amp; Kanawa"), \r\n, runs of blank lines, or only
  *  whitespace (an image sent with an empty caption). → plain text, or null when nothing's left. */
 export function cleanChatText(t: string | null | undefined): string | null {
   if (!t) return null
-  const s = t
+  const decoded = t
     .replace(/&nbsp;/g, ' ').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"')
     .replace(/&#0?39;|&apos;/g, "'").replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n))).replace(/&amp;/g, '&')
+  // <b>/<i>/<br> → WhatsApp *bold* / _italic_ / newline
+  const s = htmlToWa(decoded)
     .replace(/\r\n?/g, '\n').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n')
     .trim()
   return s || null

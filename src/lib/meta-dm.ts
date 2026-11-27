@@ -175,6 +175,31 @@ async function findQuotedMessage(db: PrismaClient, conversationId: string, mid: 
   return hit ? { id: hit.id } : null
 }
 
+/**
+ * A reaction (or its removal) sits on the message it was made on, like Instagram shows it —
+ * the customer's in reactionIn, ours (made in the IG app) in reactionOut. Returns false when the
+ * reacted-to message isn't stored here (e.g. older than the ERP's history).
+ */
+async function applyReaction(db: PrismaClient, platform: MetaDmPlatform, event: MetaMessagingEvent): Promise<boolean> {
+  const r = event.reaction
+  if (!r?.mid) return false
+  const remove = r.action === 'unreact'
+  const emoji = remove ? null : (r.emoji ?? (r.reaction === 'love' ? '❤️' : r.reaction) ?? '❤️')
+  // The reactor is either the customer (sender) or us (recipient is the customer).
+  const convs = await db.instagramConversation.findMany({
+    where: { platform, externalUserId: { in: [event.sender.id, event.recipient.id] } },
+    select: { id: true, externalUserId: true },
+  })
+  for (const conv of convs) {
+    const target = await findQuotedMessage(db, conv.id, r.mid)
+    if (!target) continue
+    const byCustomer = conv.externalUserId === event.sender.id
+    await db.instagramMessage.update({ where: { id: target.id }, data: byCustomer ? { reactionIn: emoji } : { reactionOut: emoji } })
+    return true
+  }
+  return false
+}
+
 /** True if this conversation already has a message whose mid is the same message in another encoding. */
 async function hasMessageWithCanonicalMid(db: PrismaClient, conversationKey: { platform_externalUserId: { platform: MetaDmPlatform; externalUserId: string } }, canon: string) {
   const conv = await db.instagramConversation.findUnique({ where: conversationKey, select: { id: true } })
@@ -317,6 +342,14 @@ export async function handleMetaMessagingEvents(db: PrismaClient, tenantId: stri
           })
           if (count) changed = true
           continue
+        }
+
+        // ── Reactions: a badge on the reacted-to bubble, not a message of their own ──
+        if (!event.message && event.reaction) {
+          if (await applyReaction(db, platform, event)) { changed = true; continue }
+          // Reacted-to message isn't stored here — keep the old "Reacted ❤️" line, but only in a
+          // thread we already have (a reaction never opens one).
+          if (event.reaction.action !== 'react' || !(await db.instagramConversation.findUnique({ where: key, select: { id: true } }))) continue
         }
 
         const msg = event.message

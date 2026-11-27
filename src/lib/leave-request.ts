@@ -144,6 +144,8 @@ export async function notifyLeaveReachedHr(
 // ─── Parallel approval (2026-11-23) ─────────────────────────────────────────────────
 // Leave / sick leave / WFH go to the direct supervisor(s) AND HR at the same time:
 //   - crew (Work Location = a yacht name): that yacht's Captain and Cruise Director
+//     (Captain's own request → CD only; CD's own request → Employee.manager = Marc, who
+//     approves here, unlike the notify-only rule for shore staff)
 //   - everyone else: Employee.manager (if they have a login) — unless that manager is in
 //     LEAVE_NOTIFY_ONLY_MANAGER_EMAILS, who is only notified
 // The first approve from any of them finalizes the request (APPROVED, leave balance
@@ -169,7 +171,17 @@ export async function resolveLeaveRouting(
   yachts: { id: string; name: string }[],
 ): Promise<LeaveRouting> {
   const yachtId = matchEmployeesToYachts([{ id: employee.id, locationName: employee.location?.name ?? null }], yachts).get(employee.id)
+  // A Cruise Director's own request goes to their manager (Marc) — never to the Captain,
+  // who reports to the CD. Marc is a real approver here (not notify-only). 2026-11-27.
+  const ownRole = employee.userId
+    ? (await db.user.findUnique({ where: { id: employee.userId }, select: { role: true } }))?.role
+    : null
+  if (yachtId && ownRole === 'CRUISE_DIRECTOR') {
+    const mgrUserId = employee.manager?.userId && employee.manager.userId !== employee.userId ? employee.manager.userId : null
+    return { yachtId, captainId: null, cdId: null, managerUserId: mgrUserId, fyiUserIds: [] }
+  }
   if (yachtId) {
+    // Crew → that yacht's Captain + CD; a Captain's own request → the CD only.
     const { captain, cd } = await resolveYachtCrewApprovers(db, yachtId)
     return {
       yachtId,
