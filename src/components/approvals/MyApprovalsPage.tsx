@@ -90,6 +90,9 @@ interface BusinessTripApproval {
   employee: { id: string; fullName: string; employeeNumber: string }
 }
 
+// Performance Review section temporarily hidden from My Approvals — flip to true to bring it back.
+const SHOW_TEAM_PERFORMANCE_REVIEWS = false
+
 interface TeamMember { id: string; fullName: string; employeeNumber: string; department: string | null; employmentStatus: string | null }
 interface TeamPerformanceReview {
   id: string
@@ -178,7 +181,7 @@ export default function MyApprovalsPage() {
     setLoading(true)
     const [res, teamRes] = await Promise.all([
       fetch('/api/purchasing/my-approvals'),
-      fetch('/api/hr/performance-reviews/mine'),
+      SHOW_TEAM_PERFORMANCE_REVIEWS ? fetch('/api/hr/performance-reviews/mine') : Promise.resolve(null),
     ])
     if (res.ok) {
       const data = await res.json()
@@ -193,7 +196,7 @@ export default function MyApprovalsPage() {
       setBusinessTripApprovals(data.businessTripApprovals ?? [])
       setRecruitmentApprovals(data.recruitmentApprovals ?? [])
     }
-    if (teamRes.ok) {
+    if (teamRes?.ok) {
       const teamData = await teamRes.json()
       setTeamReports(teamData.directReports ?? [])
       setTeamReviews(teamData.requests ?? [])
@@ -320,7 +323,7 @@ export default function MyApprovalsPage() {
         <p className="text-muted-foreground text-sm mt-1">Requests awaiting your approval</p>
       </div>
 
-      {teamReports.length > 0 && (
+      {SHOW_TEAM_PERFORMANCE_REVIEWS && teamReports.length > 0 && (
         <>
           <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">My Team — Performance Reviews</h3>
           <div className="space-y-2">
