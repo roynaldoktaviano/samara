@@ -701,7 +701,7 @@ export default function WhatsAppThread({ conversationId, onConversationUpdate, s
                 <p className="text-[11px] text-muted-foreground">For customers who haven&apos;t messaged yet, or whose last reply was more than 24h ago.</p>
               </div>
               {templates.length === 0 ? (
-                <p className="text-xs text-muted-foreground">No templates registered for this number yet (Chat &gt; WhatsApp Templates).</p>
+                <p className="text-xs text-muted-foreground">No templates registered for this number yet (Conversation &gt; WhatsApp Templates).</p>
               ) : (
                 <Select value={templateName} onValueChange={v => { setTemplateName(v); setTemplateParams(new Array(templates.find(t => templateKey(t) === v)?.paramLabels?.length ?? 0).fill('')) }}>
                   <SelectTrigger aria-label="Message Template" className="h-9 w-full text-sm"><SelectValue placeholder="Choose template" /></SelectTrigger>

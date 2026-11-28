@@ -26,7 +26,7 @@ export type NavItem = {
 
 export const NAV_GROUPS = [
   { key: 'main',       label: 'Main' },
-  { key: 'chat',       label: 'Chat', icon: MessageCircle },
+  { key: 'chat',       label: 'Conversation', icon: MessageCircle },
   { key: 'operations', label: 'Operations', icon: Ship },
   { key: 'finance',    label: 'Finance', icon: Wallet },
   { key: 'statistics', label: 'Statistics', icon: TrendingUp },
@@ -55,7 +55,7 @@ export const navigationItems: NavItem[] = [
   // Identity-gated rather than role-gated: always on for every role (see ALWAYS_ON_EVERY_ROLE
   // in role-permissions.ts), and the sidebar only shows it to employees with direct reports.
   { id: 'my-recruitment', label: 'Recruitment Request', icon: UserSearch, roles: ['SUPER_ADMIN', 'ADMIN', 'SALES', 'FINANCE', 'MARKETING', 'PURCHASING', 'WAREHOUSE', 'HR', 'SALES_MARKETING', 'MARKETING_DIRECTOR', 'FINANCE_DIRECTOR', 'CREW', 'BOAT_CAPTAIN', 'CRUISE_DIRECTOR'], group: 'main' },
-  { id: 'chat-inbox',    label: 'All Chats',      icon: MessageCircle, roles: ['ADMIN', 'SALES'],                      group: 'chat' },
+  { id: 'chat-inbox',    label: 'Chat',           icon: MessageCircle, roles: ['ADMIN', 'SALES'],                      group: 'chat' },
   { id: 'chat-email',    label: 'Email',          icon: Mail,          roles: ['ADMIN', 'SALES'],                      group: 'chat' },
   { id: 'chat-whatsapp-distribution', label: 'Leads Distribution', icon: Shuffle, roles: ['ADMIN'], group: 'chat' },
   { id: 'chat-whatsapp-templates', label: 'WhatsApp Templates', icon: FileText, roles: ['ADMIN'], group: 'chat' },

@@ -1170,7 +1170,7 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
           <p className="text-muted-foreground text-sm">Manage all yacht reservations</p>
         </div>
         {canManageBookings && (
-          <Button onClick={() => setWizardOpen(true)}>
+          <Button onClick={() => setWizardOpen(true)} className="max-sm:h-9 max-sm:rounded-full max-sm:px-3.5">
             <Plus className="h-4 w-4" /> New Booking
           </Button>
         )}
@@ -1219,9 +1219,9 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
         </Card>
       )}
 
-      {/* ── Bookings Table ── */}
-      <Card>
-        <CardHeader className="pb-3">
+      {/* ── Bookings Table (desktop) / card list (phones) ── */}
+      <Card className="max-md:border-0 max-md:shadow-none max-md:bg-transparent max-md:py-0 max-md:gap-3">
+        <CardHeader className="pb-3 max-md:px-0 max-md:pb-0">
           {/* Title row */}
           <div className="flex items-center justify-between gap-3">
             <div>
@@ -1353,9 +1353,86 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
               </PopoverContent>
             </Popover>
           </div>
+          {/* Phones: search right on the page — opening Filters just to search is a lot of taps */}
+          <div className="relative md:hidden mt-3">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+            <Input
+              aria-label="Search bookings"
+              placeholder="Search code, guest, yacht…"
+              value={searchTerm}
+              onChange={e => withPageReset(setSearchTerm)(e.target.value)}
+              className="pl-9 pr-9 h-10 rounded-full bg-muted/60 border-0"
+            />
+            {searchTerm && (
+              <button type="button" aria-label="Clear search" className="absolute right-3 top-1/2 -translate-y-1/2" onClick={() => setSearchTerm('')}>
+                <X className="h-4 w-4 text-muted-foreground" />
+              </button>
+            )}
+          </div>
         </CardHeader>
-        <CardContent>
-          <div className="rounded-md border overflow-x-auto">
+        <CardContent className="max-md:px-0">
+          {/* Phones: one card per booking */}
+          <div className="md:hidden space-y-2.5">
+            {loading || (canManageBookings && paymentsLoading) ? (
+              Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-28 w-full rounded-2xl" />)
+            ) : filtered.length === 0 ? (
+              <p className="rounded-2xl border border-dashed py-10 px-4 text-center text-sm text-muted-foreground">
+                {bookings.length === 0 ? 'No bookings yet — tap "New Booking" to get started.' : 'No bookings match the current filters.'}
+              </p>
+            ) : paginated.map(b => {
+              const effStatus = getEffectiveBookingStatus(b.status, b.startDate, b.endDate)
+              const title = b.tripType === 'OPEN_TRIP' ? (b.openTrip?.title ?? 'Open Trip') : `Private Charter${b.yacht?.name ? ` · ${b.yacht.name}` : ''}`
+              const holdExp = b.status === 'on_hold' && b.holdUntil ? new Date(b.holdUntil) : null
+              const invoiceReady = payments.some(p => p.bookingId === b.id && p.status === 'invoice_ready')
+              return (
+                <button key={b.id} type="button" onClick={() => openDetail(b)}
+                  className="w-full text-left rounded-2xl border bg-card px-4 py-3.5 shadow-xs active:bg-muted/40 transition-colors">
+                  <div className="flex items-start justify-between gap-3">
+                    <p className="min-w-0 text-[15px] font-semibold leading-snug line-clamp-2">{title}</p>
+                    <BookingStatusBadge status={effStatus} size="sm" className="shrink-0 font-semibold" />
+                  </div>
+                  <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <Calendar className="size-3.5 shrink-0" />
+                    <span className="tabular-nums">{formatDate(b.startDate)} – {formatDate(b.endDate)}</span>
+                    <span>· {getDays(b.startDate, b.endDate)}d</span>
+                  </p>
+                  <p className="mt-1 flex items-center gap-1.5 text-sm">
+                    <Users className="size-3.5 shrink-0 text-muted-foreground" />
+                    <span className="truncate">{b.customer.name}</span>
+                    {b.agent && <span className="truncate text-xs text-muted-foreground">via {b.agent.name}</span>}
+                  </p>
+                  {(isDepositOverdue(b) || holdExp || invoiceReady || b.isCollaboration || b.isComplimentary) && (
+                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                      {isDepositOverdue(b) && (
+                        <StatusBadge tone="destructive" size="sm" className="font-semibold"><AlertCircle className="size-3" /> DP overdue</StatusBadge>
+                      )}
+                      {holdExp && (
+                        <StatusBadge tone={holdExp < new Date() ? 'destructive' : 'warning'} size="sm" className="font-semibold">
+                          <Clock className="size-3" /> {holdExp < new Date() ? 'Hold expired' : `Hold until ${formatDate(holdExp, 'short')} ${formatDate(holdExp, 'time')}`}
+                        </StatusBadge>
+                      )}
+                      {invoiceReady && <StatusBadge tone="info" size="sm" className="font-semibold"><CreditCard className="size-3" /> Invoice Ready</StatusBadge>}
+                      {b.isCollaboration
+                        ? <StatusBadge tone="purple" size="sm" className="font-semibold">Collaboration</StatusBadge>
+                        : b.isComplimentary && <StatusBadge tone="success" size="sm" className="font-semibold"><Gift className="size-3" /> Complimentary</StatusBadge>}
+                    </div>
+                  )}
+                  <div className="mt-3 pt-2.5 border-t flex items-center gap-2 text-[11px] text-muted-foreground">
+                    <span className="font-mono font-medium text-foreground/80">{b.bookingCode}</span>
+                    {b.tripType === 'PRIVATE_CHARTER' && b.tripNumber != null && (
+                      <span className="font-mono">#{b.tripNumber}/{new Date(b.endDate).getFullYear()}</span>
+                    )}
+                    <span className="ml-auto inline-flex items-center rounded-full border px-2 py-0.5 font-medium"
+                      style={b.source === 'AGENT' ? { borderColor: ACCENT, color: ACCENT } : undefined}>
+                      {b.source === 'AGENT' ? 'Agent' : 'Direct'}
+                    </span>
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+
+          <div className="max-md:hidden rounded-md border overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -1486,7 +1563,7 @@ export default function Bookings({ deepLinkId, onDeepLinkHandled }: { deepLinkId
 
           {/* Pagination */}
           {!loading && filtered.length > 0 && (
-            <div className="flex items-center justify-between gap-3 pt-3 text-xs text-muted-foreground">
+            <div className="flex items-center justify-between gap-3 pt-3 max-md:pt-4 text-xs text-muted-foreground max-md:[&_button]:h-9 max-md:[&_button]:w-9">
               <span>
                 Showing {(safePage - 1) * PAGE_SIZE + 1}–{Math.min(safePage * PAGE_SIZE, filtered.length)} of {filtered.length}
               </span>

@@ -102,7 +102,7 @@ export default function EmailSignatureDialog({ open, onOpenChange, userId }: {
       <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto" onInteractOutside={e => e.preventDefault()}>
         <DialogHeader>
           <DialogTitle>Email Signature</DialogTitle>
-          <DialogDescription>Added below every email you send from Chat › Email. The layout is the same for everyone — only your details change.</DialogDescription>
+          <DialogDescription>Added below every email you send from Conversation › Email. The layout is the same for everyone — only your details change.</DialogDescription>
         </DialogHeader>
 
         {loading ? (

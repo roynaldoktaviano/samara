@@ -24,6 +24,7 @@ import { cn } from '@/lib/utils'
 import { getEffectiveBookingStatus, bookingStatusStyle } from '@/lib/booking-status'
 import { formatDate, formatDateRange, formatMoney } from '@/lib/format'
 import { StatusBadge, BookingStatusBadge } from '@/components/ui/status-badge'
+import MobileCalendar, { type MobileCalendarEvent, type MobileCalendarAction } from '@/components/calendar/MobileCalendar'
 
 interface BookingEvent {
   id: string
@@ -1190,7 +1191,11 @@ export default function CalendarView() {
 
   const fetchBookings = useCallback(async () => {
     try {
-      const data = await fetch('/api/bookings?view=calendar').then(r => r.json())
+      const res = await fetch('/api/bookings?view=calendar')
+      const data = await res.json().catch(() => null)
+      // A failing API used to leave the calendar silently empty (open trips still showed, so it
+      // looked like only bookings were "missing") — say so instead.
+      if (!res.ok || !Array.isArray(data)) toast.error('Failed to load bookings for the calendar')
       const rawData = Array.isArray(data) ? data : []
       // Track cancelled open-trip cabins separately (filtered out below)
       setCancelledOtCabins(
@@ -1262,6 +1267,8 @@ export default function CalendarView() {
           setYachtFilter(prev => {
             const names = list.map(y => y.name)
             if (names.includes(prev)) return prev
+            // Phones open on "All yachts" (MobileCalendar) — one screen shows every yacht's trips.
+            if (window.matchMedia('(max-width: 767px)').matches) return ''
             // Default to Samara I when available, rather than whatever the API happens to return first.
             return list.find(y => y.name === 'Samara I')?.name ?? list[0]?.name ?? ''
           })
@@ -1741,9 +1748,88 @@ export default function CalendarView() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openTrips, leftYear, leftMonth, tripFilter, yachtFilter, filterActive, filterFrom, filterTo, filterMode])
 
+  const openBookingDetail = (b: BookingEvent) => {
+    setSelectedBooking(b)
+    setIsDetailOpen(true)
+    setBookingDetailLoading(true)
+    fetch(`/api/bookings/${b.id}`).then(r => r.json()).then(data => {
+      setBookingFullDetail(data)
+      setBookingDetailLoading(false)
+    }).catch(() => setBookingDetailLoading(false))
+  }
+
+  // Phone layout (MobileCalendar) — same filtered data as the month grid, flattened into one
+  // event list; tapping an event opens the same dialogs as desktop.
+  const mobileEvents: MobileCalendarEvent[] = useMemo(() => [
+    ...monthBookings.map(b => {
+      const eff = getEffectiveBookingStatus(b.status, b.startDate, b.endDate)
+      const sales = b.salespersonUser?.name || b.salesperson
+      return {
+        key: `b-${b.id}`, start: b.startDate, end: b.endDate,
+        title: b.customerName || b.bookingCode || b.yachtName,
+        subtitle: [b.bookingCode, b.yachtName, sales && `Sales: ${sales}`].filter(Boolean).join(' · '),
+        kindLabel: 'Charter', duration: `${getDays(b.startDate, b.endDate)} days`,
+        color: bookingStatusStyle(eff).bar,
+        barColor: yachtColorMap[b.yachtName],
+        barLabel: [b.yachtName, b.customerName].filter(Boolean).join(' · '),
+        badge: <BookingStatusBadge status={eff} size="sm" className="font-semibold" />,
+        onOpen: () => openBookingDetail(b),
+      }
+    }),
+    ...monthOpenTrips
+      .filter(t => !(t.status === 'closed' && t.closedReason?.includes('Private Charter')))
+      .map(t => {
+        const isClosed = t.status === 'closed'
+        const isFull = t.status === 'full' || (!isClosed && t.spotsAvailable === 0)
+        return {
+          key: `ot-${t.id}`, start: t.startDate, end: t.endDate,
+          title: t.title,
+          subtitle: [t.yacht.name, t.destination].filter(Boolean).join(' · '),
+          kindLabel: 'Open Trip', duration: `${getDays(t.startDate, t.endDate)} days`,
+          color: isClosed ? 'var(--muted-foreground)' : isFull ? 'var(--destructive)' : 'var(--success)',
+          barColor: yachtColorMap[t.yacht.name],
+          barLabel: `${t.yacht.name} · Open Trip`,
+          badge: (
+            <StatusBadge tone={isClosed ? 'neutral' : isFull ? 'destructive' : 'success'} size="sm" className="font-semibold">
+              {isClosed ? 'Closed' : isFull ? 'Sold Out' : `${t.spotsAvailable}/${t.maxCapacity} spots`}
+            </StatusBadge>
+          ),
+          onOpen: () => handleOpenTripClick(t),
+        }
+      }),
+    ...filteredInternalEvents.map(ev => ({
+      key: `ie-${ev.id}`, start: ev.startDate, end: ev.endDate,
+      title: ev.title,
+      subtitle: [ev.yachtName ?? 'Company-wide', ev.notes].filter(Boolean).join(' · '),
+      kindLabel: INTERNAL_EVENT_LABEL[ev.type], duration: `${getDays(ev.startDate, ev.endDate)} days`,
+      color: INTERNAL_EVENT_COLOR[ev.type],
+      barColor: (ev.yachtName && yachtColorMap[ev.yachtName]) || INTERNAL_EVENT_COLOR[ev.type],
+      barLabel: [ev.yachtName, INTERNAL_EVENT_LABEL[ev.type]].filter(Boolean).join(' · '),
+      onOpen: () => openEditInternalEvent(ev),
+    })),
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  ], [monthBookings, monthOpenTrips, filteredInternalEvents, handleOpenTripClick, yachtColorMap])
+
+  const mobileActions: MobileCalendarAction[] = [
+    ...(isAdmin ? [{ label: 'New Booking', icon: Plus, onClick: () => { setSelectedDate(''); setWizardOpen(true) } }] : []),
+    ...(isAdmin ? [{ label: 'Internal Event', icon: Anchor, onClick: openAddInternalEvent }] : []),
+    ...(canAddCollaboration ? [{ label: 'Collaboration Book', icon: Gift, onClick: () => { setSelectedDate(''); setWizardCollaboration(true); setWizardOpen(true) } }] : []),
+  ]
+
   if (loading) {
     return (
-      <div className="space-y-5 w-full">
+      <>
+      {/* Phone skeleton — mirrors MobileCalendar */}
+      <div className="md:hidden space-y-4 pt-2">
+        <div className="h-8 w-40 rounded-lg bg-muted animate-pulse" />
+        <div className="h-8 w-full rounded-full bg-muted/60 animate-pulse" />
+        <div className="grid grid-cols-7 gap-y-3 pt-2">
+          {Array.from({ length: 35 }).map((_, i) => <div key={i} className="mx-auto size-8 rounded-full bg-muted/50 animate-pulse" />)}
+        </div>
+        <div className="h-20 rounded-2xl bg-muted/50 animate-pulse" />
+        <div className="h-20 rounded-2xl bg-muted/50 animate-pulse" />
+      </div>
+      <div className="max-md:hidden space-y-5 w-full">
         <div className="flex items-center justify-between">
           <div className="space-y-2">
             <div className="h-8 w-36 rounded-lg bg-muted animate-pulse" />
@@ -1773,14 +1859,35 @@ export default function CalendarView() {
           </div>
         </div>
       </div>
+      </>
     )
   }
 
   return (
     <div className="space-y-5 w-full">
 
+      {/* Phone layout — replaces the header + calendar card below md */}
+      <div className="md:hidden">
+        <MobileCalendar
+          year={leftYear} month={leftMonth}
+          onMonthChange={(y, m) => setCurrentDate(new Date(y, m, 1))}
+          events={mobileEvents}
+          yachts={[...yachts]
+            .sort((a, b) => {
+              const ORDER = ['Samara I', 'Samara II', 'Siloina I', 'Siloina II', 'Mischief', 'Otium']
+              const ai = ORDER.indexOf(a.name), bi = ORDER.indexOf(b.name)
+              return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi)
+            })
+            .map(y => ({ name: y.name, color: yachtColorMap[y.name] ?? 'var(--muted-foreground)' }))}
+          yachtFilter={yachtFilter} onYachtFilter={setYachtFilter}
+          tripFilter={tripFilter} onTripFilter={setTripFilter}
+          actions={mobileActions}
+          onNewBookingOnDate={canEdit ? handleDateClick : undefined}
+        />
+      </div>
+
       {/* Page header */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="max-md:hidden flex flex-wrap items-center justify-between gap-3">
         <div>
           <h3 className="text-2xl font-bold tracking-tight">Trip Calendar</h3>
           <p className="text-sm text-muted-foreground mt-0.5">Manage your yacht bookings and schedule</p>
@@ -1816,7 +1923,7 @@ export default function CalendarView() {
       </div>
 
       {/* ── Calendar card ── */}
-      <Card className="w-full">
+      <Card className="max-md:hidden w-full">
         {/* Top nav — single row: year left · months center · icons right */}
         <div className="flex items-center gap-2 px-3 sm:px-5 py-2 border-b">
 
@@ -2276,44 +2383,38 @@ export default function CalendarView() {
           <DialogTitle className="sr-only">{selectedBooking?.yachtName ?? 'Booking Detail'}</DialogTitle>
           {selectedBooking && (
             <>
-              <DialogHeader>
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-xl font-semibold">{selectedBooking.yachtName}</p>
-                    <DialogDescription>{selectedBooking.bookingCode} · {selectedBooking.customerName}</DialogDescription>
+              {/* Left-aligned on phones too; the status sits under the title so it never
+                  collides with the dialog's close button. */}
+              <DialogHeader className="text-left pr-8 gap-1.5">
+                <p className="text-xl font-semibold leading-snug">{selectedBooking.yachtName}</p>
+                <DialogDescription className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                  {selectedBooking.bookingCode && <span className="font-mono text-xs">{selectedBooking.bookingCode}</span>}
+                  {selectedBooking.bookingCode && selectedBooking.customerName && <span aria-hidden>·</span>}
+                  {selectedBooking.customerName && <span>{selectedBooking.customerName}</span>}
+                </DialogDescription>
+                {!isBookingEditing && (
+                  <div className="pt-0.5">
+                    <BookingStatusBadge status={getEffectiveBookingStatus(selectedBooking.status, selectedBooking.startDate, selectedBooking.endDate)} size="sm" className="font-semibold" />
                   </div>
-                  {!isBookingEditing && (() => {
-                    const effStatus = getEffectiveBookingStatus(selectedBooking.status, selectedBooking.startDate, selectedBooking.endDate)
-                    return (
-                      <BookingStatusBadge status={effStatus} className="font-semibold px-3 py-1" />
-                    )
-                  })()}
-                </div>
+                )}
               </DialogHeader>
 
               {/* ── View mode ── */}
               {!isBookingEditing ? (
                 <div className="space-y-3 py-2">
-                  <div className="grid grid-cols-2 gap-3">
+                  {/* Dates, duration and price in one card (2×2) */}
+                  <div className="grid grid-cols-2 gap-px rounded-xl border bg-border overflow-hidden">
                     {[
-                      { label: 'Check-in',  val: formatDate(selectedBooking.startDate, 'medium', { utc: true }) },
-                      { label: 'Check-out', val: formatDate(selectedBooking.endDate, 'medium', { utc: true }) },
+                      { label: 'Check-in',  icon: null, val: formatDate(selectedBooking.startDate, 'medium', { utc: true }) },
+                      { label: 'Check-out', icon: null, val: formatDate(selectedBooking.endDate, 'medium', { utc: true }) },
+                      { label: 'Duration',  icon: Clock, val: `${getDays(selectedBooking.startDate, selectedBooking.endDate)} days` },
+                      { label: 'Total Price', icon: DollarSign, val: formatMoney(selectedBooking.totalPrice, { currency: 'USD', decimals: 0, empty: 'USD –' }) },
                     ].map(r => (
-                      <div key={r.label} className="rounded-lg border p-3">
-                        <div className="text-[11px] text-muted-foreground mb-1">{r.label}</div>
-                        <div className="text-sm font-semibold">{r.val}</div>
+                      <div key={r.label} className="bg-card px-3.5 py-3 min-w-0">
+                        <div className="flex items-center gap-1 text-[11px] text-muted-foreground">{r.icon && <r.icon className="size-3" />}{r.label}</div>
+                        <div className="mt-0.5 text-sm font-semibold truncate tabular-nums">{r.val}</div>
                       </div>
                     ))}
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="rounded-lg border p-3">
-                      <div className="flex items-center gap-1 text-[11px] text-muted-foreground mb-1"><Clock className="w-3 h-3" /> Duration</div>
-                      <div className="text-sm font-semibold">{getDays(selectedBooking.startDate, selectedBooking.endDate)} days</div>
-                    </div>
-                    <div className="rounded-lg border p-3">
-                      <div className="flex items-center gap-1 text-[11px] text-muted-foreground mb-1"><DollarSign className="w-3 h-3" /> Total Price</div>
-                      <div className="text-sm font-semibold">{formatMoney(selectedBooking.totalPrice, { currency: 'USD', decimals: 0, empty: 'USD –' })}</div>
-                    </div>
                   </div>
                   {selectedBooking.status === 'on_hold' && bookingFullDetail?.holdUntil && (() => {
                     const exp     = new Date(bookingFullDetail.holdUntil)
@@ -2330,7 +2431,7 @@ export default function CalendarView() {
                     )
                   })()}
                   {((selectedBooking.salespersonUser?.name || selectedBooking.salesperson) || selectedBooking.notes) && (
-                    <div className="grid gap-3" style={{ gridTemplateColumns: (selectedBooking.salespersonUser?.name || selectedBooking.salesperson) && selectedBooking.notes ? '1fr 1fr' : '1fr' }}>
+                    <div className={cn('grid gap-3', (selectedBooking.salespersonUser?.name || selectedBooking.salesperson) && selectedBooking.notes && 'sm:grid-cols-2')}>
                       {(selectedBooking.salespersonUser?.name || selectedBooking.salesperson) && (
                         <div className="rounded-lg border p-3">
                           <div className="text-[11px] text-muted-foreground mb-1">Salesperson</div>
@@ -2340,7 +2441,7 @@ export default function CalendarView() {
                       {selectedBooking.notes && (
                         <div className="rounded-lg border p-3">
                           <div className="text-[11px] text-muted-foreground mb-1">Notes</div>
-                          <p className="text-sm">{selectedBooking.notes}</p>
+                          <p className="text-sm whitespace-pre-wrap break-words">{selectedBooking.notes}</p>
                         </div>
                       )}
                     </div>
@@ -2564,8 +2665,10 @@ export default function CalendarView() {
                     )}
                   </div>
 
-                  <DialogFooter className="gap-2 pt-1 flex-wrap">
-                    <Button variant="outline" onClick={() => setIsDetailOpen(false)}>Close</Button>
+                  {/* Phones: footer sticks to the bottom of the sheet; primary action full width on top,
+                      secondary actions side by side; "Close" is dropped there (the ✕ already does it). */}
+                  <DialogFooter className="gap-2 pt-1 flex-wrap max-sm:flex-row max-sm:sticky max-sm:-bottom-6 max-sm:-mx-6 max-sm:px-6 max-sm:py-3 max-sm:border-t max-sm:bg-card max-sm:[&>button]:flex-1 max-sm:[&>button]:min-w-[40%]">
+                    <Button variant="outline" onClick={() => setIsDetailOpen(false)} className="max-sm:hidden">Close</Button>
                     {canEdit && selectedBooking.status !== 'cancelled' && (
                       <Button
                         variant="outline"
@@ -2591,7 +2694,7 @@ export default function CalendarView() {
                           setCompleteBookingId(selectedBooking.id)
                           setWizardOpen(true)
                         }}
-                        className="bg-warning hover:bg-warning/90 text-warning-foreground"
+                        className="bg-warning hover:bg-warning/90 text-warning-foreground max-sm:order-first max-sm:basis-full"
                       >
                         <ChevronRight className="w-3.5 h-3.5 mr-2" /> Complete Booking
                       </Button>
@@ -2605,7 +2708,7 @@ export default function CalendarView() {
                           <BookOpen className="w-3.5 h-3.5 mr-2" /> Crew Sheet
                         </Button>
                         {canEdit && selectedBooking.isOwnBooking !== false && new Date(selectedBooking.endDate) >= new Date(new Date().toDateString()) && (
-                          <Button variant="brand" onClick={startBookingEdit}>
+                          <Button variant="brand" onClick={startBookingEdit} className="max-sm:order-first max-sm:basis-full">
                             <Pencil className="w-3.5 h-3.5 mr-2" /> Edit Booking
                           </Button>
                         )}
@@ -2871,24 +2974,24 @@ export default function CalendarView() {
             </>
           ) : (
             <>
-              <DialogHeader>
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <DialogTitle className="text-lg">{otDetail.title}</DialogTitle>
-                    <DialogDescription>
-                      {otDetail.yacht?.name} · {otDetail.destination} ·{' '}
-                      {formatDateRange(otDetail.startDate, otDetail.endDate, { utc: true })}
-                    </DialogDescription>
-                  </div>
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    {isAdmin && otDetail.startDate && new Date(otDetail.startDate) < new Date(new Date().toDateString()) && (
-                      <StatusBadge tone="warning" size="sm" className="font-semibold px-2.5 py-1">PAST</StatusBadge>
-                    )}
-                    <StatusBadge
-                      tone={otDetail.status === 'open' ? 'success' : otDetail.status === 'full' ? 'destructive' : 'neutral'}
-                      size="sm" className="font-semibold px-2.5 py-1"
-                    >{otDetail.status?.toUpperCase()}</StatusBadge>
-                  </div>
+              {/* Left-aligned on phones too, and the status chips sit under the title so they
+                  never collide with the dialog's close button. */}
+              <DialogHeader className="text-left pr-8 gap-1.5">
+                <DialogTitle className="text-lg leading-snug">{otDetail.title}</DialogTitle>
+                <DialogDescription className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                  <span>{otDetail.yacht?.name}</span>
+                  {otDetail.destination && <><span aria-hidden>·</span><span>{otDetail.destination}</span></>}
+                  <span aria-hidden>·</span>
+                  <span className="whitespace-nowrap">{formatDateRange(otDetail.startDate, otDetail.endDate, { utc: true })}</span>
+                </DialogDescription>
+                <div className="flex items-center gap-1.5 pt-0.5">
+                  <StatusBadge
+                    tone={otDetail.status === 'open' ? 'success' : otDetail.status === 'full' ? 'destructive' : 'neutral'}
+                    size="sm" className="font-semibold"
+                  >{otDetail.status === 'open' ? 'Open' : otDetail.status === 'full' ? 'Full' : otDetail.status === 'closed' ? 'Closed' : otDetail.status}</StatusBadge>
+                  {isAdmin && otDetail.startDate && new Date(otDetail.startDate) < new Date(new Date().toDateString()) && (
+                    <StatusBadge tone="warning" size="sm" className="font-semibold">Past</StatusBadge>
+                  )}
                 </div>
               </DialogHeader>
 
@@ -2910,39 +3013,33 @@ export default function CalendarView() {
                     const availPct = total ? (avail   / total) * 100 : 100
                     return (
                       <div className="rounded-xl border bg-muted/30 p-4 space-y-3">
-                        {/* Numbers row */}
-                        <div className="grid grid-cols-5 divide-x text-center">
-                          {[
-                            { label: 'Total',               val: total,   color: 'text-foreground'  },
-                            { label: 'Available',           val: avail,   color: 'text-muted-foreground'   },
-                            { label: 'On Hold',             val: onHold,  color: 'text-success'   },
-                            { label: 'Waiting Payment',     val: pending, color: 'text-warning'   },
-                            { label: 'Booked',              val: paid,    color: 'text-destructive'     },
-                          ].map(s => (
-                            <div key={s.label} className="px-2">
-                              <div className={`text-2xl font-bold ${s.color}`}>{s.val}</div>
-                              <div className="text-[10px] text-muted-foreground mt-0.5 leading-tight">{s.label}</div>
-                            </div>
-                          ))}
+                        {/* Headline + bar */}
+                        <div className="flex items-baseline justify-between gap-3">
+                          <p className="text-sm font-semibold">{total} cabin{total === 1 ? '' : 's'}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {isClosed ? 'Closed' : <><span className="font-semibold text-foreground">{avail}</span> available</>}
+                          </p>
                         </div>
-                        {/* Progress bar */}
-                        <div className="h-2.5 rounded-full overflow-hidden bg-muted flex">
+                        <div className="h-2 rounded-full overflow-hidden bg-muted flex">
                           {paid    > 0 && <div className="h-full bg-destructive transition-all"   style={{ width: `${paidPct}%` }} />}
                           {pending > 0 && <div className="h-full bg-warning transition-all" style={{ width: `${pendPct}%` }} />}
                           {onHold  > 0 && <div className="h-full bg-success transition-all" style={{ width: `${holdPct}%` }} />}
                           {avail   > 0 && <div className="h-full bg-muted-foreground/25 transition-all" style={{ width: `${availPct}%` }} />}
                         </div>
-                        {/* Legend */}
-                        <div className="flex items-center gap-4 flex-wrap">
+                        {/* Status tiles — the dot doubles as the bar's legend */}
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                           {[
-                            { dot: 'border border-muted-foreground/70 bg-card', label: 'Available' },
-                            { dot: 'bg-success',  label: 'On Hold' },
-                            { dot: 'bg-warning',  label: 'Waiting for Payment' },
-                            { dot: 'bg-destructive',    label: 'Booked' },
-                          ].map(l => (
-                            <div key={l.label} className="flex items-center gap-1.5">
-                              <span className={`w-2 h-2 rounded-full ${l.dot} shrink-0`} />
-                              <span className="text-[10px] text-muted-foreground">{l.label}</span>
+                            { label: 'Available',       val: avail,   dot: 'border border-muted-foreground/70 bg-card', color: 'text-foreground' },
+                            { label: 'On Hold',         val: onHold,  dot: 'bg-success',     color: 'text-success' },
+                            { label: 'Waiting Payment', val: pending, dot: 'bg-warning',     color: 'text-warning' },
+                            { label: 'Booked',          val: paid,    dot: 'bg-destructive', color: 'text-destructive' },
+                          ].map(s => (
+                            <div key={s.label} className="rounded-lg bg-card border px-3 py-2">
+                              <div className="flex items-center gap-1.5">
+                                <span className={`size-2 rounded-full shrink-0 ${s.dot}`} />
+                                <span className="text-[11px] text-muted-foreground truncate">{s.label}</span>
+                              </div>
+                              <div className={`mt-0.5 text-xl font-bold tabular-nums ${s.val === 0 ? 'text-muted-foreground/60' : s.color}`}>{s.val}</div>
                             </div>
                           ))}
                         </div>
@@ -2952,8 +3049,8 @@ export default function CalendarView() {
 
                   {/* ── Cabin list ── */}
                   <div className="rounded-xl border overflow-hidden">
-                    <div className="bg-muted/40 px-4 py-2 border-b flex items-center justify-between">
-                      <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Cabin Details</p>
+                    <div className="bg-muted/40 pl-4 pr-2 py-1.5 border-b flex items-center justify-between gap-2">
+                      <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Cabins</p>
                       {otDetail.status !== 'closed' && (
                         <Button
                           type="button"
@@ -2963,7 +3060,7 @@ export default function CalendarView() {
                           className="h-auto gap-1.5 px-2 py-1 text-[10px] font-semibold text-info hover:text-info/80 hover:bg-info/10"
                         >
                           <BookOpen className="size-3" />
-                          Download Crew Sheet
+                          Crew Sheet
                         </Button>
                       )}
                     </div>
@@ -2991,48 +3088,46 @@ export default function CalendarView() {
                                         : 'neutral'
                         const badgeLabel = isHold    ? 'On Hold'
                                          : isPaid    ? 'Booked'
-                                         : isPending ? 'Waiting for Payment'
+                                         : isPending ? 'Waiting Payment'
                                          : isTripClosed ? 'Closed'
                                          : 'Available'
                         return (
-                          <div
+                          <button
+                            type="button"
                             key={c.id}
-                            className="px-4 py-3 hover:bg-muted/20 transition-colors cursor-pointer"
+                            className="w-full text-left px-4 py-3 hover:bg-muted/30 active:bg-muted/50 transition-colors"
                             onClick={() => handleCabinClick(c)}
                           >
-                            <div className="flex items-center gap-3">
-                              {/* Status dot */}
-                              <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${dotCls}`} />
-                              {/* Info */}
+                            <div className="flex items-start gap-3">
+                              {/* Status dot — aligned with the cabin name */}
+                              <span className={`mt-1.5 size-2.5 rounded-full shrink-0 ${dotCls}`} />
                               <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <span className="font-semibold text-sm">{c.name}</span>
-                                  {c.deck    && <span className="text-[10px] text-muted-foreground border rounded px-1.5 py-px">{c.deck}</span>}
-                                  {c.bedType && <span className="text-[10px] text-muted-foreground">{c.bedType}</span>}
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="min-w-0">
+                                    <p className="font-semibold text-sm truncate">{c.name}</p>
+                                    {(c.deck || c.bedType) && (
+                                      <p className="text-xs text-muted-foreground mt-0.5">{[c.deck, c.bedType].filter(Boolean).join(' · ')}</p>
+                                    )}
+                                  </div>
+                                  <StatusBadge tone={badgeTone} size="sm" className={cn('shrink-0 font-semibold', badgeTone === 'neutral' && isTripClosed && 'text-muted-foreground/70')}>
+                                    {badgeLabel}
+                                  </StatusBadge>
                                 </div>
                                 {hasGuests && (
-                                  <div className="mt-1 flex flex-wrap gap-1 items-center">
+                                  <div className="mt-2 flex flex-wrap gap-1.5">
                                     {c.guests.map((g: { id: string; bgId?: string; name: string }) => (
-                                      <span key={g.id} className="text-[10px] bg-muted border rounded px-1.5 py-px text-foreground">
-                                        {g.name}
+                                      <span key={g.id} className="inline-flex items-center gap-1 text-[11px] bg-muted rounded-full px-2 py-0.5 text-foreground">
+                                        <Users className="size-3 text-muted-foreground" />{g.name}
                                       </span>
                                     ))}
                                   </div>
                                 )}
-                              </div>
-                              {/* Badge + salesperson */}
-                              <div className="flex flex-col items-end gap-1 shrink-0">
-                                <StatusBadge tone={badgeTone} size="sm" className={cn('font-semibold px-2.5 py-1', badgeTone === 'neutral' && isTripClosed && 'text-muted-foreground/70')}>
-                                  {badgeLabel}
-                                </StatusBadge>
                                 {c.salesperson && (
-                                  <span className="text-[10px] text-muted-foreground whitespace-nowrap">
-                                    by: {c.salesperson}
-                                  </span>
+                                  <p className="mt-1.5 text-[11px] text-muted-foreground">Sales: <span className="font-medium text-foreground/80">{c.salesperson}</span></p>
                                 )}
                               </div>
                             </div>
-                          </div>
+                          </button>
                         )
                       })}
                       {(!otDetail.cabins || otDetail.cabins.length === 0) && (
@@ -3041,7 +3136,7 @@ export default function CalendarView() {
                     </div>
                   </div>
 
-                  <DialogFooter className="gap-2">
+                  <DialogFooter className="gap-2 max-sm:[&>button]:w-full">
                     <Button variant="outline" onClick={() => setOtDetailOpen(false)}>Close</Button>
                     {canEdit && otDetail.status === 'open' && (
                       <Button

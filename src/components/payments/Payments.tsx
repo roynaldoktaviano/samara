@@ -617,26 +617,26 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
             <RotateCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
           </button>
         </div>
-        <p className="text-muted-foreground">Manage and confirm payments from the sales team</p>
+        <p className="text-muted-foreground max-sm:text-sm">Manage and confirm payments from the sales team</p>
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
         {[
           { label: 'Pending Action', value: counts.requested + counts.invoice_ready + counts.pending_confirmation, icon: AlertCircle, color: 'text-warning', bg: 'bg-warning/10' },
           { label: 'Confirmed',      value: counts.confirmed,            icon: CheckCircle2,  color: 'text-success',  bg: 'bg-success/10' },
           { label: 'Rejected',       value: counts.rejected,             icon: XCircle,       color: 'text-destructive',    bg: 'bg-destructive/10' },
           { label: 'Total Paid',     value: formatMoney(totalConfirmed, { currency: 'USD' }),   icon: TrendingUp,    color: 'text-info',   bg: 'bg-info/10' },
         ].map(s => (
-          <Card key={s.label} className="overflow-hidden">
-            <CardContent className="pt-4 pb-3 px-4">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs text-muted-foreground font-medium">{s.label}</span>
-                <div className={`${s.bg} p-1.5 rounded-md`}>
+          <Card key={s.label} className="overflow-hidden max-md:py-0 max-md:rounded-2xl">
+            <CardContent className="pt-4 pb-3 px-4 max-md:p-3">
+              <div className="flex items-center justify-between mb-2 max-md:mb-1">
+                <span className="text-xs text-muted-foreground font-medium truncate">{s.label}</span>
+                <div className={`${s.bg} p-1.5 rounded-md shrink-0`}>
                   <s.icon className={`h-3.5 w-3.5 ${s.color}`} />
                 </div>
               </div>
-              <p className="text-2xl font-bold">{s.value}</p>
+              <p className="text-2xl max-md:text-xl font-bold tabular-nums truncate">{s.value}</p>
             </CardContent>
           </Card>
         ))}
@@ -644,8 +644,8 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
 
       {/* ── Pending Refund Decisions (Finance only) ── */}
       {isFinance && (refundLoading || refundBookings.length > 0) && (
-        <Card className="border-warning/30 bg-warning/5">
-          <CardHeader className="pb-3">
+        <Card className="border-warning/30 bg-warning/5 max-md:py-4 max-md:gap-3 max-md:rounded-2xl">
+          <CardHeader className="pb-3 max-md:px-4 max-md:pb-0">
             <CardTitle className="flex items-center gap-2 text-warning">
               <AlertCircle className="h-4 w-4" />
               Pending Refund Decisions
@@ -655,13 +655,13 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
             </CardTitle>
             <CardDescription>Cancelled bookings with confirmed payments awaiting refund decision</CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="max-md:px-4">
             {refundLoading ? (
               <div className="space-y-2">{[...Array(2)].map((_, i) => <div key={i} className="h-12 rounded bg-muted animate-pulse" />)}</div>
             ) : (
               <div className="space-y-2">
                 {refundBookings.map(b => (
-                  <div key={b.id} className="flex items-center justify-between gap-3 rounded-lg border bg-background px-4 py-3">
+                  <div key={b.id} className="flex items-center justify-between gap-3 rounded-lg border bg-background px-4 py-3 max-sm:flex-col max-sm:items-stretch max-sm:px-3.5">
                     <div className="min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-mono text-xs font-semibold bg-muted px-1.5 py-0.5 rounded">{b.bookingCode}</span>
@@ -682,7 +682,7 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                         Confirmed payments: {b.payments.map(p => `${p.invoiceNumber} (${formatMoney(p.amount, { currency: 'USD' })})`).join(', ')}
                       </p>
                     </div>
-                    <Button size="sm" variant="outline" className="shrink-0" onClick={() => { setRefundSelected(b); setRefundDecision(b.refundDecision as 'no_refund' | 'refund' | null ?? null); setRefundReason(b.refundReason ?? ''); setRefundProof('') }}>
+                    <Button size="sm" variant="outline" className="shrink-0 max-sm:w-full max-sm:h-9" onClick={() => { setRefundSelected(b); setRefundDecision(b.refundDecision as 'no_refund' | 'refund' | null ?? null); setRefundReason(b.refundReason ?? ''); setRefundProof('') }}>
                       {b.refundStatus === 'pending_decision' ? 'Decide' : b.refundStatus === 'refund_pending' ? 'Upload Proof' : 'View'}
                     </Button>
                   </div>
@@ -694,18 +694,18 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
       )}
 
       {/* Table card */}
-      <Card className="overflow-hidden">
-        <CardHeader className="pb-3 space-y-3">
-          {/* Row 1: title + view toggle + search */}
+      <Card className="overflow-hidden max-md:overflow-visible max-md:border-0 max-md:shadow-none max-md:bg-transparent max-md:py-0 max-md:gap-3">
+        <CardHeader className="pb-3 space-y-3 max-md:px-0 max-md:pb-0">
+          {/* Row 1: title + view toggle + search (phones: toggle drops to its own full-width row) */}
           <div className="flex flex-col gap-2">
-            <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center justify-between gap-2 max-sm:flex-col max-sm:items-stretch">
               <div>
                 <CardTitle>{tableView === 'payments' ? 'All Payments' : tableView === 'refunds' ? 'Refund Records' : 'Trip Sheet'}</CardTitle>
                 <CardDescription>
                   {tableView === 'payments' ? `${filtered.length} record(s) found` : tableView === 'refunds' ? `${refundHistory.length} record(s)` : 'Trip-by-trip guest & payment breakdown'}
                 </CardDescription>
               </div>
-              <div className="flex items-center gap-0.5 rounded-lg border p-0.5 bg-muted/40 shrink-0">
+              <div className="flex items-center gap-0.5 rounded-lg border p-0.5 bg-muted/40 shrink-0 max-sm:grid max-sm:grid-flow-col max-sm:auto-cols-fr max-sm:rounded-full max-sm:p-1 max-sm:[&>button]:rounded-full max-sm:[&>button]:py-2">
                 <button
                   onClick={() => setTableView('payments')}
                   className={`px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors ${tableView === 'payments' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
@@ -730,12 +730,13 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
             </div>
             {tableView !== 'trip-sheet' && (
               <div className="relative w-full">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                <Search className="absolute left-2.5 max-md:left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 max-md:h-4 max-md:w-4 text-muted-foreground pointer-events-none" />
                 <Input
+                  aria-label="Search payments"
                   placeholder="Search invoice, booking, name…"
                   value={search}
                   onChange={e => setSearch(e.target.value)}
-                  className="pl-8 w-full h-8 text-sm"
+                  className="pl-8 w-full h-8 text-sm max-md:h-10 max-md:pl-9 max-md:rounded-full max-md:bg-muted/60 max-md:border-0"
                 />
                 {search && (
                   <button onClick={() => setSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2">
@@ -790,7 +791,8 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                     type="date"
                     value={dateFrom}
                     onChange={e => setDateFrom(e.target.value)}
-                    className="h-8 rounded-md border border-input bg-background px-2 text-xs text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring flex-1 min-w-0"
+                    aria-label="From date"
+                    className="h-8 max-md:h-9 rounded-md border border-input bg-background px-2 text-xs text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring flex-1 min-w-0"
                   />
                   <span className="text-xs text-muted-foreground shrink-0">–</span>
                   <input
@@ -798,7 +800,8 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                     value={dateTo}
                     min={dateFrom}
                     onChange={e => setDateTo(e.target.value)}
-                    className="h-8 rounded-md border border-input bg-background px-2 text-xs text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring flex-1 min-w-0"
+                    aria-label="To date"
+                    className="h-8 max-md:h-9 rounded-md border border-input bg-background px-2 text-xs text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring flex-1 min-w-0"
                   />
                   {(dateFrom || dateTo) && (
                     <button onClick={() => { setDateFrom(''); setDateTo('') }} className="text-muted-foreground hover:text-foreground shrink-0">
@@ -824,7 +827,7 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
 
         <CardContent className="p-0">
           {tableView === 'trip-sheet' ? (
-            <div className="p-3">
+            <div className="p-3 max-md:p-0">
               <TripSheet />
             </div>
           ) : tableView === 'refunds' ? (
@@ -834,7 +837,32 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
             ) : refundHistory.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-12">No refund records yet.</p>
             ) : (
-              <div className="overflow-x-auto rounded-b-md border-t">
+              <>
+              {/* Phones: one card per refund */}
+              <div className="md:hidden space-y-2.5">
+                {refundHistory.map(r => {
+                  const totalAmount = r.payments.reduce((s, p) => s + p.amount, 0)
+                  const tone: StatusTone = r.refundStatus === 'no_refund' ? 'destructive' : r.refundStatus === 'refund_confirmed' ? 'success' : r.refundStatus ? 'info' : 'neutral'
+                  const label = ({ no_refund: 'No Refund', refund_pending: 'Pending', refund_uploaded: 'Awaiting', refund_confirmed: 'Confirmed' } as Record<string, string>)[r.refundStatus ?? ''] ?? r.refundStatus ?? '—'
+                  return (
+                    <button key={r.id} type="button" onClick={() => setRefundHistorySelected(r)}
+                      className="w-full text-left rounded-2xl border bg-card px-4 py-3.5 shadow-xs active:bg-muted/40 transition-colors">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-[15px] font-semibold truncate">{r.customer.name}</p>
+                          <p className="font-mono text-[11px] text-muted-foreground mt-0.5">{r.bookingCode}</p>
+                        </div>
+                        <StatusBadge size="sm" tone={tone} className="shrink-0 font-semibold">{label}</StatusBadge>
+                      </div>
+                      <div className="mt-2 flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                        <span className="truncate">{r.refundDecision === 'refund' ? 'Refund' : r.refundDecision === 'no_refund' ? 'No refund' : 'No decision'}{r.cancelReason ? ` · ${r.cancelReason}` : ''}</span>
+                        <span className="shrink-0 text-sm font-semibold text-foreground tabular-nums">{formatMoney(totalAmount, { currency: 'USD' })}</span>
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+              <div className="max-md:hidden overflow-x-auto rounded-b-md border-t">
                 <Table>
                   <TableHeader>
                     <TableRow className="text-xs">
@@ -894,9 +922,53 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
                   </TableBody>
                 </Table>
               </div>
+              </>
             )
           ) : (
-          <div className="rounded-b-md border-t overflow-x-auto">
+          <>
+          {/* Phones: one card per payment */}
+          <div className="md:hidden space-y-2.5">
+            {loading ? (
+              [...Array(5)].map((_, i) => <Skeleton key={i} className="h-28 w-full rounded-2xl" />)
+            ) : filtered.length === 0 ? (
+              <p className="rounded-2xl border border-dashed py-10 text-center text-sm text-muted-foreground">No payments found</p>
+            ) : filtered.map(p => {
+              const sc = STATUS_CONFIG[p.status]
+              const StatusIcon = sc?.icon ?? Clock
+              const trip = p.booking.tripType === 'OPEN_TRIP' ? (p.booking.openTrip?.title ?? p.booking.destination) : p.booking.yacht?.name
+              return (
+                <div key={p.id} role="button" tabIndex={0} onClick={() => openDetail(p)} onKeyDown={e => { if (e.key === 'Enter') openDetail(p) }}
+                  className="rounded-2xl border bg-card px-4 py-3.5 shadow-xs active:bg-muted/40 transition-colors cursor-pointer">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-[15px] font-semibold truncate">{p.booking.customer.name}</p>
+                      {trip && <p className="text-xs text-muted-foreground truncate mt-0.5">{trip}</p>}
+                    </div>
+                    <p className="shrink-0 text-base font-bold tabular-nums">{formatMoney(p.amount, { currency: 'USD' })}</p>
+                  </div>
+                  <div className="mt-2 flex items-center justify-between gap-2">
+                    <StatusBadge size="sm" tone={sc?.tone ?? 'neutral'} className="font-semibold">
+                      <StatusIcon className="h-3 w-3" /> {sc?.label ?? p.status}
+                    </StatusBadge>
+                    <span className="text-[11px] text-muted-foreground truncate">
+                      {[p.paymentMethod, formatDate(p.createdAt)].filter(Boolean).join(' · ')}
+                    </span>
+                  </div>
+                  <div className="mt-2.5 pt-2 border-t flex items-center gap-2 text-[11px] text-muted-foreground">
+                    <FileText className="h-3.5 w-3.5 shrink-0" />
+                    <span className="font-mono text-foreground/80 truncate">{p.invoiceNumber}</span>
+                    <span className="font-mono truncate">· {p.booking.bookingCode}</span>
+                    {isFinance && (p.status === 'requested' || p.status === 'pending_confirmation') && (
+                      <span className="ml-auto shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary-strong">
+                        {p.status === 'requested' ? 'Generate invoice' : 'Review'}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+          <div className="max-md:hidden rounded-b-md border-t overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow className="text-xs">
@@ -1016,6 +1088,7 @@ export default function Payments({ deepLinkId, onDeepLinkHandled }: { deepLinkId
               </TableBody>
             </Table>
           </div>
+          </>
           )}
         </CardContent>
       </Card>

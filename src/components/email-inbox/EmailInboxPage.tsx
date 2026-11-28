@@ -201,7 +201,18 @@ export default function EmailInboxPage({ initialConversationId }: { initialConve
     if (target) { deepLinkConsumed.current = true; openConversation(target) }
   }, [initialConversationId, conversations])
 
+  // Mobile shows the list and the open email as two full screens (same as Conversation › Chat),
+  // so an open email gets a history entry — the phone's back gesture returns to the list
+  // instead of leaving the ERP.
+  const isMobile = () => typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches
+  useEffect(() => {
+    const onPop = () => { setActiveId(null); setDetail(null) }
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  }, [])
+
   async function openConversation(c: Pick<ConversationSummary, 'id' | 'unreadCount'>) {
+    if (isMobile() && !activeId) window.history.pushState({ emailThread: true }, '')
     if (c.id !== activeId) { setExpanded(new Set()); setReplyOpen(false); replyFiles.reset() }
     setActiveId(c.id)
     setDetailLoading(true)
@@ -256,8 +267,8 @@ export default function EmailInboxPage({ initialConversationId }: { initialConve
     setCompose(prev => ({ open: true, key: prev.key + 1 }))
   }
   function closeThread() {
-    setActiveId(null)
-    setDetail(null)
+    if ((window.history.state as { emailThread?: boolean } | null)?.emailThread) window.history.back()
+    else { setActiveId(null); setDetail(null) }
   }
 
   /** Gmail-style Forward of `msg` (default: the newest message): quoted header + body + its attachments. */
@@ -295,12 +306,13 @@ export default function EmailInboxPage({ initialConversationId }: { initialConve
   const activeIndex = filtered.findIndex(c => c.id === activeId)
 
   return (
-    <div className="h-[calc(100vh-6rem)] flex rounded-2xl border overflow-hidden bg-card">
+    // Mobile: edge-to-edge (cancels page.tsx's p-3) and fills the screen under the 3rem top bar.
+    <div className="-m-3 sm:m-0 h-[calc(100dvh-3rem)] sm:h-[calc(100dvh-6rem)] flex sm:rounded-2xl sm:border overflow-hidden bg-card">
       {/* ── Thread list ── */}
       <div className={`relative w-full md:w-[340px] xl:w-[380px] shrink-0 md:border-r flex-col ${activeId ? 'hidden md:flex' : 'flex'}`}>
-        <div className="px-5 pt-5 pb-3 space-y-3">
+        <div className="px-4 md:px-5 pt-4 md:pt-5 pb-3 space-y-3">
           <div>
-            <h2 className="text-lg font-semibold leading-tight">{folderLabel}</h2>
+            <h2 className="text-2xl md:text-lg font-bold md:font-semibold tracking-tight md:tracking-normal leading-tight">{folderLabel}</h2>
             <p className="text-xs text-muted-foreground mt-0.5">{filtered.length} Messages • {unreadTotal} Unread</p>
           </div>
           <div className="flex gap-2">
@@ -354,7 +366,7 @@ export default function EmailInboxPage({ initialConversationId }: { initialConve
             return (
               <div key={c.id} role="button" tabIndex={0} onClick={() => openConversation(c)}
                 onKeyDown={e => { if (e.key === 'Enter') openConversation(c) }}
-                className={`group relative px-5 py-4 border-b cursor-pointer transition-colors ${active ? 'bg-info/5' : 'hover:bg-muted/50'}`}>
+                className={`group relative px-4 md:px-5 py-3.5 md:py-4 border-b cursor-pointer transition-colors ${active ? 'bg-info/5' : 'hover:bg-muted/50 active:bg-muted/60'}`}>
                 {active && <span className="absolute left-0 inset-y-0 w-[3px]" style={{ backgroundColor: ACCENT }} />}
                 <div className="flex items-center gap-2">
                   <span className="h-1.5 w-1.5 rounded-full shrink-0" style={{ backgroundColor: unread ? ACCENT : 'transparent' }} />
@@ -444,8 +456,9 @@ export default function EmailInboxPage({ initialConversationId }: { initialConve
                   ))}
 
                   {replyOpen ? (
-                    <div className="flex gap-3 px-4 md:px-6 py-5">
-                      <LetterAvatar name={myName} email={`me:${myName}`} />
+                    <div className="flex gap-3 px-3 md:px-6 py-4 md:py-5">
+                      {/* Phone: the composer gets the full width — the avatar column is desktop-only. */}
+                      <div className="hidden md:block shrink-0"><LetterAvatar name={myName} email={`me:${myName}`} /></div>
                       <div className="min-w-0 flex-1 rounded-xl border shadow-sm overflow-hidden">
                         <div className="flex items-center gap-2 px-4 py-2.5 text-sm text-muted-foreground border-b bg-muted/50">
                           <Reply className="h-4 w-4 shrink-0" />
@@ -607,8 +620,9 @@ function MessageItem({ m, detail, expanded, onToggle, onReply, onForward }: {
   return (
     <div className="px-4 md:px-6 py-5 border-b">
       <div className="flex gap-3">
-        <LetterAvatar name={name} email={avatarKey} size={44} />
-        <div className="min-w-0 flex-1 flex items-start justify-between gap-3">
+        <div className="shrink-0 md:hidden"><LetterAvatar name={name} email={avatarKey} size={36} /></div>
+        <div className="shrink-0 hidden md:block"><LetterAvatar name={name} email={avatarKey} size={44} /></div>
+        <div className="min-w-0 flex-1 flex items-start justify-between gap-2 md:gap-3">
           <div role="button" tabIndex={0} onClick={onToggle} onKeyDown={e => { if (e.key === 'Enter') onToggle() }} className="min-w-0 cursor-pointer">
             <p className="text-[15px] font-semibold truncate">{name}</p>
             <p className="text-xs text-muted-foreground truncate">
@@ -616,7 +630,9 @@ function MessageItem({ m, detail, expanded, onToggle, onReply, onForward }: {
             </p>
           </div>
           <div className="shrink-0 flex flex-col items-end">
-            <span className="text-xs text-muted-foreground">{formatDate(m.createdAt, 'datetime')}</span>
+            {/* Phone: short time so the sender's name/email keep the room. */}
+            <span className="text-xs text-muted-foreground md:hidden">{fmtListTime(m.createdAt)}</span>
+            <span className="text-xs text-muted-foreground hidden md:inline">{formatDate(m.createdAt, 'datetime')}</span>
             <div className="mt-1 flex items-center gap-0.5">
               <Button type="button" variant="ghost" size="icon" onClick={onReply} title="Reply" aria-label="Reply" className={iconBtn}><Reply className="h-4 w-4" /></Button>
               <Button type="button" variant="ghost" size="icon" onClick={onForward} title="Forward" aria-label="Forward" className={iconBtn}><Forward className="h-4 w-4" /></Button>
@@ -625,7 +641,8 @@ function MessageItem({ m, detail, expanded, onToggle, onReply, onForward }: {
         </div>
       </div>
       <div className="mt-4 md:pl-[56px]">
-        <div className="text-sm">
+        {/* Newsletter-style HTML (fixed-width tables) scrolls sideways inside the message instead of widening the phone screen. */}
+        <div className="text-sm overflow-x-auto">
           {m.bodyHtml
             ? <div className={`break-words ${EMAIL_BODY_CLASSES}`} dangerouslySetInnerHTML={{ __html: m.bodyHtml }} />
             : m.body && <p className="whitespace-pre-wrap break-words leading-relaxed">{m.body}</p>}

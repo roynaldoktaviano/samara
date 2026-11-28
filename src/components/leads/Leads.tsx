@@ -15,7 +15,8 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Skeleton } from '@/components/ui/skeleton'
-import { UserPlus, Plus, Edit, MessageCircle, Send, Search, Mail, Phone, ChevronRight, ChevronLeft, Trash2, X, Globe, RotateCw, Download, ArrowUp, ArrowDown, Target, AlertTriangle, Loader2, Ship, AtSign, Instagram, Facebook, MessagesSquare, HelpCircle, Briefcase } from 'lucide-react'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { UserPlus, Plus, Edit, MessageCircle, Send, Search, Mail, Phone, ChevronRight, ChevronLeft, Trash2, X, Globe, RotateCw, Download, ArrowUp, ArrowDown, Target, AlertTriangle, Loader2, Ship, AtSign, Instagram, Facebook, MessagesSquare, HelpCircle, Briefcase, MoreHorizontal } from 'lucide-react'
 import LeadEditSheet from '@/components/leads/LeadEditSheet'
 import LostReasonDialog from '@/components/leads/LostReasonDialog'
 import { leadDealName, type DealTripType } from '@/lib/deal-name'
@@ -490,17 +491,37 @@ export default function Leads({ onOpenWhatsapp, onOpenMetaChat, onOpenEmail, onO
     <div className="space-y-6">
       {!detailOpen && <>
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
           <div className="flex items-center gap-2">
             <h3 className="text-2xl font-bold tracking-tight">Leads</h3>
             <button onClick={() => fetchLeads()} title="Refresh" className="text-muted-foreground hover:text-foreground transition-colors mt-0.5">
               <RotateCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
             </button>
           </div>
-          <p className="text-muted-foreground">Manage lead profiles</p>
+          <p className="text-muted-foreground max-sm:text-sm">Manage lead profiles</p>
         </div>
-        <div className="flex items-center gap-2">
+        {/* Phones: primary action + the rest tucked into a menu */}
+        <div className="md:hidden flex items-center gap-1.5 shrink-0">
+          <Button onClick={() => { setSheetLeadId(null); setSheetOpen(true) }} className="h-9 rounded-full px-3.5">
+            <Plus className="h-4 w-4" /> Add Lead
+          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="icon" className="size-9 rounded-full" aria-label="More actions">
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="min-w-52">
+              <DropdownMenuItem onSelect={() => setFailuresOpen(true)} className="py-2.5"><AlertTriangle className="h-4 w-4" /> Failed Submissions</DropdownMenuItem>
+              {canExportGoogleAds && (
+                <DropdownMenuItem disabled={exportingGoogleAds} onSelect={handleExportGoogleAds} className="py-2.5"><Download className="h-4 w-4" /> Google Ads CSV</DropdownMenuItem>
+              )}
+              <DropdownMenuItem onSelect={() => setImportOpen(true)} className="py-2.5"><Download className="h-4 w-4" /> Import from Freshsales</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+        <div className="max-md:hidden flex items-center gap-2">
           <Button variant="outline" onClick={() => setFailuresOpen(true)}>
             <AlertTriangle className="mr-2 h-4 w-4" /> Failed Submissions
           </Button>
@@ -519,8 +540,23 @@ export default function Leads({ onOpenWhatsapp, onOpenMetaChat, onOpenEmail, onO
         </div>
       </div>
 
-      {/* Channel tabs */}
-      <div className="flex gap-1 border-b overflow-x-auto">
+      {/* Channel — phones: dropdown (a scrolling tab strip gets cut off) */}
+      <Select value={channel} onValueChange={v => setChannel(v as LeadChannel)}>
+        <SelectTrigger aria-label="Lead channel" className="md:hidden w-full h-11 rounded-xl font-medium">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {CHANNEL_TABS.map(t => (
+            <SelectItem key={t.value} value={t.value}>
+              {t.label}
+              <span className="ml-1.5 text-xs tabular-nums text-muted-foreground">
+                {(t.value === 'all' ? Object.values(sourceCounts).reduce((a, b) => a + b, 0) : sourceCounts[t.value] ?? 0).toLocaleString()}
+              </span>
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <div className="max-md:hidden flex gap-1 border-b overflow-x-auto">
         {CHANNEL_TABS.map(t => (
           <button
             key={t.value}
@@ -535,27 +571,41 @@ export default function Leads({ onOpenWhatsapp, onOpenMetaChat, onOpenEmail, onO
         ))}
       </div>
 
-      {/* Table card */}
-      <Card>
-        <CardHeader>
-          <CardTitle>{CHANNEL_TABS.find(t => t.value === channel)?.title}</CardTitle>
-          <CardDescription>{totalLeads} lead(s) registered</CardDescription>
+      {/* Table card (desktop) / card list (phones) */}
+      <Card className="max-md:border-0 max-md:shadow-none max-md:bg-transparent max-md:py-0 max-md:gap-3 max-md:-mt-2">
+        <CardHeader className="max-md:px-0">
+          <CardTitle className="max-md:hidden">{CHANNEL_TABS.find(t => t.value === channel)?.title}</CardTitle>
+          <CardDescription className="max-md:hidden">{totalLeads.toLocaleString()} lead(s) registered</CardDescription>
         </CardHeader>
-        <CardContent>
-          <div className="flex flex-wrap items-center gap-2 mb-4">
-            <Search className="h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search by name, email, phone, passport…"
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              className="max-w-sm"
-            />
-            {search && <button onClick={() => setSearch('')}><X className="h-4 w-4 text-muted-foreground" /></button>}
+        <CardContent className="max-md:px-0">
+          {/* Phones: 2-column grid of full-width controls; desktop: one wrapping row */}
+          <div className="grid grid-cols-2 gap-2 mb-4 md:flex md:flex-wrap md:items-center max-md:[&_[data-slot=select-trigger]]:w-full">
+            <div className="relative col-span-2 md:w-full md:max-w-sm">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+              <Input
+                aria-label="Search leads"
+                placeholder="Search by name, email, phone, passport…"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                className="pl-9 pr-9 max-md:h-10 max-md:rounded-full max-md:bg-muted/60 max-md:border-0"
+              />
+              {search && <button type="button" aria-label="Clear search" className="absolute right-3 top-1/2 -translate-y-1/2" onClick={() => setSearch('')}><X className="h-4 w-4 text-muted-foreground" /></button>}
+            </div>
+
+            {/* Stage — phones only (desktop keeps the chip row below) */}
+            <Select value={stageFilter} onValueChange={v => setStageFilter(v as typeof stageFilter)}>
+              <SelectTrigger aria-label="Filter by stage" className={`md:hidden ${stageFilter !== 'all' ? 'border-primary text-primary font-medium' : ''}`}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {(['all', ...LEAD_STAGES] as const).map(st => <SelectItem key={st} value={st}>{st === 'all' ? 'All Stages' : LEAD_STAGE_LABEL[st]}</SelectItem>)}
+              </SelectContent>
+            </Select>
 
             {channel === 'INSTANT_FORM' ? <>
-              <Input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className={`w-[150px] ${dateFrom ? 'border-primary text-primary font-medium' : ''}`} title="Lead date from" />
-              <span className="text-muted-foreground text-xs">–</span>
-              <Input type="date" value={dateTo} min={dateFrom || undefined} onChange={e => setDateTo(e.target.value)} className={`w-[150px] ${dateTo ? 'border-primary text-primary font-medium' : ''}`} title="Lead date to" />
+              <Input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className={`md:w-[150px] ${dateFrom ? 'border-primary text-primary font-medium' : ''}`} title="Lead date from" aria-label="Lead date from" />
+              <span className="max-md:hidden text-muted-foreground text-xs">–</span>
+              <Input type="date" value={dateTo} min={dateFrom || undefined} onChange={e => setDateTo(e.target.value)} className={`md:w-[150px] ${dateTo ? 'border-primary text-primary font-medium' : ''}`} title="Lead date to" aria-label="Lead date to" />
 
               <Select value={campaignFilter} onValueChange={setCampaignFilter}>
                 <SelectTrigger className={`w-[220px] ${campaignFilter !== 'all' ? 'border-primary text-primary font-medium' : ''}`}>
@@ -632,7 +682,7 @@ export default function Leads({ onOpenWhatsapp, onOpenMetaChat, onOpenEmail, onO
 
             {/* Bulk action bar */}
             {isAdmin && selectedIds.size > 0 && (
-              <div className="ml-auto flex items-center gap-2">
+              <div className="max-md:hidden ml-auto flex items-center gap-2">
                 <span className="text-sm text-muted-foreground">{selectedIds.size} selected</span>
                 <Button
                   variant="destructive" size="sm"
@@ -647,7 +697,7 @@ export default function Leads({ onOpenWhatsapp, onOpenMetaChat, onOpenEmail, onO
               </div>
             )}
           </div>
-          <div className="flex flex-wrap gap-1.5 mb-4">
+          <div className="max-md:hidden flex flex-wrap gap-1.5 mb-4">
             {(['all', ...LEAD_STAGES] as const).map(s => (
               <button
                 key={s}
@@ -658,7 +708,82 @@ export default function Leads({ onOpenWhatsapp, onOpenMetaChat, onOpenEmail, onO
               </button>
             ))}
           </div>
-          <div className="rounded-md border">
+          {/* Phones: one card per lead */}
+          <div className="md:hidden space-y-2.5">
+            {loading ? (
+              [...Array(6)].map((_, i) => <Skeleton key={i} className="h-28 w-full rounded-2xl" />)
+            ) : leads.length === 0 ? (
+              <p className="rounded-2xl border border-dashed py-10 text-center text-sm text-muted-foreground">No leads found</p>
+            ) : leads.map(l => {
+              const src = l.entrySource ? ENTRY_SOURCE_BADGE[l.entrySource] : null
+              const mi = channel === 'INSTANT_FORM' ? l.inquiries?.[0] : undefined
+              const chat = isChatChannel(channel) ? (channel === 'WHATSAPP' ? l.whatsappConversations : l.instagramConversations)?.[0] : undefined
+              return (
+                <div key={l.id} role="button" tabIndex={0} onClick={() => openDetail(l)} onKeyDown={e => { if (e.key === 'Enter') openDetail(l) }}
+                  className="rounded-2xl border bg-card px-4 pt-3.5 pb-2 shadow-xs active:bg-muted/40 transition-colors cursor-pointer">
+                  <div className="flex items-start gap-3">
+                    <div className="relative shrink-0">
+                      <div className="flex size-10 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary-strong">
+                        {(l.name?.trim()?.[0] ?? '?').toUpperCase()}
+                      </div>
+                      {src && l.entrySource && (
+                        <span title={`Came in via ${LEAD_ENTRY_SOURCE_LABEL[l.entrySource]}`}
+                          className={`absolute -bottom-0.5 -right-0.5 size-4 rounded-full flex items-center justify-center ring-2 ring-card ${src.className}`}>
+                          <src.icon className="size-2.5" />
+                        </span>
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="font-semibold text-[15px] leading-snug truncate">{l.name}</p>
+                        <Badge className={`${LEAD_STAGE_COLOR[l.stage]} border-transparent shrink-0 text-[10px]`}>{LEAD_STAGE_LABEL[l.stage]}</Badge>
+                      </div>
+                      <div className="mt-0.5 space-y-0.5 text-xs text-muted-foreground">
+                        {l.email && <p className="flex items-center gap-1.5 min-w-0"><Mail className="size-3 shrink-0" /><span className="truncate">{l.email}</span></p>}
+                        {l.phone && <p className="flex items-center gap-1.5 min-w-0"><Phone className="size-3 shrink-0" /><span className="truncate">{l.phone}</span></p>}
+                        {!l.email && !l.phone && l.instagram && <p className="flex items-center gap-1.5 min-w-0"><AtSign className="size-3 shrink-0" /><span className="truncate">{l.instagram}</span></p>}
+                      </div>
+                      {mi && (mi.utmCampaign || mi.checkInDate) && (
+                        <p className="mt-1 text-xs text-foreground/80 truncate">
+                          {[mi.tripType, mi.checkInDate && `${formatDate(mi.checkInDate, 'short', { utc: true })}${mi.checkOutDate ? ` – ${formatDate(mi.checkOutDate, 'short', { utc: true })}` : ''}`, mi.utmCampaign].filter(Boolean).join(' · ')}
+                        </p>
+                      )}
+                      {chat?.lastMessagePreview && (
+                        <p className="mt-1 text-xs text-foreground/80 truncate">
+                          {chat.brand && <span className="font-medium">{WHATSAPP_BRAND_LABELS[chat.brand]}: </span>}{chat.lastMessagePreview}
+                        </p>
+                      )}
+                      <p className="mt-1.5 text-[11px] text-muted-foreground truncate">
+                        {[l.owner ? `Sales: ${l.owner.name}` : 'Unassigned', l.nationality, formatDate(l.createdAt)].filter(Boolean).join(' · ')}
+                      </p>
+                    </div>
+                  </div>
+                  {/* Quick actions */}
+                  <div className="mt-2 pt-1.5 border-t flex items-center justify-end gap-0.5" onClick={e => e.stopPropagation()}>
+                    {canFollowUp && l.email && (
+                      <Button variant="ghost" size="sm" className="h-8 gap-1.5 text-xs text-info hover:text-info hover:bg-info/10" onClick={() => setEmailFollowUp(l)}>
+                        <Mail className="size-3.5" /> Email
+                      </Button>
+                    )}
+                    {canFollowUp && l.phone && (
+                      <Button variant="ghost" size="sm" className="h-8 gap-1.5 text-xs text-success hover:text-success hover:bg-success/10" onClick={() => setWaFollowUp(l)}>
+                        <MessageCircle className="size-3.5" /> WhatsApp
+                      </Button>
+                    )}
+                    <Button variant="ghost" size="icon" className="size-8 text-muted-foreground" aria-label={`Edit ${l.name}`} onClick={e => openEdit(l, e)}><Edit className="size-3.5" /></Button>
+                    {isAdmin && (
+                      <Button variant="ghost" size="icon" aria-label={`Delete ${l.name}`} className="size-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                        onClick={() => { setDeleteError(''); setDeleteTarget(l) }}>
+                        <Trash2 className="size-3.5" />
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+
+          <div className="max-md:hidden rounded-md border">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -861,8 +986,16 @@ export default function Leads({ onOpenWhatsapp, onOpenMetaChat, onOpenEmail, onO
 
           {totalPages > 1 && (
             <div className="flex items-center justify-between text-sm pt-4">
-              <p className="text-muted-foreground text-xs">Page {page} of {totalPages} · {totalLeads} lead(s)</p>
-              <div className="flex items-center gap-1">
+              <p className="text-muted-foreground text-xs">Page {page.toLocaleString()} of {totalPages.toLocaleString()}<span className="max-md:hidden"> · {totalLeads} lead(s)</span></p>
+              <div className="md:hidden flex items-center gap-2">
+                <Button variant="outline" size="icon" className="size-9 rounded-full" disabled={page <= 1} onClick={() => goToPage(page - 1)} aria-label="Previous page">
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <Button variant="outline" size="icon" className="size-9 rounded-full" disabled={page >= totalPages} onClick={() => goToPage(page + 1)} aria-label="Next page">
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+              <div className="max-md:hidden flex items-center gap-1">
                 <Button variant="outline" size="icon" className="h-8 w-8" disabled={page <= 1} onClick={() => goToPage(1)}>
                   <ChevronLeft className="h-3 w-3" /><ChevronLeft className="h-3 w-3 -ml-2" />
                 </Button>
@@ -932,19 +1065,25 @@ export default function Leads({ onOpenWhatsapp, onOpenMetaChat, onOpenEmail, onO
       {/* ── Detail (full page) ────────────────────────────────────────────── */}
       {detailOpen && (
         <>
-          <div className="flex items-center gap-3">
-            <Button variant="outline" size="icon" onClick={closeDetail}>
+          <div className="flex items-start gap-3">
+            <Button variant="outline" size="icon" onClick={closeDetail} aria-label="Back to leads" className="shrink-0 max-md:rounded-full">
               <ChevronLeft className="h-4 w-4" />
             </Button>
-            <div className="flex-1 flex items-start justify-between gap-3">
+            <div className="flex-1 min-w-0 flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <h3 className="text-xl font-bold tracking-tight">{detail?.name}</h3>
+                <h3 className="text-xl font-bold tracking-tight break-words">{detail?.name}</h3>
                 {detail?.dealName && detail.dealName !== detail.name && (
                   <p className="text-sm font-medium text-primary break-words">{detail.dealName}</p>
                 )}
               </div>
+              {/* Phones: Edit stays here as an icon; the follow-up buttons get their own row below */}
               {detail && (
-                <div className="flex items-center gap-2 flex-wrap justify-end">
+                <Button size="icon" variant="outline" onClick={e => openEdit(detail, e)} aria-label="Edit lead" className="md:hidden shrink-0 rounded-full">
+                  <Edit className="h-4 w-4" />
+                </Button>
+              )}
+              {detail && (
+                <div className="max-md:hidden flex items-center gap-2 flex-wrap justify-end">
                   {canFollowUp && detail.email && (
                     <Button size="sm" variant="outline" className="text-info border-info/30 hover:bg-info/10 hover:text-info" onClick={() => setEmailFollowUp(detail)}>
                       <Mail className="h-3.5 w-3.5 mr-1.5" /> Follow up by Email
@@ -963,12 +1102,27 @@ export default function Leads({ onOpenWhatsapp, onOpenMetaChat, onOpenEmail, onO
             </div>
           </div>
 
+          {detail && canFollowUp && (detail.email || detail.phone) && (
+            <div className="md:hidden grid grid-cols-2 gap-2 -mt-2">
+              {detail.email && (
+                <Button variant="outline" className={`h-10 rounded-full text-info border-info/30 hover:bg-info/10 hover:text-info ${detail.phone ? '' : 'col-span-2'}`} onClick={() => setEmailFollowUp(detail)}>
+                  <Mail className="h-4 w-4" /> Email
+                </Button>
+              )}
+              {detail.phone && (
+                <Button variant="outline" className={`h-10 rounded-full text-success border-success/30 hover:bg-success/10 hover:text-success ${detail.email ? '' : 'col-span-2'}`} onClick={() => setWaFollowUp(detail)}>
+                  <MessageCircle className="h-4 w-4" /> WhatsApp
+                </Button>
+              )}
+            </div>
+          )}
+
           {detail && (
-            <Card>
-              <CardContent className="pt-6 space-y-4">
+            <Card className="max-md:border-0 max-md:shadow-none max-md:bg-transparent max-md:py-0">
+              <CardContent className="pt-6 max-md:p-0 space-y-4">
                 <div className="rounded-lg border bg-muted/20 px-4 py-3 space-y-2.5">
                   <div className="flex items-center justify-between flex-wrap gap-2">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
                       <p className="text-xs text-muted-foreground uppercase tracking-wide">Pipeline Stage</p>
                       <Badge className={`${LEAD_STAGE_COLOR[detail.stage]} border-transparent`}>{LEAD_STAGE_LABEL[detail.stage]}</Badge>
                     </div>
@@ -980,11 +1134,11 @@ export default function Leads({ onOpenWhatsapp, onOpenMetaChat, onOpenEmail, onO
                       </SelectContent>
                     </Select>
                   </div>
-                  <p className="text-[11px] text-muted-foreground">
+                  <p className="max-md:hidden text-[11px] text-muted-foreground">
                     Stages move on their own as you reply from the ERP, create a booking, generate the invoice and confirm the first payment — pick one here to move it by hand.
                   </p>
                 </div>
-                <div className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
+                <div className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm max-md:gap-x-4 max-md:rounded-xl max-md:border max-md:bg-card max-md:p-4">
                   {[
                     ['Email', detail.email],
                     ['Phone', detail.phone],
@@ -1002,22 +1156,23 @@ export default function Leads({ onOpenWhatsapp, onOpenMetaChat, onOpenEmail, onO
                       ? `${detail.budgetCurrency ?? ''} ${detail.budgetMin ?? '?'} - ${detail.budgetMax ?? '?'}`.trim()
                       : null],
                   ].filter(([, v]) => v).map(([label, value]) => (
-                    <div key={label as string}>
-                      <p className="text-xs text-muted-foreground uppercase tracking-wide">{label}</p>
-                      <p className="font-medium mt-0.5">{value}</p>
+                    // Email / long text take the full row on phones and wrap instead of overflowing
+                    <div key={label as string} className={`min-w-0 ${label === 'Email' || label === 'Yacht / Product Interest' ? 'max-md:col-span-2' : ''}`}>
+                      <p className="text-xs text-muted-foreground uppercase tracking-wide max-md:text-[10px]">{label}</p>
+                      <p className="font-medium mt-0.5 [overflow-wrap:anywhere]">{value}</p>
                     </div>
                   ))}
                 </div>
                 {detail.notes && (
-                  <div className="text-sm">
+                  <div className="text-sm max-md:rounded-xl max-md:border max-md:bg-card max-md:p-4">
                     <p className="text-xs text-muted-foreground uppercase tracking-wide">Notes</p>
-                    <p className="font-medium mt-0.5 whitespace-pre-wrap">{detail.notes}</p>
+                    <p className="font-medium mt-0.5 whitespace-pre-wrap [overflow-wrap:anywhere]">{detail.notes}</p>
                   </div>
                 )}
-                <div className="rounded-lg border px-4 py-3">
+                <div className="rounded-lg border px-4 py-3 max-md:rounded-xl max-md:bg-card">
                   <DealBookingHistory guestId={detail.guestId} currentBookingId={detail.bookingId} onOpenBooking={onOpenBooking} onOpenGuest={onOpenGuest} />
                 </div>
-                <div className="rounded-lg border px-4 py-3 empty:hidden">
+                <div className="rounded-lg border px-4 py-3 empty:hidden max-md:rounded-xl max-md:bg-card">
                   <FreshsalesHistory leadId={detail.id} />
                 </div>
                 <div className="text-sm">
@@ -1044,7 +1199,7 @@ export default function Leads({ onOpenWhatsapp, onOpenMetaChat, onOpenEmail, onO
                             onClick: openChat,
                             onKeyDown: (e: React.KeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openChat() } },
                           })}
-                          className={`rounded-lg border px-3 py-2 space-y-1 ${openChat ? 'cursor-pointer hover:bg-muted/40 transition-colors' : ''}`}
+                          className={`rounded-lg border px-3 py-2 space-y-1 max-md:bg-card max-md:rounded-xl ${openChat ? 'cursor-pointer hover:bg-muted/40 transition-colors' : ''}`}
                         >
                           <div className="flex items-center justify-between gap-2">
                             <span className="flex flex-wrap items-center gap-1.5 min-w-0">
@@ -1082,7 +1237,7 @@ export default function Leads({ onOpenWhatsapp, onOpenMetaChat, onOpenEmail, onO
                         )
                         }
                         return inq && (
-                        <div key={inq.id} className="rounded-lg border px-3 py-2 space-y-1">
+                        <div key={inq.id} className="rounded-lg border px-3 py-2 space-y-1 max-md:bg-card max-md:rounded-xl">
                           <div className="flex items-center justify-between gap-2">
                             {(() => {
                               const origin = classifyLeadOrigin(inq)
@@ -1104,7 +1259,7 @@ export default function Leads({ onOpenWhatsapp, onOpenMetaChat, onOpenEmail, onO
                               {inq.tripType ? ` · ${inq.tripType}` : ''}
                             </p>
                           )}
-                          {inq.message && <p className="text-xs whitespace-pre-wrap">{inq.message}</p>}
+                          {inq.message && <p className="text-xs whitespace-pre-wrap [overflow-wrap:anywhere]">{inq.message}</p>}
                           {inq.website && (
                             <p className="text-xs text-muted-foreground">
                               {isHttpUrl(inq.url) ? <a href={inq.url} target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground">{formPageLabel(inq.url, inq.website)}</a> : inq.website}
@@ -1325,7 +1480,7 @@ function EmailFollowUpDialog({ lead, onClose, onSent }: { lead: Lead | null; onC
       <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Follow up by Email</DialogTitle>
-          <DialogDescription>Sent from the shared Email inbox — replies continue in Chat › Email.</DialogDescription>
+          <DialogDescription>Sent from the shared Email inbox — replies continue in Conversation › Email.</DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
           <div className="space-y-1">

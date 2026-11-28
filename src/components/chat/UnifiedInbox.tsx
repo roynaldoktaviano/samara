@@ -232,7 +232,7 @@ export default function UnifiedInbox({ onOpenEmail, onOpenBooking, initialWhatsa
 
   return (
     // Mobile: edge-to-edge (cancels page.tsx's p-3) and fills the screen under the 3rem top bar.
-    <div className="-m-3 sm:m-0 h-[calc(100dvh-3rem)] sm:h-[calc(100vh-6rem)] flex sm:rounded-xl sm:border overflow-hidden bg-card">
+    <div className="-m-3 sm:m-0 h-[calc(100dvh-3rem)] sm:h-[calc(100dvh-6rem)] flex sm:rounded-xl sm:border overflow-hidden bg-card">
       {/* Conversation list */}
       <div className={cn('w-full md:w-80 shrink-0 md:border-r flex-col relative', threadOpen ? 'hidden md:flex' : 'flex')}>
         <div className="px-4 pt-4 pb-2 md:py-4 md:border-b flex items-start justify-between gap-2">

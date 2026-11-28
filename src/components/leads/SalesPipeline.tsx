@@ -1,9 +1,9 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSession } from 'next-auth/react'
 import { toast } from 'sonner'
-import { Loader2, MessageCircle, Search, Pencil, Clock, Inbox, ChevronDown, ChevronUp, Globe, UserPen, UserPlus, Instagram, BellRing, Zap, Facebook, Lock } from 'lucide-react'
+import { Loader2, MessageCircle, Search, Pencil, Clock, Inbox, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Globe, UserPen, UserPlus, Instagram, BellRing, Zap, Facebook, Lock } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -193,6 +193,8 @@ export default function SalesPipeline({ onOpenChat, onOpenMetaChat, onOpenBookin
   const [busy, setBusy] = useState(false)
   const [dragId, setDragId] = useState<string | null>(null)
   const [dropStage, setDropStage] = useState<LeadStage | null>(null)
+  const [mobileStage, setMobileStage] = useState<LeadStage>(COLUMNS[0])
+  const swipeStart = useRef<{ x: number; y: number } | null>(null)
 
   useEffect(() => {
     const t = setTimeout(() => setSearch(searchInput.trim()), 350)
@@ -312,116 +314,8 @@ export default function SalesPipeline({ onOpenChat, onOpenMetaChat, onOpenBookin
   }
   const isClosed = (s: LeadStage) => s === 'CLOSED_WON' || s === 'CLOSED_LOST'
 
-  return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight">Sales Pipeline</h2>
-          <p className="text-sm text-muted-foreground">One card per deal from website, WhatsApp, Instagram, email and manual entry. Cards move on their own as you chat, book and invoice — drag to move by hand. Won and Lost deals are read-only.</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="relative w-full sm:w-56">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-            <Input value={searchInput} onChange={e => setSearchInput(e.target.value)} placeholder="Search name / email / number" aria-label="Search leads" className="pl-8" />
-          </div>
-          <Select value={channel} onValueChange={v => setChannel(v as Channel)}>
-            <SelectTrigger aria-label="Filter by channel" className="w-full sm:w-40"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              {(Object.keys(CHANNEL_LABEL) as Channel[]).map(c => <SelectItem key={c} value={c}>{CHANNEL_LABEL[c]}</SelectItem>)}
-            </SelectContent>
-          </Select>
-          <Select value={brand} onValueChange={v => setBrand(v as WhatsappBrand)}>
-            <SelectTrigger aria-label="Filter by brand" className="w-full sm:w-40"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              {WHATSAPP_BRANDS.map(b => <SelectItem key={b} value={b}>{WHATSAPP_BRAND_LABELS[b]} pipeline</SelectItem>)}
-            </SelectContent>
-          </Select>
-          {isAdmin && (
-            <Select value={owner} onValueChange={setOwner}>
-              <SelectTrigger aria-label="Filter by owner" className="w-full sm:w-44"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All sales</SelectItem>
-                <SelectItem value="unassigned">No owner</SelectItem>
-                {salesUsers.map(u => <SelectItem key={u.id} value={u.id}>{u.name ?? u.email}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          )}
-        </div>
-      </div>
-
-      {/* Triage strip — WhatsApp chats nobody has categorised yet */}
-      {channel === 'whatsapp' && (
-        <div className="rounded-xl border bg-card">
-          <button type="button" aria-expanded={triageOpen} onClick={() => setTriageOpen(o => !o)} className="w-full flex items-center justify-between px-4 py-3">
-            <span className="flex items-center gap-2 text-sm font-semibold">
-              <Inbox className="h-4 w-4" /> Uncategorized WhatsApp chats
-              <Badge variant="secondary" className={unsorted.length ? 'bg-warning/15 text-warning' : ''}>{unsorted.length}</Badge>
-            </span>
-            {triageOpen ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
-          </button>
-          {triageOpen && (
-            <div className="border-t divide-y max-h-72 overflow-y-auto">
-              {unsorted.length === 0 ? (
-                <p className="px-4 py-4 text-sm text-muted-foreground">All chats have been categorized.</p>
-              ) : unsorted.map(c => (
-                <div key={c.id} className="px-4 py-2.5 flex flex-wrap items-center gap-3">
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium truncate">
-                      {c.contactName || `+${c.phone}`}
-                      <span className="ml-2 text-[11px] font-normal text-muted-foreground">{WHATSAPP_BRAND_LABELS[c.brand]} · {relTime(c.lastMessageAt)}</span>
-                      {isAdmin && <span className="ml-2 text-[11px] font-normal text-muted-foreground">· {c.assignedTo ? (c.assignedTo.name ?? c.assignedTo.email) : 'unassigned'}</span>}
-                    </p>
-                    <p className="text-xs text-muted-foreground truncate">{c.lastMessagePreview || '—'}</p>
-                  </div>
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <Button size="icon" variant="ghost" className="size-7" onClick={() => onOpenChat(c.id)} title="Open chat" aria-label="Open chat">
-                      <MessageCircle className="h-3.5 w-3.5" />
-                    </Button>
-                    {TRIAGE_OPTIONS.map(cat => (
-                      <Button key={cat} size="sm" variant={cat === 'SALES' ? 'default' : 'outline'} className="h-7 px-2.5 text-xs"
-                        style={cat === 'SALES' ? { backgroundColor: WA_GREEN } : undefined}
-                        disabled={triaging === c.id} onClick={() => triage(c, cat)}>
-                        {TRIAGE_SHORT[cat]}
-                      </Button>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Board */}
-      {loading ? (
-        <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
-      ) : (
-        <div className="flex gap-3 overflow-x-auto pb-2">
-          {COLUMNS.map(stage => {
-            const col = byStage[stage]
-            const items = col?.items ?? []
-            const usdTotal = items.reduce((sum, l) => { const v = dealValue(l); return v && v.currency === 'USD' ? sum + v.amount : sum }, 0)
-            return (
-              <div key={stage}
-                onDragOver={e => { if (dragId) { e.preventDefault(); setDropStage(stage) } }}
-                onDragLeave={() => setDropStage(s => s === stage ? null : s)}
-                onDrop={() => onDrop(stage)}
-                className={cn('w-64 shrink-0 rounded-xl border bg-muted/30 flex flex-col max-h-[calc(100vh-18rem)]',
-                  dropStage === stage && 'ring-2 ring-primary/50 bg-primary/5')}>
-                <div className="px-3 py-2.5 border-b space-y-0.5">
-                  <div className="flex items-center justify-between">
-                    <Badge className={`${LEAD_STAGE_COLOR[stage]} border-transparent`}>{LEAD_STAGE_LABEL[stage]}</Badge>
-                    <span className="text-xs text-muted-foreground">
-                      {col && col.total > items.length ? `${items.length} / ${col.total}` : items.length}
-                    </span>
-                  </div>
-                  <p className="text-[10px] text-muted-foreground">
-                    {usdTotal > 0 ? money(usdTotal, 'USD') : '\u00a0'}
-                    {stage === 'NEW' && ` · last ${newLookbackDays} days`}
-                  </p>
-                </div>
-                <div className="flex-1 overflow-y-auto p-2 space-y-2">
-                  {items.map(l => {
+  // One deal card — shared by the desktop board columns and the phone single-stage list.
+  const renderCard = (l: PipelineLead, stage: LeadStage) => {
                     const chat = l.whatsappConversations[0]
                     const inConversation = CONVERSATION_STAGES.includes(stage)
                     const waiting = inConversation ? waitingHours(l) : null
@@ -435,7 +329,7 @@ export default function SalesPipeline({ onOpenChat, onOpenMetaChat, onOpenBookin
                     return (
                       <div key={l.id} draggable={!locked} onDragStart={() => { if (!locked) setDragId(l.id) }} onDragEnd={() => { setDragId(null); setDropStage(null) }}
                         onClick={() => setSelectedId(l.id)}
-                        className={cn('rounded-lg border bg-card p-2.5 cursor-pointer hover:shadow-sm transition-shadow space-y-1.5',
+                        className={cn('rounded-lg border bg-card p-2.5 max-md:p-3.5 max-md:rounded-xl max-md:shadow-xs cursor-pointer hover:shadow-sm transition-shadow space-y-1.5',
                           overdue && 'border-destructive/40 bg-destructive/5',
                           dragId === l.id && 'opacity-50')}>
                         <div className="flex items-start justify-between gap-2">
@@ -488,13 +382,188 @@ export default function SalesPipeline({ onOpenChat, onOpenMetaChat, onOpenBookin
                         </div>
                       </div>
                     )
-                  })}
+  }
+
+  // Phones: one stage at a time (the 10-column board doesn't fit), switched with the
+  // dropdown, the arrows or a horizontal swipe.
+  const stageIdx = Math.max(0, COLUMNS.indexOf(mobileStage))
+  const stepStage = (d: number) => setMobileStage(COLUMNS[Math.min(COLUMNS.length - 1, Math.max(0, stageIdx + d))])
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 className="text-2xl font-bold tracking-tight">Sales Pipeline</h2>
+          <p className="max-sm:hidden text-sm text-muted-foreground">One card per deal from website, WhatsApp, Instagram, email and manual entry. Cards move on their own as you chat, book and invoice — drag to move by hand. Won and Lost deals are read-only.</p>
+        </div>
+        {/* Phones: search full width, dropdowns in a 2-column grid */}
+        <div className="w-full sm:w-auto grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
+          <div className="relative col-span-2 sm:w-56">
+            <Search className="absolute left-3 sm:left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 sm:h-3.5 sm:w-3.5 text-muted-foreground pointer-events-none" />
+            <Input value={searchInput} onChange={e => setSearchInput(e.target.value)} placeholder="Search name / email / number" aria-label="Search leads"
+              className="pl-9 sm:pl-8 max-sm:h-10 max-sm:rounded-full max-sm:bg-muted/60 max-sm:border-0" />
+          </div>
+          <Select value={channel} onValueChange={v => setChannel(v as Channel)}>
+            <SelectTrigger aria-label="Filter by channel" className="w-full sm:w-40"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {(Object.keys(CHANNEL_LABEL) as Channel[]).map(c => <SelectItem key={c} value={c}>{CHANNEL_LABEL[c]}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Select value={brand} onValueChange={v => setBrand(v as WhatsappBrand)}>
+            <SelectTrigger aria-label="Filter by brand" className="w-full sm:w-40"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {WHATSAPP_BRANDS.map(b => <SelectItem key={b} value={b}>{WHATSAPP_BRAND_LABELS[b]} pipeline</SelectItem>)}
+            </SelectContent>
+          </Select>
+          {isAdmin && (
+            <Select value={owner} onValueChange={setOwner}>
+              <SelectTrigger aria-label="Filter by owner" className="w-full sm:w-44 max-sm:col-span-2"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All sales</SelectItem>
+                <SelectItem value="unassigned">No owner</SelectItem>
+                {salesUsers.map(u => <SelectItem key={u.id} value={u.id}>{u.name ?? u.email}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          )}
+        </div>
+      </div>
+
+      {/* Triage strip — WhatsApp chats nobody has categorised yet */}
+      {channel === 'whatsapp' && (
+        <div className="rounded-xl border bg-card">
+          <button type="button" aria-expanded={triageOpen} onClick={() => setTriageOpen(o => !o)} className="w-full flex items-center justify-between px-4 py-3">
+            <span className="flex items-center gap-2 text-sm font-semibold">
+              <Inbox className="h-4 w-4" /> Uncategorized WhatsApp chats
+              <Badge variant="secondary" className={unsorted.length ? 'bg-warning/15 text-warning' : ''}>{unsorted.length}</Badge>
+            </span>
+            {triageOpen ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+          </button>
+          {triageOpen && (
+            <div className="border-t divide-y max-h-72 overflow-y-auto">
+              {unsorted.length === 0 ? (
+                <p className="px-4 py-4 text-sm text-muted-foreground">All chats have been categorized.</p>
+              ) : unsorted.map(c => (
+                <div key={c.id} className="px-4 py-2.5 flex flex-wrap items-center gap-x-3 gap-y-2">
+                  <div className="min-w-0 flex-1 max-sm:basis-full">
+                    <p className="text-sm font-medium truncate">
+                      {c.contactName || `+${c.phone}`}
+                      <span className="ml-2 text-[11px] font-normal text-muted-foreground">{WHATSAPP_BRAND_LABELS[c.brand]} · {relTime(c.lastMessageAt)}</span>
+                      {isAdmin && <span className="ml-2 text-[11px] font-normal text-muted-foreground">· {c.assignedTo ? (c.assignedTo.name ?? c.assignedTo.email) : 'unassigned'}</span>}
+                    </p>
+                    <p className="text-xs text-muted-foreground truncate">{c.lastMessagePreview || '—'}</p>
+                  </div>
+                  {/* Phones: own full-width row — chat icon + 4 equal buttons */}
+                  <div className="flex items-center gap-1.5 shrink-0 max-sm:w-full max-sm:grid max-sm:grid-cols-[auto_repeat(4,minmax(0,1fr))]">
+                    <Button size="icon" variant="ghost" className="size-7 max-sm:size-8" onClick={() => onOpenChat(c.id)} title="Open chat" aria-label="Open chat">
+                      <MessageCircle className="h-3.5 w-3.5" />
+                    </Button>
+                    {TRIAGE_OPTIONS.map(cat => (
+                      <Button key={cat} size="sm" variant={cat === 'SALES' ? 'default' : 'outline'} className="h-7 px-2.5 text-xs max-sm:h-8 max-sm:px-1"
+                        style={cat === 'SALES' ? { backgroundColor: WA_GREEN } : undefined}
+                        disabled={triaging === c.id} onClick={() => triage(c, cat)}>
+                        {TRIAGE_SHORT[cat]}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Board */}
+      {loading ? (
+        <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+      ) : (
+        <>
+        <div className="md:hidden space-y-3">
+          <div className="flex items-center gap-2">
+            <Button type="button" variant="outline" size="icon" className="size-10 shrink-0 rounded-full" disabled={stageIdx === 0} onClick={() => stepStage(-1)} aria-label="Previous stage">
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <Select value={mobileStage} onValueChange={v => setMobileStage(v as LeadStage)}>
+              <SelectTrigger aria-label="Stage" className="flex-1 min-w-0 h-10 rounded-xl">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {COLUMNS.map(st => {
+                  const col = byStage[st]
+                  return (
+                    <SelectItem key={st} value={st}>
+                      {LEAD_STAGE_LABEL[st]}
+                      <span className="ml-1.5 text-xs tabular-nums text-muted-foreground">{col?.total ?? col?.items.length ?? 0}</span>
+                    </SelectItem>
+                  )
+                })}
+              </SelectContent>
+            </Select>
+            <Button type="button" variant="outline" size="icon" className="size-10 shrink-0 rounded-full" disabled={stageIdx === COLUMNS.length - 1} onClick={() => stepStage(1)} aria-label="Next stage">
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+          {(() => {
+            const col = byStage[mobileStage]
+            const items = col?.items ?? []
+            const usdTotal = items.reduce((sum, l) => { const v = dealValue(l); return v && v.currency === 'USD' ? sum + v.amount : sum }, 0)
+            return (
+              <>
+                <div className="flex items-center justify-between px-1 text-xs text-muted-foreground">
+                  <span>
+                    {col && col.total > items.length ? `${items.length} of ${col.total}` : items.length} deal{items.length === 1 ? '' : 's'}
+                    {mobileStage === 'NEW' && ` · last ${newLookbackDays} days`}
+                  </span>
+                  {usdTotal > 0 && <span className="font-medium text-foreground tabular-nums">{money(usdTotal, 'USD')}</span>}
+                </div>
+                <div className="space-y-2 min-h-40"
+                  onTouchStart={e => { swipeStart.current = { x: e.touches[0].clientX, y: e.touches[0].clientY } }}
+                  onTouchEnd={e => {
+                    const t = swipeStart.current; swipeStart.current = null
+                    if (!t) return
+                    const dx = e.changedTouches[0].clientX - t.x, dy = e.changedTouches[0].clientY - t.y
+                    if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) stepStage(dx < 0 ? 1 : -1)
+                  }}>
+                  {items.map(l => renderCard(l, mobileStage))}
+                  {items.length === 0 && <p className="rounded-xl border border-dashed py-10 text-center text-sm text-muted-foreground">No deals in this stage</p>}
+                </div>
+              </>
+            )
+          })()}
+        </div>
+
+        <div className="max-md:hidden flex gap-3 overflow-x-auto pb-2">
+          {COLUMNS.map(stage => {
+            const col = byStage[stage]
+            const items = col?.items ?? []
+            const usdTotal = items.reduce((sum, l) => { const v = dealValue(l); return v && v.currency === 'USD' ? sum + v.amount : sum }, 0)
+            return (
+              <div key={stage}
+                onDragOver={e => { if (dragId) { e.preventDefault(); setDropStage(stage) } }}
+                onDragLeave={() => setDropStage(s => s === stage ? null : s)}
+                onDrop={() => onDrop(stage)}
+                className={cn('w-64 shrink-0 rounded-xl border bg-muted/30 flex flex-col max-h-[calc(100vh-18rem)]',
+                  dropStage === stage && 'ring-2 ring-primary/50 bg-primary/5')}>
+                <div className="px-3 py-2.5 border-b space-y-0.5">
+                  <div className="flex items-center justify-between">
+                    <Badge className={`${LEAD_STAGE_COLOR[stage]} border-transparent`}>{LEAD_STAGE_LABEL[stage]}</Badge>
+                    <span className="text-xs text-muted-foreground">
+                      {col && col.total > items.length ? `${items.length} / ${col.total}` : items.length}
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground">
+                    {usdTotal > 0 ? money(usdTotal, 'USD') : '\u00a0'}
+                    {stage === 'NEW' && ` · last ${newLookbackDays} days`}
+                  </p>
+                </div>
+                <div className="flex-1 overflow-y-auto p-2 space-y-2">
+                  {items.map(l => renderCard(l, stage))}
                   {items.length === 0 && <p className="text-xs text-muted-foreground text-center py-4">—</p>}
                 </div>
               </div>
             )
           })}
         </div>
+        </>
       )}
 
       {/* Lead detail */}
